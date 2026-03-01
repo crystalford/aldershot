@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Video pipeline config
+  // AI Film Studio
 };
 
 export default nextConfig;
