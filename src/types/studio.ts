@@ -1,6 +1,6 @@
 // ─── Project ────────────────────────────────────────────────────────────────
 
-export type ProjectType = "music_video" | "short_film" | "commercial" | "cinematic";
+export type ProjectType = "music_video" | "short_film" | "commercial" | "cinematic" | "video_essay";
 
 export type ProjectStatus =
   | "concept"
@@ -125,6 +125,7 @@ export interface Asset {
   id: string;
   project_id: string;
   shot_id?: string;
+  scene_id?: string;
   type: AssetType;
   url?: string;
   storage_path?: string;
@@ -132,6 +133,8 @@ export interface Asset {
   prompt?: string;
   metadata: Record<string, unknown>;
   status: AssetStatus;
+  hero?: boolean; // marks this as the anchor/reference image for a scene
+  approved?: boolean;
   created_at: string;
 }
 
@@ -142,7 +145,13 @@ export type JobType =
   | "generate_storyboard"
   | "generate_shots"
   | "generate_shot_image"
-  | "render_sequence";
+  | "render_sequence"
+  | "transcribe_audio"
+  | "segment_transcript"
+  | "generate_hero_images"
+  | "generate_ai_fill"
+  | "animate_hero_image"
+  | "render_video_essay";
 
 export type JobStatus = "pending" | "running" | "completed" | "failed";
 
@@ -159,6 +168,99 @@ export interface ProductionJob {
   updated_at: string;
 }
 
+// ─── Transcript ───────────────────────────────────────────────────────────────
+
+export interface TranscriptWord {
+  word: string;
+  punctuated_word: string;
+  start: number; // seconds
+  end: number;   // seconds
+  confidence: number;
+}
+
+export interface Transcript {
+  id: string;
+  project_id: string;
+  audio_url: string;
+  duration_seconds: number;
+  words: TranscriptWord[];
+  full_text: string;
+  created_at: string;
+}
+
+// ─── Resource Library ─────────────────────────────────────────────────────────
+
+export type ResourceType = "image" | "video" | "audio";
+
+export interface Resource {
+  id: string;
+  project_id: string;
+  type: ResourceType;
+  url?: string;
+  storage_path: string;
+  original_filename: string;
+  file_size_bytes?: number;
+  duration_seconds?: number;
+  description?: string;
+  tags: string[];
+  mood?: string;
+  subjects?: string[];
+  created_at: string;
+}
+
+// ─── Visual Assignment ────────────────────────────────────────────────────────
+
+export type VisualAssignmentType =
+  | "hero_image"
+  | "resource"
+  | "text_card"
+  | "ai_fill"
+  | "animated_clip";
+
+export interface VisualAssignment {
+  id: string;
+  scene_id: string;
+  order_index: number;
+  type: VisualAssignmentType;
+  asset_id?: string;
+  resource_id?: string;
+  text_content?: string;
+  start_word_index?: number;
+  end_word_index?: number;
+  start_seconds?: number;
+  end_seconds?: number;
+  created_at: string;
+}
+
+// ─── Video Essay ──────────────────────────────────────────────────────────────
+
+export type EssayStyle =
+  | "documentary"
+  | "explainer"
+  | "cinematic"
+  | "illustrated"
+  | "dark-academia"
+  | "minimal";
+
+export interface EssaySegment {
+  scene_number: number;
+  title: string;
+  topic: string;
+  visual_concept: string;
+  visual_type: "generated_image" | "text_card" | "user_resource";
+  mood: string;
+  color_direction: string;
+  start_word_index: number;
+  end_word_index: number;
+  order_index: number;
+}
+
+export interface CreateEssayInput {
+  title: string;
+  description?: string;
+  style: EssayStyle;
+}
+
 // ─── AI generation payloads ───────────────────────────────────────────────────
 
 export interface GenerateScriptInput {
@@ -169,7 +271,7 @@ export interface GenerateScriptInput {
   genre?: string;
   style?: string;
   duration_seconds?: number;
-  lyrics?: string; // for music videos
+  lyrics?: string;
 }
 
 export interface GenerateStoryboardInput {
