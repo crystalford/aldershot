@@ -45,12 +45,12 @@ The part that compensates for not naturally watching trends.
   schedule via **Cron Triggers** — runs itself in the cloud, no laptop. Scans what
   people are *actively consuming now*: model launches, show premieres, game drops,
   memes, news.
-- **Wave scoring.** Each detected trend scored on:
-  - **Velocity** — how fast it's rising
-  - **Saturation** — how crowded it already is (the anti-"pissing in the wind" signal)
-  - **Fit** — match to operator's niche / voice / capabilities
-  - **Window** — how long the wave will last
-  → yields a **ride score** + recommended stage (jump now / build for later / skip).
+- **Window, not saturation.** Each trend gets a **window** — when it's live and when it
+  expires (Fable: ~1 wk until pulled from Claude; Widows Bay: new ep Wed ~8pm ET). The
+  point isn't a crowdedness score (operator already has trend instinct) — it's "here's
+  the window, fire inside it." Once a trend is identified, **quality/insight decides**,
+  not timing games. Optional **fit** flag (matches operator's lane?) is the only scoring
+  that earns its keep.
 - **Anticipatory calendar.** Known upcoming waves (next ChatGPT release, ongoing shows,
   holidays, sports, product launches). AI-populated + manually editable. This is the
   *preparedness* fix — pre-stage angles before the wave breaks.
@@ -137,8 +137,13 @@ the console.**
 
 ---
 
+## Niche & voice (v1 working definition)
+Timely, **insightful** commentary on **what people are actively consuming** — video
+essays + memes. Two starting verticals: **prestige TV** (Apple TV hits — Widows Bay,
+Maximum Pleasure Guaranteed, Plural) and **AI/culture moments** (Fable 5, model launches).
+Bias: ship something good *now* over shipping nothing perfect.
+
 ## Open questions
-- Operator's **niche/voice** — needed to make "fit" scoring and style packs meaningful.
-- Trend **saturation** measurement — what concretely signals "too crowded"?
 - Per-model **video pricing** confirmation (feasibility doc §5).
-- Where the finished article/essay gets **published** (the old "Canopticon" slot).
+- Where the finished essay/video gets **published** / distributed (phase v3).
+- Exact v0 stack choice (Workers runtime + framework) — to be set when build starts.
