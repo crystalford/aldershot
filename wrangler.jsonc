@@ -1,0 +1,25 @@
+{
+  // Aldershot v0 — Cloudflare Workers config.
+  // Fill in resource IDs after running the one-time setup (see README).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aldershot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Workers AI — all model calls (FLUX stills, Wan I2V, Aura voice) go through this.
+  "ai": { "binding": "AI" },
+
+  // R2 — every generated asset (stills, animated clips, voiceover, final cuts).
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "aldershot-media" }
+  ],
+
+  // D1 — project + shot state. Create with: wrangler d1 create aldershot
+  "d1_databases": [
+    { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
+  ]
+
+  // Later phases: Containers (ffmpeg assembly), Cron Triggers (the Radar),
+  // Vectorize (trend clustering / style search), AI Gateway (metered video).
+}
