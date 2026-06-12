@@ -81,7 +81,46 @@ creative **angles** (funny / analytical / contrarian / explainer) → presents a
 Studio. **Operator stays the taste-maker; the system does the watching, preparing, and
 building.** Works both ways: Radar can *suggest*, or operator can *push* a topic directly.
 
+### Ideation quality — how it gets good, and how it gets *yours*
+
+The brain is not separate from "Claude" — it **is** a frontier model (Claude via AI
+Gateway). So out of the box it ideates at frontier quality. What makes it *reliable* and
+*on-brand* is three layers — an "idea compiler" mirroring the visual one:
+
+1. **Context engineering** (biggest lever) — feed the model *real trend facts* (Radar
+   research), the operator's **taste profile** (voice, no-go's, what's hit before), and
+   examples. Thin prompt → clichés; rich structured context → insight. The "gentrification
+   = the curse" read only existed because the show was *researched first*.
+2. **The quality score** — generate N candidate angles, then score each (model-as-critic)
+   on explicit axes: **insight** (non-obvious?), **timeliness** (rides the window?),
+   **fit** (the voice?), **shareability** (will people repost?). Rank, surface the top few,
+   optionally self-critique-and-revise.
+3. **Feedback flywheel** — every operator pick (A over B) and every real outcome (views)
+   feeds back into the taste profile. Over time it's not "generic Claude guessing" — it's
+   a model tuned to what *this* audience shares. That tuning is the moat a cold model can't copy.
+
+Honest bar: it won't be 100% bangers — it'll be like a strong collaborator, some great,
+some mid. That's *why* the human-pick wizard exists: the system surfaces enough good
+options fast; the operator's taste does the final 10%.
+
 ---
+
+## Content spectrum — clips ↔ cinematic
+
+Not everything needs the full compiler. Output spans a spectrum, and the Radar feeds
+both ends:
+
+- **Tier 0 — Clips / GIFs.** Zero generation. Pure **timing + recognition**: spot the
+  moment that will hit (the "Patricia dancing" GIF), be *first* while the episode's fresh,
+  caption/format/ship in minutes. The system's value here is a **moment detector** — as
+  episodes/streams get discussed, flag the clippable beats (the dance, the line, the
+  reaction), rank them for share-potential, and hand the operator a grab instruction
+  (timestamp + source) routed through the human-loop gate. Solves "ship something, not
+  nothing" on low-effort days.
+- **Tier 1 — Essays / cinematic.** The full Studio + compiler (e.g. the Fable eulogy).
+
+A single wave might want a clip, an essay, or both. The moment detector and the ideation
+engine are the same analytical layer pointed at two different output tiers.
 
 ## End-to-end pipeline
 
