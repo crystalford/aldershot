@@ -67,6 +67,16 @@ Max resolution across catalog **1080p**; max duration **~16s** (Vidu Q3).
 upstream provider rate passed through. Third-party blogs cite ~$0.05/s (Grok) to
 ~$0.25/s (Runway Gen-4.5) — **confirm per-model against the live catalog**.
 
+**Confirmed against primary source (Cloudflare's GitHub model catalog, 2026-06-12):**
+There is **no native (`@cf/`, neuron-billed) video model — including Wan.** The `@cf/`
+prefix is the tell of a Cloudflare-hosted, neuron-billed model (FLUX = `@cf/black-forest-labs/flux-2-dev`).
+Every video model instead uses bare `provider/model` IDs and points to the provider's
+own ToS: Wan = `alibaba/wan-2.7-i2v` (provider `alibaba`), Grok = `xai/grok-imagine-video`
+(links to x.ai ToS, `"Unified"` gateway billing key), Veo = `google/veo-3`. Wan being
+open-weight does **not** make it native here — Cloudflare exposes it as a partner/gateway
+model; neuron pricing would require self-hosting the weights on your own GPUs. **Net:
+all video = AI-Gateway pass-through + 5%, no exceptions.**
+
 ### Neuron model
 - **$0.011 / 1,000 neurons**, **10,000 neurons/day free**, on Workers Paid ($5/mo).
 
