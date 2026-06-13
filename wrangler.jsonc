@@ -21,8 +21,24 @@
   // D1 — project + shot state. Create with: wrangler d1 create aldershot
   "d1_databases": [
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
+  ],
+
+  // Containers — ffmpeg render for the Transcript Editor export (see container/).
+  "containers": [
+    {
+      "class_name": "RenderContainer",
+      "image": "./container/Dockerfile",
+      "name": "aldershot-render",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
   ]
 
-  // Later phases: Containers (ffmpeg assembly), Cron Triggers (the Radar),
-  // Vectorize (trend clustering / style search), AI Gateway (metered video).
+  // Later phases: Cron Triggers (the Radar), Vectorize (trend clustering /
+  // style search), AI Gateway (metered video).
 }

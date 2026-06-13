@@ -16,6 +16,15 @@
 
 import type { Env } from "../env";
 
+/**
+ * Workers AI runner with loosened typing. Several model schemas used here
+ * (FLUX.2 fields, the partner Wan 2.7 I2V) are still being confirmed against
+ * the live catalog, so we call through a permissive signature and validate the
+ * output shape at each call site.
+ */
+const runAI = (env: Env) =>
+  env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
 /** The controlled axes of a single intentional shot — the anti-"stock" spec. */
 export interface ShotSpec {
   subject: string; // who/what is in frame
@@ -60,7 +69,7 @@ export async function generateStill(
   spec: ShotSpec,
 ): Promise<string> {
   const prompt = synthPrompt(spec);
-  const result = (await env.AI.run(MODELS.still, { prompt })) as { image?: string };
+  const result = (await runAI(env)(MODELS.still, { prompt })) as { image?: string };
   // FLUX returns a base64 image; decode and persist.
   if (!result.image) throw new Error("FLUX returned no image");
   const bytes = Uint8Array.from(atob(result.image), (c) => c.charCodeAt(0));
@@ -80,7 +89,7 @@ export async function animate(
   if (!still) throw new Error(`Still not found: ${stillKey}`);
   const image = await still.arrayBuffer();
   // TODO: confirm partner I2V input schema (image encoding, motion/duration params).
-  const result = (await env.AI.run(MODELS.animate, {
+  const result = (await runAI(env)(MODELS.animate, {
     image: [...new Uint8Array(image)],
     prompt: spec.motion ?? spec.intent,
     duration: spec.durationSeconds ?? 5,
@@ -93,7 +102,7 @@ export async function animate(
 
 /** Narration — voiceover for a beat. Returns the R2 key of the audio. */
 export async function narrate(env: Env, beatId: string, text: string): Promise<string> {
-  const result = (await env.AI.run(MODELS.voice, { text })) as { audio?: ReadableStream };
+  const result = (await runAI(env)(MODELS.voice, { text })) as { audio?: ReadableStream };
   if (!result.audio) throw new Error("Aura returned no audio");
   const key = `beats/${beatId}/vo.mp3`;
   await env.MEDIA.put(key, result.audio, { httpMetadata: { contentType: "audio/mpeg" } });

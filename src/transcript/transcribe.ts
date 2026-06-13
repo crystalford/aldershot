@@ -23,7 +23,10 @@ export async function transcribeUpload(
   const mediaKey = `uploads/${crypto.randomUUID()}`;
   await env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType } });
 
-  const res = (await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
+  // Whisper turbo's generated input type lags the live model (word-level
+  // timestamps + exact audio encoding); call through a loosened signature.
+  const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  const res = (await run("@cf/openai/whisper-large-v3-turbo", {
     audio: [...new Uint8Array(bytes)],
   })) as { text: string; words?: { word: string; start: number; end: number }[] };
 

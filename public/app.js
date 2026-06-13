@@ -170,7 +170,7 @@ $("#export").addEventListener("click", async () => {
     a.click();
     return;
   }
-  setStatus("Exporting…");
+  setStatus("Rendering cut…");
   try {
     const res = await fetch("/api/export", {
       method: "POST",
@@ -178,7 +178,8 @@ $("#export").addEventListener("click", async () => {
       body: JSON.stringify({ mediaKey, words }),
     });
     const data = await res.json();
-    alert(`Cut ready: ${data.keptSeconds.toFixed(1)}s in ${data.ranges.length} segment(s).\nRender step (ffmpeg Container) is the next wiring.`);
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    alert(`Cut rendered: ${data.keptSeconds.toFixed(1)}s in ${data.ranges.length} segment(s).\nSaved to R2 as ${data.outputKey}.`);
   } catch (err) {
     alert(`Export failed: ${err.message}`);
   }
