@@ -16,6 +16,43 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.get("/api/health", (c) => c.json({ app: "aldershot", status: "ok", phase: "v0" }));
 
+// Stream a stored object (uploads + rendered cuts) back to the browser, with
+// HTTP range support so <video> can seek/scrub the result.
+app.get("/api/media/*", async (c) => {
+  const key = decodeURIComponent(c.req.path.slice("/api/media/".length));
+  if (!key) return c.json({ error: "missing media key" }, 400);
+
+  const rangeHeader = c.req.header("range");
+  let r2Range: R2Range | undefined;
+  const m = rangeHeader ? /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim()) : null;
+  if (m) {
+    const start = m[1] ? parseInt(m[1], 10) : undefined;
+    const end = m[2] ? parseInt(m[2], 10) : undefined;
+    if (start !== undefined && end !== undefined) r2Range = { offset: start, length: end - start + 1 };
+    else if (start !== undefined) r2Range = { offset: start };
+    else if (end !== undefined) r2Range = { suffix: end };
+  }
+
+  const obj = await c.env.MEDIA.get(key, r2Range ? { range: r2Range } : undefined);
+  if (!obj) return c.json({ error: `not found in R2: ${key}` }, 404);
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set("etag", obj.httpEtag);
+  headers.set("accept-ranges", "bytes");
+  if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
+
+  if (r2Range) {
+    const start = "suffix" in r2Range ? obj.size - r2Range.suffix : r2Range.offset ?? 0;
+    const end = "length" in r2Range && r2Range.length !== undefined ? start + r2Range.length - 1 : obj.size - 1;
+    headers.set("content-range", `bytes ${start}-${end}/${obj.size}`);
+    headers.set("content-length", String(end - start + 1));
+    return new Response(obj.body, { status: 206, headers });
+  }
+  headers.set("content-length", String(obj.size));
+  return new Response(obj.body, { status: 200, headers });
+});
+
 // ── Transcript Editor ────────────────────────────────────────────────
 // Upload audio/video -> R2 + Whisper -> word-level transcript.
 app.post("/api/transcribe", async (c) => {

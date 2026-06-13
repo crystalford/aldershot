@@ -179,7 +179,15 @@ $("#export").addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
-    alert(`Cut rendered: ${data.keptSeconds.toFixed(1)}s in ${data.ranges.length} segment(s).\nSaved to R2 as ${data.outputKey}.`);
+    // Load the rendered cut into the player and offer a download.
+    const url = "/api/media/" + data.outputKey.split("/").map(encodeURIComponent).join("/");
+    editPlaying = false;
+    video.src = url;
+    $("#filename").textContent = data.outputKey;
+    $("#status").innerHTML =
+      `cut: ${data.keptSeconds.toFixed(1)}s · ${data.ranges.length} segment(s) · ` +
+      `<a href="${url}" download style="color:var(--amber)">download</a>`;
+    return;
   } catch (err) {
     alert(`Export failed: ${err.message}`);
   }
