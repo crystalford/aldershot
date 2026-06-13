@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Aldershot — solid monogram">
+  <rect width="240" height="240" rx="42" fill="#141416" stroke="#26262A" stroke-width="2"/>
+  <path fill-rule="evenodd" fill="#EDE8DF"
+        d="M120,46 L184,196 L56,196 Z M120,96 L150,146 L90,146 Z M120,158 L158,196 L82,196 Z"/>
+  <rect x="80" y="147" width="80" height="10" fill="#F2A93B"/>
+</svg>
