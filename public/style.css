@@ -1,0 +1,50 @@
+:root {
+  --bg: #0b0b0c;
+  --panel: #141416;
+  --bone: #ede8df;
+  --dim: #8a8a86;
+  --amber: #f2a93b;
+  --line: #26262a;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--bone);
+  font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px; border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .mark { width: 30px; height: 30px; }
+.brand span { font-family: Georgia, serif; letter-spacing: 4px; font-size: 18px; }
+.brand em { color: var(--dim); font-style: normal; font-size: 13px; letter-spacing: 1px; }
+.stats { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 0; }
+.left, .right { background: var(--bg); padding: 20px; overflow: auto; }
+
+video { width: 100%; background: #000; border-radius: 10px; aspect-ratio: 16/9; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
+.btn {
+  background: var(--panel); color: var(--bone); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer; transition: .15s;
+}
+.btn:hover { border-color: #3a3a40; }
+.btn.amber { border-color: var(--amber); color: var(--amber); }
+.btn.amber:hover { background: rgba(242,169,59,.1); }
+.btn.ghost { color: var(--dim); }
+.meta { display: flex; justify-content: space-between; color: var(--dim); font-size: 13px; margin-top: 6px; }
+.hint { color: var(--dim); font-size: 13px; margin-top: 14px; }
+
+.transcript { font-size: 19px; line-height: 2; letter-spacing: .2px; }
+.transcript .empty { color: var(--dim); font-size: 15px; }
+.word { cursor: pointer; padding: 1px 1px; border-radius: 3px; }
+.word:hover { box-shadow: inset 0 -2px 0 var(--amber); }
+.word.deleted { color: #54545a; text-decoration: line-through; text-decoration-color: #54545a; }
+.word.playing { background: rgba(242,169,59,.22); }

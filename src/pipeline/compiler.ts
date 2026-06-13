@@ -14,11 +14,7 @@
  * Calls below are written to the documented shapes and marked where uncertain.
  */
 
-export interface Env {
-  AI: Ai;
-  MEDIA: R2Bucket;
-  DB: D1Database;
-}
+import type { Env } from "../env";
 
 /** The controlled axes of a single intentional shot — the anti-"stock" spec. */
 export interface ShotSpec {

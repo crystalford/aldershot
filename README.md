@@ -7,12 +7,22 @@ produces it to an intentional, high-fidelity standard.
 - **Feasibility research:** [`docs/research/feasibility.md`](docs/research/feasibility.md)
 - **Content briefs (live waves):** [`docs/content/wave-briefs.md`](docs/content/wave-briefs.md)
 
-## Status: v0 — the Spine
+## Status: v0
 
-Proving the **Cinematic Compiler** end-to-end on Cloudflare: an art-directed
-`ShotSpec` → FLUX.2 still (lock the look, cheap) → Wan 2.7 I2V (add motion) → R2.
-Plus Aura-2 voiceover. Assembly (ffmpeg in Containers), the console, the Radar
-(Cron-driven trend engine), and publishing come in later phases.
+First console surface: the **Transcript Editor** (Descript-style text-based editing).
+Second track: the **Cinematic Compiler** spine (`ShotSpec` → FLUX still → Wan I2V → R2,
+plus Aura voiceover). The Radar (Cron trend engine) and publishing come later.
+
+## Transcript Editor — try it now
+
+The editor runs **in a browser with no backend**: open `public/index.html`, hit
+**“Demo transcript”**, and click words to cut them — then **▶ Play edit** previews the
+cut instantly (load any local video first). Transcribe + render need Cloudflare:
+
+- `POST /api/transcribe` — upload audio → R2 + Whisper → word-level transcript.
+- `POST /api/export` — edited words → kept-time EDL → (ffmpeg `container/` render = next wiring).
+
+> Not yet run against a live Cloudflare account — wire bindings per setup below first.
 
 ## One-time setup (needs your Cloudflare account)
 
