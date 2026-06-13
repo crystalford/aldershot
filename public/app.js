@@ -79,9 +79,28 @@ $("#transcript").addEventListener("dblclick", (e) => {
   video.play();
 });
 
+// Highlight the word currently under the playhead (karaoke during preview).
+let playingEl = null;
+function highlightAt(t) {
+  let found = -1;
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (!w.deleted && t >= w.start && t < w.end) { found = i; break; }
+  }
+  const next = found >= 0 ? $(`.word[data-i="${found}"]`) : null;
+  if (next === playingEl) return;
+  if (playingEl) playingEl.classList.remove("playing");
+  if (next) next.classList.add("playing");
+  playingEl = next;
+}
+function clearHighlight() {
+  if (playingEl) { playingEl.classList.remove("playing"); playingEl = null; }
+}
+
 // Play edit: walk the kept ranges, skipping deleted gaps.
 let editPlaying = false;
 $("#playEdit").addEventListener("click", () => {
+  if (!video.src) { setStatus("Load a video first to preview the cut."); return; }
   const ranges = keptRanges(words);
   if (!ranges.length) return;
   editPlaying = true;
@@ -92,14 +111,15 @@ $("#playEdit").addEventListener("click", () => {
     if (!editPlaying) return;
     if (video.currentTime >= ranges[idx].end - 0.02) {
       idx++;
-      if (idx >= ranges.length) { editPlaying = false; video.pause(); return; }
+      if (idx >= ranges.length) { editPlaying = false; video.pause(); clearHighlight(); return; }
       video.currentTime = ranges[idx].start;
     }
+    highlightAt(video.currentTime);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 });
-video.addEventListener("pause", () => { editPlaying = false; });
+video.addEventListener("pause", () => { editPlaying = false; clearHighlight(); });
 
 // Load a local video/audio file.
 $("#file").addEventListener("change", (e) => {
