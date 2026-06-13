@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 200" width="820" height="200" role="img" aria-label="Aldershot — editorial masthead">
+  <rect width="820" height="200" fill="#0B0B0C"/>
+  <line x1="130" y1="60" x2="690" y2="60" stroke="#2C2C30" stroke-width="1.5"/>
+  <g transform="translate(410,60)">
+    <rect x="-16" y="-12" width="32" height="24" fill="#0B0B0C"/>
+    <path d="M11,0 L5.5,9.5 L-5.5,9.5 L-11,0 L-5.5,-9.5 L5.5,-9.5 Z" fill="#F2A93B"/>
+  </g>
+  <text x="410" y="128" text-anchor="middle" font-family="'Times New Roman', Georgia, serif" font-size="62" letter-spacing="16" fill="#EDE8DF">ALDERSHOT</text>
+  <line x1="130" y1="150" x2="690" y2="150" stroke="#2C2C30" stroke-width="1.5"/>
+  <text x="410" y="176" text-anchor="middle" font-family="Georgia, serif" font-size="12" letter-spacing="7" fill="#8A8A86">CINEMATIC&#160;&#160;MEDIA&#160;&#160;ENGINE</text>
+</svg>

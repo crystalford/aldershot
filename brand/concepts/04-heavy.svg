@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" width="760" height="200" role="img" aria-label="Aldershot — heavy">
+  <rect width="760" height="200" fill="#0B0B0C"/>
+  <rect x="44" y="64" width="11" height="72" fill="#F2A93B"/>
+  <g transform="translate(74,0) scale(0.94,1)">
+    <text x="0" y="128" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-weight="900" font-size="80" letter-spacing="0" fill="#EDE8DF">ALDERSHOT</text>
+  </g>
+  <rect x="676" y="120" width="14" height="14" fill="#F2A93B"/>
+</svg>
