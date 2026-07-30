@@ -141,11 +141,14 @@ function renderProject() {
           <button class="btn amber" id="playEdit">▶ Play edit</button>
           <button class="btn" id="stopEdit">■ Stop</button>
           <button class="btn" id="arrange">✨ Auto-arrange</button>
+          <button class="btn" id="findShorts">🎬 Find shorts</button>
+          <button class="btn amber" id="export">⬇ Export cut</button>
           <span class="spacer"></span>
           <button class="btn" id="save">Save edit</button>
         </div>
         <video id="sel-player" controls playsinline></video>
         <div id="timeline"></div>
+        <div id="shorts"></div>
         <p class="hint">Click a word to cut it · shift-click for a range · double-click to jump the player there.</p>
         <div class="transcript" id="transcript"></div>
       </section>
@@ -160,8 +163,11 @@ function renderProject() {
   $("#playEdit").onclick = playEdit;
   $("#stopEdit").onclick = stopEdit;
   $("#arrange").onclick = autoArrange;
+  $("#findShorts").onclick = findShorts;
+  $("#export").onclick = exportCut;
   $("#save").onclick = saveEdit;
   $("#sel-player").addEventListener("pause", () => { if (edit.playing) stopEdit(); });
+  renderShorts();
 }
 
 // ── AI arrange + timeline panel ──────────────────────────────────────
@@ -468,6 +474,120 @@ async function saveEdit() {
     btn.disabled = false;
   }
 }
+
+// ── Suggested shorts ─────────────────────────────────────────────────
+async function findShorts() {
+  const ready = state.videos.filter((v) => v.status === "ready" && v.words);
+  if (!ready.length) { alert("Transcribe at least one video first."); return; }
+  const btn = $("#findShorts");
+  const label = btn.textContent;
+  btn.textContent = "Finding…";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/shorts`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.shorts = data.shorts;
+    renderShorts();
+  } catch (err) {
+    alert(`Find shorts failed: ${err.message}\n\n(The AI step needs the live Cloudflare account.)`);
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+}
+
+function renderShorts() {
+  const el = $("#shorts");
+  if (!el) return;
+  const shorts = state.shorts || [];
+  if (!shorts.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="shorts">
+    <div class="tl-head"><strong>Suggested shorts</strong><span class="dim">${shorts.length}</span></div>
+    <div class="short-grid">${shorts.map((s, i) => shortCard(s, i)).join("")}</div>
+  </div>`;
+  shorts.forEach((s, i) => {
+    const card = el.querySelector(`.short[data-i="${i}"]`);
+    card.querySelector(".s-play").onclick = () => previewShort(s);
+    card.querySelector(".s-prod").onclick = (e) => produceShort(s, e.currentTarget);
+  });
+}
+
+function shortCard(s, i) {
+  const v = state.videos.find((x) => x.id === s.videoId);
+  const src = v ? decodeURIComponent(v.filename || "video") : s.videoId;
+  const score = typeof s.score === "number" ? `<span class="s-score">${s.score}</span>` : "";
+  return `<div class="short" data-i="${i}">
+    <div class="s-top">${score}<div class="s-title">${escapeHtml(s.title)}</div></div>
+    <div class="s-hook">${escapeHtml(s.hook || "")}</div>
+    <div class="s-meta">${fmt(s.start)}–${fmt(s.end)} · ${Math.round(s.end - s.start)}s · ${escapeHtml(src)}</div>
+    <div class="s-actions"><button class="btn small s-play">▶ Preview</button><button class="btn small amber s-prod">Produce ⬇</button></div>
+  </div>`;
+}
+
+async function previewShort(s) {
+  stopEdit();
+  const v = state.videos.find((x) => x.id === s.videoId);
+  if (!v) return;
+  state.selected = s.videoId;
+  renderVideoList();
+  highlightSelectedTranscript();
+  const p = $("#sel-player");
+  await ensureSrc(p, { r2_key: v.r2_key });
+  p.currentTime = s.start;
+  p.play();
+  const stop = () => { if (p.currentTime >= s.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
+  p.addEventListener("timeupdate", stop);
+}
+
+async function produceShort(s, btn) {
+  const v = state.videos.find((x) => x.id === s.videoId);
+  if (!v) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  try {
+    const blob = await Renderer.renderShort(
+      { r2_key: v.r2_key, start: s.start, end: s.end },
+      (msg) => { btn.textContent = msg; },
+    );
+    downloadBlob(blob, safeName(s.title) + ".mp4");
+    btn.textContent = "Done ✓";
+    setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+  } catch (err) {
+    alert(`Produce failed: ${err.message || err}`);
+    btn.textContent = label;
+    btn.disabled = false;
+  }
+}
+
+// ── Long-form export (browser render) ────────────────────────────────
+async function exportCut() {
+  const clips = buildClips();
+  if (!clips.length) { alert("Nothing to export — cut some words or auto-arrange first."); return; }
+  const secs = clips.reduce((a, c) => a + (c.end - c.start), 0);
+  if (secs > 600 && !confirm(`This cut is ${fmt(secs)} long. Rendering in the browser may take a while and use a lot of memory. Continue?`)) return;
+  const btn = $("#export");
+  const label = btn.textContent;
+  btn.disabled = true;
+  try {
+    const blob = await Renderer.renderLongform(clips, (msg) => { btn.textContent = msg; });
+    downloadBlob(blob, safeName(state.project.name) + "-cut.mp4");
+    btn.textContent = "Exported ✓";
+    setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+  } catch (err) {
+    alert(`Export failed: ${err.message || err}`);
+    btn.textContent = label;
+    btn.disabled = false;
+  }
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const safeName = (t) => (t || "aldershot").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "aldershot";
 
 // ── Upload + transcribe ──────────────────────────────────────────────
 function wireDropzone() {
