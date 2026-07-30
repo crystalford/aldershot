@@ -137,6 +137,12 @@ function renderProject() {
         <div class="vlist" id="vlist"></div>
       </aside>
       <section class="stage">
+        <div class="toolbar">
+          <button class="btn amber" id="playEdit">▶ Play edit</button>
+          <button class="btn" id="stopEdit">■ Stop</button>
+          <span class="spacer"></span>
+          <button class="btn" id="save">Save edit</button>
+        </div>
         <video id="sel-player" controls playsinline></video>
         <p class="hint">Click a word to cut it · shift-click for a range · double-click to jump the player there.</p>
         <div class="transcript" id="transcript"></div>
@@ -148,6 +154,10 @@ function renderProject() {
   renderTranscript();
   updateStats();
   selectVideo(state.selected);
+  $("#playEdit").onclick = playEdit;
+  $("#stopEdit").onclick = stopEdit;
+  $("#save").onclick = saveEdit;
+  $("#sel-player").addEventListener("pause", () => { if (edit.playing) stopEdit(); });
 }
 
 function renderVideoList() {
@@ -258,6 +268,114 @@ function updateStats() {
     tw += v.words.length;
   });
   setStats(`${fmt(kept)} kept / ${fmt(total)} · ${kw}/${tw} words · ${ready.length} clip(s)`);
+}
+
+// ── Cross-video edit preview ─────────────────────────────────────────
+const edit = { playing: false, clips: [], raf: 0, playingEl: null };
+
+// Ordered kept ranges across every ready video — the linear multi-clip cut.
+function buildClips() {
+  const clips = [];
+  for (const v of state.videos) {
+    if (v.status !== "ready" || !v.words) continue;
+    for (const r of keptRanges(v.words)) clips.push({ videoId: v.id, r2_key: v.r2_key, start: r.start, end: r.end });
+  }
+  return clips;
+}
+
+const mediaUrl = (key) => "/api/media/" + key.split("/").map(encodeURIComponent).join("/");
+
+function ensureSrc(player, clip) {
+  return new Promise((resolve) => {
+    if (player.dataset.key === clip.r2_key) return resolve();
+    player.dataset.key = clip.r2_key;
+    const onReady = () => { player.removeEventListener("canplay", onReady); resolve(); };
+    player.addEventListener("canplay", onReady);
+    player.src = mediaUrl(clip.r2_key);
+    player.load();
+  });
+}
+
+async function playEdit() {
+  const clips = buildClips();
+  if (!clips.length) return;
+  stopEdit();
+  edit.playing = true;
+  edit.clips = clips;
+  await playClip(0);
+}
+
+async function playClip(i) {
+  if (!edit.playing) return;
+  const clip = edit.clips[i];
+  state.selected = clip.videoId;
+  renderVideoList();
+  highlightSelectedTranscript();
+  const player = $("#sel-player");
+  await ensureSrc(player, clip);
+  if (!edit.playing) return;
+  try { player.currentTime = clip.start; await player.play(); } catch { /* autoplay race */ }
+  cancelAnimationFrame(edit.raf);
+  const tick = () => {
+    if (!edit.playing) return;
+    highlightPlayhead(clip.videoId, player.currentTime);
+    if (player.currentTime >= clip.end - 0.03) {
+      if (i + 1 >= edit.clips.length) { stopEdit(); return; }
+      playClip(i + 1);
+      return;
+    }
+    edit.raf = requestAnimationFrame(tick);
+  };
+  edit.raf = requestAnimationFrame(tick);
+}
+
+function stopEdit() {
+  edit.playing = false;
+  cancelAnimationFrame(edit.raf);
+  const player = $("#sel-player");
+  if (player && !player.paused) player.pause();
+  clearPlayhead();
+}
+
+function highlightPlayhead(videoId, t) {
+  const v = state.videos.find((x) => x.id === videoId);
+  if (!v || !v.words) return;
+  let idx = -1;
+  for (let i = 0; i < v.words.length; i++) {
+    const w = v.words[i];
+    if (!w.deleted && t >= w.start && t < w.end) { idx = i; break; }
+  }
+  const sec = document.querySelector(`.tsec[data-vid="${videoId}"] .tsec-body`);
+  const next = idx >= 0 && sec ? sec.querySelector(`.word[data-i="${idx}"]`) : null;
+  if (next === edit.playingEl) return;
+  clearPlayhead();
+  if (next) { next.classList.add("playing"); edit.playingEl = next; }
+}
+
+function clearPlayhead() {
+  if (edit.playingEl) { edit.playingEl.classList.remove("playing"); edit.playingEl = null; }
+}
+
+async function saveEdit() {
+  const ready = state.videos.filter((v) => v.status === "ready" && v.words);
+  if (!ready.length) return;
+  const btn = $("#save");
+  const label = btn.textContent;
+  btn.textContent = "Saving…";
+  btn.disabled = true;
+  try {
+    await Promise.all(ready.map((v) =>
+      fetch(`/api/videos/${v.id}/transcript`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(v.words),
+      })));
+    btn.textContent = "Saved ✓";
+    setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1200);
+  } catch {
+    btn.textContent = "Save failed";
+    btn.disabled = false;
+  }
 }
 
 // ── Upload + transcribe ──────────────────────────────────────────────

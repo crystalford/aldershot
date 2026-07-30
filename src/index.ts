@@ -162,6 +162,19 @@ app.post("/api/videos/:id/transcribe", async (c) => {
   }
 });
 
+// Persist edited words (deleted flags) for a video — the manual cut state.
+app.put("/api/videos/:id/transcript", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  const words = await c.req.json<Word[]>();
+  await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(words), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return c.json({ ok: true, count: words.length });
+});
+
 // ── Transcript Editor (legacy single-file) ───────────────────────────
 // Upload audio/video -> R2 + Whisper -> word-level transcript.
 app.post("/api/transcribe", async (c) => {
