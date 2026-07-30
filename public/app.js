@@ -140,10 +140,12 @@ function renderProject() {
         <div class="toolbar">
           <button class="btn amber" id="playEdit">▶ Play edit</button>
           <button class="btn" id="stopEdit">■ Stop</button>
+          <button class="btn" id="arrange">✨ Auto-arrange</button>
           <span class="spacer"></span>
           <button class="btn" id="save">Save edit</button>
         </div>
         <video id="sel-player" controls playsinline></video>
+        <div id="timeline"></div>
         <p class="hint">Click a word to cut it · shift-click for a range · double-click to jump the player there.</p>
         <div class="transcript" id="transcript"></div>
       </section>
@@ -152,12 +154,85 @@ function renderProject() {
   wireDropzone();
   renderVideoList();
   renderTranscript();
+  renderTimeline();
   updateStats();
   selectVideo(state.selected);
   $("#playEdit").onclick = playEdit;
   $("#stopEdit").onclick = stopEdit;
+  $("#arrange").onclick = autoArrange;
   $("#save").onclick = saveEdit;
   $("#sel-player").addEventListener("pause", () => { if (edit.playing) stopEdit(); });
+}
+
+// ── AI arrange + timeline panel ──────────────────────────────────────
+const hasTimeline = () => state.timeline && ((state.timeline.coldOpen || []).length || (state.timeline.body || []).length);
+
+async function autoArrange() {
+  const ready = state.videos.filter((v) => v.status === "ready" && v.words);
+  if (!ready.length) { alert("Transcribe at least one video first."); return; }
+  const btn = $("#arrange");
+  const label = btn.textContent;
+  btn.textContent = "Arranging…";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/arrange`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.timeline = data.timeline;
+    renderTimeline();
+    updateStats();
+  } catch (err) {
+    alert(`Auto-arrange failed: ${err.message}\n\n(The AI step needs the live Cloudflare account.)`);
+  }
+  btn.textContent = label;
+  btn.disabled = false;
+}
+
+function renderTimeline() {
+  const el = $("#timeline");
+  if (!el) return;
+  if (!hasTimeline()) { el.innerHTML = ""; return; }
+  const t = state.timeline;
+  const seg = (s, group, idx) => {
+    const v = state.videos.find((x) => x.id === s.videoId);
+    const name = v ? decodeURIComponent(v.filename || "video") : s.videoId;
+    return `<div class="seg" data-g="${group}" data-i="${idx}">
+      <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
+      <span class="seg-src">${escapeHtml(name)}</span>
+      <span class="seg-reason">${escapeHtml(s.reason || "")}</span>
+      <button class="seg-x" data-g="${group}" data-i="${idx}" title="Remove">×</button></div>`;
+  };
+  el.innerHTML = `
+    <div class="tl">
+      <div class="tl-head"><strong>Arranged cut</strong><button class="btn ghost small" id="clearTl">Clear</button></div>
+      ${(t.coldOpen || []).length ? `<div class="tl-label">Cold open</div>${t.coldOpen.map((s, i) => seg(s, "coldOpen", i)).join("")}` : ""}
+      ${(t.body || []).length ? `<div class="tl-label">Body</div>${t.body.map((s, i) => seg(s, "body", i)).join("")}` : ""}
+    </div>`;
+  el.querySelectorAll(".seg").forEach((row) => {
+    row.querySelector(".seg-x").onclick = (e) => {
+      e.stopPropagation();
+      state.timeline[row.dataset.g].splice(+row.dataset.i, 1);
+      saveTimeline();
+      renderTimeline();
+      updateStats();
+    };
+    row.onclick = () => {
+      const s = state.timeline[row.dataset.g][+row.dataset.i];
+      selectVideo(s.videoId);
+      const p = $("#sel-player");
+      p.currentTime = s.start;
+      p.play();
+    };
+  });
+  $("#clearTl").onclick = () => { state.timeline = null; saveTimeline(); renderTimeline(); updateStats(); };
+}
+
+function saveTimeline() {
+  return fetch(`/api/projects/${state.project.id}/timeline`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(state.timeline || { coldOpen: [], body: [] }),
+  });
 }
 
 function renderVideoList() {
@@ -258,6 +333,12 @@ function highlightSelectedTranscript() {
 }
 
 function updateStats() {
+  if (hasTimeline()) {
+    const segs = [...(state.timeline.coldOpen || []), ...(state.timeline.body || [])];
+    const dur = segs.reduce((s, x) => s + (x.end - x.start), 0);
+    setStats(`arranged ${fmt(dur)} · ${segs.length} segment(s)`);
+    return;
+  }
   const ready = state.videos.filter((v) => v.status === "ready" && v.words);
   if (!ready.length) { setStats(state.videos.length ? "transcribing…" : ""); return; }
   let kept = 0, total = 0, kw = 0, tw = 0;
@@ -273,8 +354,18 @@ function updateStats() {
 // ── Cross-video edit preview ─────────────────────────────────────────
 const edit = { playing: false, clips: [], raf: 0, playingEl: null };
 
-// Ordered kept ranges across every ready video — the linear multi-clip cut.
+// The clips Play edit walks: the arranged Timeline when present, else the
+// linear kept ranges across every ready video.
 function buildClips() {
+  if (hasTimeline()) {
+    const segs = [...(state.timeline.coldOpen || []), ...(state.timeline.body || [])];
+    return segs
+      .map((s) => {
+        const v = state.videos.find((x) => x.id === s.videoId);
+        return v && v.r2_key ? { videoId: s.videoId, r2_key: v.r2_key, start: s.start, end: s.end } : null;
+      })
+      .filter(Boolean);
+  }
   const clips = [];
   for (const v of state.videos) {
     if (v.status !== "ready" || !v.words) continue;

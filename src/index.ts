@@ -20,6 +20,7 @@ import {
   setVideoStatus,
 } from "./db";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, pickExt } from "./keys";
+import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
 
 export { RenderContainer } from "./render";
 
@@ -159,6 +160,54 @@ app.post("/api/videos/:id/transcribe", async (c) => {
   } catch (err) {
     await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ error: `transcribe failed: ${err}` }, 500);
+  }
+});
+
+// Gather a project's transcribed videos (id + words) for the reasoning steps.
+async function readyTranscripts(c: { env: Env }, pid: string): Promise<VideoTranscript[]> {
+  const videos = await listVideos(c.env.DB, pid);
+  const out: VideoTranscript[] = [];
+  for (const v of videos) {
+    if (v.status !== "ready") continue;
+    const words = await readJson<Word[]>(c.env.MEDIA, transcriptKey(pid, v.id));
+    if (words?.length) out.push({ id: v.id, filename: v.filename, words });
+  }
+  return out;
+}
+
+// AI narrative arrange: analyse transcripts → ordered long-form Timeline.
+app.post("/api/projects/:id/arrange", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
+  if (!ready.length) return c.json({ error: "no transcribed videos to arrange yet" }, 400);
+  try {
+    const timeline = await arrangeTimeline(c.env, ready);
+    await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return c.json({ timeline });
+  } catch (err) {
+    return c.json({ error: `arrange failed: ${err}` }, 502);
+  }
+});
+
+// Opus-Clip-style: suggest self-contained shorts across the project's videos.
+app.post("/api/projects/:id/shorts", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
+  if (!ready.length) return c.json({ error: "no transcribed videos to mine yet" }, 400);
+  try {
+    const shorts = await suggestShorts(c.env, ready);
+    await c.env.MEDIA.put(shortsKey(id), JSON.stringify(shorts), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return c.json({ shorts });
+  } catch (err) {
+    return c.json({ error: `shorts failed: ${err}` }, 502);
   }
 });
 
