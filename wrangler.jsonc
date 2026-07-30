@@ -1,44 +1,36 @@
 {
   // Aldershot v0 — Cloudflare Workers config.
-  // Fill in resource IDs after running the one-time setup (see README).
+  // Fill in the D1 database_id after the one-time setup (see README).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aldershot",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Console UI (the Transcript Editor + future surfaces) served as static assets.
+  // Console UI (project console) served as static assets.
   "assets": { "directory": "./public", "binding": "ASSETS" },
 
-  // Workers AI — all model calls (Whisper transcribe, FLUX, Wan I2V, Aura voice).
+  // Workers AI — Whisper transcribe + Llama arrange/shorts (and later FLUX/Wan/Aura).
   "ai": { "binding": "AI" },
 
-  // R2 — every generated asset (stills, animated clips, voiceover, final cuts).
+  // R2 — uploads, transcripts, timelines, shorts, rendered cuts.
   "r2_buckets": [
     { "binding": "MEDIA", "bucket_name": "aldershot-media" }
   ],
 
-  // D1 — project + shot state. Create with: wrangler d1 create aldershot
+  // D1 — projects + videos. Create with: wrangler d1 create aldershot
+  // then paste the returned id below and run: wrangler d1 migrations apply aldershot --remote
   "d1_databases": [
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
-  ],
-
-  // Containers — ffmpeg render for the Transcript Editor export (see container/).
-  "containers": [
-    {
-      "class_name": "RenderContainer",
-      "image": "./container/Dockerfile",
-      "name": "aldershot-render",
-      "max_instances": 3
-    }
-  ],
-  "durable_objects": {
-    "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]
-  },
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
   ]
 
-  // Later phases: Cron Triggers (the Radar), Vectorize (trend clustering /
-  // style search), AI Gateway (metered video).
+  // Server-side ffmpeg render (container/) is intentionally OFF so deploy needs
+  // no Docker — rendering runs in the browser (public/render.js). To bring back
+  // big-file server render, restore these blocks and `export { RenderContainer }`
+  // in src/index.ts:
+  //   "containers": [{ "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-render", "max_instances": 3 }],
+  //   "durable_objects": { "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }] },
+  //   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }]
+  //
+  // Later phases: Cron Triggers (Radar), Vectorize (trend/style search), AI Gateway.
 }

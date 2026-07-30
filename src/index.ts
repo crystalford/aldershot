@@ -4,11 +4,10 @@
  * Heavy work is synchronous in v0; Workflows orchestration comes later.
  */
 import { Hono } from "hono";
-import { getContainer } from "@cloudflare/containers";
 import type { Env } from "./env";
 import { runShot, narrate, type ShotSpec } from "./pipeline/compiler";
 import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
-import { keptRanges, totalSeconds, ffmpegSelect, type Word, type Timeline } from "./transcript/edl";
+import type { Word, Timeline } from "./transcript/edl";
 import {
   ensureSchema,
   createProject,
@@ -22,7 +21,9 @@ import {
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, pickExt } from "./keys";
 import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
 
-export { RenderContainer } from "./render";
+// The render container (src/render.ts) is kept for a future server-side "pro
+// render" path but is intentionally NOT wired in the default deploy, so going
+// live needs no Docker. Rendering happens in the browser (public/render.js).
 
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   const obj = await bucket.get(key);
@@ -232,34 +233,12 @@ app.post("/api/transcribe", async (c) => {
   return c.json(await transcribeUpload(c.env, bytes, contentType));
 });
 
-// Render the cut: pull the source from R2, hand bytes + EDL to the ffmpeg
-// container, stream the resulting MP4 back into R2.
-app.post("/api/export", async (c) => {
-  const { mediaKey, words } = await c.req.json<{ mediaKey: string; words: Word[] }>();
-  const ranges = keptRanges(words);
-  const keptSeconds = totalSeconds(ranges);
-  if (!ranges.length) return c.json({ error: "nothing kept to render" }, 400);
-
-  const src = await c.env.MEDIA.get(mediaKey);
-  if (!src) return c.json({ error: `media not found in R2: ${mediaKey}` }, 404);
-
-  // One container instance per source — reused across re-exports of the same media.
-  const render = getContainer(c.env.RENDER, mediaKey);
-  const cut = await render.fetch("https://render/cut", {
-    method: "POST",
-    headers: { "content-type": "application/octet-stream", "x-ranges": JSON.stringify(ranges) },
-    body: src.body,
-  });
-  if (!cut.ok) {
-    return c.json({ error: "render failed", detail: await cut.text(), ffmpeg: ffmpegSelect(ranges) }, 502);
-  }
-
-  const stem = mediaKey.split("/").pop()!.replace(/\.[^.]+$/, "");
-  const outputKey = `cuts/${stem}-${Date.now()}.mp4`;
-  await c.env.MEDIA.put(outputKey, cut.body, { httpMetadata: { contentType: "video/mp4" } });
-
-  return c.json({ mediaKey, outputKey, ranges, keptSeconds, status: "rendered" });
-});
+// Rendering now happens in the browser (public/render.js, ffmpeg.wasm). The
+// server-side container render is parked; re-enable src/render.ts + the wrangler
+// containers block to bring it back for large files.
+app.post("/api/export", (c) =>
+  c.json({ error: "export renders in the browser now — use the console's Export / Produce" }, 501),
+);
 
 // ── Studio (v0 spine) ────────────────────────────────────────────────
 app.post("/api/shot", async (c) => {

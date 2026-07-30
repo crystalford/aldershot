@@ -7,33 +7,53 @@ produces it to an intentional, high-fidelity standard.
 - **Feasibility research:** [`docs/research/feasibility.md`](docs/research/feasibility.md)
 - **Content briefs (live waves):** [`docs/content/wave-briefs.md`](docs/content/wave-briefs.md)
 
-## Status: v0
+## Status: v0 — the Project Console
 
-First console surface: the **Transcript Editor** (Descript-style text-based editing).
-Second track: the **Cinematic Compiler** spine (`ShotSpec` → FLUX still → Wan I2V → R2,
-plus Aura voiceover). The Radar (Cron trend engine) and publishing come later.
+Upload a **batch of videos into one project**, transcribe them all, and edit as text:
 
-## Transcript Editor — try it now
+- **Projects** — create a project, drag-drop multiple videos (base take + commentary…).
+- **Transcribe** — audio is extracted in-browser and sent to Whisper for word-level timing.
+- **Edit as text** — click words to cut them; **▶ Play edit** previews the multi-clip cut,
+  hopping across videos with the source swapping live.
+- **✨ Auto-arrange** — an LLM reads every transcript and proposes a long-form cut: a
+  **cold open** of the punchiest hooks, then the best takes in narrative order. Edit it by hand.
+- **🎬 Find shorts** — Opus-Clip-style: self-contained 15–60s moments, ranked, each ready to
+  **Produce** as an MP4.
+- **⬇ Export** — the arranged cut and every short render **in the browser** (ffmpeg.wasm) —
+  no server render needed to ship.
 
-The editor runs **in a browser with no backend**: open `public/index.html`, hit
-**“Demo transcript”**, and click words to cut them — then **▶ Play edit** previews the
-cut instantly (load any local video first). Transcribe + render need Cloudflare:
+Rendering is client-side by design, so **deploy needs no Docker**. The server ffmpeg
+container (`container/`) is parked for a future big-file "pro render" path.
 
-- `POST /api/transcribe` — upload audio → R2 + Whisper → word-level transcript.
-- `POST /api/export` — edited words → kept-time EDL → (ffmpeg `container/` render = next wiring).
+### API surface
+`POST /api/projects` · `GET /api/projects[/:id]` · `POST /api/projects/:id/videos`
+· `POST /api/videos/:id/transcribe` · `PUT /api/videos/:id/transcript`
+· `POST /api/projects/:id/arrange` · `POST /api/projects/:id/shorts`
+· `PUT /api/projects/:id/timeline` · `GET /api/media/*` (range-aware playback).
 
-> Not yet run against a live Cloudflare account — wire bindings per setup below first.
+## Go live (needs your Cloudflare account)
 
-## One-time setup (needs your Cloudflare account)
+```bash
+npx wrangler login            # interactive — authenticates to your account
+./scripts/setup.sh            # installs, creates R2 + D1, wires the db id, migrates, deploys
+```
+
+`setup.sh` prints your live URL: `https://aldershot.<your-subdomain>.workers.dev`.
+
+Prefer to do it by hand? The equivalent steps:
 
 ```bash
 npm install
 npx wrangler login
 npx wrangler r2 bucket create aldershot-media
-npx wrangler d1 create aldershot   # paste the returned database_id into wrangler.jsonc
-npm run dev                        # local dev
-npm run deploy                     # ship to your account
+npx wrangler d1 create aldershot            # paste the returned id into wrangler.jsonc (replace "TODO")
+npx wrangler d1 migrations apply aldershot --remote
+npm run deploy                              # -> workers.dev URL
 ```
+
+> Headless/CI deploy: set `CLOUDFLARE_API_TOKEN` (+ `CLOUDFLARE_ACCOUNT_ID`) instead of
+> `wrangler login`. Local `wrangler dev` needs credentials too, because the Workers AI
+> binding runs against the live account.
 
 ## Try the spine
 

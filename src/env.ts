@@ -6,6 +6,8 @@ export interface Env {
   MEDIA: R2Bucket;
   DB: D1Database;
   ASSETS?: Fetcher;
-  // ffmpeg render container (Transcript Editor export → cut MP4 in R2).
-  RENDER: DurableObjectNamespace<RenderContainer>;
+  // Optional server-side ffmpeg render container — not bound in the default
+  // (Docker-free) deploy; rendering runs in the browser. Re-enable in
+  // wrangler.jsonc to bring back big-file server render.
+  RENDER?: DurableObjectNamespace<RenderContainer>;
 }
