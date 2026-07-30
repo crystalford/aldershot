@@ -8,12 +8,31 @@ export interface TranscriptResult {
 }
 
 /**
- * Store the upload in R2 and transcribe with Whisper (word-level timestamps).
+ * Transcribe AUDIO bytes with Whisper → word-level timestamps.
  *
- * NOTE: Whisper expects audio. For VIDEO uploads, audio must be extracted first
- * (ffmpeg in the export Container — see container/). v0 works directly with audio
- * files (m4a/mp3/wav); video transcription wiring is the next step. Exact Whisper
- * response shape (word vs segment timestamps) to confirm against the live model.
+ * Whisper expects audio, not a video container. The client extracts a small
+ * mono 16kHz track from the source (ffmpeg.wasm, see public/render.js) and
+ * posts THAT here, so this function stays a pure audio→words call.
+ */
+export async function transcribeAudio(env: Env, audio: ArrayBuffer): Promise<Word[]> {
+  // Whisper turbo's generated input type lags the live model (word-level
+  // timestamps + exact audio encoding); call through a loosened signature.
+  const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  const res = (await run("@cf/openai/whisper-large-v3-turbo", {
+    audio: [...new Uint8Array(audio)],
+  })) as { text?: string; words?: { word: string; start: number; end: number }[] };
+
+  return (res.words ?? []).map((w) => ({
+    text: w.word,
+    start: w.start,
+    end: w.end,
+    deleted: false,
+  }));
+}
+
+/**
+ * Legacy single-file path: store the upload in R2 and transcribe. Kept for the
+ * standalone editor; the project flow uses transcribeAudio + R2 persistence.
  */
 export async function transcribeUpload(
   env: Env,
@@ -22,20 +41,7 @@ export async function transcribeUpload(
 ): Promise<TranscriptResult> {
   const mediaKey = `uploads/${crypto.randomUUID()}`;
   await env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType } });
-
-  // Whisper turbo's generated input type lags the live model (word-level
-  // timestamps + exact audio encoding); call through a loosened signature.
-  const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  const res = (await run("@cf/openai/whisper-large-v3-turbo", {
-    audio: [...new Uint8Array(bytes)],
-  })) as { text: string; words?: { word: string; start: number; end: number }[] };
-
-  const words: Word[] = (res.words ?? []).map((w) => ({
-    text: w.word,
-    start: w.start,
-    end: w.end,
-    deleted: false,
-  }));
-
-  return { mediaKey, text: res.text, words };
+  const words = await transcribeAudio(env, bytes);
+  const text = words.map((w) => w.text).join(" ");
+  return { mediaKey, text, words };
 }

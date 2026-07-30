@@ -15,6 +15,32 @@ export interface Range {
   end: number;
 }
 
+/** A contiguous span of one video's timeline, in source seconds. The unit the
+ *  arranged long-form and the shorts are both built from. */
+export interface Segment {
+  videoId: string;
+  start: number;
+  end: number;
+  reason?: string; // why the AI chose it (arrange step); absent for manual segments
+}
+
+/** The arranged long-form cut: a cold open of hooks, then the body. */
+export interface Timeline {
+  coldOpen: Segment[];
+  body: Segment[];
+}
+
+/** An Opus-Clip-style suggested short — a self-contained moment. */
+export interface Short {
+  title: string;
+  videoId: string;
+  start: number;
+  end: number;
+  hook: string;
+  why?: string;
+  score?: number; // 0–100 share-worthiness
+}
+
 /** Merge kept (non-deleted) words into contiguous time ranges. */
 export function keptRanges(words: Word[], gapTolerance = 0.12): Range[] {
   const ranges: Range[] = [];

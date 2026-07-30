@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aldershot · Transcript Editor</title>
+  <title>Aldershot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="bar">
-    <div class="brand">
+    <div class="brand" id="home" role="button" tabindex="0" title="Projects">
       <svg class="mark" viewBox="0 0 240 240" aria-hidden="true">
         <g fill="none" stroke="#EDE8DF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
           <path d="M52,86 L52,52 L86,52" />
@@ -19,30 +19,17 @@
         <circle cx="120" cy="120" r="12" fill="#F2A93B" />
       </svg>
       <span>ALDERSHOT</span>
-      <em>Transcript Editor</em>
     </div>
-    <div class="stats" id="stats">no transcript</div>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="stats" id="stats"></div>
   </header>
 
-  <main>
-    <section class="left">
-      <video id="video" controls playsinline></video>
-      <div class="controls">
-        <label class="btn">Load video<input id="file" type="file" accept="video/*,audio/*" hidden /></label>
-        <button class="btn" id="transcribe">Transcribe</button>
-        <button class="btn ghost" id="demo">Demo transcript</button>
-        <button class="btn amber" id="playEdit">▶ Play edit</button>
-        <button class="btn amber" id="export">Export</button>
-      </div>
-      <div class="meta"><span id="filename">no file</span><span id="status"></span></div>
-      <p class="hint">Click a word to cut it. Shift-click for a range. Double-click to jump there.</p>
-    </section>
+  <main id="main"><div class="loading">Loading…</div></main>
 
-    <section class="right">
-      <div id="transcript" class="transcript"><span class="empty">Load a video and Transcribe — or hit “Demo transcript” to feel the editor right now.</span></div>
-    </section>
-  </main>
+  <!-- shared hidden player used for cross-video edit preview -->
+  <video id="player" playsinline style="display:none"></video>
 
+  <script src="audio.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

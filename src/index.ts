@@ -7,10 +7,26 @@ import { Hono } from "hono";
 import { getContainer } from "@cloudflare/containers";
 import type { Env } from "./env";
 import { runShot, narrate, type ShotSpec } from "./pipeline/compiler";
-import { transcribeUpload } from "./transcript/transcribe";
-import { keptRanges, totalSeconds, ffmpegSelect, type Word } from "./transcript/edl";
+import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
+import { keptRanges, totalSeconds, ffmpegSelect, type Word, type Timeline } from "./transcript/edl";
+import {
+  ensureSchema,
+  createProject,
+  listProjects,
+  getProject,
+  addVideo,
+  listVideos,
+  getVideo,
+  setVideoStatus,
+} from "./db";
+import { videoSourceKey, transcriptKey, timelineKey, shortsKey, pickExt } from "./keys";
 
 export { RenderContainer } from "./render";
+
+async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
+  const obj = await bucket.get(key);
+  return obj ? await obj.json<T>() : null;
+}
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -53,7 +69,100 @@ app.get("/api/media/*", async (c) => {
   return new Response(obj.body, { status: 200, headers });
 });
 
-// ── Transcript Editor ────────────────────────────────────────────────
+// ── Projects ─────────────────────────────────────────────────────────
+// A project holds multiple videos that get transcribed, arranged into a
+// long-form cut, and mined for shorts.
+app.post("/api/projects", async (c) => {
+  await ensureSchema(c.env.DB);
+  const body = await c.req.json<{ name?: string }>().catch(() => ({}) as { name?: string });
+  const project = await createProject(c.env.DB, body.name?.trim() || "Untitled project");
+  return c.json(project, 201);
+});
+
+app.get("/api/projects", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json({ projects: await listProjects(c.env.DB) });
+});
+
+app.get("/api/projects/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  const project = await getProject(c.env.DB, id);
+  if (!project) return c.json({ error: "project not found" }, 404);
+
+  const videos = await listVideos(c.env.DB, id);
+  const withWords = await Promise.all(
+    videos.map(async (v) => ({
+      ...v,
+      words: v.status === "ready" ? await readJson(c.env.MEDIA, transcriptKey(id, v.id)) : null,
+    })),
+  );
+  const timeline = await readJson<Timeline>(c.env.MEDIA, timelineKey(id));
+  const shorts = await readJson(c.env.MEDIA, shortsKey(id));
+  return c.json({ project, videos: withWords, timeline, shorts });
+});
+
+// Persist the manually-edited / arranged long-form timeline.
+app.put("/api/projects/:id/timeline", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const timeline = await c.req.json<Timeline>();
+  await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return c.json({ ok: true });
+});
+
+// Upload one video into a project. Body = raw bytes; x-filename / x-duration headers.
+app.post("/api/projects/:id/videos", async (c) => {
+  await ensureSchema(c.env.DB);
+  const pid = c.req.param("id");
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
+
+  const filename = c.req.header("x-filename") || "video";
+  const contentType = c.req.header("content-type") || "application/octet-stream";
+  const duration = Number(c.req.header("x-duration")) || null;
+  const vid = crypto.randomUUID();
+  const key = videoSourceKey(pid, vid, pickExt(filename, contentType));
+
+  const body = c.req.raw.body;
+  if (!body) return c.json({ error: "empty upload" }, 400);
+  await c.env.MEDIA.put(key, body, { httpMetadata: { contentType } });
+  const ord = (await listVideos(c.env.DB, pid)).length;
+  const video = await addVideo(c.env.DB, {
+    id: vid,
+    project_id: pid,
+    filename,
+    r2_key: key,
+    duration,
+    ord,
+  });
+  return c.json(video, 201);
+});
+
+// Transcribe a video. Body = client-extracted audio bytes (mono 16kHz).
+app.post("/api/videos/:id/transcribe", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+
+  await setVideoStatus(c.env.DB, vid, "transcribing");
+  try {
+    const words = await transcribeAudio(c.env, await c.req.arrayBuffer());
+    await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(words), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    await setVideoStatus(c.env.DB, vid, "ready");
+    return c.json({ videoId: vid, words });
+  } catch (err) {
+    await setVideoStatus(c.env.DB, vid, "failed");
+    return c.json({ error: `transcribe failed: ${err}` }, 500);
+  }
+});
+
+// ── Transcript Editor (legacy single-file) ───────────────────────────
 // Upload audio/video -> R2 + Whisper -> word-level transcript.
 app.post("/api/transcribe", async (c) => {
   const contentType = c.req.header("content-type") ?? "application/octet-stream";
