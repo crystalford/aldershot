@@ -55,11 +55,13 @@ jobs:
           node -e 'const fs=require("fs");let s=fs.readFileSync("wrangler.jsonc","utf8");s=s.replace(/("database_id":\s*")TODO(")/,`$1${process.argv[1]}$2`);fs.writeFileSync("wrangler.jsonc",s)' "$DB_ID"
           # tables are created lazily by ensureSchema() on first request — no migration step needed
 
-          echo "==> Deploying (builds the ffmpeg container image too)"
-          npx wrangler deploy
+          echo "==> Storage CORS (first, so it lands regardless of the deploy step)"
+          node scripts/set-cors.mjs || true
 
-          echo "==> Direct-upload storage CORS + secrets"
-          R2_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" node scripts/set-cors.mjs || true
+          echo "==> Deploying (skip container rollout — it's unchanged and already live)"
+          npx wrangler deploy --containers-rollout=none
+
+          echo "==> Secrets"
           put_secret() { if [ -n "${2:-}" ]; then printf '%s' "$2" | npx wrangler secret put "$1"; else echo "  (skip $1 — not set)"; fi; }
           put_secret R2_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
           put_secret R2_ACCESS_KEY_ID "${R2_ACCESS_KEY_ID:-}"
