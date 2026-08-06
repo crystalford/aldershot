@@ -1,24 +1,27 @@
-// Configure R2 bucket CORS so the browser can PUT directly to storage.
-// Runs in the deploy Action with the R2 API credentials. No-op if unset.
-import { AwsClient } from "aws4fetch";
-
-const acct = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID;
-const id = process.env.R2_ACCESS_KEY_ID;
-const secret = process.env.R2_SECRET_ACCESS_KEY;
-if (!acct || !id || !secret) {
-  console.log("  (skip CORS — R2 credentials not set)");
+// Configure R2 bucket CORS (so the browser can PUT directly to storage) via the
+// Cloudflare API, using the deploy token — which has R2 edit permission, unlike
+// an object-scoped R2 token. No-op if unset.
+const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
+const token = process.env.CLOUDFLARE_API_TOKEN;
+if (!acct || !token) {
+  console.log("  (skip CORS — no Cloudflare token)");
   process.exit(0);
 }
 
-const client = new AwsClient({ accessKeyId: id, secretAccessKey: secret, service: "s3", region: "auto" });
-const cors =
-  "<CORSConfiguration><CORSRule>" +
-  "<AllowedOrigin>*</AllowedOrigin>" +
-  "<AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod>" +
-  "<AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds>" +
-  "</CORSRule></CORSConfiguration>";
+const body = {
+  rules: [
+    {
+      allowed: { origins: ["*"], methods: ["GET", "PUT", "HEAD"], headers: ["*"] },
+      exposeHeaders: ["ETag"],
+      maxAgeSeconds: 3600,
+    },
+  ],
+};
 
-const url = `https://${acct}.r2.cloudflarestorage.com/aldershot-media?cors`;
-const res = await client.fetch(url, { method: "PUT", body: cors, headers: { "content-type": "application/xml" } });
+const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/r2/buckets/aldershot-media/cors`, {
+  method: "PUT",
+  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
 console.log("  R2 CORS:", res.status);
-if (!res.ok) console.log(await res.text());
+if (!res.ok) console.log((await res.text()).slice(0, 500));
