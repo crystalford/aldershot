@@ -20,6 +20,7 @@ import {
 } from "./db";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, pickExt } from "./keys";
 import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
+import { resolveMedia } from "./import";
 
 // The render container (src/render.ts) is kept for a future server-side "pro
 // render" path but is intentionally NOT wired in the default deploy, so going
@@ -141,6 +142,38 @@ app.post("/api/projects/:id/videos", async (c) => {
     ord,
   });
   return c.json(video, 201);
+});
+
+// Import a video from a URL (Rumble / direct link) straight into R2.
+app.post("/api/projects/:id/import", async (c) => {
+  await ensureSchema(c.env.DB);
+  const pid = c.req.param("id");
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
+
+  const { url } = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
+  if (!url) return c.json({ error: "no url provided" }, 400);
+
+  try {
+    const resolved = await resolveMedia(url);
+    const upstream = await fetch(resolved.mediaUrl, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+      },
+    });
+    if (!upstream.ok || !upstream.body) {
+      return c.json({ error: `couldn't fetch the media (HTTP ${upstream.status})` }, 502);
+    }
+    const contentType = resolved.contentType || upstream.headers.get("content-type") || "video/mp4";
+    const vid = crypto.randomUUID();
+    const key = videoSourceKey(pid, vid, pickExt(resolved.filename, contentType));
+    await c.env.MEDIA.put(key, upstream.body, { httpMetadata: { contentType } });
+
+    const ord = (await listVideos(c.env.DB, pid)).length;
+    const video = await addVideo(c.env.DB, { id: vid, project_id: pid, filename: resolved.filename, r2_key: key, ord });
+    return c.json(video, 201);
+  } catch (err) {
+    return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
+  }
 });
 
 // Transcribe a video. Body = client-extracted audio bytes (mono 16kHz).

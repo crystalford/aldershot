@@ -155,6 +155,10 @@ function renderProject() {
           <span>or <label class="link">browse<input id="file" type="file" accept="video/*,audio/*" multiple hidden /></label></span>
           <small>Base video + commentary — add as many as you like.</small>
         </div>
+        <div class="import">
+          <input id="url" class="import-input" placeholder="Paste a Rumble or direct video link…" autocomplete="off" />
+          <button class="btn small amber" id="importBtn">Import</button>
+        </div>
         <div class="side-h">Videos</div>
         <div class="vlist" id="vlist"></div>
       </aside>
@@ -188,6 +192,8 @@ function renderProject() {
   $("#findShorts").onclick = (e) => findShorts(e.currentTarget);
   $("#export").onclick = (e) => exportCut(e.currentTarget);
   $("#save").onclick = (e) => saveEdit(e.currentTarget);
+  $("#importBtn").onclick = importFromUrl;
+  $("#url").addEventListener("keydown", (e) => { if (e.key === "Enter") importFromUrl(); });
   $("#sel-player").addEventListener("pause", () => { if (edit.playing) stopEdit(); });
 }
 
@@ -204,7 +210,7 @@ function renderVideoList() {
     else pill = `<span class="pill work">${esc(v.stage || v.status)}</span>`;
 
     if (v.status === "uploading") extra = `<div class="progress"><i style="width:${Math.round((v.pct || 0) * 100)}%"></i></div>`;
-    else if (v.status === "transcribing") extra = `<div class="progress indeterminate"><i></i></div>`;
+    else if (v.status === "transcribing" || v.status === "importing") extra = `<div class="progress indeterminate"><i></i></div>`;
     else if (v.status === "failed" && v.error) extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error)}</span></div>`;
     else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
 
@@ -531,30 +537,68 @@ async function handleFiles(files) {
     const item = { id: null, filename: encodeURIComponent(file.name), status: "uploading", pct: 0, duration: null, words: null };
     state.videos.push(item); renderVideoList();
     try {
-      item.duration = await readDuration(file).catch(() => null);
+      item.duration = await readDuration(file);
+      item.stage = "uploading…"; renderVideoList();
       const video = await uploadVideo(state.project.id, file, item.duration, (p) => { item.pct = p; renderVideoList(); });
       if (video.error) throw new Error(video.error);
       Object.assign(item, video);
-      item.status = "transcribing"; item.stage = "extracting audio…"; renderVideoList();
-      const wav = await Audiox.extractWav(file, (msg) => { item.stage = msg; renderVideoList(); });
-      item.stage = "transcribing…"; renderVideoList();
-      const { words } = await api.transcribe(item.id, wav);
-      item.words = words; item.status = "ready"; item.stage = "";
-      if (!state.selected) state.selected = item.id;
-      renderProject();
-      toast(`“${decodeURIComponent(item.filename)}” transcribed`, { type: "success" });
+      await transcribeItem(item, file);
     } catch (err) {
       item.status = "failed"; item.error = err.message || String(err); renderVideoList();
-      toast(item.error, { type: "error", title: "Transcription failed" });
+      toast(item.error, { type: "error", title: "Upload failed" });
     }
   }
 }
 
+// Shared tail: extract audio locally, transcribe, mark ready.
+async function transcribeItem(item, file) {
+  item.status = "transcribing"; item.stage = "extracting audio…"; renderVideoList();
+  const wav = await Audiox.extractWav(file, (msg) => { item.stage = msg; renderVideoList(); });
+  item.stage = "transcribing…"; renderVideoList();
+  const { words } = await api.transcribe(item.id, wav);
+  item.words = words; item.status = "ready"; item.stage = "";
+  if (!state.selected) state.selected = item.id;
+  renderProject();
+  toast(`“${decodeURIComponent(item.filename)}” transcribed`, { type: "success" });
+}
+
+// Import a video from a URL (Rumble / direct link) → R2 → transcribe.
+async function importFromUrl() {
+  const input = $("#url");
+  const url = (input.value || "").trim();
+  if (!url) return;
+  const btn = $("#importBtn");
+  btn.classList.add("loading"); btn.disabled = true;
+  const item = { id: null, filename: encodeURIComponent("Importing…"), status: "importing", stage: "fetching video…", words: null };
+  state.videos.push(item); renderVideoList();
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/import`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }),
+    });
+    const video = await res.json();
+    if (!res.ok) throw new Error(video.error || res.statusText);
+    Object.assign(item, video);
+    input.value = "";
+    item.status = "importing"; item.stage = "downloading…"; renderVideoList();
+    const blob = await fetch(mediaUrl(video.r2_key)).then((r) => r.blob());
+    const file = new File([blob], decodeURIComponent(video.filename || "video.mp4"), { type: blob.type || "video/mp4" });
+    await transcribeItem(item, file);
+  } catch (err) {
+    item.status = "failed"; item.error = err.message || String(err); renderVideoList();
+    toast(item.error, { type: "error", title: "Import failed" });
+  }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+
+// Read duration, but NEVER block the upload: resolve null after a short cap if
+// the browser can't produce metadata (this was the "stuck at uploading" hang).
 function readDuration(file) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const el = document.createElement("video"); el.preload = "metadata";
-    el.onloadedmetadata = () => { URL.revokeObjectURL(el.src); resolve(el.duration); };
-    el.onerror = () => { URL.revokeObjectURL(el.src); reject(new Error("no metadata")); };
+    const done = (val) => { clearTimeout(t); try { URL.revokeObjectURL(el.src); } catch {} resolve(val); };
+    const t = setTimeout(() => done(null), 6000);
+    el.onloadedmetadata = () => done(isFinite(el.duration) ? el.duration : null);
+    el.onerror = () => done(null);
     el.src = URL.createObjectURL(file);
   });
 }
