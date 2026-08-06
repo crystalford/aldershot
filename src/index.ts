@@ -4,10 +4,13 @@
  * Heavy work is synchronous in v0; Workflows orchestration comes later.
  */
 import { Hono } from "hono";
+import { getContainer } from "@cloudflare/containers";
 import type { Env } from "./env";
 import { runShot, narrate, type ShotSpec } from "./pipeline/compiler";
 import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
 import type { Word, Timeline } from "./transcript/edl";
+
+export { RenderContainer } from "./render";
 import {
   ensureSchema,
   createProject,
@@ -18,13 +21,10 @@ import {
   getVideo,
   setVideoStatus,
 } from "./db";
-import { videoSourceKey, transcriptKey, timelineKey, shortsKey, pickExt } from "./keys";
+import { videoSourceKey, transcriptKey, timelineKey, shortsKey, jobKey, pickExt } from "./keys";
 import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
 import { resolveMedia } from "./import";
-
-// The render container (src/render.ts) is kept for a future server-side "pro
-// render" path but is intentionally NOT wired in the default deploy, so going
-// live needs no Docker. Rendering happens in the browser (public/render.js).
+import { presignPut, presignGet } from "./r2sign";
 
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   const obj = await bucket.get(key);
@@ -142,6 +142,115 @@ app.post("/api/projects/:id/videos", async (c) => {
     ord,
   });
   return c.json(video, 201);
+});
+
+// ── Large-file engine ────────────────────────────────────────────────
+// 1) presign a direct-to-R2 upload URL (browser uploads straight to storage).
+app.post("/api/projects/:id/videos/presign", async (c) => {
+  await ensureSchema(c.env.DB);
+  const pid = c.req.param("id");
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
+  const body = await c.req.json<{ filename?: string; contentType?: string }>().catch(() => ({}) as { filename?: string; contentType?: string });
+  const vid = crypto.randomUUID();
+  const key = videoSourceKey(pid, vid, pickExt(body.filename, body.contentType));
+  const uploadUrl = await presignPut(c.env, key);
+  if (!uploadUrl) return c.json({ error: "direct uploads aren't configured yet (missing R2 API keys)" }, 501);
+  return c.json({ videoId: vid, key, uploadUrl });
+});
+
+// 2) confirm the upload finished → create the video record.
+app.post("/api/projects/:id/videos/confirm", async (c) => {
+  await ensureSchema(c.env.DB);
+  const pid = c.req.param("id");
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
+  const b = await c.req.json<{ videoId: string; key: string; filename?: string; duration?: number }>();
+  if (!b.videoId || !b.key) return c.json({ error: "missing videoId/key" }, 400);
+  const ord = (await listVideos(c.env.DB, pid)).length;
+  const video = await addVideo(c.env.DB, {
+    id: b.videoId, project_id: pid, filename: b.filename || "video", r2_key: b.key, duration: b.duration ?? null, ord,
+  });
+  return c.json(video, 201);
+});
+
+interface TranscribeJob {
+  mediaUrl: string;
+  duration: number;
+  segment: number;
+  done: number;
+  words: Word[];
+}
+
+// A URL the container can read the video from (presigned R2, else our range route).
+async function sourceUrl(c: { env: Env; req: { url: string } }, key: string): Promise<string> {
+  const signed = await presignGet(c.env, key, 21600);
+  if (signed) return signed;
+  const origin = new URL(c.req.url).origin;
+  return `${origin}/api/media/${key.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+// 3) start transcription: figure out length, then chunk through the container.
+app.post("/api/videos/:id/transcribe-remote", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
+
+  const mediaUrl = await sourceUrl(c, video.r2_key);
+  let duration = video.duration && video.duration > 0 ? video.duration : 0;
+  try {
+    if (!duration) {
+      const probe = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/probe", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
+      });
+      const pj = await probe.json<{ duration?: number }>().catch(() => ({}) as { duration?: number });
+      duration = pj.duration || 0;
+    }
+  } catch { /* fall through to error below */ }
+  if (!duration) { await setVideoStatus(c.env.DB, vid, "failed"); return c.json({ error: "couldn't read the video length" }, 502); }
+
+  const job: TranscribeJob = { mediaUrl, duration, segment: 300, done: 0, words: [] };
+  await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
+  await setVideoStatus(c.env.DB, vid, "transcribing");
+  return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });
+});
+
+// 4) poll: each call transcribes the next audio chunk; finalizes when done.
+app.get("/api/videos/:id/transcribe-status", async (c) => {
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  if (!c.env.RENDER) return c.json({ error: "not configured" }, 501);
+  const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
+  if (!job) return c.json({ error: "no transcription job for this video" }, 404);
+
+  const total = Math.max(1, Math.ceil(job.duration / job.segment));
+  const finalize = async () => {
+    await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(job.words), { httpMetadata: { contentType: "application/json" } });
+    await setVideoStatus(c.env.DB, vid, "ready");
+    return c.json({ status: "ready", words: job.words });
+  };
+  if (job.done >= total) return finalize();
+
+  try {
+    const start = job.done * job.segment;
+    const dur = Math.min(job.segment, job.duration - start);
+    const res = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/extract", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: job.mediaUrl, start, dur }),
+    });
+    if (!res.ok) throw new Error(`audio extract failed: ${(await res.text()).slice(0, 200)}`);
+    const audio = await res.arrayBuffer();
+    const chunkWords = await transcribeAudio(c.env, audio);
+    for (const w of chunkWords) { w.start += start; w.end += start; }
+    job.words.push(...chunkWords);
+    job.done += 1;
+    await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
+    if (job.done >= total) return finalize();
+    return c.json({ status: "processing", progress: Math.round((job.done / total) * 100) });
+  } catch (err) {
+    await setVideoStatus(c.env.DB, vid, "failed");
+    return c.json({ status: "failed", error: `${err instanceof Error ? err.message : err}` });
+  }
 });
 
 // Import a video from a URL (Rumble / direct link) straight into R2.

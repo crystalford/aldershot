@@ -1,67 +1,60 @@
-// Render worker (runs inside the container). Applies an EDL to a source media
-// file with ffmpeg and streams the cut MP4 back to the Worker.
-//
-// Request:  POST  body = raw source media bytes
-//                 header  x-ranges: JSON [{start,end}, ...]
-// Response: 200  body = rendered MP4 (video/mp4)   |   non-2xx = JSON error
+// ffmpeg helper (runs inside the Cloudflare Container). Two jobs, both driven by
+// the Worker for long-video transcription:
+//   POST /probe    { url }               -> { duration }         (source length in seconds)
+//   POST /extract  { url, start, dur }   -> audio/mpeg           (mono 16kHz mp3 of that slice)
+// The Worker feeds each slice to Workers AI Whisper and stitches the words.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { writeFile, readFile, unlink } from "node:fs/promises";
 
-const IN = "/tmp/in";
-const OUT = "/tmp/out.mp4";
-
-function ffmpegArgs(ranges) {
-  const between = ranges.map((r) => `between(t,${r.start},${r.end})`).join("+");
-  return [
-    "-hide_banner", "-loglevel", "error",
-    "-i", IN,
-    "-vf", `select='${between}',setpts=N/FRAME_RATE/TB`,
-    "-af", `aselect='${between}',asetpts=N/SR/TB`,
-    "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac",
-    "-movflags", "+faststart",
-    "-y", OUT,
-  ];
-}
-
-function fail(res, code, payload) {
-  res.writeHead(code, { "content-type": "application/json" });
-  res.end(JSON.stringify(payload));
-}
-
-createServer((req, res) => {
-  if (req.method !== "POST") { res.writeHead(405).end(); return; }
-
-  let ranges;
-  try { ranges = JSON.parse(req.headers["x-ranges"] || "[]"); }
-  catch { return fail(res, 400, { ok: false, error: "x-ranges is not valid JSON" }); }
-  if (!Array.isArray(ranges) || ranges.length === 0) {
-    return fail(res, 400, { ok: false, error: "x-ranges must be a non-empty array" });
-  }
-
-  const chunks = [];
-  req.on("data", (c) => chunks.push(c));
-  req.on("error", (e) => fail(res, 400, { ok: false, error: String(e) }));
-  req.on("end", async () => {
-    try {
-      await writeFile(IN, Buffer.concat(chunks));
-    } catch (e) { return fail(res, 500, { ok: false, error: `write input: ${e}` }); }
-
-    const ff = spawn("ffmpeg", ffmpegArgs(ranges));
-    let log = "";
-    ff.stderr.on("data", (d) => (log += d));
-    ff.on("close", async (code) => {
-      if (code !== 0) return fail(res, 500, { ok: false, log: log.slice(-2000) });
-      try {
-        const buf = await readFile(OUT);
-        res.writeHead(200, { "content-type": "video/mp4", "content-length": buf.length });
-        res.end(buf);
-      } catch (e) {
-        return fail(res, 500, { ok: false, error: `read output: ${e}` });
-      } finally {
-        unlink(IN).catch(() => {});
-        unlink(OUT).catch(() => {});
-      }
-    });
+function readJson(req) {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { resolve({}); } });
   });
+}
+function jsonError(res, code, obj) {
+  res.writeHead(code, { "content-type": "application/json" });
+  res.end(JSON.stringify(obj));
+}
+
+function probe(url, res) {
+  const ff = spawn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", url]);
+  let out = "", err = "";
+  ff.stdout.on("data", (d) => (out += d));
+  ff.stderr.on("data", (d) => (err += d));
+  ff.on("close", (code) => {
+    const duration = parseFloat(String(out).trim());
+    if (code === 0 && duration > 0) jsonError(res, 200, { duration });
+    else jsonError(res, 500, { error: err.slice(-800) || "probe failed" });
+  });
+}
+
+function extract(url, start, dur, res) {
+  const args = [
+    "-hide_banner", "-loglevel", "error",
+    "-ss", String(start), "-i", url, "-t", String(dur),
+    "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", "-f", "mp3", "pipe:1",
+  ];
+  const ff = spawn("ffmpeg", args);
+  const chunks = [];
+  let err = "";
+  ff.stdout.on("data", (d) => chunks.push(d));
+  ff.stderr.on("data", (d) => (err += d));
+  ff.on("close", (code) => {
+    if (code !== 0) return jsonError(res, 500, { error: err.slice(-1200) });
+    const buf = Buffer.concat(chunks);
+    res.writeHead(200, { "content-type": "audio/mpeg", "content-length": buf.length });
+    res.end(buf);
+  });
+}
+
+createServer(async (req, res) => {
+  if (req.method !== "POST") { res.writeHead(405).end(); return; }
+  const path = (req.url || "").split("?")[0];
+  const body = await readJson(req);
+  if (!body.url) return jsonError(res, 400, { error: "missing url" });
+  if (path === "/probe") return probe(body.url, res);
+  if (path === "/extract") return extract(body.url, body.start ?? 0, body.dur ?? 300, res);
+  res.writeHead(404).end();
 }).listen(8080);

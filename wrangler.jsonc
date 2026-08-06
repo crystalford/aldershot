@@ -22,15 +22,20 @@
   // then paste the returned id below and run: wrangler d1 migrations apply aldershot --remote
   "d1_databases": [
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
+  ],
+
+  // Container (ffmpeg) — extracts + chunks audio for long-video transcription.
+  // Requires the account on Workers Paid with Containers enabled. Built by the
+  // GitHub Action (Docker on the runner).
+  "containers": [
+    { "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-ffmpeg", "max_instances": 5 }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
   ]
 
-  // Server-side ffmpeg render (container/) is intentionally OFF so deploy needs
-  // no Docker — rendering runs in the browser (public/render.js). To bring back
-  // big-file server render, restore these blocks and `export { RenderContainer }`
-  // in src/index.ts:
-  //   "containers": [{ "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-render", "max_instances": 3 }],
-  //   "durable_objects": { "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }] },
-  //   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }]
-  //
   // Later phases: Cron Triggers (Radar), Vectorize (trend/style search), AI Gateway.
 }

@@ -6,8 +6,12 @@ export interface Env {
   MEDIA: R2Bucket;
   DB: D1Database;
   ASSETS?: Fetcher;
-  // Optional server-side ffmpeg render container — not bound in the default
-  // (Docker-free) deploy; rendering runs in the browser. Re-enable in
-  // wrangler.jsonc to bring back big-file server render.
+  // ffmpeg container — extracts + chunks audio for long-video transcription.
+  // Optional so the Worker still deploys/works before Containers are enabled.
   RENDER?: DurableObjectNamespace<RenderContainer>;
+
+  // R2 API token (secrets) — powers signed direct-to-storage uploads.
+  R2_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
 }

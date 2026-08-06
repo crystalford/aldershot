@@ -534,15 +534,29 @@ async function handleFiles(files) {
   const media = files.filter((f) => f.type.startsWith("video/") || f.type.startsWith("audio/"));
   if (files.length && !media.length) toast("Those files aren't video or audio.", { type: "error" });
   for (const file of media) {
-    const item = { id: null, filename: encodeURIComponent(file.name), status: "uploading", pct: 0, duration: null, words: null };
+    const item = { id: null, filename: file.name, status: "uploading", pct: 0, duration: null, words: null };
     state.videos.push(item); renderVideoList();
     try {
       item.duration = await readDuration(file);
+      // 1) get a signed direct-to-storage URL
+      const pres = await fetch(`/api/projects/${state.project.id}/videos/presign`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+      }).then((r) => r.json());
+      if (pres.error) throw new Error(pres.error);
+      item.id = pres.videoId;
+      // 2) upload straight to storage (no size cap), with progress
       item.stage = "uploading…"; renderVideoList();
-      const video = await uploadVideo(state.project.id, file, item.duration, (p) => { item.pct = p; renderVideoList(); });
+      await putToR2(pres.uploadUrl, file, (p) => { item.pct = p; renderVideoList(); });
+      // 3) register the video
+      const video = await fetch(`/api/projects/${state.project.id}/videos/confirm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ videoId: pres.videoId, key: pres.key, filename: file.name, duration: item.duration }),
+      }).then((r) => r.json());
       if (video.error) throw new Error(video.error);
       Object.assign(item, video);
-      await transcribeItem(item, file);
+      // 4) transcribe (server-side, any length)
+      await pollTranscription(item);
     } catch (err) {
       item.status = "failed"; item.error = err.message || String(err); renderVideoList();
       toast(item.error, { type: "error", title: "Upload failed" });
@@ -550,16 +564,43 @@ async function handleFiles(files) {
   }
 }
 
-// Shared tail: extract audio locally, transcribe, mark ready.
-async function transcribeItem(item, file) {
-  item.status = "transcribing"; item.stage = "extracting audio…"; renderVideoList();
-  const wav = await Audiox.extractWav(file, (msg) => { item.stage = msg; renderVideoList(); });
+// Direct PUT to storage with progress.
+function putToR2(uploadUrl, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`storage upload failed (${xhr.status})`)));
+    xhr.onerror = () => reject(new Error("network error during upload"));
+    xhr.send(file);
+  });
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Start remote transcription and poll until ready (handles long videos).
+async function pollTranscription(item) {
+  item.status = "transcribing"; item.stage = "starting transcription…"; renderVideoList();
+  const start = await fetch(`/api/videos/${item.id}/transcribe-remote`, { method: "POST" });
+  if (!start.ok) { const d = await start.json().catch(() => ({})); throw new Error(d.error || "couldn't start transcription"); }
   item.stage = "transcribing…"; renderVideoList();
-  const { words } = await api.transcribe(item.id, wav);
-  item.words = words; item.status = "ready"; item.stage = "";
-  if (!state.selected) state.selected = item.id;
-  renderProject();
-  toast(`“${decodeURIComponent(item.filename)}” transcribed`, { type: "success" });
+  for (let i = 0; i < 2000; i++) {
+    await sleep(1500);
+    const res = await fetch(`/api/videos/${item.id}/transcribe-status`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "status check failed");
+    if (typeof data.progress === "number") { item.stage = `transcribing ${data.progress}%…`; renderVideoList(); }
+    if (data.status === "ready") {
+      item.words = data.words; item.status = "ready"; item.stage = "";
+      if (!state.selected) state.selected = item.id;
+      renderProject();
+      toast(`“${item.filename}” transcribed`, { type: "success" });
+      return;
+    }
+    if (data.status === "failed") throw new Error(data.error || "transcription failed");
+  }
+  throw new Error("transcription timed out");
 }
 
 // Import a video from a URL (Rumble / direct link) → R2 → transcribe.
@@ -569,7 +610,7 @@ async function importFromUrl() {
   if (!url) return;
   const btn = $("#importBtn");
   btn.classList.add("loading"); btn.disabled = true;
-  const item = { id: null, filename: encodeURIComponent("Importing…"), status: "importing", stage: "fetching video…", words: null };
+  const item = { id: null, filename: "Importing…", status: "importing", stage: "fetching video…", words: null };
   state.videos.push(item); renderVideoList();
   try {
     const res = await fetch(`/api/projects/${state.project.id}/import`, {
@@ -579,10 +620,7 @@ async function importFromUrl() {
     if (!res.ok) throw new Error(video.error || res.statusText);
     Object.assign(item, video);
     input.value = "";
-    item.status = "importing"; item.stage = "downloading…"; renderVideoList();
-    const blob = await fetch(mediaUrl(video.r2_key)).then((r) => r.blob());
-    const file = new File([blob], decodeURIComponent(video.filename || "video.mp4"), { type: blob.type || "video/mp4" });
-    await transcribeItem(item, file);
+    await pollTranscription(item);
   } catch (err) {
     item.status = "failed"; item.error = err.message || String(err); renderVideoList();
     toast(item.error, { type: "error", title: "Import failed" });
