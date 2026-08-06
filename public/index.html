@@ -9,28 +9,34 @@
 <body>
   <header class="bar">
     <div class="brand" id="home" role="button" tabindex="0" title="Projects">
-      <svg class="mark" viewBox="0 0 240 240" aria-hidden="true">
-        <g fill="none" stroke="#EDE8DF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M52,86 L52,52 L86,52" />
-          <path d="M154,52 L188,52 L188,86" />
-          <path d="M52,154 L52,188 L86,188" />
-        </g>
-        <path d="M154,188 L188,188 L188,154" fill="none" stroke="#F2A93B" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="120" cy="120" r="12" fill="#F2A93B" />
-      </svg>
-      <span>ALDERSHOT</span>
+      <span class="mark-tile">
+        <svg class="mark" viewBox="0 0 240 240" aria-hidden="true">
+          <g fill="none" stroke="#EDE8DF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M52,86 L52,52 L86,52" />
+            <path d="M154,52 L188,52 L188,86" />
+            <path d="M52,154 L52,188 L86,188" />
+          </g>
+          <path d="M154,188 L188,188 L188,154" fill="none" stroke="#F2A93B" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="120" cy="120" r="13" fill="#F2A93B" />
+        </svg>
+      </span>
+      <span class="wordmark">Aldershot</span>
     </div>
-    <div class="crumbs" id="crumbs"></div>
+    <nav class="crumbs" id="crumbs"></nav>
     <div class="stats" id="stats"></div>
   </header>
 
-  <main id="main"><div class="loading">Loading…</div></main>
+  <main id="main"><div class="loading"><span class="spinner"></span> Loading…</div></main>
 
   <!-- shared hidden player used for cross-video edit preview -->
   <video id="player" playsinline style="display:none"></video>
 
+  <div id="toasts"></div>
+  <div id="modal-root"></div>
+
   <script src="audio.js"></script>
   <script src="render.js"></script>
+  <script src="ui.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
