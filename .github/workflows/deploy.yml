@@ -28,21 +28,30 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "==> R2 bucket (ok if it already exists / needs enabling)"
+          echo "==> R2 bucket (ok if it already exists)"
           npx wrangler r2 bucket create aldershot-media || true
 
-          echo "==> D1 database"
-          if ! npx wrangler d1 info aldershot >/dev/null 2>&1; then
+          echo "==> D1 database (look up by name; create if missing)"
+          find_id() {
+            npx wrangler d1 list --json 2>/dev/null | node -e '
+              let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+                let j; try { j=JSON.parse(s) } catch { j=[] }
+                const a=Array.isArray(j)?j:(j.result||j.databases||[]);
+                const db=a.find(d=>d.name==="aldershot")||{};
+                process.stdout.write(db.uuid||db.database_id||db.id||"");
+              })'
+          }
+          DB_ID="$(find_id)"
+          if [ -z "$DB_ID" ]; then
             npx wrangler d1 create aldershot
+            DB_ID="$(find_id)"
           fi
-          DB_ID="$(npx wrangler d1 info aldershot --json \
-            | node -pe 'const d=JSON.parse(require("fs").readFileSync(0)); d.uuid||d.database_id||""')"
-          if [ -z "$DB_ID" ]; then echo "Could not read D1 id"; exit 1; fi
+          if [ -z "$DB_ID" ]; then echo "Could not resolve D1 id"; exit 1; fi
+          echo "==> D1 id: $DB_ID"
+
           echo "==> Wiring database_id into wrangler.jsonc"
           node -e 'const fs=require("fs");let s=fs.readFileSync("wrangler.jsonc","utf8");s=s.replace(/("database_id":\s*")TODO(")/,`$1${process.argv[1]}$2`);fs.writeFileSync("wrangler.jsonc",s)' "$DB_ID"
-
-          echo "==> Applying D1 migrations (schema also self-heals via ensureSchema)"
-          npx wrangler d1 migrations apply aldershot --remote || true
+          # tables are created lazily by ensureSchema() on first request — no migration step needed
 
           echo "==> Deploying"
           npx wrangler deploy
