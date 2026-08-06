@@ -3,6 +3,9 @@ name: Set R2 CORS
 # Standalone: sets the R2 bucket CORS policy (so the browser can upload direct)
 # without a full container redeploy. Run via "Run workflow".
 on:
+  push:
+    branches: [claude/aldershot-project-status-32ntv2]
+    paths: [".github/workflows/set-cors.yml", "scripts/set-cors.mjs"]
   workflow_dispatch: {}
 
 jobs:
