@@ -205,10 +205,15 @@ async function putJob(env: Env, pid: string, vid: string, job: TranscribeJob) {
 // looks "stuck" to the user with zero feedback — hence the background job.
 async function runExtraction(env: Env, video: { id: string; project_id: string; r2_key: string }, mediaUrl: string) {
   const audioKey = audioKeyFor(video.project_id, video.id);
+  const log = (...args: unknown[]) => console.log(`[extract ${video.id}]`, ...args);
   try {
+    log("mediaUrl resolved:", mediaUrl.slice(0, 120), "…");
+    log("calling container /extract-full");
+    const t0 = Date.now();
     const extract = await getContainer(env.RENDER!, video.id).fetch("http://ffmpeg/extract-full", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
     });
+    log(`container responded after ${Date.now() - t0}ms, status=${extract.status}, content-length=${extract.headers.get("content-length")}`);
     if (!extract.ok || !extract.body) {
       const detail = await extract.text().catch(() => "");
       throw new Error(`audio extraction failed: ${detail.slice(0, 300) || extract.status}`);
@@ -218,7 +223,9 @@ async function runExtraction(env: Env, video: { id: string; project_id: string; 
     // as a stream property, so re-declare it explicitly with FixedLengthStream
     // rather than buffering the whole file (can be ~200MB for a long video).
     const declaredLength = Number(extract.headers.get("content-length") || 0);
+    const t1 = Date.now();
     if (declaredLength > 0) {
+      log(`streaming ${declaredLength} bytes into R2 via FixedLengthStream`);
       const { readable, writable } = new FixedLengthStream(declaredLength);
       const pump = extract.body.pipeTo(writable);
       await env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
@@ -227,14 +234,20 @@ async function runExtraction(env: Env, video: { id: string; project_id: string; 
       // content-length didn't make it through the container proxy — fall back
       // to buffering fully. Fine for typical videos; a very long source could
       // approach Worker memory limits, but a working fallback beats a hard fail.
+      log("no content-length from container — falling back to full buffering");
       const buf = await extract.arrayBuffer();
+      log(`buffered ${buf.byteLength} bytes, putting to R2`);
       await env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
     }
+    log(`R2 put done after ${Date.now() - t1}ms`);
     const head = await env.MEDIA.head(audioKey);
     const duration = head ? durationFromWavSize(head.size) : 0;
+    log(`audio object size=${head?.size}, computed duration=${duration}s`);
     if (!duration) throw new Error("extracted audio was empty");
     await putJob(env, video.project_id, video.id, { phase: "chunking", audioKey, duration, segment: 30, done: 0, words: [] });
+    log("job phase -> chunking, ready to transcribe");
   } catch (err) {
+    log("FAILED:", err instanceof Error ? err.stack || err.message : err);
     await setVideoStatus(env.DB, video.id, "failed");
     await putJob(env, video.project_id, video.id, {
       phase: "extracting", segment: 30, done: 0, words: [],
@@ -253,6 +266,7 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
   if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
 
   const mediaUrl = await sourceUrl(c, video.r2_key);
+  console.log(`[transcribe-remote ${vid}] kicking off background extraction`);
   await putJob(c.env, video.project_id, vid, { phase: "extracting", segment: 30, done: 0, words: [] });
   await setVideoStatus(c.env.DB, vid, "transcribing");
   c.executionCtx.waitUntil(runExtraction(c.env, { id: vid, project_id: video.project_id, r2_key: video.r2_key }, mediaUrl));
