@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import type { Word } from "./edl";
+import { durationFromWavSize } from "../wav";
 
 export interface TranscriptResult {
   mediaKey: string;
@@ -7,7 +8,7 @@ export interface TranscriptResult {
   words: Word[];
 }
 
-type WhisperResult = { text?: string; words?: { word: string; start: number; end: number }[] };
+type WhisperResult = { text?: string; words?: { word: string; start: number; end: number }[]; [k: string]: unknown };
 
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -47,12 +48,27 @@ export async function transcribeAudio(env: Env, audio: ArrayBuffer): Promise<Wor
     }
   }
 
-  return (res.words ?? []).map((w) => ({
-    text: w.word,
-    start: w.start,
-    end: w.end,
-    deleted: false,
-  }));
+  console.log(
+    "[whisper] response keys:", Object.keys(res),
+    "textLen:", res.text?.length ?? 0,
+    "wordsLen:", res.words?.length ?? 0,
+    "sample:", JSON.stringify(res).slice(0, 400),
+  );
+
+  if (res.words && res.words.length) {
+    return res.words.map((w) => ({ text: w.word, start: w.start, end: w.end, deleted: false }));
+  }
+
+  // No word-level timestamps came back on this call — rather than silently
+  // return an empty transcript, spread the plain text evenly across the
+  // chunk's known duration so there's still something to see/edit. (Logged
+  // above so the real shape can be confirmed and word timing fixed for real.)
+  const text = (res.text ?? "").trim();
+  if (!text) return [];
+  const tokens = text.split(/\s+/).filter(Boolean);
+  const dur = durationFromWavSize(audio.byteLength);
+  const per = tokens.length ? dur / tokens.length : 0;
+  return tokens.map((t, i) => ({ text: t, start: i * per, end: (i + 1) * per, deleted: false }));
 }
 
 /**
