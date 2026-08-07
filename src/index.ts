@@ -174,11 +174,13 @@ app.post("/api/projects/:id/videos/confirm", async (c) => {
 });
 
 interface TranscribeJob {
-  audioKey: string; // full-length mono 16kHz WAV, extracted once
-  duration: number;
+  phase: "extracting" | "chunking";
+  audioKey?: string; // full-length mono 16kHz WAV, extracted once
+  duration?: number;
   segment: number;
   done: number;
   words: Word[];
+  error?: string;
 }
 
 // A URL the container can read the video from (presigned R2, else our range route).
@@ -191,20 +193,20 @@ async function sourceUrl(c: { env: Env; req: { url: string } }, key: string): Pr
 
 const audioKeyFor = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/audio.wav`;
 
-// 3) start transcription: extract the FULL audio track ONCE (small — tens of MB
-// even for a multi-hour video) rather than re-seeking into the huge source
-// video per chunk, which was destabilizing the container ("suddenly disconnected").
-app.post("/api/videos/:id/transcribe-remote", async (c) => {
-  await ensureSchema(c.env.DB);
-  const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, vid);
-  if (!video) return c.json({ error: "video not found" }, 404);
-  if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
+async function putJob(env: Env, pid: string, vid: string, job: TranscribeJob) {
+  await env.MEDIA.put(jobKey(pid, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
+}
 
-  const mediaUrl = await sourceUrl(c, video.r2_key);
-  const audioKey = audioKeyFor(video.project_id, vid);
+// Runs in the background (past the response) — extract the FULL audio track
+// ONCE (small, tens of MB even for a multi-hour video) rather than re-seeking
+// into the huge source video per chunk, which was destabilizing the container.
+// A prior version did this inline before responding: for a long video that's
+// several minutes of a single silent request, which either times out or just
+// looks "stuck" to the user with zero feedback — hence the background job.
+async function runExtraction(env: Env, video: { id: string; project_id: string; r2_key: string }, mediaUrl: string) {
+  const audioKey = audioKeyFor(video.project_id, video.id);
   try {
-    const extract = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/extract-full", {
+    const extract = await getContainer(env.RENDER!, video.id).fetch("http://ffmpeg/extract-full", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
     });
     if (!extract.ok || !extract.body) {
@@ -219,55 +221,73 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
     if (declaredLength > 0) {
       const { readable, writable } = new FixedLengthStream(declaredLength);
       const pump = extract.body.pipeTo(writable);
-      await c.env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
+      await env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
       await pump;
     } else {
       // content-length didn't make it through the container proxy — fall back
       // to buffering fully. Fine for typical videos; a very long source could
       // approach Worker memory limits, but a working fallback beats a hard fail.
       const buf = await extract.arrayBuffer();
-      await c.env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
+      await env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
     }
+    const head = await env.MEDIA.head(audioKey);
+    const duration = head ? durationFromWavSize(head.size) : 0;
+    if (!duration) throw new Error("extracted audio was empty");
+    await putJob(env, video.project_id, video.id, { phase: "chunking", audioKey, duration, segment: 30, done: 0, words: [] });
   } catch (err) {
-    await setVideoStatus(c.env.DB, vid, "failed");
-    return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
+    await setVideoStatus(env.DB, video.id, "failed");
+    await putJob(env, video.project_id, video.id, {
+      phase: "extracting", segment: 30, done: 0, words: [],
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+}
 
-  const head = await c.env.MEDIA.head(audioKey);
-  const duration = head ? durationFromWavSize(head.size) : 0;
-  if (!duration) { await setVideoStatus(c.env.DB, vid, "failed"); return c.json({ error: "extracted audio was empty" }, 502); }
+// 3) start transcription: kick off extraction in the background and return
+// immediately — the client polls transcribe-status for real progress.
+app.post("/api/videos/:id/transcribe-remote", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
 
-  // 30s chunks: comfortably inside Whisper's native window and small per call.
-  const job: TranscribeJob = { audioKey, duration, segment: 30, done: 0, words: [] };
-  await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
+  const mediaUrl = await sourceUrl(c, video.r2_key);
+  await putJob(c.env, video.project_id, vid, { phase: "extracting", segment: 30, done: 0, words: [] });
   await setVideoStatus(c.env.DB, vid, "transcribing");
-  return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });
+  c.executionCtx.waitUntil(runExtraction(c.env, { id: vid, project_id: video.project_id, r2_key: video.r2_key }, mediaUrl));
+  return c.json({ ok: true });
 });
 
-// 4) poll: each call transcribes the next audio chunk (a plain R2 range read —
-// no container involved), finalizes when done.
+// 4) poll: while extracting, just report that phase; once chunking, each call
+// transcribes the next audio chunk (a plain R2 range read — no container
+// involved), finalizing when done.
 app.get("/api/videos/:id/transcribe-status", async (c) => {
   const vid = c.req.param("id");
   const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
   const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
   if (!job) return c.json({ error: "no transcription job for this video" }, 404);
+  if (job.error) return c.json({ status: "failed", error: job.error });
+  if (job.phase === "extracting") return c.json({ status: "extracting" });
 
-  const total = Math.max(1, Math.ceil(job.duration / job.segment));
+  const duration = job.duration ?? 0;
+  const audioKey = job.audioKey!;
+  const total = Math.max(1, Math.ceil(duration / job.segment));
   const finalize = async () => {
     await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(job.words), { httpMetadata: { contentType: "application/json" } });
     await setVideoStatus(c.env.DB, vid, "ready");
-    await c.env.MEDIA.delete(job.audioKey).catch(() => {});
+    await c.env.MEDIA.delete(audioKey).catch(() => {});
     return c.json({ status: "ready", words: job.words });
   };
   if (job.done >= total) return finalize();
 
   try {
     const start = job.done * job.segment;
-    const dur = Math.min(job.segment, job.duration - start);
+    const dur = Math.min(job.segment, duration - start);
     const offset = byteOffsetForSecond(start);
     const length = byteOffsetForSecond(start + dur) - offset;
-    const obj = await c.env.MEDIA.get(job.audioKey, { range: { offset, length } });
+    const obj = await c.env.MEDIA.get(audioKey, { range: { offset, length } });
     if (!obj) throw new Error("extracted audio went missing mid-transcription");
     const pcm = await obj.arrayBuffer();
     const chunkWords = await transcribeAudio(c.env, wrapPcm(pcm));
