@@ -7,20 +7,45 @@ export interface TranscriptResult {
   words: Word[];
 }
 
+type WhisperResult = { text?: string; words?: { word: string; start: number; end: number }[] };
+
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  const chunkSize = 0x8000; // chunk to stay well under call-arg limits on large audio
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function runWhisper(env: Env, audio: unknown): Promise<WhisperResult> {
+  const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  return (await run("@cf/openai/whisper-large-v3-turbo", { audio })) as WhisperResult;
+}
+
 /**
  * Transcribe AUDIO bytes with Whisper → word-level timestamps.
  *
- * Whisper expects audio, not a video container. The client extracts a small
- * mono 16kHz track from the source (ffmpeg.wasm, see public/render.js) and
- * posts THAT here, so this function stays a pure audio→words call.
+ * Whisper expects audio, not a video container; callers hand this a small
+ * extracted audio slice. The live model's accepted input shape for 'audio'
+ * isn't fully pinned down (docs/examples disagree — some show a plain byte
+ * array, a real working caller uses base64), so we try base64 first and fall
+ * back to the byte-array form on failure rather than guess wrong and fail.
  */
 export async function transcribeAudio(env: Env, audio: ArrayBuffer): Promise<Word[]> {
-  // Whisper turbo's generated input type lags the live model (word-level
-  // timestamps + exact audio encoding); call through a loosened signature.
-  const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  const res = (await run("@cf/openai/whisper-large-v3-turbo", {
-    audio: [...new Uint8Array(audio)],
-  })) as { text?: string; words?: { word: string; start: number; end: number }[] };
+  let res: WhisperResult;
+  try {
+    res = await runWhisper(env, toBase64(audio));
+  } catch (base64Err) {
+    try {
+      res = await runWhisper(env, [...new Uint8Array(audio)]);
+    } catch (arrayErr) {
+      throw new Error(
+        `Whisper rejected both audio encodings — base64: ${base64Err instanceof Error ? base64Err.message : base64Err}; array: ${arrayErr instanceof Error ? arrayErr.message : arrayErr}`,
+      );
+    }
+  }
 
   return (res.words ?? []).map((w) => ({
     text: w.word,
