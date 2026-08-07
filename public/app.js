@@ -204,12 +204,17 @@ function renderVideoList() {
       if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Retry transcription</button>`;
     } else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
 
-    row.innerHTML = `<div class="vrow-top"><span class="vname">${esc(filenameOf(v.filename))}</span>${pill}</div>${extra}`;
+    const thumb = v.r2_key
+      ? `<div class="vthumb"><img data-thumb-src="${esc(mediaUrl(v.r2_key))}" data-thumb-t="${Math.min(2, (v.duration || 4) / 4)}" alt="" /><span class="vthumb-play">${ic("play")}</span></div>`
+      : `<div class="vthumb placeholder">${ic("video")}</div>`;
+
+    row.innerHTML = `<div class="vrow-top">${thumb}<div class="vrow-info"><div class="vrow-line"><span class="vname">${esc(filenameOf(v.filename))}</span>${pill}</div>${extra}</div></div>`;
     if (v.id && v.status !== "uploading") row.onclick = () => selectVideo(v.id);
     const retryBtn = row.querySelector(".retry-btn");
     if (retryBtn) retryBtn.onclick = (e) => { e.stopPropagation(); retryVideo(v); };
     list.appendChild(row);
   });
+  Thumb.hydrate(list);
 }
 
 function selectVideo(id) {
@@ -456,19 +461,32 @@ function renderShorts() {
     <div class="short-grid">${shorts.map(shortCard).join("")}</div></div>`;
   shorts.forEach((s, i) => {
     const card = el.querySelector(`.short[data-i="${i}"]`);
+    card.querySelector(".short-cover").onclick = () => previewShort(s);
     card.querySelector(".s-play").onclick = () => previewShort(s);
     card.querySelector(".s-prod").onclick = (e) => produceShort(s, e.currentTarget);
   });
+  Thumb.hydrate(el);
 }
 function shortCard(s, i) {
   const v = state.videos.find((x) => x.id === s.videoId);
   const src = v ? filenameOf(v.filename) : s.videoId;
-  const score = typeof s.score === "number" ? `<span class="s-score">${s.score}</span>` : "";
+  const score = typeof s.score === "number" ? s.score : null;
+  const tier = score == null ? "" : score >= 80 ? "hot" : score >= 55 ? "warm" : "cool";
+  const thumbUrl = v && v.r2_key ? mediaUrl(v.r2_key) : "";
   return `<div class="short" data-i="${i}">
-    <div class="s-top">${score}<div class="s-title">${esc(s.title)}</div></div>
-    <div class="s-hook">${esc(s.hook || "")}</div>
-    <div class="s-meta">${fmt(s.start)}–${fmt(s.end)} · ${Math.round(s.end - s.start)}s · ${esc(src)}</div>
-    <div class="s-actions"><button class="btn small s-play">${ic("play")} Preview</button><button class="btn small amber s-prod">${ic("download")} Produce</button></div>
+    <div class="short-cover">
+      ${thumbUrl ? `<img class="thumb-img" data-thumb-src="${esc(thumbUrl)}" data-thumb-t="${Math.max(0.1, s.start).toFixed(1)}" alt="" />` : ""}
+      <div class="short-cover-scrim"></div>
+      <div class="short-cover-play">${ic("play")}</div>
+      ${score != null ? `<span class="short-score ${tier}">${score}</span>` : ""}
+      <span class="short-dur">${Math.round(s.end - s.start)}s</span>
+    </div>
+    <div class="short-body">
+      <div class="s-title">${esc(s.title)}</div>
+      <div class="s-hook">${esc(s.hook || "")}</div>
+      <div class="s-meta">${fmt(s.start)}–${fmt(s.end)} · ${esc(src)}</div>
+      <div class="s-actions"><button class="btn small ghost s-play">${ic("play")} Preview</button><button class="btn small amber s-prod">${ic("download")} Produce</button></div>
+    </div>
   </div>`;
 }
 async function previewShort(s) {
