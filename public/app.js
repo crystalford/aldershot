@@ -42,18 +42,36 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, selected: null };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null };
 
-function keptRanges(words, gap = 0.12) {
-  const r = [];
+// A continuous run of KEPT words becomes one range from the first word's start
+// to the last word's end — this preserves every natural pause inside it. A
+// range only ends where a word was actually deleted (ripple-delete: cutting a
+// word closes exactly the gap it occupied, nothing more). Previously this
+// merged on a fixed 0.12s gap, which silently treated almost every pause
+// between sentences as a cut even when nothing had been deleted.
+// `trimPausesAbove` is an explicit opt-in (the "Trim long pauses" toolbar
+// action) to additionally hard-cut internal pauses longer than N seconds.
+function keptRanges(words, opts = {}) {
+  const trimPausesAbove = opts.trimPausesAbove ?? Infinity;
+  const out = [];
+  let segStart = null, segEnd = null;
   for (const w of words || []) {
-    if (w.deleted) continue;
-    const last = r[r.length - 1];
-    if (last && w.start - last.end <= gap) last.end = w.end;
-    else r.push({ start: w.start, end: w.end });
+    if (w.deleted) {
+      if (segStart != null) { out.push({ start: segStart, end: segEnd }); segStart = null; }
+      continue;
+    }
+    if (segStart == null) { segStart = w.start; segEnd = w.end; continue; }
+    if (w.start - segEnd > trimPausesAbove) { out.push({ start: segStart, end: segEnd }); segStart = w.start; }
+    segEnd = w.end;
   }
-  return r;
+  if (segStart != null) out.push({ start: segStart, end: segEnd });
+  return out;
 }
+
+// Common filler words worth flagging for one-click cleanup (Descript-style).
+const FILLER_WORDS = new Set(["um", "umm", "uh", "uhh", "uhm", "er", "erm", "hmm"]);
+const isFillerWord = (text) => FILLER_WORDS.has(String(text).toLowerCase().replace(/[^a-z]/gi, ""));
 const rangeSeconds = (r) => r.reduce((s, x) => s + (x.end - x.start), 0);
 const hasTimeline = () => state.timeline && ((state.timeline.coldOpen || []).length || (state.timeline.body || []).length);
 
@@ -124,6 +142,7 @@ async function openProject(id) {
   state.videos = (data.videos || []).map((v) => ({ ...v }));
   state.timeline = data.timeline;
   state.shorts = data.shorts;
+  state.suggestions = data.suggestions;
   state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
   setCrumbs([{ label: "Projects", go: showProjects }, { label: data.project.name }]);
   renderProject();
@@ -152,14 +171,30 @@ function renderProject() {
           <button class="btn" id="stopEdit">${ic("stop")} Stop</button>
           <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
           <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
+          <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
           <button class="btn primary" id="export">${ic("download")} Export cut</button>
           <span class="spacer"></span>
           <button class="btn ghost" id="save">${ic("save")} Save</button>
         </div>
         <video id="sel-player" controls playsinline></video>
+        <div class="ruler" id="ruler"></div>
+        <div class="toolbar toolbar-edit">
+          <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+          <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+          <button class="btn small ghost" id="removeFillers">Remove fillers</button>
+          <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
+          <span class="spacer"></span>
+          <div class="search-box">
+            <input id="search" placeholder="Search transcript…" autocomplete="off" />
+            <span class="search-count" id="searchCount"></span>
+            <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
+            <button class="search-nav" id="searchNext" title="Next match">›</button>
+          </div>
+        </div>
         <div id="timeline"></div>
         <div id="shorts"></div>
-        <p class="hint">Click a word to cut it · shift-click a range · double-click to jump the player there.</p>
+        <div id="suggest"></div>
+        <p class="hint">Click a word to cut it · shift-click a range · double-click to jump the player there · space to play/pause.</p>
         <div class="transcript" id="transcript"></div>
       </section>
     </div>`;
@@ -168,18 +203,47 @@ function renderProject() {
   renderTranscript();
   renderTimeline();
   renderShorts();
+  renderSuggestions();
+  renderRuler();
   updateStats();
   selectVideo(state.selected);
   $("#playEdit").onclick = playEdit;
   $("#stopEdit").onclick = stopEdit;
   $("#arrange").onclick = (e) => autoArrange(e.currentTarget);
   $("#findShorts").onclick = (e) => findShorts(e.currentTarget);
+  $("#suggestEdits").onclick = (e) => findSuggestions(e.currentTarget);
   $("#export").onclick = (e) => exportCut(e.currentTarget);
   $("#save").onclick = (e) => saveEdit(e.currentTarget);
   $("#importBtn").onclick = importFromUrl;
   $("#url").addEventListener("keydown", (e) => { if (e.key === "Enter") importFromUrl(); });
-  $("#sel-player").addEventListener("pause", () => { if (edit.playing) stopEdit(); });
+  $("#undoBtn").onclick = undo;
+  $("#redoBtn").onclick = redo;
+  $("#removeFillers").onclick = removeFillers;
+  $("#trimPauses").onclick = toggleTrimPauses;
+  $("#trimPauses").classList.toggle("amber", !!state.trimPausesAbove);
+  $("#search").addEventListener("input", (e) => runSearch(e.target.value));
+  $("#search").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); }
+  });
+  $("#searchPrev").onclick = () => gotoMatch(searchIdx - 1);
+  $("#searchNext").onclick = () => gotoMatch(searchIdx + 1);
+  const player = $("#sel-player");
+  player.addEventListener("pause", () => { if (edit.playing) stopEdit(); });
+  player.addEventListener("timeupdate", updateRulerPlayhead);
 }
+
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea") return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+  } else if (e.key === " " && $("#sel-player")) {
+    e.preventDefault();
+    const p = $("#sel-player");
+    if (p.paused) p.play(); else p.pause();
+  }
+});
 
 function renderVideoList() {
   const list = $("#vlist");
@@ -231,6 +295,7 @@ function selectVideo(id) {
   }
   renderVideoList();
   highlightSelectedTranscript();
+  renderRuler();
 }
 
 // ── Transcript + cutting ─────────────────────────────────────────────
@@ -254,7 +319,10 @@ function renderTranscript() {
     body.className = "tsec-body";
     v.words.forEach((w, i) => {
       const span = document.createElement("span");
-      span.className = "word" + (w.deleted ? " deleted" : "");
+      let cls = "word";
+      if (w.deleted) cls += " deleted";
+      else if (isFillerWord(w.text)) cls += " filler";
+      span.className = cls;
       span.textContent = w.text + " ";
       span.dataset.i = i;
       body.appendChild(span);
@@ -265,17 +333,127 @@ function renderTranscript() {
     t.appendChild(sec);
   });
   highlightSelectedTranscript();
+  runSearch($("#search")?.value || "");
+}
+
+// ── Search-in-transcript ─────────────────────────────────────────────
+let searchMatches = [], searchIdx = -1;
+function runSearch(q) {
+  document.querySelectorAll(".word.match").forEach((el) => el.classList.remove("match", "match-active"));
+  searchMatches = []; searchIdx = -1;
+  const qq = q.trim().toLowerCase();
+  if (qq.length >= 2) {
+    document.querySelectorAll(".tsec-body .word").forEach((el) => {
+      if (el.textContent.toLowerCase().includes(qq)) { el.classList.add("match"); searchMatches.push(el); }
+    });
+  }
+  updateSearchCount();
+}
+function gotoMatch(idx) {
+  if (!searchMatches.length) return;
+  if (searchIdx >= 0 && searchMatches[searchIdx]) searchMatches[searchIdx].classList.remove("match-active");
+  searchIdx = ((idx % searchMatches.length) + searchMatches.length) % searchMatches.length;
+  const el = searchMatches[searchIdx];
+  el.classList.add("match-active");
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  updateSearchCount();
+}
+function updateSearchCount() {
+  const el = $("#searchCount"); if (!el) return;
+  const q = $("#search")?.value || "";
+  el.textContent = searchMatches.length ? `${searchIdx + 1}/${searchMatches.length}` : q.trim().length >= 2 ? "0/0" : "";
+}
+
+// ── Cut ruler — a compact strip showing kept vs. cut across the selected
+// video, so navigating a multi-hour transcript doesn't mean endless scrolling.
+function renderRuler() {
+  const el = $("#ruler"); if (!el) return;
+  const v = state.videos.find((x) => x.id === state.selected);
+  if (!v || v.status !== "ready" || !v.words || !v.words.length) { el.innerHTML = ""; return; }
+  const t0 = v.words[0].start;
+  const total = Math.max(0.001, v.words[v.words.length - 1].end - t0);
+  const opts = { trimPausesAbove: state.trimPausesAbove ?? Infinity };
+  const blocks = keptRanges(v.words, opts).map((r) => {
+    const left = ((r.start - t0) / total) * 100;
+    const width = Math.max(0.15, ((r.end - r.start) / total) * 100);
+    return `<div class="ruler-kept" style="left:${left}%;width:${width}%"></div>`;
+  }).join("");
+  el.innerHTML = `<div class="ruler-track">${blocks}<div class="ruler-playhead" id="rulerPlayhead"></div></div>`;
+  el.querySelector(".ruler-track").onclick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    $("#sel-player").currentTime = t0 + pct * total;
+  };
+}
+function updateRulerPlayhead() {
+  const v = state.videos.find((x) => x.id === state.selected);
+  const ph = $("#rulerPlayhead");
+  if (!v || !ph || !v.words || !v.words.length) return;
+  const t0 = v.words[0].start;
+  const total = Math.max(0.001, v.words[v.words.length - 1].end - t0);
+  const t = $("#sel-player").currentTime;
+  ph.style.left = `${Math.min(100, Math.max(0, ((t - t0) / total) * 100))}%`;
+}
+
+// ── Undo / redo ──────────────────────────────────────────────────────
+// Snapshot a video's words before any mutating action; Cmd/Ctrl+Z restores it.
+const HISTORY_LIMIT = 60;
+function snapshotHistory(v) {
+  v._history = v._history || [];
+  v._future = [];
+  v._history.push(JSON.stringify(v.words));
+  if (v._history.length > HISTORY_LIMIT) v._history.shift();
+  state.lastEditedVideo = v;
+}
+function undo() {
+  const v = state.lastEditedVideo;
+  if (!v || !v._history || !v._history.length) return;
+  v._future = v._future || [];
+  v._future.push(JSON.stringify(v.words));
+  v.words = JSON.parse(v._history.pop());
+  renderTranscript(); updateStats(); renderRuler();
+}
+function redo() {
+  const v = state.lastEditedVideo;
+  if (!v || !v._future || !v._future.length) return;
+  v._history.push(JSON.stringify(v.words));
+  v.words = JSON.parse(v._future.pop());
+  renderTranscript(); updateStats(); renderRuler();
 }
 
 function onWordClick(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
   const i = +el.dataset.i;
+  snapshotHistory(v);
   if (e.shiftKey && v._anchor != null) {
     const [a, b] = [Math.min(v._anchor, i), Math.max(v._anchor, i)];
     const anyKept = v.words.slice(a, b + 1).some((w) => !w.deleted);
     for (let k = a; k <= b; k++) v.words[k].deleted = anyKept;
   } else { v.words[i].deleted = !v.words[i].deleted; v._anchor = i; }
-  renderTranscript(); updateStats();
+  renderTranscript(); updateStats(); renderRuler();
+}
+
+// Bulk-delete every filler word ("um", "uh", …) across all transcribed videos.
+function removeFillers() {
+  const ready = state.videos.filter((v) => v.status === "ready" && v.words);
+  let count = 0;
+  ready.forEach((v) => {
+    const hasFiller = v.words.some((w) => !w.deleted && isFillerWord(w.text));
+    if (!hasFiller) return;
+    snapshotHistory(v);
+    v.words.forEach((w) => { if (!w.deleted && isFillerWord(w.text)) { w.deleted = true; count++; } });
+  });
+  if (!count) { toast("No filler words found."); return; }
+  renderTranscript(); updateStats(); renderRuler();
+  toast(`Removed ${count} filler word${count === 1 ? "" : "s"}`, { type: "success" });
+}
+
+// Toggle hard-cutting internal pauses longer than the threshold (natural
+// pauses are preserved by default now — see keptRanges).
+function toggleTrimPauses() {
+  state.trimPausesAbove = state.trimPausesAbove ? null : 1.5;
+  renderProject();
+  toast(state.trimPausesAbove ? "Trimming pauses longer than 1.5s" : "Pause trimming off");
 }
 function onWordDbl(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
@@ -295,8 +473,9 @@ function updateStats() {
   const ready = state.videos.filter((v) => v.status === "ready" && v.words);
   if (!ready.length) { setStats(state.videos.length ? "transcribing…" : ""); return; }
   let kept = 0, total = 0, kw = 0, tw = 0;
+  const opts = { trimPausesAbove: state.trimPausesAbove ?? Infinity };
   ready.forEach((v) => {
-    kept += rangeSeconds(keptRanges(v.words));
+    kept += rangeSeconds(keptRanges(v.words, opts));
     total += v.words.length ? v.words[v.words.length - 1].end - v.words[0].start : 0;
     kw += v.words.filter((w) => !w.deleted).length; tw += v.words.length;
   });
@@ -316,9 +495,10 @@ function buildClips() {
     }).filter(Boolean);
   }
   const clips = [];
+  const opts = { trimPausesAbove: state.trimPausesAbove ?? Infinity };
   for (const v of state.videos) {
     if (v.status !== "ready" || !v.words) continue;
-    for (const r of keptRanges(v.words)) clips.push({ videoId: v.id, r2_key: v.r2_key, start: r.start, end: r.end });
+    for (const r of keptRanges(v.words, opts)) clips.push({ videoId: v.id, r2_key: v.r2_key, start: r.start, end: r.end });
   }
   return clips;
 }
@@ -440,6 +620,66 @@ function renderTimeline() {
 }
 function saveTimeline() {
   return fetch(`/api/projects/${state.project.id}/timeline`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(state.timeline || { coldOpen: [], body: [] }) });
+}
+
+// ── Suggested edits (callbacks / contrasts / themes across the whole transcript) ──
+async function findSuggestions(btn) {
+  if (!state.videos.some((v) => v.status === "ready" && v.words)) { toast("Transcribe a video first."); return; }
+  btn.classList.add("loading"); btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/suggest-edits`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.suggestions = data.suggestions;
+    renderSuggestions();
+    toast(`Found ${data.suggestions.length} connection${data.suggestions.length === 1 ? "" : "s"}`, { type: "success" });
+  } catch (err) { toast(err.message || "Suggested edits failed", { type: "error", title: "Suggested edits" }); }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+const SUGGEST_TYPE_LABEL = { callback: "Callback", contrast: "Contrast", theme: "Theme" };
+function renderSuggestions() {
+  const el = $("#suggest"); if (!el) return;
+  const suggestions = state.suggestions || [];
+  if (!suggestions.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="suggestions">
+    <div class="tl-head"><h2>Suggested edits</h2><span class="empty small">${suggestions.length}</span></div>
+    ${suggestions.map((s, i) => suggestionCard(s, i)).join("")}
+  </div>`;
+  suggestions.forEach((s, i) => {
+    const card = el.querySelector(`.suggestion[data-i="${i}"]`);
+    card.querySelector(".sg-preview").onclick = () => previewSuggestion(s);
+    card.querySelector(".sg-apply").onclick = (e) => applySuggestion(s, e.currentTarget);
+  });
+}
+function suggestionCard(s, i) {
+  const parts = s.segments.map((seg) => {
+    const v = state.videos.find((x) => x.id === seg.videoId);
+    return `<span class="sg-seg">${fmt(seg.start)} · ${esc(v ? filenameOf(v.filename) : seg.videoId)}</span>`;
+  }).join(`<span class="sg-arrow">→</span>`);
+  return `<div class="suggestion" data-i="${i}">
+    <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
+    <div class="sg-why">${esc(s.why)}</div>
+    <div class="sg-segs">${parts}</div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small amber sg-apply">Add to timeline</button></div>
+  </div>`;
+}
+async function previewSuggestion(s) {
+  const clips = s.segments
+    .map((seg) => {
+      const v = state.videos.find((x) => x.id === seg.videoId);
+      return v && v.r2_key ? { videoId: seg.videoId, r2_key: v.r2_key, start: seg.start, end: seg.end } : null;
+    })
+    .filter(Boolean);
+  if (!clips.length) return;
+  stopEdit(); edit.playing = true; edit.clips = clips;
+  await playClip(0);
+}
+function applySuggestion(s, btn) {
+  if (!state.timeline) state.timeline = { coldOpen: [], body: [] };
+  s.segments.forEach((seg) => state.timeline.body.push({ ...seg, reason: s.title }));
+  saveTimeline(); renderTimeline(); updateStats();
+  btn.textContent = "Added ✓";
+  setTimeout(() => { btn.textContent = "Add to timeline"; }, 1200);
 }
 
 // ── Suggested shorts ─────────────────────────────────────────────────

@@ -7,12 +7,15 @@
  * small, grounded, and cheap to validate.
  */
 import type { Env } from "../env";
-import type { Word, Segment, Timeline, Short } from "../transcript/edl";
+import type { Word, Segment, Timeline, Short, EditSuggestion } from "../transcript/edl";
 
 // Capable, fast Workers AI text model. Exact id to confirm against the live
 // catalog (feasibility doc lists Llama available natively).
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-const MAX_SENTENCES = 500;
+// Was 500 — too low for a real long-form recording (a 66-minute talk alone runs
+// ~600-700 sentences), which would silently drop the back half of the video
+// exactly where cross-video "callback" candidates are most likely to live.
+const MAX_SENTENCES = 4000;
 
 export interface VideoTranscript {
   id: string;
@@ -181,4 +184,47 @@ export async function suggestShorts(env: Env, videos: VideoTranscript[]): Promis
     });
   }
   return shorts.sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
+}
+
+// ── Suggested edits (callbacks / contrasts / themes) ──────────────────
+// The documentary-editing technique this maps to is a "thematic string-out":
+// cluster every mention of a theme across the whole recording into one
+// sequence, regardless of when it was said. Here we ask the model to find
+// specific, concrete pairings (not vague topic overlap) worth an intentional
+// juxtaposition — a joke callback, a contradiction, or a strong through-line.
+interface SuggestReply {
+  suggestions?: { title: string; type?: string; why?: string; segmentIds?: string[] }[];
+}
+
+export async function suggestEdits(env: Env, videos: VideoTranscript[]): Promise<EditSuggestion[]> {
+  const { menu, byId } = buildMenu(videos);
+  const system =
+    "You are a sharp story editor. You read a full transcript (as numbered sentences) and find " +
+    "SPECIFIC, CONCRETE connections between moments that are far apart — the same subject " +
+    "mentioned twice (a callback/punchline), two statements that contradict or ironically " +
+    "undercut each other, or a clear through-line worth cutting together. You do NOT propose " +
+    "vague 'both are about life' connections — only ones a sharp editor would actually cut " +
+    "together on purpose. You only reference the sentence [id]s given, never invent text.";
+  const user =
+    "Find the best 3 to 8 edit suggestions. Each cites 2 (occasionally 3) sentence ids, ideally " +
+    "separated by real distance in the recording (this is the whole point — surfacing a distant " +
+    "echo the editor would otherwise miss). Classify each as one of: callback (a punchline that " +
+    "pays off something said earlier), contrast (two statements that undercut or contradict each " +
+    "other), theme (a strong recurring idea worth stitching together).\n\n" +
+    'Return ONLY JSON: {"suggestions":[{"title":"short punchy label","type":"callback","why":"one sentence, specific","segmentIds":["v0s12","v1s340"]}]}\n\n' +
+    "Sentences:\n" +
+    menu;
+
+  const reply = await runJson<SuggestReply>(env, system, user);
+  const suggestions: EditSuggestion[] = [];
+  for (const s of reply.suggestions ?? []) {
+    const segs = (s.segmentIds ?? [])
+      .map((id) => byId.get(id))
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .map((sent): Segment => ({ videoId: sent.videoId, start: sent.start, end: sent.end }));
+    if (segs.length < 2) continue;
+    const type: EditSuggestion["type"] = s.type === "contrast" || s.type === "theme" ? s.type : "callback";
+    suggestions.push({ title: s.title || "Untitled connection", type, why: s.why || "", segments: segs });
+  }
+  return suggestions;
 }

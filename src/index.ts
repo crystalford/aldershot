@@ -21,8 +21,8 @@ import {
   getVideo,
   setVideoStatus,
 } from "./db";
-import { videoSourceKey, transcriptKey, timelineKey, shortsKey, jobKey, pickExt } from "./keys";
-import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
+import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
+import { arrangeTimeline, suggestShorts, suggestEdits, type VideoTranscript } from "./pipeline/reason";
 import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
 import { wrapPcm, byteOffsetForSecond, durationFromWavSize } from "./wav";
@@ -103,7 +103,8 @@ app.get("/api/projects/:id", async (c) => {
   );
   const timeline = await readJson<Timeline>(c.env.MEDIA, timelineKey(id));
   const shorts = await readJson(c.env.MEDIA, shortsKey(id));
-  return c.json({ project, videos: withWords, timeline, shorts });
+  const suggestions = await readJson(c.env.MEDIA, suggestionsKey(id));
+  return c.json({ project, videos: withWords, timeline, shorts, suggestions });
 });
 
 // Persist the manually-edited / arranged long-form timeline.
@@ -410,6 +411,26 @@ app.post("/api/projects/:id/shorts", async (c) => {
     return c.json({ shorts });
   } catch (err) {
     return c.json({ error: `shorts failed: ${err}` }, 502);
+  }
+});
+
+// AI-found connections worth cutting together on purpose — callbacks,
+// contrasts, recurring themes spread across the whole transcript ("thematic
+// string-out"), not just adjacent-sentence coherence like /arrange.
+app.post("/api/projects/:id/suggest-edits", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
+  if (!ready.length) return c.json({ error: "no transcribed videos to analyze yet" }, 400);
+  try {
+    const suggestions = await suggestEdits(c.env, ready);
+    await c.env.MEDIA.put(suggestionsKey(id), JSON.stringify(suggestions), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return c.json({ suggestions });
+  } catch (err) {
+    return c.json({ error: `suggest-edits failed: ${err}` }, 502);
   }
 });
 

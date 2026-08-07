@@ -6,6 +6,7 @@ export const transcriptKey = (pid: string, vid: string) =>
 export const jobKey = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/job.json`;
 export const timelineKey = (pid: string) => `projects/${pid}/timeline.json`;
 export const shortsKey = (pid: string) => `projects/${pid}/shorts.json`;
+export const suggestionsKey = (pid: string) => `projects/${pid}/suggestions.json`;
 export const exportKey = (pid: string, name: string) => `projects/${pid}/exports/${name}`;
 
 /** Best-effort file extension from a filename, then content-type, else mp4. */

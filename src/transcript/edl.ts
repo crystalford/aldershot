@@ -41,6 +41,15 @@ export interface Short {
   score?: number; // 0–100 share-worthiness
 }
 
+/** An AI-found connection between two (or more) moments worth editing together —
+ *  a callback, a contrast, or a shared theme spread across the transcript(s). */
+export interface EditSuggestion {
+  title: string;
+  type: "callback" | "contrast" | "theme";
+  why: string;
+  segments: Segment[]; // play/cut in this order to realize the suggestion
+}
+
 /** Merge kept (non-deleted) words into contiguous time ranges. */
 export function keptRanges(words: Word[], gapTolerance = 0.12): Range[] {
   const ranges: Range[] = [];
