@@ -194,8 +194,11 @@ function renderVideoList() {
     else pill = `<span class="pill work">${esc(v.stage || v.status)}</span>`;
 
     if (v.status === "uploading") extra = `<div class="progress"><i style="width:${Math.round((v.pct || 0) * 100)}%"></i></div>`;
-    else if (v.status === "transcribing" || v.status === "importing") extra = `<div class="progress indeterminate"><i></i></div>`;
-    else if (v.status === "failed") {
+    else if (v.status === "transcribing" || v.status === "importing") {
+      extra = `<div class="progress indeterminate"><i></i></div>`;
+      // Always offer a restart, even mid-flight — nothing recovers a truly stuck job on its own.
+      if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Restart transcription</button>`;
+    } else if (v.status === "failed") {
       extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error || "failed")}</span></div>`;
       // The upload itself already succeeded (v.id + r2_key exist) — retry without re-uploading.
       if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Retry transcription</button>`;

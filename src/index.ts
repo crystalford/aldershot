@@ -281,14 +281,17 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
   const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
   const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
+  const log = (...args: unknown[]) => console.log(`[chunk ${vid}]`, ...args);
   if (!job) return c.json({ error: "no transcription job for this video" }, 404);
-  if (job.error) return c.json({ status: "failed", error: job.error });
-  if (job.phase === "extracting") return c.json({ status: "extracting" });
+  if (job.error) { log("job has error field:", job.error); return c.json({ status: "failed", error: job.error }); }
+  if (job.phase === "extracting") { log("still extracting"); return c.json({ status: "extracting" }); }
 
   const duration = job.duration ?? 0;
   const audioKey = job.audioKey!;
   const total = Math.max(1, Math.ceil(duration / job.segment));
+  log(`phase=chunking done=${job.done}/${total} duration=${duration}s segment=${job.segment}s audioKey=${audioKey}`);
   const finalize = async () => {
+    log("finalizing — all chunks done");
     await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(job.words), { httpMetadata: { contentType: "application/json" } });
     await setVideoStatus(c.env.DB, vid, "ready");
     await c.env.MEDIA.delete(audioKey).catch(() => {});
@@ -301,10 +304,14 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
     const dur = Math.min(job.segment, duration - start);
     const offset = byteOffsetForSecond(start);
     const length = byteOffsetForSecond(start + dur) - offset;
+    log(`chunk ${job.done}: reading R2 range offset=${offset} length=${length}`);
     const obj = await c.env.MEDIA.get(audioKey, { range: { offset, length } });
     if (!obj) throw new Error("extracted audio went missing mid-transcription");
     const pcm = await obj.arrayBuffer();
+    log(`chunk ${job.done}: got ${pcm.byteLength} bytes PCM, calling Whisper`);
+    const t0 = Date.now();
     const chunkWords = await transcribeAudio(c.env, wrapPcm(pcm));
+    log(`chunk ${job.done}: Whisper returned ${chunkWords.length} words in ${Date.now() - t0}ms`);
     for (const w of chunkWords) { w.start += start; w.end += start; }
     job.words.push(...chunkWords);
     job.done += 1;
@@ -312,6 +319,7 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
     if (job.done >= total) return finalize();
     return c.json({ status: "processing", progress: Math.round((job.done / total) * 100) });
   } catch (err) {
+    log("FAILED:", err instanceof Error ? err.stack || err.message : err);
     await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ status: "failed", error: `${err instanceof Error ? err.message : err}` });
   }
