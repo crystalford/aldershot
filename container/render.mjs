@@ -1,10 +1,15 @@
-// ffmpeg helper (runs inside the Cloudflare Container). Two jobs, both driven by
-// the Worker for long-video transcription:
-//   POST /probe    { url }               -> { duration }         (source length in seconds)
-//   POST /extract  { url, start, dur }   -> audio/mpeg           (mono 16kHz mp3 of that slice)
-// The Worker feeds each slice to Workers AI Whisper and stitches the words.
+// ffmpeg helper (runs inside the Cloudflare Container). One job, driven by the
+// Worker for long-video transcription:
+//   POST /extract-full  { url }  -> audio/wav (the ENTIRE audio track, mono 16kHz)
+// The Worker stores this once (it's small — a couple hours of speech is only
+// tens of MB) and then slices 30s chunks out of it directly via R2 range reads,
+// feeding each to Workers AI Whisper. No more per-chunk container calls, which
+// is what was destabilizing the container: repeatedly re-seeking into a
+// multi-GB remote source for every 30s chunk.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { createReadStream } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 
 function readJson(req) {
   return new Promise((resolve) => {
@@ -14,38 +19,33 @@ function readJson(req) {
   });
 }
 function jsonError(res, code, obj) {
+  if (res.headersSent) { res.destroy(); return; }
   res.writeHead(code, { "content-type": "application/json" });
   res.end(JSON.stringify(obj));
 }
 
-function probe(url, res) {
-  const ff = spawn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", url]);
-  let out = "", err = "";
-  ff.stdout.on("data", (d) => (out += d));
-  ff.stderr.on("data", (d) => (err += d));
-  ff.on("close", (code) => {
-    const duration = parseFloat(String(out).trim());
-    if (code === 0 && duration > 0) jsonError(res, 200, { duration });
-    else jsonError(res, 500, { error: err.slice(-800) || "probe failed" });
-  });
-}
-
-function extract(url, start, dur, res) {
+function extractFull(url, res) {
+  const outPath = `/tmp/full-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
   const args = [
     "-hide_banner", "-loglevel", "error",
-    "-ss", String(start), "-i", url, "-t", String(dur),
-    "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", "-f", "mp3", "pipe:1",
+    "-i", url, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", "-y", outPath,
   ];
   const ff = spawn("ffmpeg", args);
-  const chunks = [];
   let err = "";
-  ff.stdout.on("data", (d) => chunks.push(d));
   ff.stderr.on("data", (d) => (err += d));
-  ff.on("close", (code) => {
-    if (code !== 0) return jsonError(res, 500, { error: err.slice(-1200) });
-    const buf = Buffer.concat(chunks);
-    res.writeHead(200, { "content-type": "audio/mpeg", "content-length": buf.length });
-    res.end(buf);
+  ff.on("error", (e) => jsonError(res, 500, { error: String(e) }));
+  ff.on("close", async (code) => {
+    if (code !== 0) return jsonError(res, 500, { error: err.slice(-1500) || "ffmpeg failed" });
+    try {
+      const st = await stat(outPath);
+      res.writeHead(200, { "content-type": "audio/wav", "content-length": String(st.size) });
+      const rs = createReadStream(outPath);
+      rs.pipe(res);
+      rs.on("close", () => { unlink(outPath).catch(() => {}); });
+      rs.on("error", () => { unlink(outPath).catch(() => {}); });
+    } catch (e) {
+      jsonError(res, 500, { error: String(e) });
+    }
   });
 }
 
@@ -54,7 +54,6 @@ createServer(async (req, res) => {
   const path = (req.url || "").split("?")[0];
   const body = await readJson(req);
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
-  if (path === "/probe") return probe(body.url, res);
-  if (path === "/extract") return extract(body.url, body.start ?? 0, body.dur ?? 300, res);
+  if (path === "/extract-full") return extractFull(body.url, res);
   res.writeHead(404).end();
 }).listen(8080);

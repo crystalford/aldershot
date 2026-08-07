@@ -25,6 +25,7 @@ import { videoSourceKey, transcriptKey, timelineKey, shortsKey, jobKey, pickExt 
 import { arrangeTimeline, suggestShorts, type VideoTranscript } from "./pipeline/reason";
 import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
+import { wrapPcm, byteOffsetForSecond, durationFromWavSize } from "./wav";
 
 async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   const obj = await bucket.get(key);
@@ -173,7 +174,7 @@ app.post("/api/projects/:id/videos/confirm", async (c) => {
 });
 
 interface TranscribeJob {
-  mediaUrl: string;
+  audioKey: string; // full-length mono 16kHz WAV, extracted once
   duration: number;
   segment: number;
   done: number;
@@ -188,7 +189,11 @@ async function sourceUrl(c: { env: Env; req: { url: string } }, key: string): Pr
   return `${origin}/api/media/${key.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-// 3) start transcription: figure out length, then chunk through the container.
+const audioKeyFor = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/audio.wav`;
+
+// 3) start transcription: extract the FULL audio track ONCE (small — tens of MB
+// even for a multi-hour video) rather than re-seeking into the huge source
+// video per chunk, which was destabilizing the container ("suddenly disconnected").
 app.post("/api/videos/:id/transcribe-remote", async (c) => {
   await ensureSchema(c.env.DB);
   const vid = c.req.param("id");
@@ -197,33 +202,38 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
   if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
 
   const mediaUrl = await sourceUrl(c, video.r2_key);
-  let duration = video.duration && video.duration > 0 ? video.duration : 0;
+  const audioKey = audioKeyFor(video.project_id, vid);
   try {
-    if (!duration) {
-      const probe = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/probe", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
-      });
-      const pj = await probe.json<{ duration?: number }>().catch(() => ({}) as { duration?: number });
-      duration = pj.duration || 0;
+    const extract = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/extract-full", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
+    });
+    if (!extract.ok || !extract.body) {
+      const detail = await extract.text().catch(() => "");
+      throw new Error(`audio extraction failed: ${detail.slice(0, 300) || extract.status}`);
     }
-  } catch { /* fall through to error below */ }
-  if (!duration) { await setVideoStatus(c.env.DB, vid, "failed"); return c.json({ error: "couldn't read the video length" }, 502); }
+    await c.env.MEDIA.put(audioKey, extract.body, { httpMetadata: { contentType: "audio/wav" } });
+  } catch (err) {
+    await setVideoStatus(c.env.DB, vid, "failed");
+    return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
+  }
 
-  // Small chunks: Whisper rejects very large single-call audio payloads (seen
-  // in practice with 5-minute/~2.4M-element arrays), and 30s sits inside the
-  // model's native window — safer and more reliable than fewer, bigger calls.
-  const job: TranscribeJob = { mediaUrl, duration, segment: 30, done: 0, words: [] };
+  const head = await c.env.MEDIA.head(audioKey);
+  const duration = head ? durationFromWavSize(head.size) : 0;
+  if (!duration) { await setVideoStatus(c.env.DB, vid, "failed"); return c.json({ error: "extracted audio was empty" }, 502); }
+
+  // 30s chunks: comfortably inside Whisper's native window and small per call.
+  const job: TranscribeJob = { audioKey, duration, segment: 30, done: 0, words: [] };
   await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
   await setVideoStatus(c.env.DB, vid, "transcribing");
   return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });
 });
 
-// 4) poll: each call transcribes the next audio chunk; finalizes when done.
+// 4) poll: each call transcribes the next audio chunk (a plain R2 range read —
+// no container involved), finalizes when done.
 app.get("/api/videos/:id/transcribe-status", async (c) => {
   const vid = c.req.param("id");
   const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
-  if (!c.env.RENDER) return c.json({ error: "not configured" }, 501);
   const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
   if (!job) return c.json({ error: "no transcription job for this video" }, 404);
 
@@ -231,6 +241,7 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
   const finalize = async () => {
     await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(job.words), { httpMetadata: { contentType: "application/json" } });
     await setVideoStatus(c.env.DB, vid, "ready");
+    await c.env.MEDIA.delete(job.audioKey).catch(() => {});
     return c.json({ status: "ready", words: job.words });
   };
   if (job.done >= total) return finalize();
@@ -238,12 +249,12 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
   try {
     const start = job.done * job.segment;
     const dur = Math.min(job.segment, job.duration - start);
-    const res = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/extract", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: job.mediaUrl, start, dur }),
-    });
-    if (!res.ok) throw new Error(`audio extract failed: ${(await res.text()).slice(0, 200)}`);
-    const audio = await res.arrayBuffer();
-    const chunkWords = await transcribeAudio(c.env, audio);
+    const offset = byteOffsetForSecond(start);
+    const length = byteOffsetForSecond(start + dur) - offset;
+    const obj = await c.env.MEDIA.get(job.audioKey, { range: { offset, length } });
+    if (!obj) throw new Error("extracted audio went missing mid-transcription");
+    const pcm = await obj.arrayBuffer();
+    const chunkWords = await transcribeAudio(c.env, wrapPcm(pcm));
     for (const w of chunkWords) { w.start += start; w.end += start; }
     job.words.push(...chunkWords);
     job.done += 1;
