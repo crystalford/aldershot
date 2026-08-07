@@ -572,27 +572,27 @@ function putToR2(uploadUrl, file, onProgress) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Start remote transcription and poll until ready (handles long videos).
-// Extraction runs in the background server-side and reports real phases, so
-// this never sits on one silent request with no feedback.
+// Step 1 (extraction) is a single directly-awaited request — the server does
+// it synchronously, so this tab must stay open while it runs. (An earlier
+// version tried to background this and return instantly, but Cloudflare kills
+// waitUntil() background tasks almost immediately — confirmed via live log
+// tailing — which just left the job frozen forever with no error surfaced.)
+// Step 2 (chunk transcription) is real polling once extraction is done.
 async function pollTranscription(item) {
-  item.status = "transcribing"; item.stage = "starting…"; renderVideoList();
+  item.status = "transcribing";
+  item.stage = "extracting audio — can take several minutes for long videos, keep this tab open…";
+  renderVideoList();
   const start = await fetch(`/api/videos/${item.id}/transcribe-remote`, { method: "POST" });
   if (!start.ok) { const d = await start.json().catch(() => ({})); throw new Error(d.error || "couldn't start transcription"); }
-  let sawExtracting = false;
+  item.stage = "transcribing…"; renderVideoList();
   for (let i = 0; i < 2000; i++) {
     await sleep(1500);
     const res = await fetch(`/api/videos/${item.id}/transcribe-status`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "status check failed");
-    if (data.status === "extracting") {
-      sawExtracting = true;
-      item.stage = "extracting audio — can take several minutes for long videos, keep this tab open…";
-      renderVideoList();
-    } else if (typeof data.progress === "number") {
+    if (typeof data.progress === "number") {
       item.stage = `transcribing ${data.progress}%…`;
       renderVideoList();
-    } else if (sawExtracting && data.status === "processing") {
-      item.stage = "transcribing…"; renderVideoList();
     }
     if (data.status === "ready") {
       item.words = data.words; item.status = "ready"; item.stage = "";

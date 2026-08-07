@@ -174,13 +174,11 @@ app.post("/api/projects/:id/videos/confirm", async (c) => {
 });
 
 interface TranscribeJob {
-  phase: "extracting" | "chunking";
-  audioKey?: string; // full-length mono 16kHz WAV, extracted once
-  duration?: number;
+  audioKey: string; // full-length mono 16kHz WAV, extracted once
+  duration: number;
   segment: number;
   done: number;
   words: Word[];
-  error?: string;
 }
 
 // A URL the container can read the video from (presigned R2, else our range route).
@@ -193,24 +191,36 @@ async function sourceUrl(c: { env: Env; req: { url: string } }, key: string): Pr
 
 const audioKeyFor = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/audio.wav`;
 
-async function putJob(env: Env, pid: string, vid: string, job: TranscribeJob) {
-  await env.MEDIA.put(jobKey(pid, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
-}
+// 3) start transcription: extract the FULL audio track ONCE (small — tens of MB
+// even for a multi-hour video) rather than re-seeking into the huge source
+// video per chunk, which was destabilizing the container.
+//
+// This runs SYNCHRONOUSLY — the client's fetch() waits on it directly. An
+// earlier version tried to background this via c.executionCtx.waitUntil() to
+// return instantly, but confirmed via a live tail: Cloudflare kills waitUntil
+// tasks almost immediately after the response is sent ("waitUntil() tasks did
+// not complete within the allowed time... and have been cancelled") — nowhere
+// near enough for a multi-minute extraction, and there's no way to catch that
+// external kill, so the job just froze forever with no error. A single directly-
+// awaited request has no such limit (Workers allow long wall-clock time for
+// I/O-bound waits); the client shows a persistent "extracting…" message for
+// the duration of this one call instead of polling a background job.
+app.post("/api/videos/:id/transcribe-remote", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
 
-// Runs in the background (past the response) — extract the FULL audio track
-// ONCE (small, tens of MB even for a multi-hour video) rather than re-seeking
-// into the huge source video per chunk, which was destabilizing the container.
-// A prior version did this inline before responding: for a long video that's
-// several minutes of a single silent request, which either times out or just
-// looks "stuck" to the user with zero feedback — hence the background job.
-async function runExtraction(env: Env, video: { id: string; project_id: string; r2_key: string }, mediaUrl: string) {
-  const audioKey = audioKeyFor(video.project_id, video.id);
-  const log = (...args: unknown[]) => console.log(`[extract ${video.id}]`, ...args);
+  const log = (...args: unknown[]) => console.log(`[extract ${vid}]`, ...args);
+  const mediaUrl = await sourceUrl(c, video.r2_key);
+  const audioKey = audioKeyFor(video.project_id, vid);
+  await setVideoStatus(c.env.DB, vid, "transcribing");
+
   try {
-    log("mediaUrl resolved:", mediaUrl.slice(0, 120), "…");
     log("calling container /extract-full");
     const t0 = Date.now();
-    const extract = await getContainer(env.RENDER!, video.id).fetch("http://ffmpeg/extract-full", {
+    const extract = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/extract-full", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
     });
     log(`container responded after ${Date.now() - t0}ms, status=${extract.status}, content-length=${extract.headers.get("content-length")}`);
@@ -228,54 +238,33 @@ async function runExtraction(env: Env, video: { id: string; project_id: string; 
       log(`streaming ${declaredLength} bytes into R2 via FixedLengthStream`);
       const { readable, writable } = new FixedLengthStream(declaredLength);
       const pump = extract.body.pipeTo(writable);
-      await env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
+      await c.env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
       await pump;
     } else {
-      // content-length didn't make it through the container proxy — fall back
-      // to buffering fully. Fine for typical videos; a very long source could
-      // approach Worker memory limits, but a working fallback beats a hard fail.
       log("no content-length from container — falling back to full buffering");
       const buf = await extract.arrayBuffer();
       log(`buffered ${buf.byteLength} bytes, putting to R2`);
-      await env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
+      await c.env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
     }
     log(`R2 put done after ${Date.now() - t1}ms`);
-    const head = await env.MEDIA.head(audioKey);
+
+    const head = await c.env.MEDIA.head(audioKey);
     const duration = head ? durationFromWavSize(head.size) : 0;
     log(`audio object size=${head?.size}, computed duration=${duration}s`);
     if (!duration) throw new Error("extracted audio was empty");
-    await putJob(env, video.project_id, video.id, { phase: "chunking", audioKey, duration, segment: 30, done: 0, words: [] });
-    log("job phase -> chunking, ready to transcribe");
+
+    const job: TranscribeJob = { audioKey, duration, segment: 30, done: 0, words: [] };
+    await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
+    return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });
   } catch (err) {
     log("FAILED:", err instanceof Error ? err.stack || err.message : err);
-    await setVideoStatus(env.DB, video.id, "failed");
-    await putJob(env, video.project_id, video.id, {
-      phase: "extracting", segment: 30, done: 0, words: [],
-      error: err instanceof Error ? err.message : String(err),
-    });
+    await setVideoStatus(c.env.DB, vid, "failed");
+    return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
   }
-}
-
-// 3) start transcription: kick off extraction in the background and return
-// immediately — the client polls transcribe-status for real progress.
-app.post("/api/videos/:id/transcribe-remote", async (c) => {
-  await ensureSchema(c.env.DB);
-  const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, vid);
-  if (!video) return c.json({ error: "video not found" }, 404);
-  if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
-
-  const mediaUrl = await sourceUrl(c, video.r2_key);
-  console.log(`[transcribe-remote ${vid}] kicking off background extraction`);
-  await putJob(c.env, video.project_id, vid, { phase: "extracting", segment: 30, done: 0, words: [] });
-  await setVideoStatus(c.env.DB, vid, "transcribing");
-  c.executionCtx.waitUntil(runExtraction(c.env, { id: vid, project_id: video.project_id, r2_key: video.r2_key }, mediaUrl));
-  return c.json({ ok: true });
 });
 
-// 4) poll: while extracting, just report that phase; once chunking, each call
-// transcribes the next audio chunk (a plain R2 range read — no container
-// involved), finalizing when done.
+// 4) poll: each call transcribes the next audio chunk (a plain R2 range read —
+// no container involved), finalizing when done.
 app.get("/api/videos/:id/transcribe-status", async (c) => {
   const vid = c.req.param("id");
   const video = await getVideo(c.env.DB, vid);
@@ -283,11 +272,9 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
   const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
   const log = (...args: unknown[]) => console.log(`[chunk ${vid}]`, ...args);
   if (!job) return c.json({ error: "no transcription job for this video" }, 404);
-  if (job.error) { log("job has error field:", job.error); return c.json({ status: "failed", error: job.error }); }
-  if (job.phase === "extracting") { log("still extracting"); return c.json({ status: "extracting" }); }
 
-  const duration = job.duration ?? 0;
-  const audioKey = job.audioKey!;
+  const duration = job.duration;
+  const audioKey = job.audioKey;
   const total = Math.max(1, Math.ceil(duration / job.segment));
   log(`phase=chunking done=${job.done}/${total} duration=${duration}s segment=${job.segment}s audioKey=${audioKey}`);
   const finalize = async () => {
