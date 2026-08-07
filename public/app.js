@@ -24,6 +24,8 @@ const ICON = {
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const esc = UI.esc;
+// Filenames aren't URI-encoded, but tolerate old records that were — never throw.
+const filenameOf = (v) => { try { return decodeURIComponent(v || "video"); } catch { return v || "video"; } };
 
 // ── API ──────────────────────────────────────────────────────────────
 const api = {
@@ -38,24 +40,6 @@ const api = {
     return data;
   },
 };
-
-// upload with real progress (XHR — fetch can't report upload %)
-function uploadVideo(pid, file, duration, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/projects/${pid}/videos`);
-    xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
-    xhr.setRequestHeader("x-filename", encodeURIComponent(file.name));
-    xhr.setRequestHeader("x-duration", String(duration || ""));
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
-    xhr.onload = () => {
-      let d = {}; try { d = JSON.parse(xhr.responseText); } catch {}
-      xhr.status >= 200 && xhr.status < 300 ? resolve(d) : reject(new Error(d.error || `upload failed (${xhr.status})`));
-    };
-    xhr.onerror = () => reject(new Error("network error during upload"));
-    xhr.send(file);
-  });
-}
 
 // ── State ────────────────────────────────────────────────────────────
 const state = { project: null, videos: [], timeline: null, shorts: null, selected: null };
@@ -211,11 +195,16 @@ function renderVideoList() {
 
     if (v.status === "uploading") extra = `<div class="progress"><i style="width:${Math.round((v.pct || 0) * 100)}%"></i></div>`;
     else if (v.status === "transcribing" || v.status === "importing") extra = `<div class="progress indeterminate"><i></i></div>`;
-    else if (v.status === "failed" && v.error) extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error)}</span></div>`;
-    else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
+    else if (v.status === "failed") {
+      extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error || "failed")}</span></div>`;
+      // The upload itself already succeeded (v.id + r2_key exist) — retry without re-uploading.
+      if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Retry transcription</button>`;
+    } else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
 
-    row.innerHTML = `<div class="vrow-top"><span class="vname">${esc(decodeURIComponent(v.filename || "video"))}</span>${pill}</div>${extra}`;
+    row.innerHTML = `<div class="vrow-top"><span class="vname">${esc(filenameOf(v.filename))}</span>${pill}</div>${extra}`;
     if (v.id && v.status !== "uploading") row.onclick = () => selectVideo(v.id);
+    const retryBtn = row.querySelector(".retry-btn");
+    if (retryBtn) retryBtn.onclick = (e) => { e.stopPropagation(); retryVideo(v); };
     list.appendChild(row);
   });
 }
@@ -246,7 +235,7 @@ function renderTranscript() {
     const sec = document.createElement("div");
     sec.className = "tsec"; sec.dataset.vid = v.id;
     const head = document.createElement("div");
-    head.className = "tsec-head"; head.textContent = decodeURIComponent(v.filename || "video");
+    head.className = "tsec-head"; head.textContent = filenameOf(v.filename);
     head.onclick = () => selectVideo(v.id);
     sec.appendChild(head);
     const body = document.createElement("div");
@@ -408,7 +397,7 @@ function renderTimeline() {
   const t = state.timeline;
   const seg = (s, group, idx) => {
     const v = state.videos.find((x) => x.id === s.videoId);
-    const name = v ? decodeURIComponent(v.filename || "video") : s.videoId;
+    const name = v ? filenameOf(v.filename) : s.videoId;
     return `<div class="seg" data-g="${group}" data-i="${idx}">
       <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
       <span class="seg-src">${esc(name)}</span>
@@ -470,7 +459,7 @@ function renderShorts() {
 }
 function shortCard(s, i) {
   const v = state.videos.find((x) => x.id === s.videoId);
-  const src = v ? decodeURIComponent(v.filename || "video") : s.videoId;
+  const src = v ? filenameOf(v.filename) : s.videoId;
   const score = typeof s.score === "number" ? `<span class="s-score">${s.score}</span>` : "";
   return `<div class="short" data-i="${i}">
     <div class="s-top">${score}<div class="s-title">${esc(s.title)}</div></div>
@@ -601,6 +590,17 @@ async function pollTranscription(item) {
     if (data.status === "failed") throw new Error(data.error || "transcription failed");
   }
   throw new Error("transcription timed out");
+}
+
+// Retry transcription for a video whose upload already succeeded — no re-upload.
+async function retryVideo(v) {
+  v.error = null;
+  try {
+    await pollTranscription(v);
+  } catch (err) {
+    v.status = "failed"; v.error = err.message || String(err); renderVideoList();
+    toast(v.error, { type: "error", title: "Transcription failed" });
+  }
 }
 
 // Import a video from a URL (Rumble / direct link) → R2 → transcribe.

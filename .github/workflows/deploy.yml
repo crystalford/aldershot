@@ -58,8 +58,8 @@ jobs:
           echo "==> Storage CORS (first, so it lands regardless of the deploy step)"
           node scripts/set-cors.mjs || true
 
-          echo "==> Deploying (skip container rollout — it's unchanged and already live)"
-          npx wrangler deploy --containers-rollout=none
+          echo "==> Deploying"
+          npx wrangler deploy
 
           echo "==> Secrets"
           put_secret() { if [ -n "${2:-}" ]; then printf '%s' "$2" | npx wrangler secret put "$1"; else echo "  (skip $1 — not set)"; fi; }

@@ -209,7 +209,10 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
   } catch { /* fall through to error below */ }
   if (!duration) { await setVideoStatus(c.env.DB, vid, "failed"); return c.json({ error: "couldn't read the video length" }, 502); }
 
-  const job: TranscribeJob = { mediaUrl, duration, segment: 300, done: 0, words: [] };
+  // Small chunks: Whisper rejects very large single-call audio payloads (seen
+  // in practice with 5-minute/~2.4M-element arrays), and 30s sits inside the
+  // model's native window — safer and more reliable than fewer, bigger calls.
+  const job: TranscribeJob = { mediaUrl, duration, segment: 30, done: 0, words: [] };
   await c.env.MEDIA.put(jobKey(video.project_id, vid), JSON.stringify(job), { httpMetadata: { contentType: "application/json" } });
   await setVideoStatus(c.env.DB, vid, "transcribing");
   return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });

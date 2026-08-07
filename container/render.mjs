@@ -34,7 +34,7 @@ function extract(url, start, dur, res) {
   const args = [
     "-hide_banner", "-loglevel", "error",
     "-ss", String(start), "-i", url, "-t", String(dur),
-    "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", "-f", "mp3", "pipe:1",
+    "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", "-f", "mp3", "pipe:1",
   ];
   const ff = spawn("ffmpeg", args);
   const chunks = [];
