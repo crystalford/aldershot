@@ -211,7 +211,23 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
       const detail = await extract.text().catch(() => "");
       throw new Error(`audio extraction failed: ${detail.slice(0, 300) || extract.status}`);
     }
-    await c.env.MEDIA.put(audioKey, extract.body, { httpMetadata: { contentType: "audio/wav" } });
+    // R2 needs a stream's exact byte length up front; the container reports it
+    // via content-length, but that doesn't always survive the container proxy
+    // as a stream property, so re-declare it explicitly with FixedLengthStream
+    // rather than buffering the whole file (can be ~200MB for a long video).
+    const declaredLength = Number(extract.headers.get("content-length") || 0);
+    if (declaredLength > 0) {
+      const { readable, writable } = new FixedLengthStream(declaredLength);
+      const pump = extract.body.pipeTo(writable);
+      await c.env.MEDIA.put(audioKey, readable, { httpMetadata: { contentType: "audio/wav" } });
+      await pump;
+    } else {
+      // content-length didn't make it through the container proxy — fall back
+      // to buffering fully. Fine for typical videos; a very long source could
+      // approach Worker memory limits, but a working fallback beats a hard fail.
+      const buf = await extract.arrayBuffer();
+      await c.env.MEDIA.put(audioKey, buf, { httpMetadata: { contentType: "audio/wav" } });
+    }
   } catch (err) {
     await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
