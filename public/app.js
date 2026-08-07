@@ -202,7 +202,11 @@ function renderVideoList() {
       extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error || "failed")}</span></div>`;
       // The upload itself already succeeded (v.id + r2_key exist) — retry without re-uploading.
       if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Retry transcription</button>`;
-    } else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
+    } else if (v.status === "ready") {
+      const wc = (v.words || []).length;
+      extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${wc} words${wc === 0 ? ` <span style="color:var(--bad)">— empty, try again</span>` : ""}</div>`;
+      if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Re-transcribe</button>`;
+    }
 
     const thumb = v.r2_key
       ? `<div class="vthumb"><img data-thumb-src="${esc(mediaUrl(v.r2_key))}" data-thumb-t="${Math.min(2, (v.duration || 4) / 4)}" alt="" /><span class="vthumb-play">${ic("play")}</span></div>`
