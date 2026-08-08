@@ -22,7 +22,7 @@ import {
   setVideoStatus,
 } from "./db";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
-import { arrangeTimeline, suggestShorts, suggestEdits, type VideoTranscript } from "./pipeline/reason";
+import { arrangeTimeline, directedArrange, suggestShorts, suggestEdits, type VideoTranscript } from "./pipeline/reason";
 import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
 import { wrapPcm, byteOffsetForSecond, durationFromWavSize } from "./wav";
@@ -393,6 +393,27 @@ app.post("/api/projects/:id/arrange", async (c) => {
     return c.json({ timeline });
   } catch (err) {
     return c.json({ error: `arrange failed: ${err}` }, 502);
+  }
+});
+
+// Directed edit: the user types their own goal ("a video about how the host
+// keeps interrupting the guest") instead of picking a generic best-cut.
+app.post("/api/projects/:id/direct", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const { instruction } = await c.req.json<{ instruction?: string }>().catch(() => ({}) as { instruction?: string });
+  if (!instruction?.trim()) return c.json({ error: "describe what you want the edit to be" }, 400);
+  const ready = await readyTranscripts(c, id);
+  if (!ready.length) return c.json({ error: "no transcribed videos to work from yet" }, 400);
+  try {
+    const timeline = await directedArrange(c.env, ready, instruction);
+    await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return c.json({ timeline });
+  } catch (err) {
+    return c.json({ error: `directed edit failed: ${err}` }, 502);
   }
 });
 

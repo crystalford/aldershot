@@ -167,35 +167,61 @@ function renderProject() {
       </aside>
       <section class="stage">
         <div class="toolbar">
-          <button class="btn amber" id="playEdit">${ic("play")} Play edit</button>
-          <button class="btn" id="stopEdit">${ic("stop")} Stop</button>
-          <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
-          <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
-          <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
+          <div class="tbgroup">
+            <button class="btn amber" id="playEdit">${ic("play")} Play edit</button>
+            <button class="btn" id="stopEdit">${ic("stop")} Stop</button>
+          </div>
+          <div class="tb-div"></div>
+          <div class="tbgroup">
+            <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
+            <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
+            <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
+          </div>
+          <div class="tb-div"></div>
           <button class="btn primary" id="export">${ic("download")} Export cut</button>
           <span class="spacer"></span>
           <button class="btn ghost" id="save">${ic("save")} Save</button>
         </div>
-        <video id="sel-player" controls playsinline></video>
-        <div class="ruler" id="ruler"></div>
-        <div class="toolbar toolbar-edit">
-          <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
-          <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
-          <button class="btn small ghost" id="removeFillers">Remove fillers</button>
-          <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
-          <span class="spacer"></span>
-          <div class="search-box">
-            <input id="search" placeholder="Search transcript…" autocomplete="off" />
-            <span class="search-count" id="searchCount"></span>
-            <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
-            <button class="search-nav" id="searchNext" title="Next match">›</button>
+
+        <div class="panel">
+          <video id="sel-player" controls playsinline></video>
+          <div class="ruler" id="ruler"></div>
+        </div>
+
+        <div class="panel direct-panel">
+          <div class="panel-head">${ic("sparkle")}<h2>Direct the edit</h2></div>
+          <p class="panel-sub">Tell it what you want, in your own words — it finds and assembles the moments that match.</p>
+          <div class="direct-box">
+            <textarea id="directInput" rows="2" placeholder='e.g. "A video about how the host keeps interrupting the guest"'></textarea>
+            <button class="btn primary" id="directBtn">${ic("sparkle")} Generate edit</button>
           </div>
         </div>
+
+        <div class="panel toolbar-edit-panel">
+          <div class="toolbar toolbar-edit">
+            <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+            <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+            <button class="btn small ghost" id="removeFillers">Remove fillers</button>
+            <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
+            <span class="spacer"></span>
+            <div class="search-box">
+              <input id="search" placeholder="Search transcript…" autocomplete="off" />
+              <span class="search-count" id="searchCount"></span>
+              <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
+              <button class="search-nav" id="searchNext" title="Next match">›</button>
+            </div>
+          </div>
+        </div>
+
         <div id="timeline"></div>
         <div id="shorts"></div>
         <div id="suggest"></div>
-        <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause. <span id="selHint" class="sel-hint"></span></p>
-        <div class="transcript" id="transcript"></div>
+
+        <div class="panel transcript-panel">
+          <div class="panel-head"><h2>Transcript</h2></div>
+          <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause. <span id="selHint" class="sel-hint"></span></p>
+          <div class="transcript" id="transcript"></div>
+        </div>
       </section>
     </div>`;
   wireDropzone();
@@ -212,6 +238,10 @@ function renderProject() {
   $("#arrange").onclick = (e) => autoArrange(e.currentTarget);
   $("#findShorts").onclick = (e) => findShorts(e.currentTarget);
   $("#suggestEdits").onclick = (e) => findSuggestions(e.currentTarget);
+  $("#directBtn").onclick = (e) => runDirectedEdit(e.currentTarget);
+  $("#directInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runDirectedEdit($("#directBtn")); }
+  });
   $("#export").onclick = (e) => exportCut(e.currentTarget);
   $("#save").onclick = (e) => saveEdit(e.currentTarget);
   $("#importBtn").onclick = importFromUrl;
@@ -660,6 +690,30 @@ async function autoArrange(btn) {
     renderTimeline(); updateStats();
     toast("Arranged a cut — refine it below", { type: "success" });
   } catch (err) { toast(err.message || "Auto-arrange failed", { type: "error", title: "Auto-arrange" }); }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+
+// "Direct the edit" — the user describes what they want in their own words
+// instead of picking a generic best-cut; finds and assembles the matching
+// moments into the same Arranged cut panel Auto-arrange fills.
+async function runDirectedEdit(btn) {
+  const input = $("#directInput");
+  const instruction = (input.value || "").trim();
+  if (!instruction) { toast("Describe the edit you want first."); return; }
+  if (!state.videos.some((v) => v.status === "ready" && v.words)) { toast("Transcribe a video first."); return; }
+  btn.classList.add("loading"); btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/direct`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instruction }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.timeline = data.timeline;
+    renderTimeline(); updateStats();
+    const n = (data.timeline.coldOpen || []).length + (data.timeline.body || []).length;
+    if (n) toast(`Built a cut from ${n} moment${n === 1 ? "" : "s"} — refine it below`, { type: "success" });
+    else toast("Nothing in the transcript matched that — try rephrasing.", { type: "error" });
+  } catch (err) { toast(err.message || "Directed edit failed", { type: "error", title: "Direct the edit" }); }
   btn.classList.remove("loading"); btn.disabled = false;
 }
 

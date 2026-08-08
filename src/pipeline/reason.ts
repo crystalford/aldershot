@@ -146,6 +146,37 @@ export async function arrangeTimeline(env: Env, videos: VideoTranscript[]): Prom
   return { coldOpen, body };
 }
 
+/** Same grounded arrange, but pointed at a user's free-form creative goal
+ *  ("make a video about how the host keeps interrupting the guest") instead of
+ *  a generic best-cut. Returns the same Timeline shape so it drops straight
+ *  into the existing arranged-cut UI/apply flow. */
+export async function directedArrange(env: Env, videos: VideoTranscript[], instruction: string): Promise<Timeline> {
+  const { menu, byId } = buildMenu(videos);
+  const system =
+    "You are a sharp video editor. The user tells you EXACTLY what they want the edit to be " +
+    "about — follow their brief precisely, don't substitute your own idea of a good cut. " +
+    "Find every sentence relevant to their brief, even ones far apart in the recording. " +
+    "You only choose from the sentences given, by their [id]. You never invent text or times. " +
+    "If nothing in the transcript matches the brief, return empty arrays rather than forcing it.";
+  const user =
+    `The user's brief: "${instruction.trim()}"\n\n` +
+    "Select and order the sentences that fulfill this brief. Put 1-3 sentences that best set up " +
+    "the premise in coldOpen (skip this if the brief doesn't call for a hook), and the rest — in a " +
+    "coherent order — in body. Prefer contiguous runs from the same clip where it doesn't hurt the brief.\n\n" +
+    'Return ONLY JSON: {"coldOpen":[{"id":"v0s2","reason":"why"}],"body":[{"id":"v1s0","reason":"why"}]}\n\n' +
+    "Sentences:\n" +
+    menu;
+
+  const reply = await runJson<ArrangeReply>(env, system, user);
+  const toSeg = (r: { id: string; reason?: string }): Segment | null => {
+    const s = byId.get(r.id);
+    return s ? { videoId: s.videoId, start: s.start, end: s.end, reason: r.reason } : null;
+  };
+  const coldOpen = (reply.coldOpen ?? []).map(toSeg).filter((x): x is Segment => !!x);
+  const body = mergeAdjacent((reply.body ?? []).map(toSeg).filter((x): x is Segment => !!x));
+  return { coldOpen, body };
+}
+
 // ── Shorts ───────────────────────────────────────────────────────────
 interface ShortReply {
   shorts?: { title: string; startId: string; endId: string; hook?: string; why?: string; score?: number }[];
