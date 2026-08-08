@@ -416,7 +416,10 @@ function selectVideo(id) {
 // ── Filmstrip — a row of real frame thumbnails across the selected video,
 // with a playhead marker, so scrubbing a long video doesn't mean guessing
 // blind at a bare seek bar (Descript/Premiere-style).
-const FILM_FRAMES = 14;
+// Kept modest — each frame spins up its own hidden <video> to seek/decode a
+// frame from the (often large, remotely-streamed) source; too many at once
+// contends with the main preview player and was part of the reported jank.
+const FILM_FRAMES = 10;
 function renderFilmstrip() {
   const el = $("#filmstrip"); if (!el) return;
   const v = state.videos.find((x) => x.id === state.selected);
@@ -445,8 +448,10 @@ function updateFilmstripPlayhead() {
 // ── Phrase chips — quick-nav strip of each paragraph's opening words, so you
 // can jump the player straight to a moment instead of hunting through text.
 let phraseChipRanges = [];
+let activePhraseChipIdx = -1;
 function renderPhraseChips() {
   const el = $("#phraseChips"); if (!el) return;
+  activePhraseChipIdx = -1;
   const v = state.videos.find((x) => x.id === state.selected);
   if (!v || !v.words || !v.words.length) { el.innerHTML = ""; phraseChipRanges = []; return; }
   const paras = groupIntoParagraphs(v.words);
@@ -469,8 +474,19 @@ function renderPhraseChips() {
 function updatePhraseChipActive() {
   const el = $("#phraseChips"); if (!el || !phraseChipRanges.length) return;
   const t = $("#sel-player").currentTime;
-  const idx = phraseChipRanges.findIndex((r) => t >= r.start && t < r.end);
-  el.querySelectorAll(".phrase-chip").forEach((chip) => chip.classList.toggle("on", +chip.dataset.n === idx));
+  // Binary search (ranges are chronological) instead of scanning every
+  // paragraph on each tick, and only touch the DOM when the active chip
+  // actually changes instead of re-toggling every chip every tick.
+  let lo = 0, hi = phraseChipRanges.length - 1, idx = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (phraseChipRanges[mid].start <= t) { idx = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  if (idx >= 0 && t >= phraseChipRanges[idx].end) idx = -1;
+  if (idx === activePhraseChipIdx) return;
+  if (activePhraseChipIdx >= 0) el.querySelector(`.phrase-chip[data-n="${activePhraseChipIdx}"]`)?.classList.remove("on");
+  if (idx >= 0) el.querySelector(`.phrase-chip[data-n="${idx}"]`)?.classList.add("on");
+  activePhraseChipIdx = idx;
 }
 
 // ── Transcript + cutting ─────────────────────────────────────────────
@@ -492,6 +508,12 @@ function renderTranscript() {
     sec.appendChild(head);
     const body = document.createElement("div");
     body.className = "tsec-body";
+    // Cache a direct index → element lookup (populated below) so the playhead
+    // highlighter never has to `querySelector` the DOM on every timeupdate —
+    // that's an O(words) scan per tick, which is the difference between smooth
+    // playback and visible stutter once a transcript runs into the thousands
+    // of words.
+    v._wordEls = new Array(v.words.length);
     groupIntoParagraphs(v.words).forEach((idxs) => {
       const p = document.createElement("p");
       p.className = "para";
@@ -505,6 +527,7 @@ function renderTranscript() {
         span.className = cls;
         span.textContent = (k === 0 ? capitalizeFirst(w.text) : w.text) + " ";
         span.dataset.i = i;
+        v._wordEls[i] = span;
         p.appendChild(span);
       });
       body.appendChild(p);
@@ -797,12 +820,23 @@ function stopEdit() {
   const p = $("#sel-player"); if (p && !p.paused) p.pause();
   clearPlayhead();
 }
+// Binary search for the word at time t (words are chronological), then a
+// small bounded scan for the nearest non-deleted one — O(log n) instead of
+// walking the whole transcript on every timeupdate tick, which is what made
+// playback stutter once a transcript reached a few thousand words.
 function highlightPlayhead(videoId, t) {
-  const v = state.videos.find((x) => x.id === videoId); if (!v || !v.words) return;
+  const v = state.videos.find((x) => x.id === videoId); if (!v || !v.words || !v.words.length) return;
+  const words = v.words;
+  let lo = 0, hi = words.length - 1, pos = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (words[mid].start <= t) { pos = mid; lo = mid + 1; } else hi = mid - 1;
+  }
   let idx = -1;
-  for (let i = 0; i < v.words.length; i++) { const w = v.words[i]; if (!w.deleted && t >= w.start && t < w.end) { idx = i; break; } }
-  const sec = document.querySelector(`.tsec[data-vid="${videoId}"] .tsec-body`);
-  const next = idx >= 0 && sec ? sec.querySelector(`.word[data-i="${idx}"]`) : null;
+  for (let k = pos; k < words.length && words[k].start <= t; k++) {
+    if (!words[k].deleted && t < words[k].end) { idx = k; break; }
+  }
+  const next = idx >= 0 ? v._wordEls?.[idx] : null;
   if (next === edit.playingEl) return;
   clearPlayhead();
   if (next) { next.classList.add("playing"); edit.playingEl = next; }
