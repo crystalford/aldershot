@@ -334,6 +334,9 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
    selector — :has() forces the style engine to keep re-checking every
    paragraph's descendants, real cost on a transcript with hundreds of them. */
 .transcript:not(.show-cuts) .para.all-cut { display: none; }
+/* Invisible trigger — mountNextChunk()'s IntersectionObserver watches this
+   to load the next batch of paragraphs as it nears the viewport. */
+.scroll-sentinel { height: 1px; }
 .word { cursor: text; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; }
 .word:hover { background: #ffffff14; }
 /* Cut words are hidden by default — deleting text should behave like

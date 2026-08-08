@@ -538,8 +538,80 @@ function updatePhraseChipActive() {
 }
 
 // ── Transcript + cutting ─────────────────────────────────────────────
+// Paragraphs are mounted progressively (not all up front) — a transcript in
+// the thousands of words means a *lot* of live DOM elements, which is real,
+// sustained weight regardless of what you're doing on the page. The first
+// PARA_CHUNK paragraphs render synchronously so there's something to look at
+// immediately; the rest mount automatically as a sentinel element near the
+// bottom of what's loaded scrolls into view (the same "infinite scroll"
+// pattern feeds use) via IntersectionObserver. Nothing ever un-mounts once
+// built, so every other system that touches word elements (selection,
+// caret, playhead, undo/redo) needs zero changes — they already tolerate a
+// word not existing yet via optional chaining. Search is the one thing that
+// genuinely needs to see the whole document regardless of scroll position,
+// so it's data-driven (reads v.words directly) rather than DOM-driven —
+// see runSearch()/gotoMatch() below.
+const PARA_CHUNK = 60;
+function buildParaEl(v, idxs) {
+  const p = document.createElement("p");
+  p.className = "para";
+  let anyKept = false;
+  idxs.forEach((i, k) => {
+    const w = v.words[i];
+    const span = document.createElement("span");
+    let cls = "word";
+    if (w.deleted) cls += " deleted";
+    else { anyKept = true; if (isFillerWord(w.text)) cls += " filler"; }
+    if (v._selStart != null && i >= v._selStart && i <= v._selEnd) cls += " selected";
+    if (v._matchSet?.has(i)) cls += " match";
+    span.className = cls;
+    span.textContent = (k === 0 ? capitalizeFirst(w.text) : w.text) + " ";
+    span.dataset.i = i;
+    v._wordEls[i] = span;
+    p.appendChild(span);
+  });
+  if (!anyKept) p.classList.add("all-cut");
+  return p;
+}
+// Mounts the next PARA_CHUNK paragraphs for `v` into `body` (inserted before
+// the sentinel, so the sentinel — and the observer watching it — always
+// stays at the very end of what's currently mounted).
+function mountNextChunk(v, body) {
+  const start = v._mountedCount;
+  const end = Math.min(start + PARA_CHUNK, v._paras.length);
+  const frag = document.createDocumentFragment();
+  for (let p = start; p < end; p++) frag.appendChild(buildParaEl(v, v._paras[p]));
+  const sentinel = body.querySelector(".scroll-sentinel");
+  if (sentinel) body.insertBefore(frag, sentinel); else body.appendChild(frag);
+  v._mountedCount = end;
+  if (v._mountedCount >= v._paras.length) {
+    if (sentinel) { v._observer?.disconnect(); sentinel.remove(); }
+    return;
+  }
+  if (!sentinel) {
+    const s = document.createElement("div");
+    s.className = "scroll-sentinel";
+    body.appendChild(s);
+    v._observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) mountNextChunk(v, body);
+    }, { root: $(".stage"), rootMargin: "800px 0px" });
+    v._observer.observe(s);
+  }
+}
+// For search navigation (jumping to a specific match) and undo/redo's
+// length-mismatch fallback — mounts chunks up through whichever paragraph
+// contains word index `i`, if it isn't mounted already.
+function ensureWordMounted(v, i) {
+  if (v._wordEls?.[i]) return;
+  const body = document.querySelector(`.tsec[data-vid="${v.id}"] .tsec-body`);
+  if (!body || !v._paras) return;
+  const pidx = v._paras.findIndex((idxs) => idxs.includes(i));
+  if (pidx < 0) return;
+  while (v._mountedCount <= pidx && v._mountedCount < v._paras.length) mountNextChunk(v, body);
+}
 function renderTranscript() {
   const t = $("#transcript");
+  state.videos.forEach((v) => v._observer?.disconnect());
   const ready = state.videos.filter((v) => v.status === "ready" && v.words);
   if (!ready.length) {
     t.innerHTML = `<div class="empty big"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICON.video}</svg>
@@ -556,32 +628,15 @@ function renderTranscript() {
     sec.appendChild(head);
     const body = document.createElement("div");
     body.className = "tsec-body";
-    // Cache a direct index → element lookup (populated below) so the playhead
-    // highlighter never has to `querySelector` the DOM on every timeupdate —
-    // that's an O(words) scan per tick, which is the difference between smooth
-    // playback and visible stutter once a transcript runs into the thousands
-    // of words.
+    // Cache a direct index → element lookup (populated as paragraphs mount)
+    // so the playhead highlighter never has to `querySelector` the DOM on
+    // every timeupdate — that's an O(words) scan per tick, which is the
+    // difference between smooth playback and visible stutter once a
+    // transcript runs into the thousands of words.
     v._wordEls = new Array(v.words.length);
-    groupIntoParagraphs(v.words).forEach((idxs) => {
-      const p = document.createElement("p");
-      p.className = "para";
-      let anyKept = false;
-      idxs.forEach((i, k) => {
-        const w = v.words[i];
-        const span = document.createElement("span");
-        let cls = "word";
-        if (w.deleted) cls += " deleted";
-        else { anyKept = true; if (isFillerWord(w.text)) cls += " filler"; }
-        if (v._selStart != null && i >= v._selStart && i <= v._selEnd) cls += " selected";
-        span.className = cls;
-        span.textContent = (k === 0 ? capitalizeFirst(w.text) : w.text) + " ";
-        span.dataset.i = i;
-        v._wordEls[i] = span;
-        p.appendChild(span);
-      });
-      if (!anyKept) p.classList.add("all-cut");
-      body.appendChild(p);
-    });
+    v._paras = groupIntoParagraphs(v.words);
+    v._mountedCount = 0;
+    mountNextChunk(v, body);
     body.addEventListener("click", (e) => onWordClick(e, v));
     body.addEventListener("dblclick", (e) => onWordDbl(e, v));
     sec.appendChild(body);
@@ -642,26 +697,42 @@ function groupIntoParagraphs(words, gapThreshold = 1.0) {
 }
 const capitalizeFirst = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-// ── Search-in-transcript ─────────────────────────────────────────────
-let searchMatches = [], searchIdx = -1;
+// ── Search-in-transcript — reads word DATA (v.words), not the DOM, so
+// results are correct across the whole transcript regardless of how much of
+// it is currently mounted (see the progressive-mount comment above
+// renderTranscript()). Only mounted matches get the `.match` highlight as
+// you scroll past them; gotoMatch() mounts on demand when jumping to one
+// that isn't loaded yet, so next/prev navigation always works everywhere.
+let searchMatches = [], searchIdx = -1; // { v, i }[]
 function runSearch(q) {
   document.querySelectorAll(".word.match").forEach((el) => el.classList.remove("match", "match-active"));
   searchMatches = []; searchIdx = -1;
+  state.videos.forEach((v) => { v._matchSet = null; });
   const qq = q.trim().toLowerCase();
   if (qq.length >= 2) {
-    document.querySelectorAll(state.showCuts ? ".tsec-body .word" : ".tsec-body .word:not(.deleted)").forEach((el) => {
-      if (el.textContent.toLowerCase().includes(qq)) { el.classList.add("match"); searchMatches.push(el); }
+    state.videos.filter((v) => v.status === "ready" && v.words).forEach((v) => {
+      const set = new Set();
+      v.words.forEach((w, i) => {
+        if (!state.showCuts && w.deleted) return;
+        if (w.text.toLowerCase().includes(qq)) { searchMatches.push({ v, i }); set.add(i); }
+      });
+      v._matchSet = set;
     });
+    searchMatches.forEach(({ v, i }) => v._wordEls?.[i]?.classList.add("match"));
   }
   updateSearchCount();
 }
 function gotoMatch(idx) {
   if (!searchMatches.length) return;
-  if (searchIdx >= 0 && searchMatches[searchIdx]) searchMatches[searchIdx].classList.remove("match-active");
+  if (searchIdx >= 0) { const prev = searchMatches[searchIdx]; prev.v._wordEls?.[prev.i]?.classList.remove("match-active"); }
   searchIdx = ((idx % searchMatches.length) + searchMatches.length) % searchMatches.length;
-  const el = searchMatches[searchIdx];
-  el.classList.add("match-active");
-  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  const { v, i } = searchMatches[searchIdx];
+  ensureWordMounted(v, i);
+  const el = v._wordEls?.[i];
+  if (el) {
+    el.classList.add("match", "match-active");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
   updateSearchCount();
 }
 function updateSearchCount() {
@@ -720,21 +791,44 @@ function snapshotHistory(v) {
 // different-length array; pollTranscription() resets history when that
 // happens, but the length check is cheap insurance against any other future
 // path that could do the same).
+// A word-count change (re-transcribe) obviously needs a real rebuild, but so
+// does a `breakBefore` change even at the same word count — a paragraph
+// break isn't reflected in any span's classList, it's a DOM structural split
+// (see groupIntoParagraphs), so undoing/redoing across an Enter-press or a
+// break-merge has to rebuild the paragraphs, not just sync word classes.
+function paragraphStructureChanged(a, b) {
+  if (!a || !b || a.length !== b.length) return true;
+  return a.some((w, i) => !!w.breakBefore !== !!b[i].breakBefore);
+}
+// After a renderTranscript() rebuild, only the first chunk of paragraphs is
+// mounted — if the caret was sitting somewhere further down the document, it
+// would otherwise just vanish (v._wordEls[caretIndex] is undefined until
+// that paragraph loads). Mount up through it and re-plant the caret there.
+function remountCaretIfNeeded(v) {
+  if (caretVideo !== v || caretIndex < 0) return;
+  ensureWordMounted(v, caretIndex);
+  const el = v._wordEls?.[caretIndex];
+  if (el) setCaret(el);
+}
 function undo() {
   const v = state.lastEditedVideo;
   if (!v || !v._history || !v._history.length) return;
   v._future = v._future || [];
   v._future.push(JSON.stringify(v.words));
+  const prevWords = v.words;
   v.words = JSON.parse(v._history.pop());
-  if (v.words.length !== v._wordEls?.length) renderTranscript(); else syncWordClasses(v);
+  if (v.words.length !== v._wordEls?.length || paragraphStructureChanged(prevWords, v.words)) { renderTranscript(); remountCaretIfNeeded(v); }
+  else syncWordClasses(v);
   updateStats(); renderRuler(); refreshSearchIfActive();
 }
 function redo() {
   const v = state.lastEditedVideo;
   if (!v || !v._future || !v._future.length) return;
   v._history.push(JSON.stringify(v.words));
+  const prevWords = v.words;
   v.words = JSON.parse(v._future.pop());
-  if (v.words.length !== v._wordEls?.length) renderTranscript(); else syncWordClasses(v);
+  if (v.words.length !== v._wordEls?.length || paragraphStructureChanged(prevWords, v.words)) { renderTranscript(); remountCaretIfNeeded(v); }
+  else syncWordClasses(v);
   updateStats(); renderRuler(); refreshSearchIfActive();
 }
 
@@ -882,9 +976,8 @@ function backspaceAtCaret() {
     snapshotHistory(v);
     next.breakBefore = false;
     renderTranscript(); // paragraph shape changed — needs the real rebuild
+    remountCaretIfNeeded(v);
     updateStats(); renderRuler();
-    const el = v._wordEls?.[caretIndex];
-    if (el) setCaret(el);
     return;
   }
   if (!v.words[caretIndex].deleted) {
@@ -925,9 +1018,8 @@ function insertBreakAtCaret() {
   snapshotHistory(v);
   v.words[nextIdx].breakBefore = true;
   renderTranscript(); // paragraph shape changed — needs the real rebuild
+  remountCaretIfNeeded(v);
   updateStats(); renderRuler();
-  const el = v._wordEls?.[caretIndex];
-  if (el) setCaret(el);
 }
 
 // Mirrors the browser's own selection onto our word classes/caret. Runs on
