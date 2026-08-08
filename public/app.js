@@ -194,7 +194,7 @@ function renderProject() {
         <div id="timeline"></div>
         <div id="shorts"></div>
         <div id="suggest"></div>
-        <p class="hint">Click a word to cut it · shift-click a range · double-click to jump the player there · space to play/pause.</p>
+        <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause. <span id="selHint" class="sel-hint"></span></p>
         <div class="transcript" id="transcript"></div>
       </section>
     </div>`;
@@ -238,6 +238,10 @@ document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) redo(); else undo();
+  } else if (e.key === "Backspace" || e.key === "Delete") {
+    if (selectedEls.length) { e.preventDefault(); deleteSelection(); }
+  } else if (e.key === "Escape") {
+    clearSelection();
   } else if (e.key === " " && $("#sel-player")) {
     e.preventDefault();
     const p = $("#sel-player");
@@ -317,17 +321,25 @@ function renderTranscript() {
     sec.appendChild(head);
     const body = document.createElement("div");
     body.className = "tsec-body";
-    v.words.forEach((w, i) => {
-      const span = document.createElement("span");
-      let cls = "word";
-      if (w.deleted) cls += " deleted";
-      else if (isFillerWord(w.text)) cls += " filler";
-      span.className = cls;
-      span.textContent = w.text + " ";
-      span.dataset.i = i;
-      body.appendChild(span);
+    groupIntoParagraphs(v.words).forEach((idxs) => {
+      const p = document.createElement("p");
+      p.className = "para";
+      idxs.forEach((i, k) => {
+        const w = v.words[i];
+        const span = document.createElement("span");
+        let cls = "word";
+        if (w.deleted) cls += " deleted";
+        else if (isFillerWord(w.text)) cls += " filler";
+        if (v._selStart != null && i >= v._selStart && i <= v._selEnd) cls += " selected";
+        span.className = cls;
+        span.textContent = (k === 0 ? capitalizeFirst(w.text) : w.text) + " ";
+        span.dataset.i = i;
+        p.appendChild(span);
+      });
+      body.appendChild(p);
     });
-    body.addEventListener("click", (e) => onWordClick(e, v));
+    body.addEventListener("mousedown", (e) => onWordMouseDown(e, v));
+    body.addEventListener("mouseover", (e) => onWordMouseOver(e, v));
     body.addEventListener("dblclick", (e) => onWordDbl(e, v));
     sec.appendChild(body);
     t.appendChild(sec);
@@ -335,6 +347,23 @@ function renderTranscript() {
   highlightSelectedTranscript();
   runSearch($("#search")?.value || "");
 }
+
+// Break a long transcript into paragraphs at natural pauses (>1s) so it reads
+// like a document instead of one unbroken wall of lowercase text. Visual only
+// — capitalization is display-only and never mutates the underlying words.
+function groupIntoParagraphs(words, gapThreshold = 1.0) {
+  const paras = [];
+  let cur = [];
+  let lastEnd = null;
+  words.forEach((w, i) => {
+    if (lastEnd != null && w.start - lastEnd > gapThreshold && cur.length) { paras.push(cur); cur = []; }
+    cur.push(i);
+    lastEnd = w.end;
+  });
+  if (cur.length) paras.push(cur);
+  return paras;
+}
+const capitalizeFirst = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // ── Search-in-transcript ─────────────────────────────────────────────
 let searchMatches = [], searchIdx = -1;
@@ -421,17 +450,68 @@ function redo() {
   renderTranscript(); updateStats(); renderRuler();
 }
 
-function onWordClick(e, v) {
-  const el = e.target.closest(".word"); if (!el) return;
-  const i = +el.dataset.i;
+// ── Text selection (Descript-style: drag across words, then Delete to cut) ──
+// A single click selects one word; dragging extends the selection; pressing
+// Backspace/Delete cuts whatever's selected. Clicking a cut (struck-through)
+// word restores it immediately — the one exception, since that's a quick,
+// obviously-reversible undo gesture people expect to work in one click.
+let dragState = null;
+let selectedEls = [];
+
+function setSelection(v, start, end) {
+  selectedEls.forEach((el) => el.classList.remove("selected"));
+  selectedEls = [];
+  state.videos.forEach((o) => { if (o !== v) { o._selStart = null; o._selEnd = null; } });
+  v._selStart = Math.min(start, end);
+  v._selEnd = Math.max(start, end);
+  const body = document.querySelector(`.tsec[data-vid="${v.id}"] .tsec-body`);
+  if (body) {
+    for (let i = v._selStart; i <= v._selEnd; i++) {
+      const el = body.querySelector(`.word[data-i="${i}"]`);
+      if (el) { el.classList.add("selected"); selectedEls.push(el); }
+    }
+  }
+  updateSelectionHint();
+}
+function clearSelection() {
+  selectedEls.forEach((el) => el.classList.remove("selected"));
+  selectedEls = [];
+  state.videos.forEach((v) => { v._selStart = null; v._selEnd = null; });
+  updateSelectionHint();
+}
+function updateSelectionHint() {
+  const el = $("#selHint"); if (!el) return;
+  const n = selectedEls.length;
+  el.textContent = n > 0 ? `${n} word${n === 1 ? "" : "s"} selected — press Delete to cut` : "";
+}
+function deleteSelection() {
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) return;
   snapshotHistory(v);
-  if (e.shiftKey && v._anchor != null) {
-    const [a, b] = [Math.min(v._anchor, i), Math.max(v._anchor, i)];
-    const anyKept = v.words.slice(a, b + 1).some((w) => !w.deleted);
-    for (let k = a; k <= b; k++) v.words[k].deleted = anyKept;
-  } else { v.words[i].deleted = !v.words[i].deleted; v._anchor = i; }
+  for (let i = v._selStart; i <= v._selEnd; i++) v.words[i].deleted = true;
+  clearSelection();
   renderTranscript(); updateStats(); renderRuler();
 }
+
+function onWordMouseDown(e, v) {
+  const el = e.target.closest(".word"); if (!el) return;
+  e.preventDefault(); // avoid native text-selection ghosting while dragging
+  const i = +el.dataset.i;
+  if (v.words[i].deleted) {
+    snapshotHistory(v);
+    v.words[i].deleted = false;
+    renderTranscript(); updateStats(); renderRuler();
+    return;
+  }
+  dragState = { v, anchor: i };
+  setSelection(v, i, i);
+}
+function onWordMouseOver(e, v) {
+  if (!dragState || dragState.v !== v) return;
+  const el = e.target.closest(".word"); if (!el) return;
+  setSelection(v, dragState.anchor, +el.dataset.i);
+}
+document.addEventListener("mouseup", () => { dragState = null; });
 
 // Bulk-delete every filler word ("um", "uh", …) across all transcribed videos.
 function removeFillers() {
