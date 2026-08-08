@@ -329,9 +329,12 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .para:last-child { margin-bottom: 0; }
 /* A fully-cut paragraph would otherwise survive as an empty <p> with its
    margin still rendering — a visible gap where cut text used to be, which
-   undercuts the "deleting closes the gap" document feel. */
-.transcript:not(.show-cuts) .para:not(:has(.word:not(.deleted))) { display: none; }
-.word { cursor: text; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; position: relative; }
+   undercuts the "deleting closes the gap" document feel. `.all-cut` is set
+   directly by JS (syncWordClass/renderTranscript) rather than via a :has()
+   selector — :has() forces the style engine to keep re-checking every
+   paragraph's descendants, real cost on a transcript with hundreds of them. */
+.transcript:not(.show-cuts) .para.all-cut { display: none; }
+.word { cursor: text; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; }
 .word:hover { background: #ffffff14; }
 /* Cut words are hidden by default — deleting text should behave like
    deleting text (the gap closes immediately), not leave struck-through

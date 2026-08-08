@@ -565,12 +565,13 @@ function renderTranscript() {
     groupIntoParagraphs(v.words).forEach((idxs) => {
       const p = document.createElement("p");
       p.className = "para";
+      let anyKept = false;
       idxs.forEach((i, k) => {
         const w = v.words[i];
         const span = document.createElement("span");
         let cls = "word";
         if (w.deleted) cls += " deleted";
-        else if (isFillerWord(w.text)) cls += " filler";
+        else { anyKept = true; if (isFillerWord(w.text)) cls += " filler"; }
         if (v._selStart != null && i >= v._selStart && i <= v._selEnd) cls += " selected";
         span.className = cls;
         span.textContent = (k === 0 ? capitalizeFirst(w.text) : w.text) + " ";
@@ -578,6 +579,7 @@ function renderTranscript() {
         v._wordEls[i] = span;
         p.appendChild(span);
       });
+      if (!anyKept) p.classList.add("all-cut");
       body.appendChild(p);
     });
     body.addEventListener("click", (e) => onWordClick(e, v));
@@ -602,6 +604,10 @@ function syncWordClass(v, i) {
   const w = v.words[i];
   el.classList.toggle("deleted", !!w.deleted);
   el.classList.toggle("filler", !w.deleted && isFillerWord(w.text));
+  const p = el.parentElement;
+  if (p?.classList.contains("para")) {
+    p.classList.toggle("all-cut", !Array.from(p.children).some((c) => !c.classList.contains("deleted")));
+  }
 }
 function syncWordClasses(v) { v.words.forEach((_, i) => syncWordClass(v, i)); }
 // Search results were previously refreshed as a side effect of the full
