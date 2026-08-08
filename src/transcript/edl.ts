@@ -8,6 +8,10 @@ export interface Word {
   start: number;
   end: number;
   deleted?: boolean;
+  /** Client-only, purely organizational: start a new paragraph before this
+   * word (Enter at the caret). Never affects timing, deletion, or export —
+   * the server ignores it. */
+  breakBefore?: boolean;
 }
 
 export interface Range {

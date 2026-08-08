@@ -43,7 +43,7 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false };
 
 // A continuous run of KEPT words becomes one range from the first word's start
 // to the last word's end — this preserves every natural pause inside it. A
@@ -186,6 +186,7 @@ function renderProject() {
           <div class="sel-toolbar" id="selToolbar">
             <span id="selCount"></span>
             <span class="sel-toolbar-div"></span>
+            <button class="chip-btn" id="selAddCut" title="Add this selection to the Cut list, where you can drag it into any order">Add to Cut</button>
             <button class="chip-btn" id="selDelete">Delete</button>
             <button class="chip-btn" id="selClear">Clear</button>
           </div>
@@ -196,6 +197,7 @@ function renderProject() {
             <button class="btn small ghost" id="removeFillers">Remove fillers</button>
             <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
             <button class="btn small ghost" id="showCuts" title="Show/hide cut words">Show cuts</button>
+            <button class="btn small ghost" id="textOnly" title="Hide the video preview and focus on the text">Text only</button>
             <span class="spacer"></span>
             <div class="search-box">
               <input id="search" placeholder="Search transcript…" autocomplete="off" />
@@ -205,7 +207,7 @@ function renderProject() {
             </div>
           </div>
 
-          <p class="hint">Click to place your cursor, drag to select — then <b>Backspace</b>/<b>Delete</b> cuts (the words disappear, just like deleting text) · toggle <b>Show cuts</b> to see and click-restore them · double-click to jump the player there and play · space to play/pause.</p>
+          <p class="hint">Click to place your cursor, drag to select — <b>Backspace</b>/<b>Delete</b> cuts, <b>Enter</b> starts a new paragraph · select text and choose <b>Add to Cut</b> to reorder sentences (drag them in the Cut tab) · toggle <b>Show cuts</b> to see/restore deleted words · double-click to jump &amp; play · space to play/pause.</p>
           <div class="transcript" id="transcript"></div>
         </section>
 
@@ -285,6 +287,7 @@ function renderProject() {
   $("#url").addEventListener("keydown", (e) => { if (e.key === "Enter") importFromUrl(); });
   $("#undoBtn").onclick = undo;
   $("#redoBtn").onclick = redo;
+  $("#selAddCut").onclick = addSelectionToCut;
   $("#selDelete").onclick = deleteSelection;
   $("#selClear").onclick = clearSelection;
   $("#removeFillers").onclick = removeFillers;
@@ -293,6 +296,9 @@ function renderProject() {
   $("#showCuts").onclick = toggleShowCuts;
   $("#showCuts").classList.toggle("accent", state.showCuts);
   $("#transcript").classList.toggle("show-cuts", state.showCuts);
+  $("#textOnly").onclick = toggleTextOnly;
+  $("#textOnly").classList.toggle("accent", state.textOnly);
+  $(".editor-shell")?.classList.toggle("text-only", state.textOnly);
   $("#search").addEventListener("input", (e) => runSearch(e.target.value));
   $("#search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); }
@@ -379,6 +385,8 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key === "Backspace" || e.key === "Delete") {
     if (selectedEls.length) { e.preventDefault(); deleteSelection(); }
     else if (caretVideo && caretIndex >= 0) { e.preventDefault(); e.key === "Backspace" ? backspaceAtCaret() : deleteForwardAtCaret(); }
+  } else if (e.key === "Enter") {
+    if (caretVideo && caretIndex >= 0) { e.preventDefault(); insertBreakAtCaret(); }
   } else if (e.key === "Escape") {
     clearSelection();
     clearCaret();
@@ -455,6 +463,10 @@ function selectVideo(id) {
 const FILM_FRAMES = 10;
 function renderFilmstrip() {
   const el = $("#filmstrip"); if (!el) return;
+  // Skip in text-only mode — this is the single biggest resource hog on the
+  // page (up to FILM_FRAMES concurrent hidden <video> elements each seeking
+  // into the source to grab a frame), and it's hidden anyway.
+  if (state.textOnly) { el.innerHTML = ""; return; }
   const v = state.videos.find((x) => x.id === state.selected);
   if (!v || !v.r2_key || !v.duration) { el.innerHTML = ""; return; }
   const url = mediaUrl(v.r2_key);
@@ -471,6 +483,7 @@ function renderFilmstrip() {
   };
 }
 function updateFilmstripPlayhead() {
+  if (state.textOnly) return;
   const v = state.videos.find((x) => x.id === state.selected);
   const ph = $("#filmPlayhead");
   if (!v || !ph || !v.duration) return;
@@ -485,6 +498,7 @@ let activePhraseChipIdx = -1;
 function renderPhraseChips() {
   const el = $("#phraseChips"); if (!el) return;
   activePhraseChipIdx = -1;
+  if (state.textOnly) { el.innerHTML = ""; phraseChipRanges = []; return; }
   const v = state.videos.find((x) => x.id === state.selected);
   if (!v || !v.words || !v.words.length) { el.innerHTML = ""; phraseChipRanges = []; return; }
   const paras = groupIntoParagraphs(v.words);
@@ -505,6 +519,7 @@ function renderPhraseChips() {
   updatePhraseChipActive();
 }
 function updatePhraseChipActive() {
+  if (state.textOnly) return;
   const el = $("#phraseChips"); if (!el || !phraseChipRanges.length) return;
   const t = $("#sel-player").currentTime;
   // Binary search (ranges are chronological) instead of scanning every
@@ -601,12 +616,18 @@ function refreshSearchIfActive() {
 // Break a long transcript into paragraphs at natural pauses (>1s) so it reads
 // like a document instead of one unbroken wall of lowercase text. Visual only
 // — capitalization is display-only and never mutates the underlying words.
+// `w.breakBefore` is a manual, purely-organizational paragraph split (Enter
+// at the caret) — it never touches word content, timing, or the exported
+// video, it's just where the text visually wraps to a new paragraph. Splits
+// on it exactly like a natural pause, so a manual break composes fine with
+// the automatic timing-gap grouping.
 function groupIntoParagraphs(words, gapThreshold = 1.0) {
   const paras = [];
   let cur = [];
   let lastEnd = null;
   words.forEach((w, i) => {
-    if (lastEnd != null && w.start - lastEnd > gapThreshold && cur.length) { paras.push(cur); cur = []; }
+    const gapBreak = lastEnd != null && w.start - lastEnd > gapThreshold;
+    if ((gapBreak || w.breakBefore) && cur.length) { paras.push(cur); cur = []; }
     cur.push(i);
     lastEnd = w.end;
   });
@@ -647,6 +668,7 @@ function updateSearchCount() {
 // video, so navigating a multi-hour transcript doesn't mean endless scrolling.
 function renderRuler() {
   const el = $("#ruler"); if (!el) return;
+  if (state.textOnly) { el.innerHTML = ""; return; }
   const v = state.videos.find((x) => x.id === state.selected);
   if (!v || v.status !== "ready" || !v.words || !v.words.length) { el.innerHTML = ""; return; }
   const t0 = v.words[0].start;
@@ -665,6 +687,7 @@ function renderRuler() {
   };
 }
 function updateRulerPlayhead() {
+  if (state.textOnly) return;
   const v = state.videos.find((x) => x.id === state.selected);
   const ph = $("#rulerPlayhead");
   if (!v || !ph || !v.words || !v.words.length) return;
@@ -782,6 +805,31 @@ function deleteSelection() {
   if (el) setCaret(el); else clearCaret();
 }
 
+// Manually promote a selected range of transcript text into the "Cut" list
+// — the same ordered segment list Auto-arrange/Direct-the-edit/Suggested
+// edits already build — so it can be dragged into any order (see the drag
+// handlers wired in renderTimeline()). This is the real mechanism behind
+// "put a sentence before another": once anything is in the Cut list, either
+// AI-arranged or added by hand, Play edit/Export follow that list's order
+// instead of the video's original linear order.
+function addSelectionToCut() {
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) return;
+  // With Show Cuts on, a selection could start/end on an already-cut word —
+  // use only the kept words for the clip's time range so an already-deleted
+  // stretch at either edge doesn't sneak into the exported clip.
+  const kept = v.words.slice(v._selStart, v._selEnd + 1).filter((w) => !w.deleted);
+  if (!kept.length) { toast("That selection is all cut words."); return; }
+  if (!state.timeline) state.timeline = { coldOpen: [], body: [] };
+  const start = kept[0].start;
+  const end = kept[kept.length - 1].end;
+  const text = kept.map((w) => w.text).join(" ");
+  state.timeline.body.push({ videoId: v.id, start, end, reason: text.length > 60 ? text.slice(0, 57) + "…" : text });
+  clearSelection();
+  saveTimeline(); renderTimeline(); updateStats(); switchToolsTab("cut");
+  toast("Added to the Cut tab — drag it to reorder", { type: "success" });
+}
+
 // Place the caret "after" a word — Backspace deletes that word, Delete
 // deletes the one ahead of it. Also anchors the native selection there (so a
 // later shift-click/drag extends from the right spot) and scrubs the player
@@ -818,6 +866,21 @@ function clearCaret() {
 }
 function backspaceAtCaret() {
   const v = caretVideo; if (!v || caretIndex < 0) return;
+  // If the word right after the caret starts a manual paragraph break, the
+  // first Backspace removes the break (merges the two paragraphs back into
+  // one) instead of deleting a word — same two-step behavior as backspacing
+  // at the start of a line in any word processor. A second Backspace, with
+  // the break already gone, falls through to the normal word-delete below.
+  const next = v.words[caretIndex + 1];
+  if (next && next.breakBefore) {
+    snapshotHistory(v);
+    next.breakBefore = false;
+    renderTranscript(); // paragraph shape changed — needs the real rebuild
+    updateStats(); renderRuler();
+    const el = v._wordEls?.[caretIndex];
+    if (el) setCaret(el);
+    return;
+  }
   if (!v.words[caretIndex].deleted) {
     snapshotHistory(v);
     v.words[caretIndex].deleted = true;
@@ -841,6 +904,22 @@ function deleteForwardAtCaret() {
   syncWordClass(v, next);
   updateStats(); renderRuler(); refreshSearchIfActive();
   // caret stays put — still "after" the same visible word
+  const el = v._wordEls?.[caretIndex];
+  if (el) setCaret(el);
+}
+
+// Enter at the caret — a purely organizational split: start a new paragraph
+// right after the caret without touching, deleting, or reordering any word.
+// This is "press Enter to make space" — the thing that was missing before,
+// where the only editing action available was deleting.
+function insertBreakAtCaret() {
+  const v = caretVideo; if (!v || caretIndex < 0) return;
+  const nextIdx = caretIndex + 1;
+  if (nextIdx >= v.words.length || v.words[nextIdx].breakBefore) return; // nothing after, or already split here
+  snapshotHistory(v);
+  v.words[nextIdx].breakBefore = true;
+  renderTranscript(); // paragraph shape changed — needs the real rebuild
+  updateStats(); renderRuler();
   const el = v._wordEls?.[caretIndex];
   if (el) setCaret(el);
 }
@@ -925,6 +1004,19 @@ function toggleShowCuts() {
   $("#transcript")?.classList.toggle("show-cuts", state.showCuts);
   $("#showCuts")?.classList.toggle("accent", state.showCuts);
   refreshSearchIfActive();
+}
+// Hides the video preview, ruler, and footer (transport/filmstrip/phrase
+// chips) — everything tied to seeing/scrubbing the video — leaving just the
+// transcript and its editing toolbar. Also stops the filmstrip's frame
+// grabs outright (not just visually hiding them), which is the heaviest
+// thing on the page: up to 10 concurrent hidden <video> elements each
+// seeking into the source. The player itself keeps its src — double-click
+// and caret placement still seek/play audio, just without the visible frame.
+function toggleTextOnly() {
+  state.textOnly = !state.textOnly;
+  $(".editor-shell")?.classList.toggle("text-only", state.textOnly);
+  $("#textOnly")?.classList.toggle("accent", state.textOnly);
+  renderRuler(); renderFilmstrip(); renderPhraseChips();
 }
 function onWordDbl(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
@@ -1092,12 +1184,16 @@ async function runDirectedEdit(btn) {
 
 function renderTimeline() {
   const el = $("#timeline"); if (!el) return;
-  if (!hasTimeline()) { el.innerHTML = ""; return; }
+  if (!hasTimeline()) {
+    el.innerHTML = `<p class="empty small">No arranged cut yet. Use Auto-arrange/Direct the edit above, or select text in the transcript and choose <b>Add to Cut</b> — segments land here and you can drag ⠿ to reorder them.</p>`;
+    return;
+  }
   const t = state.timeline;
   const seg = (s, group, idx) => {
     const v = state.videos.find((x) => x.id === s.videoId);
     const name = v ? filenameOf(v.filename) : s.videoId;
-    return `<div class="seg" data-g="${group}" data-i="${idx}">
+    return `<div class="seg" draggable="true" data-g="${group}" data-i="${idx}">
+      <span class="seg-drag" title="Drag to reorder">⠿</span>
       <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
       <span class="seg-src">${esc(name)}</span>
       <span class="seg-reason">${esc(s.reason || "")}</span>
@@ -1105,19 +1201,48 @@ function renderTimeline() {
   };
   el.innerHTML = `<div class="tl">
     <div class="tl-head"><h2>Arranged cut</h2><button class="btn ghost small" id="clearTl">Clear</button></div>
+    <p class="tl-hint">Drag ⠿ to reorder — playback and export follow this order.</p>
     ${(t.coldOpen || []).length ? `<div class="tl-label">Cold open</div>${t.coldOpen.map((s, i) => seg(s, "coldOpen", i)).join("")}` : ""}
     ${(t.body || []).length ? `<div class="tl-label">Body</div>${t.body.map((s, i) => seg(s, "body", i)).join("")}` : ""}
   </div>`;
+  // Drag-to-reorder within a group (coldOpen/body kept separate — moving a
+  // segment between the two changes what it *means*, not just where it
+  // sits, so that's left to the existing manual add/remove flow instead).
+  let dragSeg = null;
   el.querySelectorAll(".seg").forEach((row) => {
     row.querySelector(".seg-x").onclick = (e) => {
       e.stopPropagation();
       state.timeline[row.dataset.g].splice(+row.dataset.i, 1);
       saveTimeline(); renderTimeline(); updateStats();
     };
-    row.onclick = () => {
+    row.onclick = (e) => {
+      if (e.target.closest(".seg-drag")) return;
       const s = state.timeline[row.dataset.g][+row.dataset.i];
       selectVideo(s.videoId); const p = $("#sel-player"); p.currentTime = s.start; p.play();
     };
+    row.addEventListener("dragstart", (e) => {
+      dragSeg = { g: row.dataset.g, i: +row.dataset.i };
+      e.dataTransfer.effectAllowed = "move";
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); dragSeg = null; });
+    row.addEventListener("dragover", (e) => {
+      if (!dragSeg || dragSeg.g !== row.dataset.g) return;
+      e.preventDefault();
+      row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      if (!dragSeg || dragSeg.g !== row.dataset.g) return;
+      const to = +row.dataset.i;
+      if (to === dragSeg.i) return;
+      const arr = state.timeline[dragSeg.g];
+      const [moved] = arr.splice(dragSeg.i, 1);
+      arr.splice(to, 0, moved);
+      saveTimeline(); renderTimeline(); updateStats();
+    });
   });
   $("#clearTl").onclick = async () => {
     if (await UI.confirm({ title: "Clear arrangement?", message: "This removes the AI cut and returns to the linear edit.", confirmText: "Clear", danger: true })) {
