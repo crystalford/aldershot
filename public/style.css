@@ -200,7 +200,16 @@ main { flex: 1; min-height: 0; overflow: auto; }
 .progress.indeterminate > i { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
 @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 
-video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; border-radius: 9px; aspect-ratio: 16/9; }
+video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; border-radius: 9px; aspect-ratio: 16/9; display: block; }
+.video-wrap { position: relative; cursor: pointer; }
+.video-playbtn {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 56px; height: 56px; border-radius: 50%; background: rgba(0,0,0,.55);
+  display: grid; place-items: center; color: #fff; opacity: 0; pointer-events: none;
+  transition: opacity .15s var(--ease);
+}
+.video-playbtn svg { width: 22px; height: 22px; }
+.video-wrap.paused .video-playbtn, .video-wrap:hover .video-playbtn { opacity: 1; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar .spacer { flex: 1; }
 .toolbar-edit { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
@@ -305,14 +314,25 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
    selects-word all come from the browser for free this way. We hide the raw
    native highlight and paint our own `.selected` class instead (mirrored via
    JS on selectionchange), so cutting still snaps to whole words. */
-.tsec-body { font-size: 18px; line-height: 1.95; }
+.tsec-body { font-size: 15.5px; line-height: 1.8; }
 .tsec-body ::selection { background: transparent; }
 .para { margin: 0 0 18px; }
 .para:last-child { margin-bottom: 0; }
+/* A fully-cut paragraph would otherwise survive as an empty <p> with its
+   margin still rendering — a visible gap where cut text used to be, which
+   undercuts the "deleting closes the gap" document feel. */
+.transcript:not(.show-cuts) .para:not(:has(.word:not(.deleted))) { display: none; }
 .word { cursor: text; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; position: relative; }
 .word:hover { background: #ffffff14; }
-.word.deleted { color: #726f6a; text-decoration: line-through; opacity: .5; cursor: pointer; }
-.word.deleted:hover { background: rgba(111, 191, 139, .14); }
+/* Cut words are hidden by default — deleting text should behave like
+   deleting text (the gap closes immediately), not leave struck-through
+   clutter in view. "Show cuts" (.transcript.show-cuts) reveals them again
+   for review/click-to-restore. */
+.word.deleted { display: none; }
+.transcript.show-cuts .word.deleted {
+  display: inline; color: #726f6a; text-decoration: line-through; opacity: .5; cursor: pointer;
+}
+.transcript.show-cuts .word.deleted:hover { background: rgba(111, 191, 139, .14); }
 .word.playing { background: rgba(91, 140, 255, .28); color: #fff; }
 .word.filler { text-decoration: underline dotted rgba(120,170,255,.6); text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
 .word.match { background: rgba(120,170,255,.18); border-radius: 3px; }

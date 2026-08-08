@@ -21,6 +21,7 @@ const ICON = {
   save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h7"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5 21 8v8l-5-2.5z"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const esc = UI.esc;
@@ -42,7 +43,7 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false };
 
 // A continuous run of KEPT words becomes one range from the first word's start
 // to the last word's end — this preserves every natural pause inside it. A
@@ -174,7 +175,10 @@ function renderProject() {
         </aside>
 
         <section class="stage">
-          <video id="sel-player" playsinline></video>
+          <div class="video-wrap" id="videoWrap">
+            <video id="sel-player" playsinline></video>
+            <div class="video-playbtn" id="videoPlayBtn" aria-hidden="true">${ic("play")}</div>
+          </div>
           <div class="ruler" id="ruler"></div>
 
           <h1 class="doc-title" id="docTitle">Transcript</h1>
@@ -191,6 +195,7 @@ function renderProject() {
             <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
             <button class="btn small ghost" id="removeFillers">Remove fillers</button>
             <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
+            <button class="btn small ghost" id="showCuts" title="Show/hide cut words">Show cuts</button>
             <span class="spacer"></span>
             <div class="search-box">
               <input id="search" placeholder="Search transcript…" autocomplete="off" />
@@ -200,7 +205,7 @@ function renderProject() {
             </div>
           </div>
 
-          <p class="hint">Click to place your cursor, drag to select — then <b>Backspace</b>/<b>Delete</b> cuts · click a cut (struck-through) word to restore it · double-click to jump the player there and play · space to play/pause.</p>
+          <p class="hint">Click to place your cursor, drag to select — then <b>Backspace</b>/<b>Delete</b> cuts (the words disappear, just like deleting text) · toggle <b>Show cuts</b> to see and click-restore them · double-click to jump the player there and play · space to play/pause.</p>
           <div class="transcript" id="transcript"></div>
         </section>
 
@@ -262,6 +267,7 @@ function renderProject() {
   renderRuler();
   updateStats();
   wireTransport();
+  wireVideoOverlay();
   wireToolsTabs();
   selectVideo(state.selected);
   $("#playEdit").onclick = playEdit;
@@ -284,6 +290,9 @@ function renderProject() {
   $("#removeFillers").onclick = removeFillers;
   $("#trimPauses").onclick = toggleTrimPauses;
   $("#trimPauses").classList.toggle("accent", !!state.trimPausesAbove);
+  $("#showCuts").onclick = toggleShowCuts;
+  $("#showCuts").classList.toggle("accent", state.showCuts);
+  $("#transcript").classList.toggle("show-cuts", state.showCuts);
   $("#search").addEventListener("input", (e) => runSearch(e.target.value));
   $("#search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); }
@@ -304,6 +313,28 @@ function wireToolsTabs() {
 function switchToolsTab(name) {
   $("#toolsTabs")?.querySelectorAll(".tool-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
   document.querySelectorAll(".tool-panel").forEach((p) => { p.hidden = p.dataset.panel !== name; });
+}
+
+// ── Video click-to-play/pause overlay — without native `controls`, the video
+// had nothing clickable on it at all (only the footer transport, easy to
+// miss). Standard YouTube-style pattern: a persistent play triangle while
+// paused, click anywhere on the video to toggle. The indicator itself is a
+// plain non-focusable <div> (not a <button>) with pointer-events disabled —
+// a real button would steal focus on click, which the global spacebar
+// play/pause handler doesn't account for and would double-fire.
+function wireVideoOverlay() {
+  const wrap = $("#videoWrap");
+  const player = $("#sel-player");
+  const btn = $("#videoPlayBtn");
+  if (!wrap || !player || !btn) return;
+  const sync = () => {
+    wrap.classList.toggle("paused", player.paused);
+    btn.innerHTML = player.paused ? ic("play") : ic("pause");
+  };
+  wrap.onclick = () => { if (!player.src) return; if (player.paused) player.play(); else player.pause(); };
+  player.addEventListener("play", sync);
+  player.addEventListener("pause", sync);
+  sync();
 }
 
 // ── Custom transport (replaces native video controls, Descript-style) ──
@@ -543,6 +574,30 @@ function renderTranscript() {
   runSearch($("#search")?.value || "");
 }
 
+// Toggling a single word's deleted state never changes which paragraph it
+// belongs to (grouping is by raw timing gaps across ALL words, deleted or
+// not) — so a cut/restore never needs to touch the DOM tree, just the
+// classes on the one <span> that changed. Full renderTranscript() rebuilds
+// every span for every video from scratch; on a several-thousand-word
+// transcript that's the difference between an instant edit and a visible
+// stutter on every keystroke. Reserve renderTranscript() for when the DOM
+// actually needs new elements (a video's words rendering for the first time).
+function syncWordClass(v, i) {
+  const el = v._wordEls?.[i]; if (!el) return;
+  const w = v.words[i];
+  el.classList.toggle("deleted", !!w.deleted);
+  el.classList.toggle("filler", !w.deleted && isFillerWord(w.text));
+}
+function syncWordClasses(v) { v.words.forEach((_, i) => syncWordClass(v, i)); }
+// Search results were previously refreshed as a side effect of the full
+// renderTranscript() rebuild every edit used to trigger — now that edits sync
+// classes in place instead, re-run search explicitly so matches/counts don't
+// go stale after a delete/restore. No-op (cheap) when no query is active.
+function refreshSearchIfActive() {
+  const q = $("#search")?.value || "";
+  if (q.trim().length >= 2) runSearch(q);
+}
+
 // Break a long transcript into paragraphs at natural pauses (>1s) so it reads
 // like a document instead of one unbroken wall of lowercase text. Visual only
 // — capitalization is display-only and never mutates the underlying words.
@@ -567,7 +622,7 @@ function runSearch(q) {
   searchMatches = []; searchIdx = -1;
   const qq = q.trim().toLowerCase();
   if (qq.length >= 2) {
-    document.querySelectorAll(".tsec-body .word").forEach((el) => {
+    document.querySelectorAll(state.showCuts ? ".tsec-body .word" : ".tsec-body .word:not(.deleted)").forEach((el) => {
       if (el.textContent.toLowerCase().includes(qq)) { el.classList.add("match"); searchMatches.push(el); }
     });
   }
@@ -629,20 +684,29 @@ function snapshotHistory(v) {
   if (v._history.length > HISTORY_LIMIT) v._history.shift();
   state.lastEditedVideo = v;
 }
+// Undo/redo swap `v.words` wholesale from a JSON snapshot, so a lightweight
+// class-sync (not a full rebuild) is enough as long as the word count still
+// matches the cached `_wordEls` array — which it always will unless a
+// re-transcribe happened in between (that replaces `v.words` with a
+// different-length array; pollTranscription() resets history when that
+// happens, but the length check is cheap insurance against any other future
+// path that could do the same).
 function undo() {
   const v = state.lastEditedVideo;
   if (!v || !v._history || !v._history.length) return;
   v._future = v._future || [];
   v._future.push(JSON.stringify(v.words));
   v.words = JSON.parse(v._history.pop());
-  renderTranscript(); updateStats(); renderRuler();
+  if (v.words.length !== v._wordEls?.length) renderTranscript(); else syncWordClasses(v);
+  updateStats(); renderRuler(); refreshSearchIfActive();
 }
 function redo() {
   const v = state.lastEditedVideo;
   if (!v || !v._future || !v._future.length) return;
   v._history.push(JSON.stringify(v.words));
   v.words = JSON.parse(v._future.pop());
-  renderTranscript(); updateStats(); renderRuler();
+  if (v.words.length !== v._wordEls?.length) renderTranscript(); else syncWordClasses(v);
+  updateStats(); renderRuler(); refreshSearchIfActive();
 }
 
 // ── Text selection & caret (real Descript-style: this is native browser text
@@ -705,12 +769,16 @@ function updateSelectionHint() {
 function deleteSelection() {
   const v = state.videos.find((x) => x._selStart != null);
   if (!v) return;
-  const caretAt = v._selStart - 1;
+  // Capture the range before clearSelection() wipes v._selStart/_selEnd.
+  const start = v._selStart, end = v._selEnd;
+  let prev = start - 1;
+  while (prev >= 0 && v.words[prev].deleted) prev--; // skip an already-cut run
   snapshotHistory(v);
-  for (let i = v._selStart; i <= v._selEnd; i++) v.words[i].deleted = true;
+  for (let i = start; i <= end; i++) v.words[i].deleted = true;
   clearSelection();
-  renderTranscript(); updateStats(); renderRuler();
-  const el = caretAt >= 0 ? v._wordEls?.[caretAt] : null;
+  for (let i = start; i <= end; i++) syncWordClass(v, i);
+  updateStats(); renderRuler(); refreshSearchIfActive();
+  const el = prev >= 0 ? v._wordEls?.[prev] : null;
   if (el) setCaret(el); else clearCaret();
 }
 
@@ -753,18 +821,26 @@ function backspaceAtCaret() {
   if (!v.words[caretIndex].deleted) {
     snapshotHistory(v);
     v.words[caretIndex].deleted = true;
-    renderTranscript(); updateStats(); renderRuler();
+    syncWordClass(v, caretIndex);
+    updateStats(); renderRuler(); refreshSearchIfActive();
   }
-  const el = caretIndex - 1 >= 0 ? v._wordEls?.[caretIndex - 1] : null;
+  // Cut words are hidden by default — skip past any already-cut run so the
+  // caret always lands on the next visible word, not an invisible one.
+  let prev = caretIndex - 1;
+  while (prev >= 0 && v.words[prev].deleted) prev--;
+  const el = prev >= 0 ? v._wordEls?.[prev] : null;
   if (el) setCaret(el); else clearCaret();
 }
 function deleteForwardAtCaret() {
-  const v = caretVideo; if (!v || caretIndex < 0 || caretIndex + 1 >= v.words.length) return;
-  if (!v.words[caretIndex + 1].deleted) {
-    snapshotHistory(v);
-    v.words[caretIndex + 1].deleted = true;
-    renderTranscript(); updateStats(); renderRuler();
-  }
+  const v = caretVideo; if (!v || caretIndex < 0) return;
+  let next = caretIndex + 1;
+  while (next < v.words.length && v.words[next].deleted) next++;
+  if (next >= v.words.length) return;
+  snapshotHistory(v);
+  v.words[next].deleted = true;
+  syncWordClass(v, next);
+  updateStats(); renderRuler(); refreshSearchIfActive();
+  // caret stays put — still "after" the same visible word
   const el = v._wordEls?.[caretIndex];
   if (el) setCaret(el);
 }
@@ -804,7 +880,8 @@ function onWordClick(e, v) {
   if (v.words[i].deleted) {
     snapshotHistory(v);
     v.words[i].deleted = false;
-    renderTranscript(); updateStats(); renderRuler();
+    syncWordClass(v, i);
+    updateStats(); renderRuler(); refreshSearchIfActive();
     const newEl = v._wordEls?.[i];
     if (newEl) setCaret(newEl);
   }
@@ -818,19 +895,36 @@ function removeFillers() {
     const hasFiller = v.words.some((w) => !w.deleted && isFillerWord(w.text));
     if (!hasFiller) return;
     snapshotHistory(v);
-    v.words.forEach((w) => { if (!w.deleted && isFillerWord(w.text)) { w.deleted = true; count++; } });
+    v.words.forEach((w, i) => {
+      if (!w.deleted && isFillerWord(w.text)) { w.deleted = true; count++; syncWordClass(v, i); }
+    });
   });
   if (!count) { toast("No filler words found."); return; }
-  renderTranscript(); updateStats(); renderRuler();
+  updateStats(); renderRuler(); refreshSearchIfActive();
   toast(`Removed ${count} filler word${count === 1 ? "" : "s"}`, { type: "success" });
 }
 
 // Toggle hard-cutting internal pauses longer than the threshold (natural
 // pauses are preserved by default now — see keptRanges).
 function toggleTrimPauses() {
+  // Doesn't touch v.words at all (only affects export/ruler gap math), so no
+  // need for a full renderProject() teardown — that was rebuilding the
+  // entire editor (sidebar, transcript, right rail, footer, every listener)
+  // just to flip a boolean.
   state.trimPausesAbove = state.trimPausesAbove ? null : 1.5;
-  renderProject();
+  $("#trimPauses")?.classList.toggle("accent", !!state.trimPausesAbove);
+  renderRuler(); updateStats();
   toast(state.trimPausesAbove ? "Trimming pauses longer than 1.5s" : "Pause trimming off");
+}
+// Deleted words are hidden by default so cutting text behaves like deleting
+// in a real document (the gap closes immediately) rather than leaving
+// struck-through clutter in view. This toggle reveals them again — struck
+// through, click-to-restore — for reviewing or undoing a cut without Ctrl+Z.
+function toggleShowCuts() {
+  state.showCuts = !state.showCuts;
+  $("#transcript")?.classList.toggle("show-cuts", state.showCuts);
+  $("#showCuts")?.classList.toggle("accent", state.showCuts);
+  refreshSearchIfActive();
 }
 function onWordDbl(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
@@ -1271,7 +1365,12 @@ async function pollTranscription(item) {
       renderVideoList();
     }
     if (data.status === "ready") {
+      // A (re-)transcribe replaces the whole words array — old undo/redo
+      // history from before it (Retry/Re-transcribe can run on a video that
+      // already had edits) would reference a different-length array and no
+      // longer make sense to restore.
       item.words = data.words; item.status = "ready"; item.stage = "";
+      item._history = []; item._future = [];
       if (!state.selected) state.selected = item.id;
       renderProject();
       toast(`“${item.filename}” transcribed`, { type: "success" });
