@@ -301,10 +301,15 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .tsec.on { border-left-color: var(--accent); }
 .tsec-head { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--faint); cursor: pointer; margin-bottom: 7px; }
 .tsec-head:hover { color: var(--bone); }
-.tsec-body { font-size: 18px; line-height: 1.95; user-select: none; }
+/* Real, native text selection — click-drag, shift-click, and double-click-
+   selects-word all come from the browser for free this way. We hide the raw
+   native highlight and paint our own `.selected` class instead (mirrored via
+   JS on selectionchange), so cutting still snaps to whole words. */
+.tsec-body { font-size: 18px; line-height: 1.95; }
+.tsec-body ::selection { background: transparent; }
 .para { margin: 0 0 18px; }
 .para:last-child { margin-bottom: 0; }
-.word { cursor: pointer; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; }
+.word { cursor: text; padding: 0 1px; border-radius: 3px; color: #dcdad6; transition: background .1s, color .1s; position: relative; }
 .word:hover { background: #ffffff14; }
 .word.deleted { color: #726f6a; text-decoration: line-through; opacity: .5; cursor: pointer; }
 .word.deleted:hover { background: rgba(111, 191, 139, .14); }
@@ -313,6 +318,15 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .word.match { background: rgba(120,170,255,.18); border-radius: 3px; }
 .word.selected { background: #5b8cff33; border-radius: 3px; color: #fff; }
 .word.match-active { background: rgba(91,140,255,.4); color: #fff; }
+
+/* Caret — clicking without dragging lands here (Backspace/Delete act on the
+   word it's next to). Real browsers only render a blinking caret inside
+   contenteditable/inputs, so we draw our own to keep that document feel. */
+.word.caret-after::after {
+  content: ""; display: inline-block; width: 1.5px; height: 1.05em; background: var(--accent);
+  margin-left: 1px; vertical-align: -3px; animation: caretBlink 1s step-end infinite;
+}
+@keyframes caretBlink { 50% { opacity: 0; } }
 
 /* ── arranged timeline ──────────────────────────────────── */
 .tl { margin: 14px 0 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; background: var(--panel); }

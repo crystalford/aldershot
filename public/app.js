@@ -200,7 +200,7 @@ function renderProject() {
             </div>
           </div>
 
-          <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause.</p>
+          <p class="hint">Click to place your cursor, drag to select — then <b>Backspace</b>/<b>Delete</b> cuts · click a cut (struck-through) word to restore it · double-click to jump the player there and play · space to play/pause.</p>
           <div class="transcript" id="transcript"></div>
         </section>
 
@@ -347,8 +347,10 @@ document.addEventListener("keydown", (e) => {
     if (e.shiftKey) redo(); else undo();
   } else if (e.key === "Backspace" || e.key === "Delete") {
     if (selectedEls.length) { e.preventDefault(); deleteSelection(); }
+    else if (caretVideo && caretIndex >= 0) { e.preventDefault(); e.key === "Backspace" ? backspaceAtCaret() : deleteForwardAtCaret(); }
   } else if (e.key === "Escape") {
     clearSelection();
+    clearCaret();
   } else if (e.key === " " && $("#sel-player")) {
     e.preventDefault();
     const p = $("#sel-player");
@@ -532,8 +534,7 @@ function renderTranscript() {
       });
       body.appendChild(p);
     });
-    body.addEventListener("mousedown", (e) => onWordMouseDown(e, v));
-    body.addEventListener("mouseover", (e) => onWordMouseOver(e, v));
+    body.addEventListener("click", (e) => onWordClick(e, v));
     body.addEventListener("dblclick", (e) => onWordDbl(e, v));
     sec.appendChild(body);
     t.appendChild(sec);
@@ -644,34 +645,55 @@ function redo() {
   renderTranscript(); updateStats(); renderRuler();
 }
 
-// ── Text selection (Descript-style: drag across words, then Delete to cut) ──
-// A single click selects one word; dragging extends the selection; pressing
-// Backspace/Delete cuts whatever's selected. Clicking a cut (struck-through)
-// word restores it immediately — the one exception, since that's a quick,
-// obviously-reversible undo gesture people expect to work in one click.
-let dragState = null;
+// ── Text selection & caret (real Descript-style: this is native browser text
+// selection, not a custom drag simulation) ────────────────────────────────
+// The transcript is plain selectable text — click-drag, shift-click, and
+// double-click-selects-word all come from the browser for free. We mirror
+// whatever the native Selection covers onto our own `.selected` word classes
+// (and hide the native highlight — `.tsec-body ::selection` is transparent —
+// so we fully control how it looks) so cutting still works at word
+// granularity. A collapsed selection (a plain click, no drag) becomes a
+// caret: a blinking bar rendered after that word, which is what Backspace/
+// Delete act on when nothing is actively selected — exactly the "click
+// somewhere, then Backspace to eat backward" feel of editing a real document.
 let selectedEls = [];
+let caretEl = null, caretVideo = null, caretIndex = -1;
+
+function wordElFromNode(node) {
+  if (!node) return null;
+  const el = node.nodeType === 3 ? node.parentElement : node;
+  return el ? el.closest(".word") : null;
+}
+function videoForWordEl(el) {
+  const tsec = el?.closest(".tsec");
+  return tsec ? state.videos.find((x) => x.id === tsec.dataset.vid) || null : null;
+}
 
 function setSelection(v, start, end) {
+  clearCaret();
   selectedEls.forEach((el) => el.classList.remove("selected"));
   selectedEls = [];
   state.videos.forEach((o) => { if (o !== v) { o._selStart = null; o._selEnd = null; } });
   v._selStart = Math.min(start, end);
   v._selEnd = Math.max(start, end);
-  const body = document.querySelector(`.tsec[data-vid="${v.id}"] .tsec-body`);
-  if (body) {
-    for (let i = v._selStart; i <= v._selEnd; i++) {
-      const el = body.querySelector(`.word[data-i="${i}"]`);
-      if (el) { el.classList.add("selected"); selectedEls.push(el); }
-    }
+  for (let i = v._selStart; i <= v._selEnd; i++) {
+    const el = v._wordEls?.[i];
+    if (el) { el.classList.add("selected"); selectedEls.push(el); }
   }
   updateSelectionHint();
 }
-function clearSelection() {
+// Clears our visual selection state without touching the native browser
+// selection — used while mirroring a native selectionchange, since fighting
+// the selection that triggered us would just cause churn.
+function clearSelectionVisual() {
   selectedEls.forEach((el) => el.classList.remove("selected"));
   selectedEls = [];
   state.videos.forEach((v) => { v._selStart = null; v._selEnd = null; });
   updateSelectionHint();
+}
+function clearSelection() {
+  clearSelectionVisual();
+  window.getSelection()?.removeAllRanges();
 }
 function updateSelectionHint() {
   const bar = $("#selToolbar"); if (!bar) return;
@@ -683,31 +705,110 @@ function updateSelectionHint() {
 function deleteSelection() {
   const v = state.videos.find((x) => x._selStart != null);
   if (!v) return;
+  const caretAt = v._selStart - 1;
   snapshotHistory(v);
   for (let i = v._selStart; i <= v._selEnd; i++) v.words[i].deleted = true;
   clearSelection();
   renderTranscript(); updateStats(); renderRuler();
+  const el = caretAt >= 0 ? v._wordEls?.[caretAt] : null;
+  if (el) setCaret(el); else clearCaret();
 }
 
-function onWordMouseDown(e, v) {
+// Place the caret "after" a word — Backspace deletes that word, Delete
+// deletes the one ahead of it. Also anchors the native selection there (so a
+// later shift-click/drag extends from the right spot) and scrubs the player
+// to it, since the transcript doubles as a scrubber.
+function setCaret(wordEl) {
+  // Otherwise Backspace/Delete would still route to a lingering-focused
+  // search box etc. instead of cutting the word — clicking into the
+  // transcript should claim keyboard input the same way clicking into any
+  // other document does.
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  if (caretEl) caretEl.classList.remove("caret-after");
+  wordEl.classList.add("caret-after");
+  caretEl = wordEl;
+  const v = videoForWordEl(wordEl);
+  caretVideo = v;
+  caretIndex = +wordEl.dataset.i;
+  if (v) {
+    if (state.selected !== v.id) selectVideo(v.id);
+    const p = $("#sel-player");
+    if (p) p.currentTime = v.words[caretIndex].start;
+  }
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(wordEl);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch { /* selection API can throw on detached nodes mid-render — harmless */ }
+}
+function clearCaret() {
+  if (caretEl) caretEl.classList.remove("caret-after");
+  caretEl = null; caretVideo = null; caretIndex = -1;
+}
+function backspaceAtCaret() {
+  const v = caretVideo; if (!v || caretIndex < 0) return;
+  if (!v.words[caretIndex].deleted) {
+    snapshotHistory(v);
+    v.words[caretIndex].deleted = true;
+    renderTranscript(); updateStats(); renderRuler();
+  }
+  const el = caretIndex - 1 >= 0 ? v._wordEls?.[caretIndex - 1] : null;
+  if (el) setCaret(el); else clearCaret();
+}
+function deleteForwardAtCaret() {
+  const v = caretVideo; if (!v || caretIndex < 0 || caretIndex + 1 >= v.words.length) return;
+  if (!v.words[caretIndex + 1].deleted) {
+    snapshotHistory(v);
+    v.words[caretIndex + 1].deleted = true;
+    renderTranscript(); updateStats(); renderRuler();
+  }
+  const el = v._wordEls?.[caretIndex];
+  if (el) setCaret(el);
+}
+
+// Mirrors the browser's own selection onto our word classes/caret. Runs on
+// every selectionchange globally (search box, url input, etc. all fire it
+// too) so the first thing it does is bail unless the change happened inside
+// the transcript.
+function handleSelectionChange() {
+  const sel = window.getSelection();
+  const container = $("#transcript");
+  if (!sel || !container || sel.rangeCount === 0 || !container.contains(sel.anchorNode)) return;
+
+  if (sel.isCollapsed) {
+    const anchorWord = wordElFromNode(sel.anchorNode);
+    if (anchorWord === caretEl) return; // feedback from setCaret's own range assignment
+    clearSelectionVisual();
+    if (anchorWord && !anchorWord.classList.contains("deleted")) setCaret(anchorWord);
+    else clearCaret();
+    return;
+  }
+  const anchorWord = wordElFromNode(sel.anchorNode);
+  const focusWord = wordElFromNode(sel.focusNode);
+  if (!anchorWord || !focusWord) return;
+  const v = videoForWordEl(anchorWord);
+  if (!v || videoForWordEl(focusWord) !== v) return; // only support single-video selections
+  setSelection(v, +anchorWord.dataset.i, +focusWord.dataset.i);
+}
+document.addEventListener("selectionchange", handleSelectionChange);
+
+// Deleted (struck-through) words aren't part of native selection handling —
+// clicking one restores it immediately, a quick, obviously-reversible
+// one-click undo gesture people expect to just work.
+function onWordClick(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
-  e.preventDefault(); // avoid native text-selection ghosting while dragging
   const i = +el.dataset.i;
   if (v.words[i].deleted) {
     snapshotHistory(v);
     v.words[i].deleted = false;
     renderTranscript(); updateStats(); renderRuler();
-    return;
+    const newEl = v._wordEls?.[i];
+    if (newEl) setCaret(newEl);
   }
-  dragState = { v, anchor: i };
-  setSelection(v, i, i);
 }
-function onWordMouseOver(e, v) {
-  if (!dragState || dragState.v !== v) return;
-  const el = e.target.closest(".word"); if (!el) return;
-  setSelection(v, dragState.anchor, +el.dataset.i);
-}
-document.addEventListener("mouseup", () => { dragState = null; });
 
 // Bulk-delete every filler word ("um", "uh", …) across all transcribed videos.
 function removeFillers() {
@@ -733,6 +834,7 @@ function toggleTrimPauses() {
 }
 function onWordDbl(e, v) {
   const el = e.target.closest(".word"); if (!el) return;
+  if (v.words[+el.dataset.i].deleted) return; // the click handler already restored it
   selectVideo(v.id);
   const p = $("#sel-player"); p.currentTime = v.words[+el.dataset.i].start; p.play();
 }

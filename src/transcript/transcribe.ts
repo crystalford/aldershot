@@ -25,6 +25,22 @@ async function runWhisper(env: Env, audio: unknown): Promise<WhisperResult> {
   return (await run("@cf/openai/whisper-large-v3-turbo", { audio })) as WhisperResult;
 }
 
+// Whisper's word-level timestamps (`res.words[].word`) commonly come back as
+// bare lowercase tokens with punctuation stripped — useful for timing, useless
+// for reading as a document. The aggregate `res.text` field carries the real
+// casing and punctuation but no per-word timing. When both tokenize to the
+// same word count (the common case — same transcript, same whitespace split),
+// zip them: real text, real timestamps. If they don't line up (rare — a
+// contraction split differently, etc.) fall back to the raw per-word tokens
+// rather than guess at an alignment.
+function reconcileWords(words: { word: string; start: number; end: number }[], fullText: string): Word[] {
+  const textTokens = fullText.trim().split(/\s+/).filter(Boolean);
+  if (textTokens.length === words.length) {
+    return words.map((w, i) => ({ text: textTokens[i], start: w.start, end: w.end, deleted: false }));
+  }
+  return words.map((w) => ({ text: w.word, start: w.start, end: w.end, deleted: false }));
+}
+
 /**
  * Transcribe AUDIO bytes with Whisper → word-level timestamps.
  *
@@ -56,7 +72,7 @@ export async function transcribeAudio(env: Env, audio: ArrayBuffer): Promise<Wor
   );
 
   if (res.words && res.words.length) {
-    return res.words.map((w) => ({ text: w.word, start: w.start, end: w.end, deleted: false }));
+    return reconcileWords(res.words, res.text ?? "");
   }
 
   // No word-level timestamps came back on this call — rather than silently
