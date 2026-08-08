@@ -81,7 +81,7 @@ window.UI = (() => {
       dismissValue: false,
       actions: [
         { label: cancelText, resolve: false },
-        { label: confirmText, variant: danger ? "danger" : "amber", resolve: true },
+        { label: confirmText, variant: danger ? "danger" : "primary", resolve: true },
       ],
     });
   }
@@ -99,7 +99,7 @@ window.UI = (() => {
       },
       actions: [
         { label: cancelText, resolve: null },
-        { label: confirmText, variant: "amber", onClick: (done, card) => done(card.querySelector("#__ui_prompt").value) },
+        { label: confirmText, variant: "primary", onClick: (done, card) => done(card.querySelector("#__ui_prompt").value) },
       ],
     });
   }

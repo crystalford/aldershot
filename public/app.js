@@ -43,7 +43,7 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false, libraryTag: null };
 
 // A continuous run of KEPT words becomes one range from the first word's start
 // to the last word's end — this preserves every natural pause inside it. A
@@ -187,6 +187,7 @@ function renderProject() {
             <span id="selCount"></span>
             <span class="sel-toolbar-div"></span>
             <button class="chip-btn" id="selAddCut" title="Add this selection to the Cut list, where you can drag it into any order">Add to Cut</button>
+            <button class="chip-btn" id="selSaveClip" title="Save this selection to the cross-project Clip Library">Save to Library</button>
             <button class="chip-btn" id="selDelete">Delete</button>
             <button class="chip-btn" id="selClear">Clear</button>
           </div>
@@ -288,6 +289,7 @@ function renderProject() {
   $("#undoBtn").onclick = undo;
   $("#redoBtn").onclick = redo;
   $("#selAddCut").onclick = addSelectionToCut;
+  $("#selSaveClip").onclick = saveSelectionToLibrary;
   $("#selDelete").onclick = deleteSelection;
   $("#selClear").onclick = clearSelection;
   $("#removeFillers").onclick = removeFillers;
@@ -930,6 +932,22 @@ function addSelectionToCut() {
   toast("Added to the Cut tab — drag it to reorder", { type: "success" });
 }
 
+// Save a selected range of transcript text directly to the cross-project
+// Clip Library — same kept-word range addSelectionToCut() computes, but
+// persisted permanently (reusable from any project) instead of living only
+// in this project's Cut list.
+async function saveSelectionToLibrary() {
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) return;
+  const kept = v.words.slice(v._selStart, v._selEnd + 1).filter((w) => !w.deleted);
+  if (!kept.length) { toast("That selection is all cut words."); return; }
+  const start = kept[0].start;
+  const end = kept[kept.length - 1].end;
+  const text = kept.map((w) => w.text).join(" ");
+  clearSelection();
+  await saveClipToLibrary([{ videoId: v.id, start, end }], { title: text.length > 60 ? text.slice(0, 57) + "…" : text });
+}
+
 // Place the caret "after" a word — Backspace deletes that word, Delete
 // deletes the one ahead of it. Also anchors the native selection there (so a
 // later shift-click/drag extends from the right spot) and scrubs the player
@@ -1295,6 +1313,7 @@ function renderTimeline() {
       <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
       <span class="seg-src">${esc(name)}</span>
       <span class="seg-reason">${esc(s.reason || "")}</span>
+      <button class="seg-save" title="Save to the cross-project Clip Library">${ic("save")}</button>
       <button class="seg-x" title="Remove">✕</button></div>`;
   };
   el.innerHTML = `<div class="tl">
@@ -1312,6 +1331,11 @@ function renderTimeline() {
       e.stopPropagation();
       state.timeline[row.dataset.g].splice(+row.dataset.i, 1);
       saveTimeline(); renderTimeline(); updateStats();
+    };
+    row.querySelector(".seg-save").onclick = (e) => {
+      e.stopPropagation();
+      const s = state.timeline[row.dataset.g][+row.dataset.i];
+      saveClipToLibrary([s], { title: s.reason || `${fmt(s.start)}–${fmt(s.end)}` });
     };
     row.onclick = (e) => {
       if (e.target.closest(".seg-drag")) return;
@@ -1379,6 +1403,7 @@ function renderSuggestions() {
     const card = el.querySelector(`.suggestion[data-i="${i}"]`);
     card.querySelector(".sg-preview").onclick = () => previewSuggestion(s);
     card.querySelector(".sg-apply").onclick = (e) => applySuggestion(s, e.currentTarget);
+    card.querySelector(".sg-save").onclick = () => saveClipToLibrary(s.segments, { title: s.title, description: s.why, kind: "ai-detected" });
   });
 }
 function suggestionCard(s, i) {
@@ -1390,7 +1415,7 @@ function suggestionCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${parts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small accent sg-apply">Add to timeline</button></div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save">Save to Library</button><button class="btn small accent sg-apply">Add to timeline</button></div>
   </div>`;
 }
 async function previewSuggestion(s) {
@@ -1653,10 +1678,265 @@ function readDuration(file) {
   });
 }
 
+// ── Clip Library (cross-project) ──────────────────────────────────────
+// The reusable-clip bin: every clip saved from any project (manually, or
+// kept from an AI suggestion) lives here permanently, browsable by tag
+// across the whole account — not scoped to one project's lifecycle like
+// the Cut tab. See migrations/0002_clips.sql / src/clips.ts for the schema.
+
+// A clip's segment can reference a video that isn't part of the CURRENTLY
+// open project (if any) — checks state.videos first (the fast, common
+// in-project path), falls back to a cached network fetch for anything
+// "foreign." One cache entry per videoId, shared across the whole session.
+const videoMetaCache = new Map(); // videoId -> Video|null|Promise
+async function resolveVideo(videoId) {
+  const local = state.videos?.find((v) => v.id === videoId);
+  if (local) return local;
+  if (!videoMetaCache.has(videoId)) {
+    videoMetaCache.set(videoId, fetch(`/api/videos/${videoId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  }
+  const v = await videoMetaCache.get(videoId);
+  videoMetaCache.set(videoId, v);
+  return v;
+}
+
+// Fills in "0:12 · filename" labels on already-rendered segment spans once
+// each video is resolved (may be an async network fetch for foreign clips),
+// instead of blocking the whole card render on it.
+function hydrateSegLabels(root, segments) {
+  segments.forEach((seg, si) => {
+    const span = root.querySelector(`[data-seg="${si}"]`);
+    if (!span) return;
+    resolveVideo(seg.videoId).then((v) => {
+      span.textContent = `${fmt(seg.start)} · ${v ? filenameOf(v.filename) : seg.videoId}`;
+    });
+  });
+}
+
+// Save-to-Library modal — title/description/tags, reusing UI.modal's generic
+// bodyHTML+actions (no new modal component needed).
+async function promptClipDetails(defaults = {}) {
+  return UI.modal({
+    title: "Save to Library",
+    bodyHTML: `
+      <label class="modal-label">Title</label>
+      <input class="modal-input" id="__clipTitle" value="${esc(defaults.title || "")}" placeholder="e.g. Darkside Phil raging at chat" autocomplete="off" />
+      <label class="modal-label" style="margin-top:12px;">Description</label>
+      <input class="modal-input" id="__clipDesc" value="${esc(defaults.description || "")}" placeholder="Optional note" autocomplete="off" />
+      <label class="modal-label" style="margin-top:12px;">Tags</label>
+      <input class="modal-input" id="__clipTags" placeholder="comma, separated, tags" autocomplete="off" />
+    `,
+    dismissValue: null,
+    onOpen: (card) => { const t = card.querySelector("#__clipTitle"); t.focus(); t.select(); },
+    actions: [
+      { label: "Cancel", resolve: null },
+      { label: "Save", variant: "primary", onClick: (done, card) => done({
+        title: card.querySelector("#__clipTitle").value.trim(),
+        description: card.querySelector("#__clipDesc").value.trim(),
+        tags: card.querySelector("#__clipTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+      }) },
+    ],
+  });
+}
+// Shared save action wired from three places that already have a Segment[]
+// on hand: the transcript selection toolbar, a Suggested Edits card, and a
+// Cut/Timeline row. `defaults.kind` marks AI-detected saves distinctly from
+// manual ones (shown in the Library grid).
+async function saveClipToLibrary(segments, defaults = {}) {
+  const result = await promptClipDetails(defaults);
+  if (!result) return;
+  if (!result.title) { toast("A title is required."); return; }
+  try {
+    const res = await fetch("/api/clips", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: result.title, description: result.description, tags: result.tags, kind: defaults.kind || "manual", segments }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast("Saved to Library", { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't save clip", { type: "error" }); }
+}
+
+// Minimal sequential player scoped to the Library view's own <video> element
+// — deliberately NOT reusing the project editor's edit.clips/playClip (those
+// are tightly coupled to the project view's DOM: video list, transcript
+// playhead highlighting, etc., none of which exist here).
+const libPlayback = { playing: false, clips: [], raf: 0 };
+async function previewClipSegments(segments) {
+  const resolved = [];
+  for (const seg of segments) {
+    const v = await resolveVideo(seg.videoId);
+    if (v && v.r2_key) resolved.push({ r2_key: v.r2_key, start: seg.start, end: seg.end });
+  }
+  if (!resolved.length) { toast("Couldn't load that clip's video."); return; }
+  stopLibraryPlayback();
+  libPlayback.playing = true; libPlayback.clips = resolved;
+  await playLibraryClip(0);
+}
+async function playLibraryClip(i) {
+  if (!libPlayback.playing) return;
+  const clip = libPlayback.clips[i];
+  const player = $("#libPreviewPlayer");
+  if (!player) return;
+  await ensureSrc(player, clip);
+  if (!libPlayback.playing) return;
+  try { player.currentTime = clip.start; await player.play(); } catch {}
+  cancelAnimationFrame(libPlayback.raf);
+  const tick = () => {
+    if (!libPlayback.playing) return;
+    if (player.currentTime >= clip.end - 0.03) {
+      if (i + 1 >= libPlayback.clips.length) { stopLibraryPlayback(); return; }
+      playLibraryClip(i + 1); return;
+    }
+    libPlayback.raf = requestAnimationFrame(tick);
+  };
+  libPlayback.raf = requestAnimationFrame(tick);
+}
+function stopLibraryPlayback() {
+  libPlayback.playing = false; cancelAnimationFrame(libPlayback.raf);
+  const p = $("#libPreviewPlayer"); if (p && !p.paused) p.pause();
+}
+
+async function showLibrary() {
+  location.hash = "#/library";
+  setCrumbs([{ label: "Library" }]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  stopLibraryPlayback();
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
+  let tags = [], clips = [];
+  try {
+    const [tagData, clipData] = await Promise.all([
+      fetch("/api/clips/tags").then((r) => r.json()),
+      fetch("/api/clips").then((r) => r.json()),
+    ]);
+    tags = tagData.tags || []; clips = clipData.clips || [];
+  } catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+
+  main.innerHTML = `
+    <section class="pad">
+      <div class="row-between">
+        <div><h1>Library</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay.</div></div>
+        <button class="btn primary" id="discoverBtn">${ic("sparkle")} Discover clips across my library</button>
+      </div>
+      <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+      <div class="tag-rail" id="tagRail"></div>
+      <input id="librarySearch" class="import-input" placeholder="Search clips by title or description…" style="max-width:340px;margin:14px 0;" autocomplete="off" />
+      <div class="library-grid" id="libraryGrid"></div>
+      <div id="discoverResults"></div>
+    </section>`;
+  renderTagRail(tags);
+  renderLibraryGrid(clips);
+  $("#discoverBtn").onclick = (e) => runDiscover(e.currentTarget);
+  let searchDebounce = null;
+  $("#librarySearch").addEventListener("input", () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(reloadLibraryGrid, 300);
+  });
+  const player = $("#libPreviewPlayer");
+  player.addEventListener("play", () => { player.style.display = "block"; });
+}
+
+function renderTagRail(tags) {
+  const el = $("#tagRail"); if (!el) return;
+  if (!tags.length) { el.innerHTML = ""; return; }
+  el.innerHTML = tags.map((t) =>
+    `<span class="tag-chip${state.libraryTag === t.tag ? " on" : ""}" data-tag="${esc(t.tag)}">${esc(t.tag)} <span class="tag-count">${t.count}</span></span>`,
+  ).join("");
+  el.querySelectorAll(".tag-chip").forEach((chip) => {
+    chip.onclick = () => {
+      state.libraryTag = state.libraryTag === chip.dataset.tag ? null : chip.dataset.tag;
+      renderTagRail(tags);
+      reloadLibraryGrid();
+    };
+  });
+}
+
+async function reloadLibraryGrid() {
+  const params = new URLSearchParams();
+  if (state.libraryTag) params.set("tag", state.libraryTag);
+  const q = $("#librarySearch")?.value.trim();
+  if (q) params.set("q", q);
+  let clips = [];
+  try { clips = (await fetch(`/api/clips?${params}`).then((r) => r.json())).clips || []; } catch { /* leave grid as-is */ }
+  renderLibraryGrid(clips);
+}
+
+function renderLibraryGrid(clips) {
+  const el = $("#libraryGrid"); if (!el) return;
+  if (!clips.length) {
+    el.innerHTML = `<p class="empty small">No clips saved yet — select text in a project's transcript and choose <b>Save to Library</b>, save a Suggested Edit, or run Discover above.</p>`;
+    return;
+  }
+  el.innerHTML = clips.map((c, i) => clipCard(c, i)).join("");
+  clips.forEach((c, i) => {
+    const card = el.querySelector(`.clip-card[data-i="${i}"]`);
+    card.querySelector(".clip-preview").onclick = () => previewClipSegments(c.segments);
+    card.querySelector(".clip-delete").onclick = () => deleteLibraryClip(c.id);
+    hydrateSegLabels(card, c.segments);
+  });
+}
+function clipCard(c, i) {
+  const segParts = c.segments.map((s, si) => `<span class="sg-seg" data-seg="${si}">${fmt(s.start)}</span>`).join(`<span class="sg-arrow">→</span>`);
+  return `<div class="clip-card" data-i="${i}">
+    <div class="sg-top"><span class="sg-type ${c.kind === "ai-detected" ? "theme" : "callback"}">${c.kind === "ai-detected" ? "AI-detected" : "Manual"}</span><span class="sg-title">${esc(c.title)}</span></div>
+    ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
+    <div class="sg-segs">${segParts}</div>
+    ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    <div class="s-actions"><button class="btn small ghost clip-preview">${ic("play")} Preview</button><button class="btn small danger clip-delete">Delete</button></div>
+  </div>`;
+}
+async function deleteLibraryClip(id) {
+  if (!(await UI.confirm({ title: "Delete this clip?", message: "This removes it from the Library permanently — it doesn't affect the source video.", confirmText: "Delete", danger: true }))) return;
+  try {
+    const res = await fetch(`/api/clips/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    toast("Clip deleted", { type: "success" });
+    reloadLibraryGrid();
+  } catch (err) { toast(err.message || "Couldn't delete clip", { type: "error" }); }
+}
+
+// Account-wide AI detection — same engine as a project's Suggested Edits,
+// pointed at every transcribed video across every project instead of one.
+async function runDiscover(btn) {
+  btn.classList.add("loading"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/clips/discover", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    renderDiscoverResults(data.candidates || []);
+    toast(`Found ${data.candidates.length} candidate${data.candidates.length === 1 ? "" : "s"}`, { type: "success" });
+  } catch (err) { toast(err.message || "Discover failed", { type: "error", title: "Discover" }); }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+function renderDiscoverResults(candidates) {
+  const el = $("#discoverResults"); if (!el) return;
+  if (!candidates.length) { el.innerHTML = `<p class="empty small">No candidates found.</p>`; return; }
+  el.innerHTML = `<div class="suggestions">
+    <div class="tl-head"><h2>Discovered candidates</h2><span class="empty small">${candidates.length}</span></div>
+    ${candidates.map((s, i) => discoverCard(s, i)).join("")}
+  </div>`;
+  candidates.forEach((s, i) => {
+    const card = el.querySelector(`.suggestion[data-i="${i}"]`);
+    card.querySelector(".sg-preview").onclick = () => previewClipSegments(s.segments);
+    card.querySelector(".sg-save").onclick = () => saveClipToLibrary(s.segments, { title: s.title, description: s.why, kind: "ai-detected" });
+    hydrateSegLabels(card, s.segments);
+  });
+}
+function discoverCard(s, i) {
+  const segParts = s.segments.map((seg, si) => `<span class="sg-seg" data-seg="${si}">${fmt(seg.start)}</span>`).join(`<span class="sg-arrow">→</span>`);
+  return `<div class="suggestion" data-i="${i}">
+    <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
+    <div class="sg-why">${esc(s.why)}</div>
+    <div class="sg-segs">${segParts}</div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small accent sg-save">Save to Library</button></div>
+  </div>`;
+}
+
 // ── boot ─────────────────────────────────────────────────────────────
 $("#home").onclick = showProjects;
 $("#home").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
+$("#libraryNav").onclick = showLibrary;
 function route() {
+  if (location.hash === "#/library") return showLibrary();
   const m = location.hash.match(/^#\/p\/([\w-]+)/);
   if (m) openProject(m[1]); else showProjects();
 }

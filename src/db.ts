@@ -110,6 +110,18 @@ export async function listVideos(db: D1Database, projectId: string): Promise<Vid
   return results ?? [];
 }
 
+/** Every ready video across every project — feeds the account-wide clip
+ *  discovery pass (unlike listVideos, not scoped to a single project_id). */
+export async function listAllReadyVideos(db: D1Database): Promise<Video[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
+       FROM videos WHERE status = 'ready' ORDER BY created_at ASC`,
+    )
+    .all<Video>();
+  return results ?? [];
+}
+
 export async function getVideo(db: D1Database, id: string): Promise<Video | null> {
   return db
     .prepare(

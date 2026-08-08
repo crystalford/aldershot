@@ -8,7 +8,7 @@ import { getContainer } from "@cloudflare/containers";
 import type { Env } from "./env";
 import { runShot, narrate, type ShotSpec } from "./pipeline/compiler";
 import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
-import type { Word, Timeline } from "./transcript/edl";
+import type { Word, Timeline, Segment } from "./transcript/edl";
 
 export { RenderContainer } from "./render";
 import {
@@ -18,9 +18,21 @@ import {
   getProject,
   addVideo,
   listVideos,
+  listAllReadyVideos,
   getVideo,
   setVideoStatus,
 } from "./db";
+import {
+  ensureClipSchema,
+  createClip,
+  listClips,
+  getClip,
+  updateClip,
+  deleteClip,
+  listAllTags,
+  type ClipKind,
+  type NewClipSegment,
+} from "./clips";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
 import { arrangeTimeline, directedArrange, suggestShorts, suggestEdits, type VideoTranscript } from "./pipeline/reason";
 import { resolveMedia } from "./import";
@@ -455,6 +467,17 @@ app.post("/api/projects/:id/suggest-edits", async (c) => {
   }
 });
 
+// A video's metadata by id alone, unscoped to any project — lets the client
+// resolve a "foreign" library clip's video (filename/r2_key/duration) without
+// loading that whole other project. getVideo() is already global.
+app.get("/api/videos/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  const video = await getVideo(c.env.DB, c.req.param("id"));
+  if (!video) return c.json({ error: "video not found" }, 404);
+  const project = await getProject(c.env.DB, video.project_id);
+  return c.json({ ...video, project: project ? { id: project.id, name: project.name } : null });
+});
+
 // Persist edited words (deleted flags) for a video — the manual cut state.
 app.put("/api/videos/:id/transcript", async (c) => {
   await ensureSchema(c.env.DB);
@@ -466,6 +489,118 @@ app.put("/api/videos/:id/transcript", async (c) => {
     httpMetadata: { contentType: "application/json" },
   });
   return c.json({ ok: true, count: words.length });
+});
+
+// Cross-project analog of readyTranscripts() — every ready video, everywhere,
+// feeding the account-wide clip discovery pass below.
+async function allReadyTranscripts(c: { env: Env }): Promise<VideoTranscript[]> {
+  const videos = await listAllReadyVideos(c.env.DB);
+  const out: VideoTranscript[] = [];
+  for (const v of videos) {
+    const words = await readJson<Word[]>(c.env.MEDIA, transcriptKey(v.project_id, v.id));
+    if (words?.length) out.push({ id: v.id, filename: v.filename, words });
+  }
+  return out;
+}
+
+// ── Clip Library (cross-project) ──────────────────────────────────────
+// A clip is a persistent, tagged, one-or-more-segment reference into any
+// project's video(s) — the reusable unit the Library view browses/searches
+// and future projects assemble from. Playback needs no new machinery: each
+// segment carries a videoId, and GET /api/media/* + GET /api/videos/:id
+// (above) resolve it regardless of which project it lives in.
+app.post("/api/clips", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const body = await c.req
+    .json<{ title?: string; description?: string; kind?: ClipKind; tags?: string[]; segments?: Segment[] }>()
+    .catch(() => ({}) as { title?: string; description?: string; kind?: ClipKind; tags?: string[]; segments?: Segment[] });
+  const title = body.title?.trim();
+  if (!title) return c.json({ error: "a title is required" }, 400);
+  if (!body.segments?.length) return c.json({ error: "a clip needs at least one segment" }, 400);
+
+  const segments: NewClipSegment[] = [];
+  for (const s of body.segments) {
+    const video = await getVideo(c.env.DB, s.videoId);
+    if (!video) return c.json({ error: `video not found for segment: ${s.videoId}` }, 400);
+    if (typeof s.start !== "number" || typeof s.end !== "number" || s.end <= s.start) {
+      return c.json({ error: "each segment needs a valid start < end" }, 400);
+    }
+    segments.push({ videoId: s.videoId, projectId: video.project_id, start: s.start, end: s.end, reason: s.reason });
+  }
+  const clip = await createClip(c.env.DB, {
+    title,
+    description: body.description?.trim() || null,
+    kind: body.kind === "ai-detected" ? "ai-detected" : "manual",
+    segments,
+    tags: body.tags,
+  });
+  return c.json(clip, 201);
+});
+
+app.get("/api/clips/tags", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  return c.json({ tags: await listAllTags(c.env.DB) });
+});
+
+// Account-wide analog of /api/projects/:id/suggest-edits: gathers every ready
+// video's transcript across every project and reuses suggestEdits()
+// unchanged. Results are NOT auto-saved — same review-then-commit UX as the
+// existing per-project Suggested Edits — the client shows candidates and
+// calls POST /api/clips per one the user keeps.
+app.post("/api/clips/discover", async (c) => {
+  await ensureSchema(c.env.DB);
+  const ready = await allReadyTranscripts(c);
+  if (!ready.length) return c.json({ error: "no transcribed videos anywhere yet" }, 400);
+  try {
+    const candidates = await suggestEdits(c.env, ready);
+    return c.json({ candidates });
+  } catch (err) {
+    return c.json({ error: `discover failed: ${err}` }, 502);
+  }
+});
+
+app.get("/api/clips", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const { tag, projectId, videoId, kind, q, limit, offset } = c.req.query();
+  const clips = await listClips(c.env.DB, {
+    tag,
+    projectId,
+    videoId,
+    kind: kind === "ai-detected" ? "ai-detected" : kind === "manual" ? "manual" : undefined,
+    q,
+    limit: limit ? Number(limit) : undefined,
+    offset: offset ? Number(offset) : undefined,
+  });
+  return c.json({ clips });
+});
+
+app.get("/api/clips/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const clip = await getClip(c.env.DB, c.req.param("id"));
+  if (!clip) return c.json({ error: "clip not found" }, 404);
+  return c.json(clip);
+});
+
+app.patch("/api/clips/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const body = await c.req
+    .json<{ title?: string; description?: string; tags?: string[] }>()
+    .catch(() => ({}) as { title?: string; description?: string; tags?: string[] });
+  const clip = await updateClip(c.env.DB, c.req.param("id"), body);
+  if (!clip) return c.json({ error: "clip not found" }, 404);
+  return c.json(clip);
+});
+
+app.delete("/api/clips/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await deleteClip(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
 });
 
 // ── Transcript Editor (legacy single-file) ───────────────────────────

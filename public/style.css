@@ -57,6 +57,11 @@ a { color: var(--accent); text-decoration: none; }
   background: var(--accent); border-radius: 7px;
 }
 .wordmark { font-size: 17px; font-weight: 800; letter-spacing: -.04em; color: var(--bone); }
+.nav-link {
+  background: none; border: none; color: var(--dim); font: inherit; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; padding: 6px 4px; margin-left: 4px; border-radius: 6px; transition: color .15s;
+}
+.nav-link:hover { color: var(--bone); }
 .crumbs { display: flex; align-items: center; gap: 9px; color: var(--dim); font-size: 13px; min-width: 0; }
 .crumbs .sep { color: var(--line2); }
 .crumbs a { color: var(--dim); transition: color .15s; }
@@ -441,6 +446,24 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .sg-segs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; font-size: 12px; }
 .sg-seg { background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .sg-arrow { color: var(--faint); }
+
+/* ── clip library ───────────────────────────────────────────── */
+.tag-rail { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+.tag-rail.small { margin: 8px 0 10px; gap: 6px; }
+.tag-chip {
+  font-size: 12px; color: var(--dim); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 100px; padding: 5px 11px; cursor: pointer; transition: .12s var(--ease); white-space: nowrap;
+}
+.tag-rail.small .tag-chip { cursor: default; padding: 3px 9px; font-size: 11px; }
+.tag-chip:hover { border-color: var(--line2); color: var(--bone); }
+.tag-chip.on { color: var(--accent); border-color: rgba(91, 140, 255, .5); background: var(--accent-soft); }
+.tag-count { color: var(--faint); font-variant-numeric: tabular-nums; }
+.library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 8px; }
+.clip-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; background: var(--panel);
+  display: flex; flex-direction: column; transition: border-color .15s, transform .15s var(--ease);
+}
+.clip-card:hover { border-color: var(--line2); transform: translateY(-1px); }
 
 /* ── toasts ─────────────────────────────────────────────── */
 #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: flex; flex-direction: column; gap: 10px; max-width: min(380px, 90vw); }
