@@ -43,7 +43,7 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false, libraryTag: null };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, bridges: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false, libraryTag: null };
 
 // A continuous run of KEPT words becomes one range from the first word's start
 // to the last word's end — this preserves every natural pause inside it. A
@@ -150,6 +150,7 @@ async function openProject(id) {
   state.timeline = data.timeline;
   state.shorts = data.shorts;
   state.suggestions = data.suggestions;
+  state.bridges = null;
   state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
   setCrumbs([{ label: "Projects", go: showProjects }, { label: data.project.name }]);
   renderProject();
@@ -225,6 +226,7 @@ function renderProject() {
               <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
               <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
               <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
+              <button class="btn" id="findBridges" title="Find gaps in the Cut that need spoken narration to connect, and write it">${ic("sparkle")} Find bridges</button>
             </div>
             <div class="direct-box-wrap">
               <div class="direct-label">${ic("sparkle")}<span>Direct the edit</span><small>— describe what you want, in your own words</small></div>
@@ -240,6 +242,7 @@ function renderProject() {
               <span class="tool-tab" data-tab="shorts">Shorts</span>
             </div>
             <div id="timeline" class="tool-panel" data-panel="cut"></div>
+            <div id="bridges" class="tool-panel" data-panel="cut"></div>
             <div id="suggest" class="tool-panel" data-panel="suggest" hidden></div>
             <div id="shorts" class="tool-panel" data-panel="shorts" hidden></div>
           </div>
@@ -265,6 +268,7 @@ function renderProject() {
   renderVideoList();
   renderTranscript();
   renderTimeline();
+  renderBridges();
   renderShorts();
   renderSuggestions();
   renderRuler();
@@ -277,6 +281,7 @@ function renderProject() {
   $("#stopEdit").onclick = stopEdit;
   $("#arrange").onclick = (e) => autoArrange(e.currentTarget);
   $("#findShorts").onclick = (e) => findShorts(e.currentTarget);
+  $("#findBridges").onclick = (e) => findBridges(e.currentTarget);
   $("#suggestEdits").onclick = (e) => findSuggestions(e.currentTarget);
   $("#directBtn").onclick = (e) => runDirectedEdit(e.currentTarget);
   $("#directInput").addEventListener("keydown", (e) => {
@@ -1392,6 +1397,194 @@ function renderTimeline() {
 }
 function saveTimeline() {
   return fetch(`/api/projects/${state.project.id}/timeline`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(state.timeline || { coldOpen: [], body: [] }) });
+}
+
+// ── Bridges — AI-written narration for gaps in the assembled cut, recorded
+// straight into the timeline. The last piece of the video-essay workflow:
+// Compose/Auto-arrange/manual editing gets you the clips in order, this
+// finds and fills what's missing between them.
+async function findBridges(btn) {
+  if (!hasTimeline() || [...(state.timeline.coldOpen || []), ...(state.timeline.body || [])].length < 2) {
+    toast("Build a Cut with at least two segments first — Auto-arrange, Direct the edit, or Add to Cut.");
+    return;
+  }
+  btn.classList.add("loading"); btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/bridges`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.bridges = data.bridges || [];
+    renderBridges();
+    if (!state.bridges.length) toast("No gaps needed a bridge — your cut already flows.", { type: "success" });
+    else toast(`Found ${state.bridges.length} gap${state.bridges.length === 1 ? "" : "s"} to fill`, { type: "success" });
+  } catch (err) { toast(err.message || "Finding bridges failed", { type: "error", title: "Bridges" }); }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+function renderBridges() {
+  const el = $("#bridges"); if (!el) return;
+  const bridges = state.bridges || [];
+  if (!bridges.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="tl">
+    <div class="tl-head"><h2>Suggested bridges</h2><span class="empty small">${bridges.length}</span></div>
+    <p class="tl-hint">Narration the AI thinks would connect these clips — record straight into the gap.</p>
+    ${bridges.map((b, i) => `<div class="suggestion" data-i="${i}">
+      <div class="sg-top"><span class="sg-type theme">Bridge</span><span class="sg-title">Clip ${b.afterIndex + 1} → ${b.afterIndex + 2}</span></div>
+      <div class="sg-why">${esc(b.script)}</div>
+      <div class="s-actions"><button class="btn small primary bridge-record">${ic("video")} Record this bridge</button></div>
+    </div>`).join("")}
+  </div>`;
+  bridges.forEach((b, i) => {
+    el.querySelector(`.suggestion[data-i="${i}"] .bridge-record`).onclick = (e) => recordAndInsertBridge(b, e.currentTarget);
+  });
+}
+
+// Records a take for one bridge's script, uploads+transcribes it through the
+// SAME pipeline any dropped-in video goes through (presign → confirm →
+// transcribe-remote), then inserts its full kept range as a new Cut segment
+// right at the gap it was written for.
+async function recordAndInsertBridge(bridge, btn) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    toast("Recording isn't supported in this browser.", { type: "error" });
+    return;
+  }
+  const blob = await recordBridge(bridge);
+  if (!blob) return; // cancelled
+  const prevText = btn.textContent;
+  btn.disabled = true; btn.textContent = "Uploading…";
+  try {
+    const item = await uploadAndTranscribeBridge(blob, (msg) => { btn.textContent = msg; });
+    if (!item.words || !item.words.length) throw new Error("That recording came back empty — try again.");
+    if (!state.timeline) state.timeline = { coldOpen: [], body: [] };
+    state.timeline.coldOpen = state.timeline.coldOpen || [];
+    state.timeline.body = state.timeline.body || [];
+    const seg = {
+      videoId: item.id,
+      start: item.words[0].start,
+      end: item.words[item.words.length - 1].end,
+      reason: "Recorded bridge",
+    };
+    const coldLen = state.timeline.coldOpen.length;
+    if (bridge.afterIndex + 1 <= coldLen) state.timeline.coldOpen.splice(bridge.afterIndex + 1, 0, seg);
+    else state.timeline.body.splice(bridge.afterIndex + 1 - coldLen, 0, seg);
+    state.bridges = (state.bridges || []).filter((b) => b !== bridge);
+    saveTimeline(); renderTimeline(); renderBridges(); updateStats();
+    toast("Bridge recorded and inserted into the Cut", { type: "success" });
+  } catch (err) {
+    toast(err.message || "Couldn't record that bridge", { type: "error" });
+    btn.disabled = false; btn.textContent = prevText;
+  }
+}
+
+// Picks a MediaRecorder mimeType the browser actually supports, falling back
+// to the browser's own default (undefined) rather than guessing wrong and
+// throwing on `new MediaRecorder(...)`.
+function pickMimeType(withCamera) {
+  const candidates = withCamera
+    ? ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  for (const t of candidates) { if (window.MediaRecorder?.isTypeSupported?.(t)) return t; }
+  return undefined;
+}
+
+// A record-review modal: pick camera+mic or voice-only, record, review the
+// take, Retake or use it. Resolves the recorded Blob, or null if cancelled.
+// Built on UI.modal's generic shell but drives its own footer buttons
+// (Start → Stop → Retake/Use) since that state machine doesn't fit modal's
+// static actions list.
+function recordBridge(bridge) {
+  return UI.modal({
+    title: "Record your bridge",
+    bodyHTML: `
+      <p class="modal-text" style="font-size:15px;line-height:1.6;">${esc(bridge.script)}</p>
+      <video id="__recPreview" autoplay muted playsinline style="width:100%;max-height:220px;background:#000;border-radius:9px;margin:10px 0;object-fit:cover;"></video>
+      <div id="__recStatus" style="color:var(--dim);font-size:12.5px;">Choose camera + mic or voice only, then record.</div>
+    `,
+    dismissValue: null,
+    onOpen: (card, done) => wireRecorder(card, done),
+  });
+}
+function wireRecorder(card, done) {
+  const video = card.querySelector("#__recPreview");
+  const status = card.querySelector("#__recStatus");
+  const foot = card.querySelector(".modal-foot");
+  let stream = null, recorder = null, chunks = [], blob = null, timerInt = null, seconds = 0;
+
+  const setButtons = (buttons) => {
+    foot.innerHTML = "";
+    buttons.forEach((b) => {
+      const el = document.createElement("button");
+      el.className = `btn ${b.variant || ""}`.trim();
+      el.textContent = b.label;
+      el.onclick = b.onClick;
+      foot.appendChild(el);
+    });
+  };
+  const cleanup = () => { clearInterval(timerInt); if (stream) stream.getTracks().forEach((t) => t.stop()); };
+  const showReady = () => {
+    status.textContent = "Choose camera + mic or voice only, then record.";
+    setButtons([
+      { label: "Cancel", onClick: () => { cleanup(); done(null); } },
+      { label: "Camera + mic", onClick: () => startRecording(true) },
+      { label: "Voice only", variant: "primary", onClick: () => startRecording(false) },
+    ]);
+  };
+  async function startRecording(withCamera) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: withCamera ? { width: 640, height: 360 } : false });
+    } catch {
+      status.textContent = "Couldn't access camera/mic — check your browser permissions.";
+      return;
+    }
+    video.srcObject = stream; video.muted = true;
+    chunks = [];
+    const mimeType = pickMimeType(withCamera);
+    try { recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined); }
+    catch { status.textContent = "Recording isn't supported in this browser."; stream.getTracks().forEach((t) => t.stop()); return; }
+    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      blob = new Blob(chunks, { type: recorder.mimeType || (withCamera ? "video/webm" : "audio/webm") });
+      video.srcObject = null; video.muted = false; video.controls = true; video.src = URL.createObjectURL(blob);
+      clearInterval(timerInt);
+      status.textContent = "Review your take.";
+      setButtons([
+        { label: "Retake", onClick: () => { video.controls = false; video.removeAttribute("src"); showReady(); } },
+        { label: "Use this take", variant: "primary", onClick: () => done(blob) },
+      ]);
+    };
+    recorder.start();
+    seconds = 0;
+    status.textContent = "● Recording… 0:00";
+    timerInt = setInterval(() => { seconds++; status.textContent = `● Recording… ${fmt(seconds)}`; }, 1000);
+    setButtons([{ label: "Stop", variant: "danger", onClick: () => recorder.stop() }]);
+  }
+  showReady();
+}
+
+// Uploads a recorded Blob through the exact same pipeline any dropped-in
+// video file uses (presign → direct-to-R2 PUT → confirm → server-side
+// transcribe), so a recorded bridge becomes a completely normal project
+// video — visible in the sidebar, editable like anything else.
+async function uploadAndTranscribeBridge(blob, onProgress) {
+  const file = new File([blob], `bridge-${Date.now()}.webm`, { type: blob.type || "video/webm" });
+  onProgress?.("Reading…");
+  const duration = await readDuration(file);
+  onProgress?.("Uploading…");
+  const pres = await fetch(`/api/projects/${state.project.id}/videos/presign`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/webm" }),
+  }).then((r) => r.json());
+  if (pres.error) throw new Error(pres.error);
+  await putToR2(pres.uploadUrl, file, () => {});
+  const video = await fetch(`/api/projects/${state.project.id}/videos/confirm`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ videoId: pres.videoId, key: pres.key, filename: file.name, duration }),
+  }).then((r) => r.json());
+  if (video.error) throw new Error(video.error);
+  const item = { ...video, filename: file.name, status: "transcribing", words: null };
+  state.videos.push(item); renderVideoList();
+  onProgress?.("Transcribing…");
+  await pollTranscription(item); // sets item.words/status and re-renders the project on success
+  return item;
 }
 
 // ── Suggested edits (callbacks / contrasts / themes across the whole transcript) ──

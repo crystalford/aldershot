@@ -316,3 +316,53 @@ export async function composeFromClips(env: Env, clips: ComposableClip[], instru
   const body = (reply.body ?? []).map(toRef).filter((x): x is ComposeRef => !!x);
   return { coldOpen, body };
 }
+
+// ── Bridging narration for gaps in an assembled cut ────────────────────
+// The last piece of the "video essay" workflow: given a sequence of clips
+// that already forms a rough cut, find the transitions that need a spoken
+// bridge to read as a coherent narrative, and write that narration. The
+// caller (POST /api/projects/:id/bridges) resolves each segment's actual
+// spoken text before calling this — the model reasons over real transcript
+// text, not just titles, so it can judge whether a transition actually
+// needs connective narration or already flows.
+export interface SegmentWithText {
+  videoId: string;
+  start: number;
+  end: number;
+  text: string;
+}
+export interface Bridge {
+  afterIndex: number; // the gap sits between segments[afterIndex] and segments[afterIndex + 1]
+  script: string;
+}
+interface BridgeReply {
+  bridges?: { afterIndex?: number; script?: string }[];
+}
+
+export async function generateBridges(env: Env, segments: SegmentWithText[], goal?: string): Promise<Bridge[]> {
+  if (segments.length < 2) return [];
+  const menu = segments.map((s, i) => `[${i}] "${s.text || "(no speech)"}"`).join("\n");
+  const system =
+    "You are a documentary narrator and script writer. Given an ordered sequence of clips (their spoken " +
+    "text) that already form a rough cut, find the transitions between adjacent clips that would feel " +
+    "jarring or unclear cut straight together, and write a short spoken bridge — one or two sentences of " +
+    "narration, in a natural human voiceover voice, not a robotic summary — that a narrator would say " +
+    "between them to make the cut flow. Not every transition needs one; only flag the ones that do. " +
+    "You never invent quotes from the clips themselves, only write NEW connective narration.";
+  const user =
+    `${goal?.trim() ? `The video's overall goal: "${goal.trim()}"\n\n` : ""}` +
+    "The clips, in order:\n" +
+    menu +
+    "\n\n" +
+    'Return ONLY JSON: {"bridges":[{"afterIndex":0,"script":"one or two sentences of narration"}]}';
+
+  const reply = await runJson<BridgeReply>(env, system, user);
+  const bridges: Bridge[] = [];
+  for (const b of reply.bridges ?? []) {
+    if (typeof b.afterIndex !== "number" || b.afterIndex < 0 || b.afterIndex >= segments.length - 1) continue;
+    const script = b.script?.trim();
+    if (!script) continue;
+    bridges.push({ afterIndex: b.afterIndex, script });
+  }
+  return bridges.sort((a, z) => a.afterIndex - z.afterIndex);
+}

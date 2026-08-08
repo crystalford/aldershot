@@ -40,7 +40,9 @@ import {
   suggestShorts,
   suggestEdits,
   composeFromClips,
+  generateBridges,
   type VideoTranscript,
+  type SegmentWithText,
 } from "./pipeline/reason";
 import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
@@ -471,6 +473,43 @@ app.post("/api/projects/:id/suggest-edits", async (c) => {
     return c.json({ suggestions });
   } catch (err) {
     return c.json({ error: `suggest-edits failed: ${err}` }, 502);
+  }
+});
+
+// Given the project's current assembled cut, resolve each segment's actual
+// spoken text (a segment may reference a video from a different project —
+// getVideo() is global) and ask the model to write bridging narration for
+// any transition that needs one — the connective-tissue step of the video
+// essay workflow, after Compose/Auto-arrange/manual Cut-building.
+app.post("/api/projects/:id/bridges", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  const project = await getProject(c.env.DB, id);
+  if (!project) return c.json({ error: "project not found" }, 404);
+  const timeline = await readJson<Timeline>(c.env.MEDIA, timelineKey(id));
+  const flat = [...(timeline?.coldOpen ?? []), ...(timeline?.body ?? [])];
+  if (flat.length < 2) return c.json({ error: "build a cut with at least two segments first" }, 400);
+
+  const transcriptCache = new Map<string, Word[] | null>();
+  const segments: SegmentWithText[] = [];
+  for (const s of flat) {
+    const video = await getVideo(c.env.DB, s.videoId);
+    if (!video) { segments.push({ videoId: s.videoId, start: s.start, end: s.end, text: "" }); continue; }
+    const key = transcriptKey(video.project_id, s.videoId);
+    if (!transcriptCache.has(key)) transcriptCache.set(key, await readJson<Word[]>(c.env.MEDIA, key));
+    const words = transcriptCache.get(key);
+    const text = (words ?? [])
+      .filter((w) => !w.deleted && w.start >= s.start && w.end <= s.end)
+      .map((w) => w.text)
+      .join(" ");
+    segments.push({ videoId: s.videoId, start: s.start, end: s.end, text });
+  }
+
+  try {
+    const bridges = await generateBridges(c.env, segments, project.name);
+    return c.json({ bridges });
+  } catch (err) {
+    return c.json({ error: `bridges failed: ${err}` }, 502);
   }
 });
 
