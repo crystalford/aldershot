@@ -34,7 +34,14 @@ import {
   type NewClipSegment,
 } from "./clips";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
-import { arrangeTimeline, directedArrange, suggestShorts, suggestEdits, type VideoTranscript } from "./pipeline/reason";
+import {
+  arrangeTimeline,
+  directedArrange,
+  suggestShorts,
+  suggestEdits,
+  composeFromClips,
+  type VideoTranscript,
+} from "./pipeline/reason";
 import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
 import { wrapPcm, byteOffsetForSecond, durationFromWavSize } from "./wav";
@@ -558,6 +565,40 @@ app.post("/api/clips/discover", async (c) => {
     return c.json({ candidates });
   } catch (err) {
     return c.json({ error: `discover failed: ${err}` }, 502);
+  }
+});
+
+// Compose a draft video essay directly from the clip library — grounded
+// against already-saved, already-titled clips (not raw transcript
+// sentences), so the model only ever picks and orders clip ids. Each cited
+// clip's own stored segments get concatenated in the order chosen — no
+// LLM-invented timestamps, same grounding principle as every other
+// reasoning endpoint. Not auto-saved to a project; the client offers
+// "save as a new project" or "add to an existing one" on the result.
+app.post("/api/clips/compose", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const { instruction } = await c.req.json<{ instruction?: string }>().catch(() => ({}) as { instruction?: string });
+  if (!instruction?.trim()) return c.json({ error: "describe what you want the video essay to be about" }, 400);
+  const clips = await listClips(c.env.DB, { limit: 500 });
+  if (!clips.length) return c.json({ error: "no clips saved yet — save some to your library first" }, 400);
+  try {
+    const plan = await composeFromClips(
+      c.env,
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags })),
+      instruction,
+    );
+    const byId = new Map(clips.map((cl) => [cl.id, cl]));
+    const toSegments = (refs: { clipId: string; reason?: string }[]): Segment[] =>
+      refs.flatMap((r) => {
+        const clip = byId.get(r.clipId);
+        if (!clip) return [];
+        return clip.segments.map((s) => ({ videoId: s.videoId, start: s.start, end: s.end, reason: r.reason || clip.title }));
+      });
+    const timeline: Timeline = { coldOpen: toSegments(plan.coldOpen), body: toSegments(plan.body) };
+    return c.json({ timeline });
+  } catch (err) {
+    return c.json({ error: `compose failed: ${err}` }, 502);
   }
 });
 

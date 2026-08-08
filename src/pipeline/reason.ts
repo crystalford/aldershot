@@ -259,3 +259,60 @@ export async function suggestEdits(env: Env, videos: VideoTranscript[]): Promise
   }
   return suggestions;
 }
+
+// ── Compose a video essay from the clip library ───────────────────────
+// Unlike arrangeTimeline/directedArrange (which ground against raw transcript
+// sentences), this grounds against ALREADY-SAVED, ALREADY-TITLED/TAGGED
+// clips — the model only ever picks and orders clip [id]s, it never sees or
+// invents timestamps. The caller maps each cited clip id back to that clip's
+// stored segments (see POST /api/clips/compose in src/index.ts), so a
+// "callback" clip already spanning two far-apart moments in the source video
+// carries both moments along automatically when it's picked.
+export interface ComposableClip {
+  id: string;
+  title: string;
+  description?: string | null;
+  tags: string[];
+}
+interface ComposeRef {
+  clipId: string;
+  reason?: string;
+}
+export interface ComposePlan {
+  coldOpen: ComposeRef[];
+  body: ComposeRef[];
+}
+interface ComposeReply {
+  coldOpen?: { id: string; reason?: string }[];
+  body?: { id: string; reason?: string }[];
+}
+
+export async function composeFromClips(env: Env, clips: ComposableClip[], instruction: string): Promise<ComposePlan> {
+  const menu = clips
+    .map((c) => {
+      const desc = c.description ? ` — ${c.description}` : "";
+      const tags = c.tags.length ? ` (tags: ${c.tags.join(", ")})` : "";
+      return `[${c.id}] "${c.title}"${desc}${tags}`;
+    })
+    .join("\n");
+  const system =
+    "You are a sharp documentary editor assembling a video essay from a library of already-cut, " +
+    "already-titled clips. The user tells you the brief; you select and order clips (by their [id]) " +
+    "that fulfill it — you don't invent clips, content, or timestamps, only choose from the ones given. " +
+    "If nothing in the library matches the brief, return empty arrays rather than forcing it.";
+  const user =
+    `The user's brief: "${instruction.trim()}"\n\n` +
+    "Select and order the clips that fulfill this brief. Put 1-3 clips that best set up the premise " +
+    "in coldOpen (skip this if the brief doesn't call for a hook), and the rest — in a coherent " +
+    "narrative order — in body.\n\n" +
+    'Return ONLY JSON: {"coldOpen":[{"id":"clip-uuid","reason":"why"}],"body":[{"id":"clip-uuid","reason":"why"}]}\n\n' +
+    "Clips:\n" +
+    menu;
+
+  const reply = await runJson<ComposeReply>(env, system, user);
+  const byId = new Set(clips.map((c) => c.id));
+  const toRef = (r: { id: string; reason?: string }): ComposeRef | null => (byId.has(r.id) ? { clipId: r.id, reason: r.reason } : null);
+  const coldOpen = (reply.coldOpen ?? []).map(toRef).filter((x): x is ComposeRef => !!x);
+  const body = (reply.body ?? []).map(toRef).filter((x): x is ComposeRef => !!x);
+  return { coldOpen, body };
+}

@@ -1166,13 +1166,18 @@ function updateStats() {
 const edit = { playing: false, clips: [], raf: 0, playingEl: null };
 const mediaUrl = (key) => "/api/media/" + key.split("/").map(encodeURIComponent).join("/");
 
-function buildClips() {
+// A timeline segment can reference a video pulled in from a DIFFERENT
+// project's Library clip, not just this project's own state.videos —
+// resolveVideo() checks the local list first (fast path, no network) and
+// falls back to a cached fetch for anything foreign.
+async function buildClips() {
   if (hasTimeline()) {
     const segs = [...(state.timeline.coldOpen || []), ...(state.timeline.body || [])];
-    return segs.map((s) => {
-      const v = state.videos.find((x) => x.id === s.videoId);
+    const resolved = await Promise.all(segs.map(async (s) => {
+      const v = await resolveVideo(s.videoId);
       return v && v.r2_key ? { videoId: s.videoId, r2_key: v.r2_key, start: s.start, end: s.end } : null;
-    }).filter(Boolean);
+    }));
+    return resolved.filter(Boolean);
   }
   const clips = [];
   const opts = { trimPausesAbove: state.trimPausesAbove ?? Infinity };
@@ -1194,7 +1199,7 @@ function ensureSrc(player, clip) {
 }
 
 async function playEdit() {
-  const clips = buildClips();
+  const clips = await buildClips();
   if (!clips.length) { toast("Nothing to play — add a video or cut some words first."); return; }
   stopEdit(); edit.playing = true; edit.clips = clips;
   await playClip(0);
@@ -1305,6 +1310,10 @@ function renderTimeline() {
     return;
   }
   const t = state.timeline;
+  // A segment's video might not be in state.videos at all — it could be a
+  // clip pulled in from a different project's Library entry. Show the local
+  // filename immediately when we have it (no flicker for the common case);
+  // resolveVideo() below corrects foreign ones once resolved.
   const seg = (s, group, idx) => {
     const v = state.videos.find((x) => x.id === s.videoId);
     const name = v ? filenameOf(v.filename) : s.videoId;
@@ -1322,6 +1331,15 @@ function renderTimeline() {
     ${(t.coldOpen || []).length ? `<div class="tl-label">Cold open</div>${t.coldOpen.map((s, i) => seg(s, "coldOpen", i)).join("")}` : ""}
     ${(t.body || []).length ? `<div class="tl-label">Body</div>${t.body.map((s, i) => seg(s, "body", i)).join("")}` : ""}
   </div>`;
+  ["coldOpen", "body"].forEach((group) => {
+    (t[group] || []).forEach((s, i) => {
+      if (state.videos.some((x) => x.id === s.videoId)) return; // already showed the real name above
+      resolveVideo(s.videoId).then((v) => {
+        const span = el.querySelector(`.seg[data-g="${group}"][data-i="${i}"] .seg-src`);
+        if (span && v) span.textContent = filenameOf(v.filename);
+      });
+    });
+  });
   // Drag-to-reorder within a group (coldOpen/body kept separate — moving a
   // segment between the two changes what it *means*, not just where it
   // sits, so that's left to the existing manual add/remove flow instead).
@@ -1338,9 +1356,9 @@ function renderTimeline() {
       saveClipToLibrary([s], { title: s.reason || `${fmt(s.start)}–${fmt(s.end)}` });
     };
     row.onclick = (e) => {
-      if (e.target.closest(".seg-drag")) return;
+      if (e.target.closest(".seg-drag") || e.target.closest(".seg-save")) return;
       const s = state.timeline[row.dataset.g][+row.dataset.i];
-      selectVideo(s.videoId); const p = $("#sel-player"); p.currentTime = s.start; p.play();
+      playSegmentInMainPlayer(s);
     };
     row.addEventListener("dragstart", (e) => {
       dragSeg = { g: row.dataset.g, i: +row.dataset.i };
@@ -1512,7 +1530,7 @@ async function produceShort(s, btn) {
 
 // ── Long-form export ─────────────────────────────────────────────────
 async function exportCut(btn) {
-  const clips = buildClips();
+  const clips = await buildClips();
   if (!clips.length) { toast("Nothing to export — cut some words or auto-arrange first."); return; }
   const secs = clips.reduce((a, c) => a + (c.end - c.start), 0);
   if (secs > 600 && !(await UI.confirm({ title: "Long render", message: `This cut is ${fmt(secs)}. Rendering in the browser may take a while and use a lot of memory. Continue?`, confirmText: "Render" }))) return;
@@ -1700,6 +1718,23 @@ async function resolveVideo(videoId) {
   return v;
 }
 
+// Seek/play a single Timeline segment in the project editor's shared player.
+// selectVideo() only knows how to point the player at a video that's part of
+// THIS project's own sidebar list — a segment pulled in from a Library clip
+// in another project needs the player src set directly instead.
+async function playSegmentInMainPlayer(s) {
+  const player = $("#sel-player"); if (!player) return;
+  if (state.videos.some((x) => x.id === s.videoId)) {
+    selectVideo(s.videoId);
+  } else {
+    const v = await resolveVideo(s.videoId);
+    if (!v || !v.r2_key) { toast("Couldn't load that clip's video."); return; }
+    if (player.dataset.key !== v.r2_key) { player.src = mediaUrl(v.r2_key); player.dataset.key = v.r2_key; }
+  }
+  player.currentTime = s.start;
+  player.play();
+}
+
 // Fills in "0:12 · filename" labels on already-rendered segment spans once
 // each video is resolved (may be an async network fetch for foreign clips),
 // instead of blocking the whole card render on it.
@@ -1817,6 +1852,16 @@ async function showLibrary() {
         <div><h1>Library</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay.</div></div>
         <button class="btn primary" id="discoverBtn">${ic("sparkle")} Discover clips across my library</button>
       </div>
+
+      <div class="direct-box-wrap" style="margin-top:16px;">
+        <div class="direct-label">${ic("sparkle")}<span>Compose a video essay</span><small>— describe what you want; the AI drafts a sequence from your saved clips (not raw transcripts)</small></div>
+        <div class="direct-box">
+          <textarea id="composeInput" rows="2" placeholder='e.g. "A video essay about Darkside Phil raging at his audience"'></textarea>
+          <button class="btn primary" id="composeBtn">${ic("sparkle")} Compose draft</button>
+        </div>
+      </div>
+      <div id="composeResult"></div>
+
       <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
       <div class="tag-rail" id="tagRail"></div>
       <input id="librarySearch" class="import-input" placeholder="Search clips by title or description…" style="max-width:340px;margin:14px 0;" autocomplete="off" />
@@ -1826,6 +1871,10 @@ async function showLibrary() {
   renderTagRail(tags);
   renderLibraryGrid(clips);
   $("#discoverBtn").onclick = (e) => runDiscover(e.currentTarget);
+  $("#composeBtn").onclick = (e) => runCompose(e.currentTarget);
+  $("#composeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runCompose($("#composeBtn")); }
+  });
   let searchDebounce = null;
   $("#librarySearch").addEventListener("input", () => {
     clearTimeout(searchDebounce);
@@ -1870,6 +1919,7 @@ function renderLibraryGrid(clips) {
   clips.forEach((c, i) => {
     const card = el.querySelector(`.clip-card[data-i="${i}"]`);
     card.querySelector(".clip-preview").onclick = () => previewClipSegments(c.segments);
+    card.querySelector(".clip-add-project").onclick = () => addClipToProject(c);
     card.querySelector(".clip-delete").onclick = () => deleteLibraryClip(c.id);
     hydrateSegLabels(card, c.segments);
   });
@@ -1881,7 +1931,11 @@ function clipCard(c, i) {
     ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
     <div class="sg-segs">${segParts}</div>
     ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
-    <div class="s-actions"><button class="btn small ghost clip-preview">${ic("play")} Preview</button><button class="btn small danger clip-delete">Delete</button></div>
+    <div class="s-actions">
+      <button class="btn small ghost clip-preview">${ic("play")} Preview</button>
+      <button class="btn small accent clip-add-project">${ic("plus")} Add to project</button>
+      <button class="btn small danger clip-delete">Delete</button>
+    </div>
   </div>`;
 }
 async function deleteLibraryClip(id) {
@@ -1906,6 +1960,104 @@ async function runDiscover(btn) {
     toast(`Found ${data.candidates.length} candidate${data.candidates.length === 1 ? "" : "s"}`, { type: "success" });
   } catch (err) { toast(err.message || "Discover failed", { type: "error", title: "Discover" }); }
   btn.classList.remove("loading"); btn.disabled = false;
+}
+
+// ── Compose — draft a video essay directly from the clip library ───────
+// Grounded against SAVED clips (their title/description/tags), not raw
+// transcript sentences — the model only ever picks and orders clip ids;
+// the server maps each one back to that clip's own stored segments. The
+// result is a draft Timeline the user can preview, then either save as a
+// brand-new project or add into an existing one.
+async function runCompose(btn) {
+  const instruction = ($("#composeInput")?.value || "").trim();
+  if (!instruction) { toast("Describe the video essay you want first."); return; }
+  btn.classList.add("loading"); btn.disabled = true;
+  try {
+    const res = await fetch("/api/clips/compose", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instruction }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    renderComposeResult(data.timeline);
+    const n = (data.timeline.coldOpen || []).length + (data.timeline.body || []).length;
+    if (n) toast(`Drafted a sequence from ${n} clip segment(s)`, { type: "success" });
+    else toast("Nothing in your library matched that — try rephrasing or save more clips.", { type: "error" });
+  } catch (err) { toast(err.message || "Compose failed", { type: "error", title: "Compose" }); }
+  btn.classList.remove("loading"); btn.disabled = false;
+}
+function renderComposeResult(timeline) {
+  const el = $("#composeResult"); if (!el) return;
+  const groups = [["coldOpen", timeline.coldOpen || []], ["body", timeline.body || []]];
+  const n = groups.reduce((s, [, segs]) => s + segs.length, 0);
+  if (!n) { el.innerHTML = ""; return; }
+  const row = (s, group, i) => `<div class="seg" data-g="${group}" data-i="${i}">
+    <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
+    <span class="seg-src" data-seg="${group}-${i}">${esc(s.videoId)}</span>
+    <span class="seg-reason">${esc(s.reason || "")}</span></div>`;
+  el.innerHTML = `<div class="tl">
+    <div class="tl-head"><h2>Draft video essay</h2><span class="empty small">${n} segment(s)</span></div>
+    ${(timeline.coldOpen || []).length ? `<div class="tl-label">Cold open</div>${timeline.coldOpen.map((s, i) => row(s, "coldOpen", i)).join("")}` : ""}
+    ${(timeline.body || []).length ? `<div class="tl-label">Body</div>${timeline.body.map((s, i) => row(s, "body", i)).join("")}` : ""}
+    <div class="s-actions" style="margin-top:10px;">
+      <button class="btn small ghost" id="composePreview">${ic("play")} Preview</button>
+      <button class="btn small accent" id="composeNewProject">${ic("plus")} Save as new project</button>
+    </div>
+  </div>`;
+  groups.forEach(([group, segs]) => segs.forEach((s, i) => {
+    resolveVideo(s.videoId).then((v) => {
+      const span = el.querySelector(`[data-seg="${group}-${i}"]`);
+      if (span && v) span.textContent = filenameOf(v.filename);
+    });
+  }));
+  $("#composePreview").onclick = () => previewClipSegments([...(timeline.coldOpen || []), ...(timeline.body || [])]);
+  $("#composeNewProject").onclick = () => saveComposeAsProject(timeline);
+}
+async function saveComposeAsProject(timeline) {
+  const name = await UI.prompt({ title: "New project", label: "Project name", placeholder: "e.g. Darkside Phil — a study in rage", confirmText: "Create" });
+  if (name === null) return;
+  try {
+    const p = await api.createProject(name.trim() || "Untitled project");
+    if (p.error) throw new Error(p.error);
+    const res = await fetch(`/api/projects/${p.id}/timeline`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(timeline),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    toast("Project created from your draft", { type: "success" });
+    openProject(p.id);
+  } catch (err) { toast(err.message || "Couldn't create project", { type: "error" }); }
+}
+
+// Manually add one saved clip's segments into an existing project's Cut —
+// the curatorial counterpart to Compose's AI-drafted sequence ("a lot of it
+// will have to be me getting clips," picking one at a time by hand).
+async function addClipToProject(clip) {
+  let projects = [];
+  try { projects = (await fetch("/api/projects").then((r) => r.json())).projects || []; } catch { /* handled below */ }
+  if (!projects.length) { toast("Create a project first."); return; }
+  const options = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  const projectId = await UI.modal({
+    title: "Add to project",
+    bodyHTML: `<label class="modal-label">Which project?</label><select class="modal-input" id="__projPick">${options}</select>`,
+    dismissValue: null,
+    actions: [
+      { label: "Cancel", resolve: null },
+      { label: "Add", variant: "primary", onClick: (done, card) => done(card.querySelector("#__projPick").value) },
+    ],
+  });
+  if (!projectId) return;
+  try {
+    const data = await fetch(`/api/projects/${projectId}`).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+    const timeline = data.timeline || { coldOpen: [], body: [] };
+    timeline.body = timeline.body || [];
+    clip.segments.forEach((s) => timeline.body.push({ videoId: s.videoId, start: s.start, end: s.end, reason: s.reason || clip.title }));
+    const res = await fetch(`/api/projects/${projectId}/timeline`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(timeline),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    const name = projects.find((p) => p.id === projectId)?.name || "project";
+    toast(`Added to ${name}`, { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't add to project", { type: "error" }); }
 }
 function renderDiscoverResults(candidates) {
   const el = $("#discoverResults"); if (!el) return;
