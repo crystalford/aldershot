@@ -96,7 +96,7 @@ function setStats(t) {
 
 // ── Projects view ────────────────────────────────────────────────────
 async function showProjects() {
-  location.hash = "#/"; setCrumbs([]); setStats(""); state.project = null;
+  location.hash = "#/"; setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading projects…</div>`;
   let projects = [];
   try { projects = (await api.listProjects()).projects || []; }
@@ -156,81 +156,103 @@ async function openProject(id) {
 
 function renderProject() {
   main.innerHTML = `
-    <div class="editor">
-      <aside class="side">
-        <div class="dropzone" id="drop">
-          ${ic("plus")}
-          <strong>Drop videos here</strong>
-          <span>or <label class="link">browse<input id="file" type="file" accept="video/*,audio/*" multiple hidden /></label></span>
-          <small>Base video + commentary — add as many as you like.</small>
-        </div>
-        <div class="import">
-          <input id="url" class="import-input" placeholder="Paste a Rumble or direct video link…" autocomplete="off" />
-          <button class="btn small accent" id="importBtn">Import</button>
-        </div>
-        <div class="side-h">Videos</div>
-        <div class="vlist" id="vlist"></div>
-      </aside>
-      <section class="stage">
-        <div class="toolbar">
-          <div class="tbgroup">
-            <button class="btn accent" id="playEdit">${ic("play")} Play edit</button>
-            <button class="btn" id="stopEdit">${ic("stop")} Stop</button>
+    <div class="editor-shell">
+      <div class="editor">
+        <aside class="side">
+          <div class="dropzone" id="drop">
+            ${ic("plus")}
+            <strong>Drop videos here</strong>
+            <span>or <label class="link">browse<input id="file" type="file" accept="video/*,audio/*" multiple hidden /></label></span>
+            <small>Base video + commentary — add as many as you like.</small>
           </div>
-          <div class="tb-div"></div>
-          <div class="tbgroup">
-            <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
-            <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
-            <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
+          <div class="import">
+            <input id="url" class="import-input" placeholder="Paste a Rumble or direct video link…" autocomplete="off" />
+            <button class="btn small accent" id="importBtn">Import</button>
           </div>
-          <div class="tb-div"></div>
-          <button class="btn primary" id="export">${ic("download")} Export cut</button>
+          <div class="side-h">Videos</div>
+          <div class="vlist" id="vlist"></div>
+        </aside>
+
+        <section class="stage">
+          <video id="sel-player" playsinline></video>
+          <div class="ruler" id="ruler"></div>
+
+          <h1 class="doc-title" id="docTitle">Transcript</h1>
+
+          <div class="sel-toolbar" id="selToolbar">
+            <span id="selCount"></span>
+            <span class="sel-toolbar-div"></span>
+            <button class="chip-btn" id="selDelete">Delete</button>
+            <button class="chip-btn" id="selClear">Clear</button>
+          </div>
+
+          <div class="toolbar toolbar-edit">
+            <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+            <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+            <button class="btn small ghost" id="removeFillers">Remove fillers</button>
+            <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
+            <span class="spacer"></span>
+            <div class="search-box">
+              <input id="search" placeholder="Search transcript…" autocomplete="off" />
+              <span class="search-count" id="searchCount"></span>
+              <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
+              <button class="search-nav" id="searchNext" title="Next match">›</button>
+            </div>
+          </div>
+
+          <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause.</p>
+          <div class="transcript" id="transcript"></div>
+        </section>
+
+        <aside class="tools" id="tools">
+          <div class="tools-scroll">
+            <div class="tools-actions">
+              <button class="btn accent" id="playEdit">${ic("play")} Play edit</button>
+              <button class="btn ghost" id="stopEdit">${ic("stop")} Stop</button>
+              <button class="btn ghost" id="save">${ic("save")} Save</button>
+            </div>
+
+            <div class="tools-h">AI tools</div>
+            <div class="tools-actions col">
+              <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
+              <button class="btn" id="suggestEdits">${ic("sparkle")} Suggested edits</button>
+              <button class="btn" id="findShorts">${ic("film")} Find shorts</button>
+            </div>
+            <div class="direct-box-wrap">
+              <div class="direct-label">${ic("sparkle")}<span>Direct the edit</span><small>— describe what you want, in your own words</small></div>
+              <div class="direct-box col">
+                <textarea id="directInput" rows="2" placeholder='e.g. "A video about how the host keeps interrupting the guest"'></textarea>
+                <button class="btn primary" id="directBtn">${ic("sparkle")} Generate edit</button>
+              </div>
+            </div>
+
+            <div class="tools-tabs" id="toolsTabs">
+              <span class="tool-tab on" data-tab="cut">Cut</span>
+              <span class="tool-tab" data-tab="suggest">Suggestions</span>
+              <span class="tool-tab" data-tab="shorts">Shorts</span>
+            </div>
+            <div id="timeline" class="tool-panel" data-panel="cut"></div>
+            <div id="suggest" class="tool-panel" data-panel="suggest" hidden></div>
+            <div id="shorts" class="tool-panel" data-panel="shorts" hidden></div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="editor-footer">
+        <div class="transport">
+          <span class="t-btn" id="tRewind" title="Back 5s">⏮</span>
+          <span class="t-btn t-play" id="tPlay" title="Play/Pause (space)">▶</span>
+          <span class="t-btn" id="tForward" title="Forward 5s">⏭</span>
+          <span class="t-time mono" id="tTime">0:00 / 0:00</span>
+          <span class="t-btn t-speed" id="tSpeed" title="Playback speed">1x</span>
+          <span class="t-btn" id="tJump" title="Jump to what's playing in the transcript">Jump to text</span>
           <span class="spacer"></span>
-          <button class="btn ghost" id="save">${ic("save")} Save</button>
         </div>
-
-        <video id="sel-player" controls playsinline></video>
-        <div class="ruler" id="ruler"></div>
-
-        <h1 class="doc-title" id="docTitle">Transcript</h1>
-
-        <div class="direct-box-wrap">
-          <div class="direct-label">${ic("sparkle")}<span>Direct the edit</span><small>— describe what you want, in your own words</small></div>
-          <div class="direct-box">
-            <textarea id="directInput" rows="2" placeholder='e.g. "A video about how the host keeps interrupting the guest"'></textarea>
-            <button class="btn primary" id="directBtn">${ic("sparkle")} Generate edit</button>
-          </div>
-        </div>
-
-        <div class="sel-toolbar" id="selToolbar">
-          <span id="selCount"></span>
-          <span class="sel-toolbar-div"></span>
-          <button class="chip-btn" id="selDelete">Delete</button>
-          <button class="chip-btn" id="selClear">Clear</button>
-        </div>
-
-        <div class="toolbar toolbar-edit">
-          <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
-          <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
-          <button class="btn small ghost" id="removeFillers">Remove fillers</button>
-          <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
-          <span class="spacer"></span>
-          <div class="search-box">
-            <input id="search" placeholder="Search transcript…" autocomplete="off" />
-            <span class="search-count" id="searchCount"></span>
-            <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
-            <button class="search-nav" id="searchNext" title="Next match">›</button>
-          </div>
-        </div>
-
-        <div id="timeline"></div>
-        <div id="shorts"></div>
-        <div id="suggest"></div>
-
-        <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause.</p>
-        <div class="transcript" id="transcript"></div>
-      </section>
+        <div class="filmstrip" id="filmstrip"></div>
+        <div class="phrase-chips" id="phraseChips"></div>
+      </footer>
     </div>`;
+  $("#headerActions").innerHTML = `<button class="btn primary" id="export">${ic("download")} Export</button>`;
   wireDropzone();
   renderVideoList();
   renderTranscript();
@@ -239,6 +261,8 @@ function renderProject() {
   renderSuggestions();
   renderRuler();
   updateStats();
+  wireTransport();
+  wireToolsTabs();
   selectVideo(state.selected);
   $("#playEdit").onclick = playEdit;
   $("#stopEdit").onclick = stopEdit;
@@ -268,7 +292,51 @@ function renderProject() {
   $("#searchNext").onclick = () => gotoMatch(searchIdx + 1);
   const player = $("#sel-player");
   player.addEventListener("pause", () => { if (edit.playing) stopEdit(); });
-  player.addEventListener("timeupdate", updateRulerPlayhead);
+  player.addEventListener("timeupdate", onPlayerTimeUpdate);
+}
+
+// ── Tabbed results dock (Cut / Suggestions / Shorts) in the right rail ──
+function wireToolsTabs() {
+  $("#toolsTabs").querySelectorAll(".tool-tab").forEach((tab) => {
+    tab.onclick = () => switchToolsTab(tab.dataset.tab);
+  });
+}
+function switchToolsTab(name) {
+  $("#toolsTabs")?.querySelectorAll(".tool-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
+  document.querySelectorAll(".tool-panel").forEach((p) => { p.hidden = p.dataset.panel !== name; });
+}
+
+// ── Custom transport (replaces native video controls, Descript-style) ──
+function wireTransport() {
+  const player = $("#sel-player");
+  const playBtn = $("#tPlay");
+  const speeds = [1, 1.5, 2, 0.5];
+  let speedIdx = 0;
+  $("#tRewind").onclick = () => { player.currentTime = Math.max(0, player.currentTime - 5); };
+  $("#tForward").onclick = () => { player.currentTime = Math.min(player.duration || 1e9, player.currentTime + 5); };
+  playBtn.onclick = () => { if (player.paused) player.play(); else player.pause(); };
+  $("#tSpeed").onclick = (e) => {
+    speedIdx = (speedIdx + 1) % speeds.length;
+    player.playbackRate = speeds[speedIdx];
+    e.currentTarget.textContent = `${speeds[speedIdx]}x`;
+  };
+  $("#tJump").onclick = () => { edit.playingEl?.scrollIntoView({ block: "center", behavior: "smooth" }); };
+  player.addEventListener("play", () => { playBtn.textContent = "⏸"; });
+  player.addEventListener("pause", () => { playBtn.textContent = "▶"; });
+  updateTransportTime();
+}
+function updateTransportTime() {
+  const player = $("#sel-player"); const el = $("#tTime");
+  if (!player || !el) return;
+  el.textContent = `${fmt(player.currentTime)} / ${fmt(player.duration || 0)}`;
+}
+function onPlayerTimeUpdate() {
+  updateRulerPlayhead();
+  updateFilmstripPlayhead();
+  updateTransportTime();
+  const v = state.videos.find((x) => x.id === state.selected);
+  if (v) highlightPlayhead(v.id, $("#sel-player").currentTime);
+  updatePhraseChipActive();
 }
 
 document.addEventListener("keydown", (e) => {
@@ -339,8 +407,70 @@ function selectVideo(id) {
   renderVideoList();
   highlightSelectedTranscript();
   renderRuler();
+  renderFilmstrip();
+  renderPhraseChips();
   const title = $("#docTitle");
   if (title) title.textContent = v ? filenameOf(v.filename).replace(/\.[a-z0-9]+$/i, "") : "Transcript";
+}
+
+// ── Filmstrip — a row of real frame thumbnails across the selected video,
+// with a playhead marker, so scrubbing a long video doesn't mean guessing
+// blind at a bare seek bar (Descript/Premiere-style).
+const FILM_FRAMES = 14;
+function renderFilmstrip() {
+  const el = $("#filmstrip"); if (!el) return;
+  const v = state.videos.find((x) => x.id === state.selected);
+  if (!v || !v.r2_key || !v.duration) { el.innerHTML = ""; return; }
+  const url = mediaUrl(v.r2_key);
+  const frames = Array.from({ length: FILM_FRAMES }, (_, i) => (v.duration * (i + 0.5)) / FILM_FRAMES);
+  el.innerHTML = `<div class="film-track" id="filmTrack">
+    ${frames.map((t) => `<img class="film-frame" data-thumb-src="${esc(url)}" data-thumb-t="${t.toFixed(1)}" alt="" />`).join("")}
+    <div class="film-playhead" id="filmPlayhead"></div>
+  </div>`;
+  Thumb.hydrate(el);
+  $("#filmTrack").onclick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    $("#sel-player").currentTime = pct * v.duration;
+  };
+}
+function updateFilmstripPlayhead() {
+  const v = state.videos.find((x) => x.id === state.selected);
+  const ph = $("#filmPlayhead");
+  if (!v || !ph || !v.duration) return;
+  const t = $("#sel-player").currentTime;
+  ph.style.left = `${Math.min(100, Math.max(0, (t / v.duration) * 100))}%`;
+}
+
+// ── Phrase chips — quick-nav strip of each paragraph's opening words, so you
+// can jump the player straight to a moment instead of hunting through text.
+let phraseChipRanges = [];
+function renderPhraseChips() {
+  const el = $("#phraseChips"); if (!el) return;
+  const v = state.videos.find((x) => x.id === state.selected);
+  if (!v || !v.words || !v.words.length) { el.innerHTML = ""; phraseChipRanges = []; return; }
+  const paras = groupIntoParagraphs(v.words);
+  phraseChipRanges = [];
+  el.innerHTML = paras.map((idxs) => {
+    const kept = idxs.map((i) => v.words[i]).filter((w) => !w.deleted);
+    if (!kept.length) return "";
+    const label = kept.slice(0, 4).map((w) => w.text).join(" ");
+    const start = v.words[idxs[0]].start;
+    const end = v.words[idxs[idxs.length - 1]].end;
+    const n = phraseChipRanges.length;
+    phraseChipRanges.push({ start, end });
+    return `<span class="phrase-chip" data-n="${n}">"${esc(label)}"</span>`;
+  }).join("");
+  el.querySelectorAll(".phrase-chip").forEach((chip) => {
+    chip.onclick = () => { $("#sel-player").currentTime = phraseChipRanges[+chip.dataset.n].start; };
+  });
+  updatePhraseChipActive();
+}
+function updatePhraseChipActive() {
+  const el = $("#phraseChips"); if (!el || !phraseChipRanges.length) return;
+  const t = $("#sel-player").currentTime;
+  const idx = phraseChipRanges.findIndex((r) => t >= r.start && t < r.end);
+  el.querySelectorAll(".phrase-chip").forEach((chip) => chip.classList.toggle("on", +chip.dataset.n === idx));
 }
 
 // ── Transcript + cutting ─────────────────────────────────────────────
@@ -700,8 +830,8 @@ async function autoArrange(btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.timeline = data.timeline;
-    renderTimeline(); updateStats();
-    toast("Arranged a cut — refine it below", { type: "success" });
+    renderTimeline(); updateStats(); switchToolsTab("cut");
+    toast("Arranged a cut — refine it in the Cut tab", { type: "success" });
   } catch (err) { toast(err.message || "Auto-arrange failed", { type: "error", title: "Auto-arrange" }); }
   btn.classList.remove("loading"); btn.disabled = false;
 }
@@ -722,9 +852,9 @@ async function runDirectedEdit(btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.timeline = data.timeline;
-    renderTimeline(); updateStats();
+    renderTimeline(); updateStats(); switchToolsTab("cut");
     const n = (data.timeline.coldOpen || []).length + (data.timeline.body || []).length;
-    if (n) toast(`Built a cut from ${n} moment${n === 1 ? "" : "s"} — refine it below`, { type: "success" });
+    if (n) toast(`Built a cut from ${n} moment${n === 1 ? "" : "s"} — refine it in the Cut tab`, { type: "success" });
     else toast("Nothing in the transcript matched that — try rephrasing.", { type: "error" });
   } catch (err) { toast(err.message || "Directed edit failed", { type: "error", title: "Direct the edit" }); }
   btn.classList.remove("loading"); btn.disabled = false;
@@ -778,7 +908,7 @@ async function findSuggestions(btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.suggestions = data.suggestions;
-    renderSuggestions();
+    renderSuggestions(); switchToolsTab("suggest");
     toast(`Found ${data.suggestions.length} connection${data.suggestions.length === 1 ? "" : "s"}`, { type: "success" });
   } catch (err) { toast(err.message || "Suggested edits failed", { type: "error", title: "Suggested edits" }); }
   btn.classList.remove("loading"); btn.disabled = false;
@@ -827,6 +957,7 @@ function applySuggestion(s, btn) {
   saveTimeline(); renderTimeline(); updateStats();
   btn.textContent = "Added ✓";
   setTimeout(() => { btn.textContent = "Add to timeline"; }, 1200);
+  toast("Added to the Cut tab", { type: "success" });
 }
 
 // ── Suggested shorts ─────────────────────────────────────────────────
@@ -838,7 +969,7 @@ async function findShorts(btn) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.shorts = data.shorts;
-    renderShorts();
+    renderShorts(); switchToolsTab("shorts");
     toast(`Found ${data.shorts.length} short${data.shorts.length === 1 ? "" : "s"}`, { type: "success" });
   } catch (err) { toast(err.message || "Find shorts failed", { type: "error", title: "Shorts" }); }
   btn.classList.remove("loading"); btn.disabled = false;
