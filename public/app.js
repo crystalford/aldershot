@@ -86,7 +86,13 @@ function setCrumbs(items) {
     el.appendChild(node);
   });
 }
-const setStats = (t) => { $("#stats").textContent = t; };
+// Header stats render as pill badges (per design spec) — split on the " · "
+// separator each caller already uses, one pill per segment.
+function setStats(t) {
+  const el = $("#stats");
+  if (!t) { el.innerHTML = ""; return; }
+  el.innerHTML = t.split(" · ").map((s) => `<span class="pill-stat">${esc(s)}</span>`).join("");
+}
 
 // ── Projects view ────────────────────────────────────────────────────
 async function showProjects() {
@@ -160,7 +166,7 @@ function renderProject() {
         </div>
         <div class="import">
           <input id="url" class="import-input" placeholder="Paste a Rumble or direct video link…" autocomplete="off" />
-          <button class="btn small amber" id="importBtn">Import</button>
+          <button class="btn small accent" id="importBtn">Import</button>
         </div>
         <div class="side-h">Videos</div>
         <div class="vlist" id="vlist"></div>
@@ -168,7 +174,7 @@ function renderProject() {
       <section class="stage">
         <div class="toolbar">
           <div class="tbgroup">
-            <button class="btn amber" id="playEdit">${ic("play")} Play edit</button>
+            <button class="btn accent" id="playEdit">${ic("play")} Play edit</button>
             <button class="btn" id="stopEdit">${ic("stop")} Stop</button>
           </div>
           <div class="tb-div"></div>
@@ -183,33 +189,37 @@ function renderProject() {
           <button class="btn ghost" id="save">${ic("save")} Save</button>
         </div>
 
-        <div class="panel">
-          <video id="sel-player" controls playsinline></video>
-          <div class="ruler" id="ruler"></div>
-        </div>
+        <video id="sel-player" controls playsinline></video>
+        <div class="ruler" id="ruler"></div>
 
-        <div class="panel direct-panel">
-          <div class="panel-head">${ic("sparkle")}<h2>Direct the edit</h2></div>
-          <p class="panel-sub">Tell it what you want, in your own words — it finds and assembles the moments that match.</p>
+        <h1 class="doc-title" id="docTitle">Transcript</h1>
+
+        <div class="direct-box-wrap">
+          <div class="direct-label">${ic("sparkle")}<span>Direct the edit</span><small>— describe what you want, in your own words</small></div>
           <div class="direct-box">
             <textarea id="directInput" rows="2" placeholder='e.g. "A video about how the host keeps interrupting the guest"'></textarea>
             <button class="btn primary" id="directBtn">${ic("sparkle")} Generate edit</button>
           </div>
         </div>
 
-        <div class="panel toolbar-edit-panel">
-          <div class="toolbar toolbar-edit">
-            <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
-            <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
-            <button class="btn small ghost" id="removeFillers">Remove fillers</button>
-            <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
-            <span class="spacer"></span>
-            <div class="search-box">
-              <input id="search" placeholder="Search transcript…" autocomplete="off" />
-              <span class="search-count" id="searchCount"></span>
-              <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
-              <button class="search-nav" id="searchNext" title="Next match">›</button>
-            </div>
+        <div class="sel-toolbar" id="selToolbar">
+          <span id="selCount"></span>
+          <span class="sel-toolbar-div"></span>
+          <button class="chip-btn" id="selDelete">Delete</button>
+          <button class="chip-btn" id="selClear">Clear</button>
+        </div>
+
+        <div class="toolbar toolbar-edit">
+          <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
+          <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+          <button class="btn small ghost" id="removeFillers">Remove fillers</button>
+          <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
+          <span class="spacer"></span>
+          <div class="search-box">
+            <input id="search" placeholder="Search transcript…" autocomplete="off" />
+            <span class="search-count" id="searchCount"></span>
+            <button class="search-nav" id="searchPrev" title="Previous match">‹</button>
+            <button class="search-nav" id="searchNext" title="Next match">›</button>
           </div>
         </div>
 
@@ -217,11 +227,8 @@ function renderProject() {
         <div id="shorts"></div>
         <div id="suggest"></div>
 
-        <div class="panel transcript-panel">
-          <div class="panel-head"><h2>Transcript</h2></div>
-          <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause. <span id="selHint" class="sel-hint"></span></p>
-          <div class="transcript" id="transcript"></div>
-        </div>
+        <p class="hint">Click or drag across words to select them, then press <b>Delete</b> to cut · click a cut (struck-through) word to restore it · double-click to jump the player there · space to play/pause.</p>
+        <div class="transcript" id="transcript"></div>
       </section>
     </div>`;
   wireDropzone();
@@ -248,9 +255,11 @@ function renderProject() {
   $("#url").addEventListener("keydown", (e) => { if (e.key === "Enter") importFromUrl(); });
   $("#undoBtn").onclick = undo;
   $("#redoBtn").onclick = redo;
+  $("#selDelete").onclick = deleteSelection;
+  $("#selClear").onclick = clearSelection;
   $("#removeFillers").onclick = removeFillers;
   $("#trimPauses").onclick = toggleTrimPauses;
-  $("#trimPauses").classList.toggle("amber", !!state.trimPausesAbove);
+  $("#trimPauses").classList.toggle("accent", !!state.trimPausesAbove);
   $("#search").addEventListener("input", (e) => runSearch(e.target.value));
   $("#search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); }
@@ -330,6 +339,8 @@ function selectVideo(id) {
   renderVideoList();
   highlightSelectedTranscript();
   renderRuler();
+  const title = $("#docTitle");
+  if (title) title.textContent = v ? filenameOf(v.filename).replace(/\.[a-z0-9]+$/i, "") : "Transcript";
 }
 
 // ── Transcript + cutting ─────────────────────────────────────────────
@@ -510,9 +521,11 @@ function clearSelection() {
   updateSelectionHint();
 }
 function updateSelectionHint() {
-  const el = $("#selHint"); if (!el) return;
+  const bar = $("#selToolbar"); if (!bar) return;
   const n = selectedEls.length;
-  el.textContent = n > 0 ? `${n} word${n === 1 ? "" : "s"} selected — press Delete to cut` : "";
+  bar.classList.toggle("show", n > 0);
+  const countEl = $("#selCount");
+  if (countEl) countEl.textContent = n > 0 ? `${n} word${n === 1 ? "" : "s"} selected` : "";
 }
 function deleteSelection() {
   const v = state.videos.find((x) => x._selStart != null);
@@ -794,7 +807,7 @@ function suggestionCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${parts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small amber sg-apply">Add to timeline</button></div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small accent sg-apply">Add to timeline</button></div>
   </div>`;
 }
 async function previewSuggestion(s) {
@@ -863,7 +876,7 @@ function shortCard(s, i) {
       <div class="s-title">${esc(s.title)}</div>
       <div class="s-hook">${esc(s.hook || "")}</div>
       <div class="s-meta">${fmt(s.start)}–${fmt(s.end)} · ${esc(src)}</div>
-      <div class="s-actions"><button class="btn small ghost s-play">${ic("play")} Preview</button><button class="btn small amber s-prod">${ic("download")} Produce</button></div>
+      <div class="s-actions"><button class="btn small ghost s-play">${ic("play")} Preview</button><button class="btn small accent s-prod">${ic("download")} Produce</button></div>
     </div>
   </div>`;
 }
