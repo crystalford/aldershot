@@ -189,6 +189,7 @@ function renderProject() {
             <span class="sel-toolbar-div"></span>
             <button class="chip-btn" id="selAddCut" title="Add this selection to the Cut list, where you can drag it into any order">Add to Cut</button>
             <button class="chip-btn" id="selSaveClip" title="Save this selection to the cross-project Clip Library">Save to Library</button>
+            <button class="chip-btn" id="selReaction" title="Find a clip already in your library that would land as a reaction/cutaway right after this line">Reaction clip</button>
             <button class="chip-btn" id="selDelete">Delete</button>
             <button class="chip-btn" id="selClear">Clear</button>
           </div>
@@ -295,6 +296,7 @@ function renderProject() {
   $("#redoBtn").onclick = redo;
   $("#selAddCut").onclick = addSelectionToCut;
   $("#selSaveClip").onclick = saveSelectionToLibrary;
+  $("#selReaction").onclick = findReactionClipForSelection;
   $("#selDelete").onclick = deleteSelection;
   $("#selClear").onclick = clearSelection;
   $("#removeFillers").onclick = removeFillers;
@@ -951,6 +953,83 @@ async function saveSelectionToLibrary() {
   const text = kept.map((w) => w.text).join(" ");
   clearSelection();
   await saveClipToLibrary([{ videoId: v.id, start, end }], { title: text.length > 60 ? text.slice(0, 57) + "…" : text });
+}
+
+// ── Reaction / cutaway clips — "he says X, cut to some existing clip that
+// echoes X." Scoped to the user's own saved Library only (the AI only ever
+// cites a real clip id, same grounding discipline as everything else here —
+// see suggestReactionClip() in src/pipeline/reason.ts). Reaching into a
+// broader stock/meme corpus of clips the user doesn't own is a deliberately
+// separate, deferred idea, not this feature's job.
+async function findReactionClipForSelection() {
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) return;
+  const selStart = v._selStart, selEnd = v._selEnd;
+  const kept = v.words.slice(selStart, selEnd + 1).filter((w) => !w.deleted);
+  if (!kept.length) { toast("That selection is all cut words."); return; }
+  const line = kept.map((w) => w.text).join(" ");
+  clearSelection();
+  let data;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/reaction-clip`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ line }),
+    });
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+  } catch (err) { toast(err.message || "Couldn't find a reaction clip", { type: "error" }); return; }
+  if (!data.match) { toast("Nothing in your library fits that line yet.", { type: "info" }); return; }
+
+  const { match } = data;
+  const insert = await UI.modal({
+    title: "Reaction clip found",
+    bodyHTML: `<p class="modal-text"><b>${esc(match.title || "Untitled clip")}</b><br>${esc(match.reason || "")}</p>`,
+    dismissValue: false,
+    actions: [
+      { label: "Skip", resolve: false },
+      { label: "Preview", onClick: () => previewSegmentsInProject(match.segments) },
+      { label: "Insert after this line", variant: "primary", resolve: true },
+    ],
+  });
+  if (!insert) return;
+  insertReactionClip(match, v, kept);
+}
+
+// Adds the selected line AND the matched reaction clip as two new segments
+// at the end of the Cut list — simplest, safest option (no guessing at a
+// precise splice point in an arrangement that may not exist yet), and the
+// existing drag-to-reorder in the Cut tab already handles positioning them.
+function insertReactionClip(match, v, keptWords) {
+  if (!state.timeline) state.timeline = { coldOpen: [], body: [] };
+  state.timeline.body = state.timeline.body || [];
+  const lineText = keptWords.map((w) => w.text).join(" ");
+  const lineSeg = {
+    videoId: v.id,
+    start: keptWords[0].start,
+    end: keptWords[keptWords.length - 1].end,
+    reason: lineText.length > 60 ? lineText.slice(0, 57) + "…" : lineText,
+  };
+  const reactionSegs = (match.segments || []).map((s) => ({
+    videoId: s.videoId, start: s.start, end: s.end, reason: `Reaction: ${match.title || match.reason || "clip"}`,
+  }));
+  state.timeline.body.push(lineSeg, ...reactionSegs);
+  saveTimeline(); renderTimeline(); updateStats(); switchToolsTab("cut");
+  toast("Added the line and the reaction clip to your Cut — drag ⠿ to position them", { type: "success" });
+}
+
+// Preview for the project editor (NOT the Library view — #libPreviewPlayer
+// doesn't exist here). Reuses the same cross-video edit.clips/playClip
+// machinery Suggested Edits already previews with, generalized through
+// resolveVideo() since a reaction clip's video may belong to a different
+// project entirely.
+async function previewSegmentsInProject(segments) {
+  const resolved = [];
+  for (const seg of segments || []) {
+    const v = await resolveVideo(seg.videoId);
+    if (v && v.r2_key) resolved.push({ videoId: seg.videoId, r2_key: v.r2_key, start: seg.start, end: seg.end });
+  }
+  if (!resolved.length) { toast("Couldn't load that clip's video."); return; }
+  stopEdit(); edit.playing = true; edit.clips = resolved;
+  await playClip(0);
 }
 
 // Place the caret "after" a word — Backspace deletes that word, Delete
@@ -1982,7 +2061,36 @@ async function saveClipToLibrary(segments, defaults = {}) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     toast("Saved to Library", { type: "success" });
+    captureVisualTags(data.id, segments); // enrichment, not awaited — a saved clip doesn't wait on it
   } catch (err) { toast(err.message || "Couldn't save clip", { type: "error" }); }
+}
+
+// Captures a few keyframes per segment — reusing the exact same client-side
+// frame grab every thumbnail in the app already uses (Thumb.grab), so no
+// server/ffmpeg work is needed — and sends them off to be captioned/OCR'd
+// (Moondream 3.1, via POST /api/clips/:id/visual-tags). Fire-and-forget:
+// visual tagging enriches a clip that already exists, it's never a
+// precondition for saving one, so a failure here stays silent.
+const VISUAL_KEYFRAMES_PER_SEGMENT = 3;
+async function captureVisualTags(clipId, segments) {
+  const frames = [];
+  for (const seg of segments) {
+    const v = await resolveVideo(seg.videoId);
+    if (!v || !v.r2_key) continue;
+    const url = mediaUrl(v.r2_key);
+    const span = Math.max(seg.end - seg.start, 0.1);
+    for (let i = 0; i < VISUAL_KEYFRAMES_PER_SEGMENT; i++) {
+      const t = seg.start + (span * (i + 0.5)) / VISUAL_KEYFRAMES_PER_SEGMENT;
+      const image = await Thumb.grab(url, t);
+      if (image) frames.push({ videoId: seg.videoId, time: t, image });
+    }
+  }
+  if (!frames.length) return;
+  try {
+    await fetch(`/api/clips/${clipId}/visual-tags`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ frames }),
+    });
+  } catch { /* silent — enrichment only */ }
 }
 
 // Minimal sequential player scoped to the Library view's own <video> element
@@ -2119,9 +2227,13 @@ function renderLibraryGrid(clips) {
 }
 function clipCard(c, i) {
   const segParts = c.segments.map((s, si) => `<span class="sg-seg" data-seg="${si}">${fmt(s.start)}</span>`).join(`<span class="sg-arrow">→</span>`);
+  // What's actually on screen, not just what's said/tagged — surfaced so
+  // visual tagging is visibly useful, not silently indexed.
+  const visualCaptions = [...new Set(c.segments.flatMap((s) => (s.visualTags || []).map((t) => t.caption).filter(Boolean)))].slice(0, 2);
   return `<div class="clip-card" data-i="${i}">
     <div class="sg-top"><span class="sg-type ${c.kind === "ai-detected" ? "theme" : "callback"}">${c.kind === "ai-detected" ? "AI-detected" : "Manual"}</span><span class="sg-title">${esc(c.title)}</span></div>
     ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
+    ${visualCaptions.length ? `<div class="sg-visual">${visualCaptions.map((cap) => `👁 ${esc(cap)}`).join(" · ")}</div>` : ""}
     <div class="sg-segs">${segParts}</div>
     ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
     <div class="s-actions">

@@ -30,9 +30,11 @@ import {
   updateClip,
   deleteClip,
   listAllTags,
+  visualSummaryOf,
   type ClipKind,
   type NewClipSegment,
 } from "./clips";
+import { ensureVisualTagSchema, createVisualTag } from "./visualtags";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
 import {
   arrangeTimeline,
@@ -41,6 +43,7 @@ import {
   suggestEdits,
   composeFromClips,
   generateBridges,
+  suggestReactionClip,
   type VideoTranscript,
   type SegmentWithText,
 } from "./pipeline/reason";
@@ -617,6 +620,7 @@ app.post("/api/clips/discover", async (c) => {
 app.post("/api/clips/compose", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
   const { instruction } = await c.req.json<{ instruction?: string }>().catch(() => ({}) as { instruction?: string });
   if (!instruction?.trim()) return c.json({ error: "describe what you want the video essay to be about" }, 400);
   const clips = await listClips(c.env.DB, { limit: 500 });
@@ -624,7 +628,7 @@ app.post("/api/clips/compose", async (c) => {
   try {
     const plan = await composeFromClips(
       c.env,
-      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags })),
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
       instruction,
     );
     const byId = new Map(clips.map((cl) => [cl.id, cl]));
@@ -641,9 +645,40 @@ app.post("/api/clips/compose", async (c) => {
   }
 });
 
+// Reaction/cutaway clips: "he says X, cut to some existing clip that echoes
+// X." Scoped to the user's own saved library only (same grounded discipline
+// as Compose — cite a real clip id or return nothing, never invent one).
+// Reaching into a broader stock/meme corpus of clips the user doesn't own is
+// a deliberately separate, deferred idea — not what this route does.
+app.post("/api/projects/:id/reaction-clip", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const { line } = await c.req.json<{ line?: string }>().catch(() => ({}) as { line?: string });
+  if (!line?.trim()) return c.json({ error: "select a line to react to" }, 400);
+
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const clips = await listClips(c.env.DB, { limit: 500 });
+  if (!clips.length) return c.json({ match: null });
+  try {
+    const match = await suggestReactionClip(
+      c.env,
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
+      line,
+    );
+    if (!match) return c.json({ match: null });
+    const clip = clips.find((cl) => cl.id === match.clipId);
+    return c.json({ match: { clipId: match.clipId, reason: match.reason, title: clip?.title, segments: clip?.segments ?? [] } });
+  } catch (err) {
+    return c.json({ error: `reaction-clip failed: ${err}` }, 502);
+  }
+});
+
 app.get("/api/clips", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
   const { tag, projectId, videoId, kind, q, limit, offset } = c.req.query();
   const clips = await listClips(c.env.DB, {
     tag,
@@ -660,6 +695,7 @@ app.get("/api/clips", async (c) => {
 app.get("/api/clips/:id", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
   const clip = await getClip(c.env.DB, c.req.param("id"));
   if (!clip) return c.json({ error: "clip not found" }, 404);
   return c.json(clip);
@@ -668,12 +704,73 @@ app.get("/api/clips/:id", async (c) => {
 app.patch("/api/clips/:id", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // updateClip() re-reads via getClip()
   const body = await c.req
     .json<{ title?: string; description?: string; tags?: string[] }>()
     .catch(() => ({}) as { title?: string; description?: string; tags?: string[] });
   const clip = await updateClip(c.env.DB, c.req.param("id"), body);
   if (!clip) return c.json({ error: "clip not found" }, 404);
   return c.json(clip);
+});
+
+// Visual tags for a clip's own segments — a handful of client-captured
+// keyframes (data URIs, from Thumb.grab()) get captioned and OCR'd via
+// Moondream 3.1 right after the clip is saved. Fire-and-forget from the
+// client's point of view: tags are an enrichment, not required for the clip
+// to exist. Tags are stored on the VIDEO's timeline (see visualtags.ts), not
+// owned by this clip, so they're picked up by any future clip that overlaps
+// the same time range too.
+app.post("/api/clips/:id/visual-tags", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const clipId = c.req.param("id");
+  const clip = await getClip(c.env.DB, clipId);
+  if (!clip) return c.json({ error: "clip not found" }, 404);
+
+  const body = await c.req
+    .json<{ frames?: { videoId: string; time: number; image: string }[] }>()
+    .catch(() => ({}) as { frames?: { videoId: string; time: number; image: string }[] });
+  const frames = body.frames ?? [];
+  if (!frames.length) return c.json({ error: "no frames provided" }, 400);
+
+  // Resolve each frame's owning project once (segments can span videos from
+  // different projects), tolerating a bad/foreign video id per-frame rather
+  // than failing the whole batch.
+  const projectIdCache = new Map<string, string | null>();
+  const created = [];
+  for (const f of frames) {
+    if (!f.videoId || typeof f.time !== "number" || !f.image) continue;
+    if (!projectIdCache.has(f.videoId)) {
+      const v = await getVideo(c.env.DB, f.videoId);
+      projectIdCache.set(f.videoId, v?.project_id ?? null);
+    }
+    const projectId = projectIdCache.get(f.videoId);
+    if (!projectId) continue;
+    try {
+      const [captionRes, ocrRes] = await Promise.all([
+        c.env.AI.run("@cf/moondream/moondream3.1-9B-A2B", { task: "caption", image: f.image, caption_length: "normal", stream: false }) as Promise<{ caption?: string }>,
+        c.env.AI.run("@cf/moondream/moondream3.1-9B-A2B", {
+          task: "query",
+          image: f.image,
+          question: "Transcribe any text visible in this image. Respond with an empty string if there is none.",
+          reasoning: false,
+          stream: false,
+        }) as Promise<{ answer?: string }>,
+      ]);
+      const tag = await createVisualTag(c.env.DB, {
+        videoId: f.videoId,
+        projectId,
+        time: f.time,
+        caption: captionRes.caption,
+        ocrText: ocrRes.answer,
+      });
+      created.push(tag);
+    } catch (err) {
+      console.error("[visual-tags] frame failed:", err);
+    }
+  }
+  return c.json({ tags: created });
 });
 
 app.delete("/api/clips/:id", async (c) => {

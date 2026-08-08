@@ -10,6 +10,7 @@
  * existing suggestion can be saved to the library with no reshaping.
  */
 import type { Segment } from "./transcript/edl";
+import { visualTagsByVideo, type VisualTag } from "./visualtags";
 
 export type ClipKind = "manual" | "ai-detected";
 
@@ -22,9 +23,13 @@ export interface Clip {
 }
 
 /** A segment as returned to the client — Segment plus the provenance the
- *  library needs to know if a segment is "foreign" to the current project. */
+ *  library needs to know if a segment is "foreign" to the current project,
+ *  plus whatever's visually tagged within its time range (see visualtags.ts —
+ *  tags live on the video's own timeline, a segment just picks up whichever
+ *  ones its [start,end] overlaps). */
 export interface ClipSegmentOut extends Segment {
   projectId: string;
+  visualTags: { time: number; caption: string | null; ocrText: string | null }[];
 }
 
 export interface ClipDetail extends Clip {
@@ -124,7 +129,7 @@ export async function createClip(
   return {
     ...clip,
     tags,
-    segments: segments.map((s) => ({ videoId: s.videoId, projectId: s.projectId, start: s.start, end: s.end, reason: s.reason })),
+    segments: segments.map((s) => ({ videoId: s.videoId, projectId: s.projectId, start: s.start, end: s.end, reason: s.reason, visualTags: [] })),
   };
 }
 
@@ -146,10 +151,16 @@ async function attachSegmentsAndTags(db: D1Database, clips: Clip[]): Promise<Cli
       .all<{ clip_id: string; tag: string }>(),
   ]);
 
+  const videoIds = [...new Set((segRows ?? []).map((r) => r.video_id))];
+  const visualByVideo = await visualTagsByVideo(db, videoIds);
+  const tagsForRange = (videoId: string, start: number, end: number): VisualTag[] =>
+    (visualByVideo.get(videoId) ?? []).filter((t) => t.time >= start && t.time <= end);
+
   const segsByClip = new Map<string, ClipSegmentOut[]>();
   for (const r of segRows ?? []) {
     const list = segsByClip.get(r.clip_id) ?? [];
-    list.push({ videoId: r.video_id, projectId: r.project_id, start: r.start, end: r.end, reason: r.reason ?? undefined });
+    const visualTags = tagsForRange(r.video_id, r.start, r.end).map((t) => ({ time: t.time, caption: t.caption, ocrText: t.ocrText }));
+    list.push({ videoId: r.video_id, projectId: r.project_id, start: r.start, end: r.end, reason: r.reason ?? undefined, visualTags });
     segsByClip.set(r.clip_id, list);
   }
   const tagsByClip = new Map<string, string[]>();
@@ -166,7 +177,19 @@ export async function listClips(db: D1Database, filter: ClipFilter = {}): Promis
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.kind) { where.push("c.kind = ?"); params.push(filter.kind); }
-  if (filter.q) { where.push("(c.title LIKE ? OR c.description LIKE ?)"); params.push(`%${filter.q}%`, `%${filter.q}%`); }
+  if (filter.q) {
+    // Matches what's SAID (title/description) or what's SHOWN (visual tags on
+    // any segment's time range) — the whole point of tagging what's on screen
+    // is that it's findable the same way as everything else.
+    where.push(
+      `(c.title LIKE ? OR c.description LIKE ? OR EXISTS (
+         SELECT 1 FROM clip_segments s JOIN visual_tags v
+           ON v.video_id = s.video_id AND v."time" >= s."start" AND v."time" <= s."end"
+         WHERE s.clip_id = c.id AND (v.caption LIKE ? OR v.ocr_text LIKE ?)
+       ))`,
+    );
+    params.push(`%${filter.q}%`, `%${filter.q}%`, `%${filter.q}%`, `%${filter.q}%`);
+  }
   if (filter.tag) {
     where.push("EXISTS (SELECT 1 FROM clip_tags t WHERE t.clip_id = c.id AND t.tag = ?)");
     params.push(normalizeTag(filter.tag));
@@ -230,6 +253,14 @@ export async function deleteClip(db: D1Database, id: string): Promise<void> {
     db.prepare(`DELETE FROM clip_segments WHERE clip_id = ?`).bind(id),
     db.prepare(`DELETE FROM clips WHERE id = ?`).bind(id),
   ]);
+}
+
+/** A short "what's on screen" summary for a clip, built from its segments'
+ *  visual tags — for folding into an AI prompt's clip menu (composeFromClips,
+ *  suggestReactionClip). undefined when nothing's been visually tagged yet. */
+export function visualSummaryOf(clip: ClipDetail): string | undefined {
+  const captions = [...new Set(clip.segments.flatMap((s) => s.visualTags.map((t) => t.caption).filter((x): x is string => !!x)))];
+  return captions.length ? captions.slice(0, 2).join("; ") : undefined;
 }
 
 export async function listAllTags(db: D1Database): Promise<{ tag: string; count: number }[]> {

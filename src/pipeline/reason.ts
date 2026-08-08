@@ -273,6 +273,12 @@ export interface ComposableClip {
   title: string;
   description?: string | null;
   tags: string[];
+  /** A short summary of what's visually tagged within the clip's own time
+   *  range (see visualtags.ts) — folded into the menu line when present, so
+   *  a clip with no matching dialogue but a matching visual (a silent
+   *  reaction shot, an on-screen graphic) is still findable. Optional: only
+   *  populated once a clip has been through visual tagging. */
+  visualSummary?: string;
 }
 interface ComposeRef {
   clipId: string;
@@ -287,14 +293,19 @@ interface ComposeReply {
   body?: { id: string; reason?: string }[];
 }
 
-export async function composeFromClips(env: Env, clips: ComposableClip[], instruction: string): Promise<ComposePlan> {
-  const menu = clips
+function buildClipMenu(clips: ComposableClip[]): string {
+  return clips
     .map((c) => {
       const desc = c.description ? ` — ${c.description}` : "";
       const tags = c.tags.length ? ` (tags: ${c.tags.join(", ")})` : "";
-      return `[${c.id}] "${c.title}"${desc}${tags}`;
+      const visual = c.visualSummary ? ` [on screen: ${c.visualSummary}]` : "";
+      return `[${c.id}] "${c.title}"${desc}${tags}${visual}`;
     })
     .join("\n");
+}
+
+export async function composeFromClips(env: Env, clips: ComposableClip[], instruction: string): Promise<ComposePlan> {
+  const menu = buildClipMenu(clips);
   const system =
     "You are a sharp documentary editor assembling a video essay from a library of already-cut, " +
     "already-titled clips. The user tells you the brief; you select and order clips (by their [id]) " +
@@ -365,4 +376,40 @@ export async function generateBridges(env: Env, segments: SegmentWithText[], goa
     bridges.push({ afterIndex: b.afterIndex, script });
   }
   return bridges.sort((a, z) => a.afterIndex - z.afterIndex);
+}
+
+// ── Reaction / cutaway clip suggestion ──────────────────────────────────
+// The "he says X, cut to some unrelated clip that echoes X" pattern common
+// in commentary/review editing — a comedic punctuation cut, not a narrative
+// bridge. Scoped deliberately to the user's OWN saved library only (same
+// grounded, cite-a-real-id-or-return-nothing discipline as everything else
+// here) — reaching into a broader stock/meme corpus of clips the user
+// doesn't own is a different, deferred idea, not this function's job.
+interface ReactionReply {
+  clipId?: string | null;
+  reason?: string;
+}
+
+export async function suggestReactionClip(env: Env, clips: ComposableClip[], line: string): Promise<{ clipId: string; reason: string } | null> {
+  if (!clips.length) return null;
+  const menu = buildClipMenu(clips);
+  const system =
+    "You are a sharp comedy editor. The user just said a specific line in their video, and wants to know " +
+    "if any clip already in their library would land as a quick reaction or cutaway right after it — the " +
+    "kind of edit where cutting to an unrelated clip echoes or punctuates what was just said, for comedic " +
+    "effect. You only choose from the clips given, by their [id]. A forced, unfunny match is worse than no " +
+    "match — if nothing genuinely fits, say so rather than picking the closest thing.";
+  const user =
+    `The line just said: "${line.trim()}"\n\n` +
+    "If one of these clips would land as a reaction/cutaway right after that line, name it and say why in " +
+    "one sentence. If nothing really fits, return null for clipId.\n\n" +
+    'Return ONLY JSON: {"clipId":"clip-uuid or null","reason":"why it lands, one sentence"}\n\n' +
+    "Clips:\n" +
+    menu;
+
+  const reply = await runJson<ReactionReply>(env, system, user);
+  if (!reply.clipId) return null;
+  const match = clips.find((c) => c.id === reply.clipId);
+  if (!match) return null;
+  return { clipId: match.id, reason: reply.reason?.trim() || "" };
 }
