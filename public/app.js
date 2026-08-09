@@ -1362,6 +1362,70 @@ function highlightPlayhead(videoId, t) {
 }
 function clearPlayhead() { if (edit.playingEl) { edit.playingEl.classList.remove("playing"); edit.playingEl = null; } }
 
+// ── AI-suggestion ↔ transcript linkage ──────────────────────────────
+// Every Cut/Suggestion/Short card can hover-highlight the exact words it's
+// about, right in the transcript, instead of being a disconnected card in
+// a sidebar tab. Same binary-search shape as highlightPlayhead above,
+// generalized from "the one word at time t" to "every word in [start,end)".
+function wordIndicesInRange(v, start, end) {
+  if (!v.words || !v.words.length) return [];
+  const words = v.words;
+  let lo = 0, hi = words.length - 1, pos = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (words[mid].start <= start) { pos = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  const idxs = [];
+  for (let k = pos; k < words.length && words[k].start < end; k++) {
+    if (!words[k].deleted && words[k].end > start) idxs.push(k);
+  }
+  return idxs;
+}
+// Segments referencing a video from a DIFFERENT project (e.g. a Library
+// clip pulled in via Compose) have no transcript mounted in this view at
+// all — skipped rather than forced, same limitation resolveVideo() already
+// has for showing their filename.
+function highlightTranscriptSegments(segments) {
+  for (const seg of segments) {
+    const v = state.videos.find((x) => x.id === seg.videoId);
+    if (!v || !v.words) continue;
+    for (const i of wordIndicesInRange(v, seg.start, seg.end)) {
+      ensureWordMounted(v, i);
+      v._wordEls?.[i]?.classList.add("ai-highlight");
+    }
+  }
+}
+function clearTranscriptHighlight() {
+  document.querySelectorAll(".word.ai-highlight").forEach((el) => el.classList.remove("ai-highlight"));
+}
+// Hover-only by design (no scroll-into-view) — a list of a dozen suggestion/
+// short cards means the mouse crosses many of them just moving down the
+// page, and yanking the transcript's scroll position on every pass would
+// be worse than the disconnect it's meant to fix.
+function wireCardHighlight(cardEl, segments) {
+  if (!cardEl || !segments?.length) return;
+  cardEl.addEventListener("mouseenter", () => highlightTranscriptSegments(segments));
+  cardEl.addEventListener("mouseleave", clearTranscriptHighlight);
+}
+// Bridges fill a GAP between two existing Cut segments rather than
+// referencing a transcript span of their own — so hovering one highlights
+// the two Cut rows it sits between instead, same idea aimed at the Cut
+// list rather than the transcript. Mirrors the flat-index→group math
+// recordAndInsertBridge uses to insert at the right spot, read-only here.
+function flatSegAt(flatIdx) {
+  const t = state.timeline; if (!t) return null;
+  const coldLen = (t.coldOpen || []).length;
+  return flatIdx < coldLen ? { group: "coldOpen", idx: flatIdx } : { group: "body", idx: flatIdx - coldLen };
+}
+function highlightBridgeGap(afterIndex) {
+  [flatSegAt(afterIndex), flatSegAt(afterIndex + 1)].forEach((loc) => {
+    if (loc) $(`#timeline .seg[data-g="${loc.group}"][data-i="${loc.idx}"]`)?.classList.add("ai-highlight");
+  });
+}
+function clearBridgeGapHighlight() {
+  $("#timeline")?.querySelectorAll(".seg.ai-highlight").forEach((el) => el.classList.remove("ai-highlight"));
+}
+
 async function saveEdit(btn) {
   const ready = state.videos.filter((v) => v.status === "ready" && v.words);
   if (!ready.length) return;
@@ -1470,6 +1534,7 @@ function renderTimeline() {
       const s = state.timeline[row.dataset.g][+row.dataset.i];
       playSegmentInMainPlayer(s);
     };
+    wireCardHighlight(row, [state.timeline[row.dataset.g][+row.dataset.i]]);
     row.addEventListener("dragstart", (e) => {
       dragSeg = { g: row.dataset.g, i: +row.dataset.i };
       e.dataTransfer.effectAllowed = "move";
@@ -1535,11 +1600,18 @@ function renderBridges() {
     ${bridges.map((b, i) => `<div class="suggestion" data-i="${i}">
       <div class="sg-top"><span class="sg-type theme">Bridge</span><span class="sg-title">Clip ${b.afterIndex + 1} → ${b.afterIndex + 2}</span></div>
       <div class="sg-why">${esc(b.script)}</div>
-      <div class="s-actions"><button class="btn small primary bridge-record">${ic("video")} Record this bridge</button></div>
+      <div class="s-actions"><button class="btn small primary bridge-record">${ic("video")} Record this bridge</button><button class="btn small ghost icon-only bridge-dismiss" title="Dismiss">✕</button></div>
     </div>`).join("")}
   </div>`;
   bridges.forEach((b, i) => {
-    el.querySelector(`.suggestion[data-i="${i}"] .bridge-record`).onclick = (e) => recordAndInsertBridge(b, e.currentTarget);
+    const card = el.querySelector(`.suggestion[data-i="${i}"]`);
+    card.querySelector(".bridge-record").onclick = (e) => recordAndInsertBridge(b, e.currentTarget);
+    card.querySelector(".bridge-dismiss").onclick = () => {
+      state.bridges.splice(state.bridges.indexOf(b), 1);
+      renderBridges();
+    };
+    card.addEventListener("mouseenter", () => highlightBridgeGap(b.afterIndex));
+    card.addEventListener("mouseleave", clearBridgeGapHighlight);
   });
 }
 
@@ -1720,6 +1792,11 @@ function renderSuggestions() {
     card.querySelector(".sg-preview").onclick = () => previewSuggestion(s);
     card.querySelector(".sg-apply").onclick = (e) => applySuggestion(s, e.currentTarget);
     card.querySelector(".sg-save").onclick = () => saveClipToLibrary(s.segments, { title: s.title, description: s.why, kind: "ai-detected" });
+    card.querySelector(".sg-dismiss").onclick = () => {
+      state.suggestions.splice(state.suggestions.indexOf(s), 1);
+      renderSuggestions();
+    };
+    wireCardHighlight(card, s.segments);
   });
 }
 function suggestionCard(s, i) {
@@ -1731,7 +1808,7 @@ function suggestionCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${parts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save">Save to Library</button><button class="btn small accent sg-apply">Add to timeline</button></div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save" title="Save to the cross-project Clip Library">Save</button><button class="btn small accent sg-apply">Add to Cut</button><button class="btn small ghost icon-only sg-dismiss" title="Dismiss">✕</button></div>
   </div>`;
 }
 async function previewSuggestion(s) {
@@ -1750,7 +1827,7 @@ function applySuggestion(s, btn) {
   s.segments.forEach((seg) => state.timeline.body.push({ ...seg, reason: s.title }));
   saveTimeline(); renderTimeline(); updateStats();
   btn.textContent = "Added ✓";
-  setTimeout(() => { btn.textContent = "Add to timeline"; }, 1200);
+  setTimeout(() => { btn.textContent = "Add to Cut"; }, 1200);
   toast("Added to the Cut tab", { type: "success" });
 }
 
@@ -1780,6 +1857,12 @@ function renderShorts() {
     card.querySelector(".short-cover").onclick = () => previewShort(s);
     card.querySelector(".s-play").onclick = () => previewShort(s);
     card.querySelector(".s-prod").onclick = (e) => produceShort(s, e.currentTarget);
+    card.querySelector(".short-dismiss").onclick = (e) => {
+      e.stopPropagation();
+      state.shorts.splice(state.shorts.indexOf(s), 1);
+      renderShorts();
+    };
+    wireCardHighlight(card, [{ videoId: s.videoId, start: s.start, end: s.end }]);
   });
   Thumb.hydrate(el);
 }
@@ -1796,6 +1879,7 @@ function shortCard(s, i) {
       <div class="short-cover-play">${ic("play")}</div>
       ${score != null ? `<span class="short-score ${tier}">${score}</span>` : ""}
       <span class="short-dur">${Math.round(s.end - s.start)}s</span>
+      <button class="short-dismiss" title="Dismiss">✕</button>
     </div>
     <div class="short-body">
       <div class="s-title">${esc(s.title)}</div>
