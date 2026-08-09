@@ -43,6 +43,15 @@ function frameThumbHTML(r2Key, duration, atSeconds) {
   </div>`;
 }
 
+// A non-interactive ghost card — shows the shape of the grid a first-time
+// visitor is about to fill, instead of a generic empty-state icon.
+function skeletonCardHTML(cardClass, bodyClass) {
+  return `<div class="${cardClass} skeleton" aria-hidden="true">
+    <div class="frame-thumb skel-shimmer"></div>
+    <div class="${bodyClass}"><div class="skel-line w60 skel-shimmer"></div><div class="skel-line w35 skel-shimmer"></div></div>
+  </div>`;
+}
+
 // ── API ──────────────────────────────────────────────────────────────
 const api = {
   listProjects: () => fetch("/api/projects").then((r) => r.json()),
@@ -130,8 +139,8 @@ async function showProjects() {
   const add = document.createElement("button");
   add.className = "card card-new"; add.innerHTML = `${ic("plus")} New project`; add.onclick = newProject;
   if (!projects.length) {
-    grid.innerHTML = `<div class="empty big" style="grid-column:1/-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICON.folder}</svg>
-      <div>No projects yet.<br><span class="empty small">Create one and drop in your videos to get started.</span></div></div>`;
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No projects yet — create one and drop in your videos to get started.</div>
+      ${skeletonCardHTML("card", "card-body")}${skeletonCardHTML("card", "card-body")}`;
   }
   projects.forEach((p) => {
     const card = document.createElement("button");
@@ -2230,7 +2239,8 @@ async function reloadLibraryGrid() {
 function renderLibraryGrid(clips) {
   const el = $("#libraryGrid"); if (!el) return;
   if (!clips.length) {
-    el.innerHTML = `<p class="empty small">No clips saved yet — select text in a project's transcript and choose <b>Save to Library</b>, save a Suggested Edit, or run Discover above.</p>`;
+    el.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No clips saved yet — select text in a project's transcript and choose <b>Save to Library</b>, save a Suggested Edit, or run Discover above.</div>
+      ${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}`;
     return;
   }
   el.innerHTML = clips.map((c, i) => clipCard(c, i)).join("");
