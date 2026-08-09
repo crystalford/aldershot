@@ -1,5 +1,12 @@
 # Aldershot — Vision & Architecture
 
+> **Superseded.** This describes an earlier, much larger vision for this
+> project — an autonomous trend-detection-and-content-generation system
+> ("the Radar" + "the Studio"). The product actually built is a
+> Descript-style AI video editor for creators working from their own
+> footage — a different, more grounded scope. Kept for history; **see the
+> root `README.md` for what's actually built and shipped today.**
+
 _Living design doc. Big-picture north star, not yet an engineering spec._
 _Companion to `docs/research/feasibility.md` (what's technically possible on Cloudflare)._
 

@@ -1,5 +1,14 @@
 # Aldershot — Product & Console Design
 
+> **Superseded.** Written for the earlier "cinematic media company"
+> vision (Feed/Radar, Studio generative pipeline, amber branding) — none
+> of that was built. The Transcript Editor concept described in §3 below
+> is the one part that survived and became the actual product. **See the
+> root `README.md` for the current feature set**, and the published
+> design spec linked from it for the current visual direction (dark,
+> blue accent, Bricolage Grotesque + IBM Plex Sans — not the amber/serif
+> direction below).
+
 _How the thing looks, feels, and works. Web-first; native app later._
 
 ## Principles

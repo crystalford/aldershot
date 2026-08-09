@@ -1,5 +1,12 @@
 # Aldershot — Feasibility Research
 
+> **Superseded.** Researched for the earlier "automated video-essay
+> generation engine" vision (generated media + sourced clips, assembled
+> automatically). The product built instead is a human-driven editor for
+> a creator's own footage — most of the model/pricing research below was
+> never load-bearing for it. **See the root `README.md` for what's
+> actually built.**
+
 _Compiled 2026-06-12. Multi-source, cited. Flags where facts are uncertain or fast-moving._
 
 Aldershot is a Cloudflare-native cinematic media engine. v1 is an **automated

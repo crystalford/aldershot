@@ -1,5 +1,8 @@
 # Wave Briefs — live ideation
 
+> **Superseded** — sample output for the earlier trend-detection/ideation
+> concept ("the Radar"), which was never built. Kept for history only.
+
 Ideation-engine output: suggested angles per live wave. Pick one (or remix), and it
 gets developed into a full shot-by-shot cinematic sheet for production.
 

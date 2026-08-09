@@ -1,3 +1,6 @@
+> **Superseded** — sample output for the earlier generative-shot-compiler
+> concept, which was never built. Kept for history only.
+
 # Shot Sheet — "Eulogy for Fable" (Wave 02, Angle A)
 
 **Format:** video essay, ~2:30. **Window:** closing (~1 wk until Fable is pulled).

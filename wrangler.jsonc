@@ -24,7 +24,9 @@
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
   ],
 
-  // Container (ffmpeg) — extracts + chunks audio for long-video transcription.
+  // Container (ffmpeg) — extracts audio for transcription, and runs the
+  // "Enhance audio" denoise/EQ/level/loudnorm pass. Everything else (cuts,
+  // captions, reframing, export) renders client-side via ffmpeg.wasm instead.
   // Requires the account on Workers Paid with Containers enabled. Built by the
   // GitHub Action (Docker on the runner).
   "containers": [
