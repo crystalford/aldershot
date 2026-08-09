@@ -2,8 +2,6 @@
  * D1 access for projects + videos — the first persistent state in Aldershot.
  * Transcripts, timelines, and shorts live as JSON in R2 (see src/keys.ts);
  * D1 holds the lightweight records that tie a project's videos together.
- * Every read/write here is scoped to a single owning account (see
- * src/tenancy.ts for how `user_id` was retrofitted onto these tables).
  */
 import type { Env } from "./env";
 
@@ -52,33 +50,28 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   ]);
 }
 
-export async function createProject(db: D1Database, userId: string, name: string): Promise<Project> {
+export async function createProject(db: D1Database, name: string): Promise<Project> {
   const project: Project = { id: crypto.randomUUID(), name, created_at: Date.now() };
   await db
-    .prepare(`INSERT INTO projects (id, name, created_at, user_id) VALUES (?, ?, ?, ?)`)
-    .bind(project.id, project.name, project.created_at, userId)
+    .prepare(`INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)`)
+    .bind(project.id, project.name, project.created_at)
     .run();
   return project;
 }
 
-export async function listProjects(db: D1Database, userId: string): Promise<Project[]> {
+export async function listProjects(db: D1Database): Promise<Project[]> {
   const { results } = await db
-    .prepare(`SELECT id, name, created_at FROM projects WHERE user_id = ? ORDER BY created_at DESC`)
-    .bind(userId)
+    .prepare(`SELECT id, name, created_at FROM projects ORDER BY created_at DESC`)
     .all<Project>();
   return results ?? [];
 }
 
-export async function getProject(db: D1Database, userId: string, id: string): Promise<Project | null> {
-  return db
-    .prepare(`SELECT id, name, created_at FROM projects WHERE id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .first<Project>();
+export async function getProject(db: D1Database, id: string): Promise<Project | null> {
+  return db.prepare(`SELECT id, name, created_at FROM projects WHERE id = ?`).bind(id).first<Project>();
 }
 
 export async function addVideo(
   db: D1Database,
-  userId: string,
   v: Omit<Video, "created_at" | "duration" | "status"> & { duration?: number | null; status?: VideoStatus },
 ): Promise<Video> {
   const video: Video = {
@@ -89,8 +82,8 @@ export async function addVideo(
   };
   await db
     .prepare(
-      `INSERT INTO videos (id, project_id, filename, r2_key, duration, status, ord, created_at, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO videos (id, project_id, filename, r2_key, duration, status, ord, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       video.id,
@@ -101,52 +94,43 @@ export async function addVideo(
       video.status,
       video.ord,
       video.created_at,
-      userId,
     )
     .run();
   return video;
 }
 
-export async function listVideos(db: D1Database, userId: string, projectId: string): Promise<Video[]> {
+export async function listVideos(db: D1Database, projectId: string): Promise<Video[]> {
   const { results } = await db
     .prepare(
       `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
-       FROM videos WHERE project_id = ? AND user_id = ? ORDER BY ord ASC, created_at ASC`,
+       FROM videos WHERE project_id = ? ORDER BY ord ASC, created_at ASC`,
     )
-    .bind(projectId, userId)
+    .bind(projectId)
     .all<Video>();
   return results ?? [];
 }
 
-/** Every ready video across every project the caller owns — feeds the
- *  account-wide clip discovery pass (unlike listVideos, not scoped to a
- *  single project_id, but still scoped to the caller's own account). */
-export async function listAllReadyVideos(db: D1Database, userId: string): Promise<Video[]> {
+/** Every ready video across every project — feeds the account-wide clip
+ *  discovery pass (unlike listVideos, not scoped to a single project_id). */
+export async function listAllReadyVideos(db: D1Database): Promise<Video[]> {
   const { results } = await db
     .prepare(
       `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
-       FROM videos WHERE status = 'ready' AND user_id = ? ORDER BY created_at ASC`,
+       FROM videos WHERE status = 'ready' ORDER BY created_at ASC`,
     )
-    .bind(userId)
     .all<Video>();
   return results ?? [];
 }
 
-export async function getVideo(db: D1Database, userId: string, id: string): Promise<Video | null> {
+export async function getVideo(db: D1Database, id: string): Promise<Video | null> {
   return db
     .prepare(
-      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
-       FROM videos WHERE id = ? AND user_id = ?`,
+      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at FROM videos WHERE id = ?`,
     )
-    .bind(id, userId)
+    .bind(id)
     .first<Video>();
 }
 
-export async function setVideoStatus(
-  db: D1Database,
-  userId: string,
-  id: string,
-  status: VideoStatus,
-): Promise<void> {
-  await db.prepare(`UPDATE videos SET status = ? WHERE id = ? AND user_id = ?`).bind(status, id, userId).run();
+export async function setVideoStatus(db: D1Database, id: string, status: VideoStatus): Promise<void> {
+  await db.prepare(`UPDATE videos SET status = ? WHERE id = ?`).bind(status, id).run();
 }

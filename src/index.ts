@@ -35,8 +35,6 @@ import {
   type NewClipSegment,
 } from "./clips";
 import { ensureVisualTagSchema, createVisualTag } from "./visualtags";
-import { ensureAuthSchema, auth, requireUser } from "./auth";
-import { ensureTenancySchema } from "./tenancy";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
 import {
   arrangeTimeline,
@@ -58,46 +56,15 @@ async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
   return obj ? await obj.json<T>() : null;
 }
 
-type Vars = { userId: string };
-const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+const app = new Hono<{ Bindings: Env }>();
 
 app.get("/api/health", (c) => c.json({ app: "aldershot", status: "ok", phase: "v0" }));
 
-// Better Auth owns sign-up/sign-in/sign-out/session entirely — no
-// hand-written routes for it. Mounted before the blanket auth requirement
-// below (and excluded from it) since you can't have a session yet when
-// you're in the middle of creating one.
-app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-  await ensureAuthSchema(c.env.DB);
-  return auth(c.env).handler(c.req.raw);
-});
-
-// Every other /api/* route requires a signed-in account. Schema setup lives
-// here rather than scattered per-route (as it used to be) because literally
-// every protected route now funnels through this one middleware — and
-// ensureTenancySchema (which ALTERs existing tables) has to run after the
-// base CREATE TABLEs below, not before, or it fails against tables that
-// don't exist yet on a fresh database.
-app.use("/api/*", async (c, next) => {
-  if (c.req.path === "/api/health" || c.req.path.startsWith("/api/auth/")) return next();
-  await ensureSchema(c.env.DB);
-  await ensureClipSchema(c.env.DB);
-  await ensureVisualTagSchema(c.env.DB);
-  await ensureTenancySchema(c.env.DB);
-  return requireUser(c, next);
-});
-
 // Stream a stored object (uploads + rendered cuts) back to the browser, with
-// HTTP range support so <video> can seek/scrub the result. Every key lives
-// under projects/<id>/... (see keys.ts) — resolve that id and check it's
-// one of the caller's own projects before streaming anything.
+// HTTP range support so <video> can seek/scrub the result.
 app.get("/api/media/*", async (c) => {
   const key = decodeURIComponent(c.req.path.slice("/api/media/".length));
   if (!key) return c.json({ error: "missing media key" }, 400);
-  const pid = key.match(/^projects\/([^/]+)\//)?.[1];
-  if (!pid || !(await getProject(c.env.DB, c.get("userId"), pid))) {
-    return c.json({ error: `not found in R2: ${key}` }, 404);
-  }
 
   const rangeHeader = c.req.header("range");
   let r2Range: R2Range | undefined;
@@ -134,22 +101,24 @@ app.get("/api/media/*", async (c) => {
 // A project holds multiple videos that get transcribed, arranged into a
 // long-form cut, and mined for shorts.
 app.post("/api/projects", async (c) => {
+  await ensureSchema(c.env.DB);
   const body = await c.req.json<{ name?: string }>().catch(() => ({}) as { name?: string });
-  const project = await createProject(c.env.DB, c.get("userId"), body.name?.trim() || "Untitled project");
+  const project = await createProject(c.env.DB, body.name?.trim() || "Untitled project");
   return c.json(project, 201);
 });
 
 app.get("/api/projects", async (c) => {
-  return c.json({ projects: await listProjects(c.env.DB, c.get("userId")) });
+  await ensureSchema(c.env.DB);
+  return c.json({ projects: await listProjects(c.env.DB) });
 });
 
 app.get("/api/projects/:id", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  const project = await getProject(c.env.DB, userId, id);
+  const project = await getProject(c.env.DB, id);
   if (!project) return c.json({ error: "project not found" }, 404);
 
-  const videos = await listVideos(c.env.DB, userId, id);
+  const videos = await listVideos(c.env.DB, id);
   const withWords = await Promise.all(
     videos.map(async (v) => ({
       ...v,
@@ -164,8 +133,9 @@ app.get("/api/projects/:id", async (c) => {
 
 // Persist the manually-edited / arranged long-form timeline.
 app.put("/api/projects/:id/timeline", async (c) => {
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, c.get("userId"), id))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
   const timeline = await c.req.json<Timeline>();
   await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
     httpMetadata: { contentType: "application/json" },
@@ -175,9 +145,9 @@ app.put("/api/projects/:id/timeline", async (c) => {
 
 // Upload one video into a project. Body = raw bytes; x-filename / x-duration headers.
 app.post("/api/projects/:id/videos", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const pid = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, pid))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
 
   const filename = c.req.header("x-filename") || "video";
   const contentType = c.req.header("content-type") || "application/octet-stream";
@@ -188,8 +158,8 @@ app.post("/api/projects/:id/videos", async (c) => {
   const body = c.req.raw.body;
   if (!body) return c.json({ error: "empty upload" }, 400);
   await c.env.MEDIA.put(key, body, { httpMetadata: { contentType } });
-  const ord = (await listVideos(c.env.DB, userId, pid)).length;
-  const video = await addVideo(c.env.DB, userId, {
+  const ord = (await listVideos(c.env.DB, pid)).length;
+  const video = await addVideo(c.env.DB, {
     id: vid,
     project_id: pid,
     filename,
@@ -203,8 +173,9 @@ app.post("/api/projects/:id/videos", async (c) => {
 // ── Large-file engine ────────────────────────────────────────────────
 // 1) presign a direct-to-R2 upload URL (browser uploads straight to storage).
 app.post("/api/projects/:id/videos/presign", async (c) => {
+  await ensureSchema(c.env.DB);
   const pid = c.req.param("id");
-  if (!(await getProject(c.env.DB, c.get("userId"), pid))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
   const body = await c.req.json<{ filename?: string; contentType?: string }>().catch(() => ({}) as { filename?: string; contentType?: string });
   const vid = crypto.randomUUID();
   const key = videoSourceKey(pid, vid, pickExt(body.filename, body.contentType));
@@ -215,13 +186,13 @@ app.post("/api/projects/:id/videos/presign", async (c) => {
 
 // 2) confirm the upload finished → create the video record.
 app.post("/api/projects/:id/videos/confirm", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const pid = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, pid))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
   const b = await c.req.json<{ videoId: string; key: string; filename?: string; duration?: number }>();
   if (!b.videoId || !b.key) return c.json({ error: "missing videoId/key" }, 400);
-  const ord = (await listVideos(c.env.DB, userId, pid)).length;
-  const video = await addVideo(c.env.DB, userId, {
+  const ord = (await listVideos(c.env.DB, pid)).length;
+  const video = await addVideo(c.env.DB, {
     id: b.videoId, project_id: pid, filename: b.filename || "video", r2_key: b.key, duration: b.duration ?? null, ord,
   });
   return c.json(video, 201);
@@ -260,16 +231,16 @@ const audioKeyFor = (pid: string, vid: string) => `projects/${pid}/videos/${vid}
 // I/O-bound waits); the client shows a persistent "extracting…" message for
 // the duration of this one call instead of polling a background job.
 app.post("/api/videos/:id/transcribe-remote", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, userId, vid);
+  const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
   if (!c.env.RENDER) return c.json({ error: "the transcription engine isn't enabled yet (Containers not configured)" }, 501);
 
   const log = (...args: unknown[]) => console.log(`[extract ${vid}]`, ...args);
   const mediaUrl = await sourceUrl(c, video.r2_key);
   const audioKey = audioKeyFor(video.project_id, vid);
-  await setVideoStatus(c.env.DB, userId, vid, "transcribing");
+  await setVideoStatus(c.env.DB, vid, "transcribing");
 
   try {
     log("calling container /extract-full");
@@ -312,7 +283,7 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
     return c.json({ ok: true, chunks: Math.ceil(duration / job.segment) });
   } catch (err) {
     log("FAILED:", err instanceof Error ? err.stack || err.message : err);
-    await setVideoStatus(c.env.DB, userId, vid, "failed");
+    await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
   }
 });
@@ -320,9 +291,8 @@ app.post("/api/videos/:id/transcribe-remote", async (c) => {
 // 4) poll: each call transcribes the next audio chunk (a plain R2 range read —
 // no container involved), finalizing when done.
 app.get("/api/videos/:id/transcribe-status", async (c) => {
-  const userId = c.get("userId");
   const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, userId, vid);
+  const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
   const job = await readJson<TranscribeJob>(c.env.MEDIA, jobKey(video.project_id, vid));
   const log = (...args: unknown[]) => console.log(`[chunk ${vid}]`, ...args);
@@ -335,7 +305,7 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
   const finalize = async () => {
     log("finalizing — all chunks done");
     await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(job.words), { httpMetadata: { contentType: "application/json" } });
-    await setVideoStatus(c.env.DB, userId, vid, "ready");
+    await setVideoStatus(c.env.DB, vid, "ready");
     await c.env.MEDIA.delete(audioKey).catch(() => {});
     return c.json({ status: "ready", words: job.words });
   };
@@ -362,16 +332,16 @@ app.get("/api/videos/:id/transcribe-status", async (c) => {
     return c.json({ status: "processing", progress: Math.round((job.done / total) * 100) });
   } catch (err) {
     log("FAILED:", err instanceof Error ? err.stack || err.message : err);
-    await setVideoStatus(c.env.DB, userId, vid, "failed");
+    await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ status: "failed", error: `${err instanceof Error ? err.message : err}` });
   }
 });
 
 // Import a video from a URL (Rumble / direct link) straight into R2.
 app.post("/api/projects/:id/import", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const pid = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, pid))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, pid))) return c.json({ error: "project not found" }, 404);
 
   const { url } = await c.req.json<{ url?: string }>().catch(() => ({}) as { url?: string });
   if (!url) return c.json({ error: "no url provided" }, 400);
@@ -391,8 +361,8 @@ app.post("/api/projects/:id/import", async (c) => {
     const key = videoSourceKey(pid, vid, pickExt(resolved.filename, contentType));
     await c.env.MEDIA.put(key, upstream.body, { httpMetadata: { contentType } });
 
-    const ord = (await listVideos(c.env.DB, userId, pid)).length;
-    const video = await addVideo(c.env.DB, userId, { id: vid, project_id: pid, filename: resolved.filename, r2_key: key, ord });
+    const ord = (await listVideos(c.env.DB, pid)).length;
+    const video = await addVideo(c.env.DB, { id: vid, project_id: pid, filename: resolved.filename, r2_key: key, ord });
     return c.json(video, 201);
   } catch (err) {
     return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
@@ -401,28 +371,28 @@ app.post("/api/projects/:id/import", async (c) => {
 
 // Transcribe a video. Body = client-extracted audio bytes (mono 16kHz).
 app.post("/api/videos/:id/transcribe", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, userId, vid);
+  const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
 
-  await setVideoStatus(c.env.DB, userId, vid, "transcribing");
+  await setVideoStatus(c.env.DB, vid, "transcribing");
   try {
     const words = await transcribeAudio(c.env, await c.req.arrayBuffer());
     await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(words), {
       httpMetadata: { contentType: "application/json" },
     });
-    await setVideoStatus(c.env.DB, userId, vid, "ready");
+    await setVideoStatus(c.env.DB, vid, "ready");
     return c.json({ videoId: vid, words });
   } catch (err) {
-    await setVideoStatus(c.env.DB, userId, vid, "failed");
+    await setVideoStatus(c.env.DB, vid, "failed");
     return c.json({ error: `transcribe failed: ${err}` }, 500);
   }
 });
 
 // Gather a project's transcribed videos (id + words) for the reasoning steps.
-async function readyTranscripts(c: { env: Env }, userId: string, pid: string): Promise<VideoTranscript[]> {
-  const videos = await listVideos(c.env.DB, userId, pid);
+async function readyTranscripts(c: { env: Env }, pid: string): Promise<VideoTranscript[]> {
+  const videos = await listVideos(c.env.DB, pid);
   const out: VideoTranscript[] = [];
   for (const v of videos) {
     if (v.status !== "ready") continue;
@@ -434,10 +404,10 @@ async function readyTranscripts(c: { env: Env }, userId: string, pid: string): P
 
 // AI narrative arrange: analyse transcripts → ordered long-form Timeline.
 app.post("/api/projects/:id/arrange", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, id))) return c.json({ error: "project not found" }, 404);
-  const ready = await readyTranscripts(c, userId, id);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
   if (!ready.length) return c.json({ error: "no transcribed videos to arrange yet" }, 400);
   try {
     const timeline = await arrangeTimeline(c.env, ready);
@@ -453,12 +423,12 @@ app.post("/api/projects/:id/arrange", async (c) => {
 // Directed edit: the user types their own goal ("a video about how the host
 // keeps interrupting the guest") instead of picking a generic best-cut.
 app.post("/api/projects/:id/direct", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, id))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
   const { instruction } = await c.req.json<{ instruction?: string }>().catch(() => ({}) as { instruction?: string });
   if (!instruction?.trim()) return c.json({ error: "describe what you want the edit to be" }, 400);
-  const ready = await readyTranscripts(c, userId, id);
+  const ready = await readyTranscripts(c, id);
   if (!ready.length) return c.json({ error: "no transcribed videos to work from yet" }, 400);
   try {
     const timeline = await directedArrange(c.env, ready, instruction);
@@ -473,10 +443,10 @@ app.post("/api/projects/:id/direct", async (c) => {
 
 // Opus-Clip-style: suggest self-contained shorts across the project's videos.
 app.post("/api/projects/:id/shorts", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, id))) return c.json({ error: "project not found" }, 404);
-  const ready = await readyTranscripts(c, userId, id);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
   if (!ready.length) return c.json({ error: "no transcribed videos to mine yet" }, 400);
   try {
     const shorts = await suggestShorts(c.env, ready);
@@ -493,10 +463,10 @@ app.post("/api/projects/:id/shorts", async (c) => {
 // contrasts, recurring themes spread across the whole transcript ("thematic
 // string-out"), not just adjacent-sentence coherence like /arrange.
 app.post("/api/projects/:id/suggest-edits", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, id))) return c.json({ error: "project not found" }, 404);
-  const ready = await readyTranscripts(c, userId, id);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ready = await readyTranscripts(c, id);
   if (!ready.length) return c.json({ error: "no transcribed videos to analyze yet" }, 400);
   try {
     const suggestions = await suggestEdits(c.env, ready);
@@ -515,9 +485,9 @@ app.post("/api/projects/:id/suggest-edits", async (c) => {
 // any transition that needs one — the connective-tissue step of the video
 // essay workflow, after Compose/Auto-arrange/manual Cut-building.
 app.post("/api/projects/:id/bridges", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  const project = await getProject(c.env.DB, userId, id);
+  const project = await getProject(c.env.DB, id);
   if (!project) return c.json({ error: "project not found" }, 404);
   const timeline = await readJson<Timeline>(c.env.MEDIA, timelineKey(id));
   const flat = [...(timeline?.coldOpen ?? []), ...(timeline?.body ?? [])];
@@ -526,7 +496,7 @@ app.post("/api/projects/:id/bridges", async (c) => {
   const transcriptCache = new Map<string, Word[] | null>();
   const segments: SegmentWithText[] = [];
   for (const s of flat) {
-    const video = await getVideo(c.env.DB, userId, s.videoId);
+    const video = await getVideo(c.env.DB, s.videoId);
     if (!video) { segments.push({ videoId: s.videoId, start: s.start, end: s.end, text: "" }); continue; }
     const key = transcriptKey(video.project_id, s.videoId);
     if (!transcriptCache.has(key)) transcriptCache.set(key, await readJson<Word[]>(c.env.MEDIA, key));
@@ -550,17 +520,18 @@ app.post("/api/projects/:id/bridges", async (c) => {
 // resolve a "foreign" library clip's video (filename/r2_key/duration) without
 // loading that whole other project. getVideo() is already global.
 app.get("/api/videos/:id", async (c) => {
-  const userId = c.get("userId");
-  const video = await getVideo(c.env.DB, userId, c.req.param("id"));
+  await ensureSchema(c.env.DB);
+  const video = await getVideo(c.env.DB, c.req.param("id"));
   if (!video) return c.json({ error: "video not found" }, 404);
-  const project = await getProject(c.env.DB, userId, video.project_id);
+  const project = await getProject(c.env.DB, video.project_id);
   return c.json({ ...video, project: project ? { id: project.id, name: project.name } : null });
 });
 
 // Persist edited words (deleted flags) for a video — the manual cut state.
 app.put("/api/videos/:id/transcript", async (c) => {
+  await ensureSchema(c.env.DB);
   const vid = c.req.param("id");
-  const video = await getVideo(c.env.DB, c.get("userId"), vid);
+  const video = await getVideo(c.env.DB, vid);
   if (!video) return c.json({ error: "video not found" }, 404);
   const words = await c.req.json<Word[]>();
   await c.env.MEDIA.put(transcriptKey(video.project_id, vid), JSON.stringify(words), {
@@ -571,8 +542,8 @@ app.put("/api/videos/:id/transcript", async (c) => {
 
 // Cross-project analog of readyTranscripts() — every ready video, everywhere,
 // feeding the account-wide clip discovery pass below.
-async function allReadyTranscripts(c: { env: Env }, userId: string): Promise<VideoTranscript[]> {
-  const videos = await listAllReadyVideos(c.env.DB, userId);
+async function allReadyTranscripts(c: { env: Env }): Promise<VideoTranscript[]> {
+  const videos = await listAllReadyVideos(c.env.DB);
   const out: VideoTranscript[] = [];
   for (const v of videos) {
     const words = await readJson<Word[]>(c.env.MEDIA, transcriptKey(v.project_id, v.id));
@@ -588,7 +559,8 @@ async function allReadyTranscripts(c: { env: Env }, userId: string): Promise<Vid
 // segment carries a videoId, and GET /api/media/* + GET /api/videos/:id
 // (above) resolve it regardless of which project it lives in.
 app.post("/api/clips", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
   const body = await c.req
     .json<{ title?: string; description?: string; kind?: ClipKind; tags?: string[]; segments?: Segment[] }>()
     .catch(() => ({}) as { title?: string; description?: string; kind?: ClipKind; tags?: string[]; segments?: Segment[] });
@@ -598,14 +570,14 @@ app.post("/api/clips", async (c) => {
 
   const segments: NewClipSegment[] = [];
   for (const s of body.segments) {
-    const video = await getVideo(c.env.DB, userId, s.videoId);
+    const video = await getVideo(c.env.DB, s.videoId);
     if (!video) return c.json({ error: `video not found for segment: ${s.videoId}` }, 400);
     if (typeof s.start !== "number" || typeof s.end !== "number" || s.end <= s.start) {
       return c.json({ error: "each segment needs a valid start < end" }, 400);
     }
     segments.push({ videoId: s.videoId, projectId: video.project_id, start: s.start, end: s.end, reason: s.reason });
   }
-  const clip = await createClip(c.env.DB, userId, {
+  const clip = await createClip(c.env.DB, {
     title,
     description: body.description?.trim() || null,
     kind: body.kind === "ai-detected" ? "ai-detected" : "manual",
@@ -616,7 +588,9 @@ app.post("/api/clips", async (c) => {
 });
 
 app.get("/api/clips/tags", async (c) => {
-  return c.json({ tags: await listAllTags(c.env.DB, c.get("userId")) });
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  return c.json({ tags: await listAllTags(c.env.DB) });
 });
 
 // Account-wide analog of /api/projects/:id/suggest-edits: gathers every ready
@@ -625,7 +599,8 @@ app.get("/api/clips/tags", async (c) => {
 // existing per-project Suggested Edits — the client shows candidates and
 // calls POST /api/clips per one the user keeps.
 app.post("/api/clips/discover", async (c) => {
-  const ready = await allReadyTranscripts(c, c.get("userId"));
+  await ensureSchema(c.env.DB);
+  const ready = await allReadyTranscripts(c);
   if (!ready.length) return c.json({ error: "no transcribed videos anywhere yet" }, 400);
   try {
     const candidates = await suggestEdits(c.env, ready);
@@ -643,9 +618,12 @@ app.post("/api/clips/discover", async (c) => {
 // reasoning endpoint. Not auto-saved to a project; the client offers
 // "save as a new project" or "add to an existing one" on the result.
 app.post("/api/clips/compose", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
   const { instruction } = await c.req.json<{ instruction?: string }>().catch(() => ({}) as { instruction?: string });
   if (!instruction?.trim()) return c.json({ error: "describe what you want the video essay to be about" }, 400);
-  const clips = await listClips(c.env.DB, c.get("userId"), { limit: 500 });
+  const clips = await listClips(c.env.DB, { limit: 500 });
   if (!clips.length) return c.json({ error: "no clips saved yet — save some to your library first" }, 400);
   try {
     const plan = await composeFromClips(
@@ -673,13 +651,15 @@ app.post("/api/clips/compose", async (c) => {
 // Reaching into a broader stock/meme corpus of clips the user doesn't own is
 // a deliberately separate, deferred idea — not what this route does.
 app.post("/api/projects/:id/reaction-clip", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
   const id = c.req.param("id");
-  if (!(await getProject(c.env.DB, userId, id))) return c.json({ error: "project not found" }, 404);
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
   const { line } = await c.req.json<{ line?: string }>().catch(() => ({}) as { line?: string });
   if (!line?.trim()) return c.json({ error: "select a line to react to" }, 400);
 
-  const clips = await listClips(c.env.DB, userId, { limit: 500 });
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const clips = await listClips(c.env.DB, { limit: 500 });
   if (!clips.length) return c.json({ match: null });
   try {
     const match = await suggestReactionClip(
@@ -696,8 +676,11 @@ app.post("/api/projects/:id/reaction-clip", async (c) => {
 });
 
 app.get("/api/clips", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
   const { tag, projectId, videoId, kind, q, limit, offset } = c.req.query();
-  const clips = await listClips(c.env.DB, c.get("userId"), {
+  const clips = await listClips(c.env.DB, {
     tag,
     projectId,
     videoId,
@@ -710,16 +693,22 @@ app.get("/api/clips", async (c) => {
 });
 
 app.get("/api/clips/:id", async (c) => {
-  const clip = await getClip(c.env.DB, c.get("userId"), c.req.param("id"));
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const clip = await getClip(c.env.DB, c.req.param("id"));
   if (!clip) return c.json({ error: "clip not found" }, 404);
   return c.json(clip);
 });
 
 app.patch("/api/clips/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB); // updateClip() re-reads via getClip()
   const body = await c.req
     .json<{ title?: string; description?: string; tags?: string[] }>()
     .catch(() => ({}) as { title?: string; description?: string; tags?: string[] });
-  const clip = await updateClip(c.env.DB, c.get("userId"), c.req.param("id"), body);
+  const clip = await updateClip(c.env.DB, c.req.param("id"), body);
   if (!clip) return c.json({ error: "clip not found" }, 404);
   return c.json(clip);
 });
@@ -732,9 +721,11 @@ app.patch("/api/clips/:id", async (c) => {
 // owned by this clip, so they're picked up by any future clip that overlaps
 // the same time range too.
 app.post("/api/clips/:id/visual-tags", async (c) => {
-  const userId = c.get("userId");
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
   const clipId = c.req.param("id");
-  const clip = await getClip(c.env.DB, userId, clipId);
+  const clip = await getClip(c.env.DB, clipId);
   if (!clip) return c.json({ error: "clip not found" }, 404);
 
   const body = await c.req
@@ -751,7 +742,7 @@ app.post("/api/clips/:id/visual-tags", async (c) => {
   for (const f of frames) {
     if (!f.videoId || typeof f.time !== "number" || !f.image) continue;
     if (!projectIdCache.has(f.videoId)) {
-      const v = await getVideo(c.env.DB, userId, f.videoId);
+      const v = await getVideo(c.env.DB, f.videoId);
       projectIdCache.set(f.videoId, v?.project_id ?? null);
     }
     const projectId = projectIdCache.get(f.videoId);
@@ -767,7 +758,7 @@ app.post("/api/clips/:id/visual-tags", async (c) => {
           stream: false,
         }) as Promise<{ answer?: string }>,
       ]);
-      const tag = await createVisualTag(c.env.DB, userId, {
+      const tag = await createVisualTag(c.env.DB, {
         videoId: f.videoId,
         projectId,
         time: f.time,
@@ -783,8 +774,9 @@ app.post("/api/clips/:id/visual-tags", async (c) => {
 });
 
 app.delete("/api/clips/:id", async (c) => {
-  const deleted = await deleteClip(c.env.DB, c.get("userId"), c.req.param("id"));
-  if (!deleted) return c.json({ error: "clip not found" }, 404);
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await deleteClip(c.env.DB, c.req.param("id"));
   return c.json({ ok: true });
 });
 

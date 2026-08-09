@@ -14,8 +14,4 @@ export interface Env {
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
-
-  // Signs Better Auth session tokens (see src/auth.ts). Required in production;
-  // falls back to a fixed dev value locally so `wrangler dev` works unconfigured.
-  BETTER_AUTH_SECRET?: string;
 }

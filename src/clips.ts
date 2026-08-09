@@ -99,7 +99,6 @@ export async function ensureClipSchema(db: D1Database): Promise<void> {
 
 export async function createClip(
   db: D1Database,
-  userId: string,
   input: { title: string; description?: string | null; kind: ClipKind; segments: NewClipSegment[]; tags?: string[] },
 ): Promise<ClipDetail> {
   const clip: Clip = {
@@ -114,8 +113,8 @@ export async function createClip(
 
   await db.batch([
     db
-      .prepare(`INSERT INTO clips (id, title, description, kind, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
-      .bind(clip.id, clip.title, clip.description, clip.kind, clip.created_at, userId),
+      .prepare(`INSERT INTO clips (id, title, description, kind, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .bind(clip.id, clip.title, clip.description, clip.kind, clip.created_at),
     ...segments.map((s, ord) =>
       db
         .prepare(
@@ -134,7 +133,7 @@ export async function createClip(
   };
 }
 
-async function attachSegmentsAndTags(db: D1Database, userId: string, clips: Clip[]): Promise<ClipDetail[]> {
+async function attachSegmentsAndTags(db: D1Database, clips: Clip[]): Promise<ClipDetail[]> {
   if (!clips.length) return [];
   const ids = clips.map((c) => c.id);
   const placeholders = ids.map(() => "?").join(",");
@@ -153,7 +152,7 @@ async function attachSegmentsAndTags(db: D1Database, userId: string, clips: Clip
   ]);
 
   const videoIds = [...new Set((segRows ?? []).map((r) => r.video_id))];
-  const visualByVideo = await visualTagsByVideo(db, userId, videoIds);
+  const visualByVideo = await visualTagsByVideo(db, videoIds);
   const tagsForRange = (videoId: string, start: number, end: number): VisualTag[] =>
     (visualByVideo.get(videoId) ?? []).filter((t) => t.time >= start && t.time <= end);
 
@@ -174,9 +173,9 @@ async function attachSegmentsAndTags(db: D1Database, userId: string, clips: Clip
   return clips.map((c) => ({ ...c, segments: segsByClip.get(c.id) ?? [], tags: tagsByClip.get(c.id) ?? [] }));
 }
 
-export async function listClips(db: D1Database, userId: string, filter: ClipFilter = {}): Promise<ClipDetail[]> {
-  const where: string[] = ["c.user_id = ?"];
-  const params: unknown[] = [userId];
+export async function listClips(db: D1Database, filter: ClipFilter = {}): Promise<ClipDetail[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
   if (filter.kind) { where.push("c.kind = ?"); params.push(filter.kind); }
   if (filter.q) {
     // Matches what's SAID (title/description) or what's SHOWN (visual tags on
@@ -210,29 +209,25 @@ export async function listClips(db: D1Database, userId: string, filter: ClipFilt
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY created_at DESC LIMIT ? OFFSET ?`;
   const { results } = await db.prepare(sql).bind(...params, limit, offset).all<Clip>();
-  return attachSegmentsAndTags(db, userId, results ?? []);
+  return attachSegmentsAndTags(db, results ?? []);
 }
 
-export async function getClip(db: D1Database, userId: string, id: string): Promise<ClipDetail | null> {
+export async function getClip(db: D1Database, id: string): Promise<ClipDetail | null> {
   const clip = await db
-    .prepare(`SELECT id, title, description, kind, created_at FROM clips WHERE id = ? AND user_id = ?`)
-    .bind(id, userId)
+    .prepare(`SELECT id, title, description, kind, created_at FROM clips WHERE id = ?`)
+    .bind(id)
     .first<Clip>();
   if (!clip) return null;
-  const [detail] = await attachSegmentsAndTags(db, userId, [clip]);
+  const [detail] = await attachSegmentsAndTags(db, [clip]);
   return detail;
 }
 
 export async function updateClip(
   db: D1Database,
-  userId: string,
   id: string,
   patch: { title?: string; description?: string | null; tags?: string[] },
 ): Promise<ClipDetail | null> {
-  const existing = await db
-    .prepare(`SELECT id FROM clips WHERE id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .first<{ id: string }>();
+  const existing = await db.prepare(`SELECT id FROM clips WHERE id = ?`).bind(id).first<{ id: string }>();
   if (!existing) return null;
 
   const statements = [];
@@ -249,21 +244,15 @@ export async function updateClip(
     for (const tag of tags) statements.push(db.prepare(`INSERT INTO clip_tags (clip_id, tag) VALUES (?, ?)`).bind(id, tag));
   }
   if (statements.length) await db.batch(statements);
-  return getClip(db, userId, id);
+  return getClip(db, id);
 }
 
-export async function deleteClip(db: D1Database, userId: string, id: string): Promise<boolean> {
-  const existing = await db
-    .prepare(`SELECT id FROM clips WHERE id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .first<{ id: string }>();
-  if (!existing) return false;
+export async function deleteClip(db: D1Database, id: string): Promise<void> {
   await db.batch([
     db.prepare(`DELETE FROM clip_tags WHERE clip_id = ?`).bind(id),
     db.prepare(`DELETE FROM clip_segments WHERE clip_id = ?`).bind(id),
     db.prepare(`DELETE FROM clips WHERE id = ?`).bind(id),
   ]);
-  return true;
 }
 
 /** A short "what's on screen" summary for a clip, built from its segments'
@@ -274,15 +263,9 @@ export function visualSummaryOf(clip: ClipDetail): string | undefined {
   return captions.length ? captions.slice(0, 2).join("; ") : undefined;
 }
 
-export async function listAllTags(db: D1Database, userId: string): Promise<{ tag: string; count: number }[]> {
+export async function listAllTags(db: D1Database): Promise<{ tag: string; count: number }[]> {
   const { results } = await db
-    .prepare(
-      `SELECT t.tag, COUNT(*) as count FROM clip_tags t
-       JOIN clips c ON c.id = t.clip_id
-       WHERE c.user_id = ?
-       GROUP BY t.tag ORDER BY count DESC, t.tag ASC`,
-    )
-    .bind(userId)
+    .prepare(`SELECT tag, COUNT(*) as count FROM clip_tags GROUP BY tag ORDER BY count DESC, tag ASC`)
     .all<{ tag: string; count: number }>();
   return results ?? [];
 }
