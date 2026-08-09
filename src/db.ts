@@ -153,3 +153,12 @@ export async function getVideo(db: D1Database, id: string): Promise<Video | null
 export async function setVideoStatus(db: D1Database, id: string, status: VideoStatus): Promise<void> {
   await db.prepare(`UPDATE videos SET status = ? WHERE id = ?`).bind(status, id).run();
 }
+
+/** Repoints a video at a different R2 object — used by "Apply enhanced
+ *  audio" to make the enhanced remux the video's active source. The
+ *  previous object is deliberately left in R2 (not deleted): duration/
+ *  transcript timestamps stay valid (the enhance pass preserves length to
+ *  the millisecond), so nothing else about the video record needs to change. */
+export async function setVideoR2Key(db: D1Database, id: string, r2Key: string): Promise<void> {
+  await db.prepare(`UPDATE videos SET r2_key = ? WHERE id = ?`).bind(r2Key, id).run();
+}

@@ -457,6 +457,7 @@ function renderVideoList() {
       const wc = (v.words || []).length;
       extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${wc} words${wc === 0 ? ` <span style="color:var(--bad)">— empty, try again</span>` : ""}</div>`;
       if (v.id && v.r2_key) extra += `<button class="btn small ghost retry-btn">Re-transcribe</button>`;
+      if (v.id && v.r2_key) extra += `<button class="btn small ghost enhance-btn" title="Denoise, level, and loudness-normalize this recording">Enhance audio</button>`;
     }
 
     const thumb = v.r2_key
@@ -467,6 +468,8 @@ function renderVideoList() {
     if (v.id && v.status !== "uploading") row.onclick = () => selectVideo(v.id);
     const retryBtn = row.querySelector(".retry-btn");
     if (retryBtn) retryBtn.onclick = (e) => { e.stopPropagation(); retryVideo(v); };
+    const enhanceBtn = row.querySelector(".enhance-btn");
+    if (enhanceBtn) enhanceBtn.onclick = (e) => { e.stopPropagation(); enhanceAudioFlow(v); };
     list.appendChild(row);
   });
   Thumb.hydrate(list);
@@ -1735,6 +1738,77 @@ function wireRecorder(card, done) {
     setButtons([{ label: "Stop", variant: "danger", onClick: () => recorder.stop() }]);
   }
   showReady();
+}
+
+// "Enhance audio" — one-click denoise/EQ/level/loudness-normalize, run
+// server-side in the ffmpeg container (see container/render.mjs). Non-
+// destructive: the result previews against the original and nothing about
+// the video changes until "Use enhanced audio" is chosen. Same dynamic-
+// footer-buttons pattern as recordBridge/wireRecorder above.
+function enhanceAudioFlow(v) {
+  return UI.modal({
+    title: "Enhance audio",
+    bodyHTML: `<div id="__enhBody">
+      <p class="modal-text">Removing noise, leveling, and normalizing loudness — this can take a minute or two for longer recordings.</p>
+      <div class="spinner" style="margin:20px auto;display:block;width:22px;height:22px;"></div>
+    </div>`,
+    dismissValue: null,
+    onOpen: (card, done) => wireEnhance(card, done, v),
+  });
+}
+function wireEnhance(card, done, v) {
+  const body = card.querySelector("#__enhBody");
+  const foot = card.querySelector(".modal-foot");
+  const setButtons = (buttons) => {
+    foot.innerHTML = "";
+    buttons.forEach((b) => {
+      const el = document.createElement("button");
+      el.className = `btn ${b.variant || ""}`.trim();
+      el.textContent = b.label;
+      el.disabled = !!b.disabled;
+      el.onclick = b.onClick;
+      foot.appendChild(el);
+    });
+  };
+  setButtons([{ label: "Cancel", onClick: () => done(null) }]);
+
+  (async () => {
+    let data;
+    try {
+      const res = await fetch(`/api/videos/${v.id}/enhance-audio`, { method: "POST" });
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+    } catch (err) {
+      body.innerHTML = `<p class="modal-text" style="color:var(--bad)">${esc(err.message || "Enhance failed")}</p>`;
+      setButtons([{ label: "Close", onClick: () => done(null) }]);
+      return;
+    }
+    body.innerHTML = `
+      <p class="modal-text">Compare, then decide — nothing changes until you apply it.</p>
+      <div class="enhance-compare">
+        <div class="enhance-col"><div class="modal-label">Original</div><audio controls src="${esc(mediaUrl(v.r2_key))}"></audio></div>
+        <div class="enhance-col"><div class="modal-label">Enhanced</div><audio controls src="${esc(data.mediaPath)}"></audio></div>
+      </div>`;
+    setButtons([
+      { label: "Discard", onClick: () => done(null) },
+      { label: "Use enhanced audio", variant: "primary", onClick: async () => {
+        setButtons([{ label: "Applying…", disabled: true, onClick: () => {} }]);
+        try {
+          const applyRes = await fetch(`/api/videos/${v.id}/apply-enhanced-audio`, { method: "POST" });
+          const applyData = await applyRes.json();
+          if (!applyRes.ok) throw new Error(applyData.error || applyRes.statusText);
+          v.r2_key = applyData.r2_key;
+          renderVideoList();
+          if (state.selected === v.id) selectVideo(v.id);
+          toast("Enhanced audio applied", { type: "success" });
+          done("applied");
+        } catch (err) {
+          toast(err.message || "Couldn't apply enhanced audio", { type: "error" });
+          done(null);
+        }
+      } },
+    ]);
+  })();
 }
 
 // Uploads a recorded Blob through the exact same pipeline any dropped-in

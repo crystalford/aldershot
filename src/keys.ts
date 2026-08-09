@@ -8,6 +8,10 @@ export const timelineKey = (pid: string) => `projects/${pid}/timeline.json`;
 export const shortsKey = (pid: string) => `projects/${pid}/shorts.json`;
 export const suggestionsKey = (pid: string) => `projects/${pid}/suggestions.json`;
 export const exportKey = (pid: string, name: string) => `projects/${pid}/exports/${name}`;
+/** Always .mp4 regardless of the source's own format/extension — the
+ *  enhance-audio container remuxes into mp4 (copied video + re-encoded
+ *  AAC audio) rather than trying to preserve every possible input container. */
+export const enhancedAudioKey = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/enhanced.mp4`;
 
 /** Best-effort file extension from a filename, then content-type, else mp4. */
 export function pickExt(filename: string | undefined, contentType: string | undefined): string {

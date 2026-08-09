@@ -21,6 +21,7 @@ import {
   listAllReadyVideos,
   getVideo,
   setVideoStatus,
+  setVideoR2Key,
 } from "./db";
 import {
   ensureClipSchema,
@@ -35,7 +36,7 @@ import {
   type NewClipSegment,
 } from "./clips";
 import { ensureVisualTagSchema, createVisualTag } from "./visualtags";
-import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt } from "./keys";
+import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey } from "./keys";
 import {
   arrangeTimeline,
   directedArrange,
@@ -538,6 +539,69 @@ app.put("/api/videos/:id/transcript", async (c) => {
     httpMetadata: { contentType: "application/json" },
   });
   return c.json({ ok: true, count: words.length });
+});
+
+// "Enhance audio" — one-click cleanup (denoise, EQ, level, loudness-normalize)
+// run in the same ffmpeg container as extraction/rendering. Non-destructive:
+// writes to a separate R2 object and leaves the video's own r2_key alone —
+// the client previews original vs. enhanced and calls apply-enhanced-audio
+// (below) to actually switch over. Same synchronous-call shape as
+// transcribe-remote, for the same reason (waitUntil doesn't survive long
+// enough for container work).
+app.post("/api/videos/:id/enhance-audio", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  if (!c.env.RENDER) return c.json({ error: "the render engine isn't enabled yet (Containers not configured)" }, 501);
+
+  const log = (...args: unknown[]) => console.log(`[enhance ${vid}]`, ...args);
+  const mediaUrl = await sourceUrl(c, video.r2_key);
+  const outKey = enhancedAudioKey(video.project_id, vid);
+  try {
+    log("calling container /enhance-audio");
+    const t0 = Date.now();
+    const enhanced = await getContainer(c.env.RENDER, vid).fetch("http://ffmpeg/enhance-audio", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: mediaUrl }),
+    });
+    log(`container responded after ${Date.now() - t0}ms, status=${enhanced.status}`);
+    if (!enhanced.ok || !enhanced.body) {
+      const detail = await enhanced.text().catch(() => "");
+      throw new Error(`enhance failed: ${detail.slice(0, 300) || enhanced.status}`);
+    }
+    const declaredLength = Number(enhanced.headers.get("content-length") || 0);
+    if (declaredLength > 0) {
+      const { readable, writable } = new FixedLengthStream(declaredLength);
+      const pump = enhanced.body.pipeTo(writable);
+      await c.env.MEDIA.put(outKey, readable, { httpMetadata: { contentType: "video/mp4" } });
+      await pump;
+    } else {
+      const buf = await enhanced.arrayBuffer();
+      await c.env.MEDIA.put(outKey, buf, { httpMetadata: { contentType: "video/mp4" } });
+    }
+    const mediaPath = `/api/media/${outKey.split("/").map(encodeURIComponent).join("/")}`;
+    return c.json({ ok: true, key: outKey, mediaPath });
+  } catch (err) {
+    log("FAILED:", err instanceof Error ? err.stack || err.message : err);
+    return c.json({ error: `${err instanceof Error ? err.message : err}` }, 502);
+  }
+});
+
+// Switches the video over to the enhanced remux produced above. Duration is
+// preserved to the millisecond by the enhance pass, so existing transcript
+// word timestamps stay valid — no re-transcription needed. The prior R2
+// object is intentionally left in place (not deleted), recoverable even
+// without an undo UI yet.
+app.post("/api/videos/:id/apply-enhanced-audio", async (c) => {
+  await ensureSchema(c.env.DB);
+  const vid = c.req.param("id");
+  const video = await getVideo(c.env.DB, vid);
+  if (!video) return c.json({ error: "video not found" }, 404);
+  const key = enhancedAudioKey(video.project_id, vid);
+  const head = await c.env.MEDIA.head(key);
+  if (!head) return c.json({ error: "no enhanced audio to apply — run Enhance audio first" }, 400);
+  await setVideoR2Key(c.env.DB, vid, key);
+  return c.json({ ok: true, r2_key: key });
 });
 
 // Cross-project analog of readyTranscripts() — every ready video, everywhere,

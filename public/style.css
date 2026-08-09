@@ -608,6 +608,8 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .modal-input { width: 100%; background: var(--bg2); border: 1px solid var(--line2); color: var(--bone); border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 14px; }
 .modal-input:focus { outline: none; border-color: var(--accent); }
 .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 20px 18px; }
+.enhance-compare { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.enhance-col audio { width: 100%; height: 34px; }
 
 /* ── command palette ────────────────────────────────────── */
 .palette-overlay {

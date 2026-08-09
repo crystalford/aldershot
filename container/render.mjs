@@ -54,6 +54,59 @@ function extractFull(url, res) {
   });
 }
 
+// "Enhance audio" — a Studio-Sound-style one-click cleanup pass: rumble/click
+// removal, RNNoise denoise, a touch of presence EQ, leveling, then two-pass-
+// equivalent loudness normalization to a podcast target (-16 LUFS / -1.5dBTP)
+// and a safety limiter. Order matters — denoise before EQ (boosting frequencies
+// before cleanup just makes the noise there louder and harder to remove) and
+// loudness normalization last (it should measure/level the already-cleaned
+// signal, not fight the raw one). Video stream (if any) is copied untouched;
+// -shortest trims the ~5-10ms of trailing padding audio filters add so audio
+// doesn't run long against the copied video track.
+const ENHANCE_FILTERS = [
+  "highpass=f=80",
+  "adeclick",
+  "adeclip",
+  "arnndn=m=/app/std.rnnn:mix=0.8",
+  "equalizer=f=3000:t=q:w=1:g=2",
+  "acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
+  "loudnorm=I=-16:TP=-1.5:LRA=11",
+  "alimiter=limit=-1.5dB",
+].join(",");
+
+function enhanceAudio(url, res) {
+  const outPath = `/tmp/enh-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
+  const args = [
+    "-hide_banner", "-loglevel", "error",
+    "-i", url,
+    "-map", "0:v?", "-c:v", "copy",
+    "-map", "0:a", "-af", ENHANCE_FILTERS, "-c:a", "aac", "-b:a", "192k",
+    "-shortest", "-f", "mp4", "-y", outPath,
+  ];
+  console.log("enhance-audio: starting ffmpeg for", url.slice(0, 120));
+  const t0 = Date.now();
+  const ff = spawn("ffmpeg", args);
+  let err = "";
+  ff.stderr.on("data", (d) => (err += d));
+  ff.on("error", (e) => { console.error("enhance-audio: spawn error", e); jsonError(res, 500, { error: String(e) }); });
+  ff.on("close", async (code) => {
+    console.log(`enhance-audio: ffmpeg exited code=${code} after ${Date.now() - t0}ms`);
+    if (code !== 0) return jsonError(res, 500, { error: err.slice(-1500) || "ffmpeg failed" });
+    try {
+      const st = await stat(outPath);
+      console.log(`enhance-audio: wrote ${st.size} bytes, streaming response`);
+      res.writeHead(200, { "content-type": "video/mp4", "content-length": String(st.size) });
+      const rs = createReadStream(outPath);
+      rs.pipe(res);
+      rs.on("close", () => { unlink(outPath).catch(() => {}); });
+      rs.on("error", (e) => { console.error("enhance-audio: read stream error", e); unlink(outPath).catch(() => {}); });
+    } catch (e) {
+      console.error("enhance-audio: post-ffmpeg error", e);
+      jsonError(res, 500, { error: String(e) });
+    }
+  });
+}
+
 createServer(async (req, res) => {
   if (req.method !== "POST") { res.writeHead(405).end(); return; }
   const path = (req.url || "").split("?")[0];
@@ -61,5 +114,6 @@ createServer(async (req, res) => {
   console.log(`container: ${req.method} ${path}`, body.url ? `url=${String(body.url).slice(0, 100)}` : "");
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);
+  if (path === "/enhance-audio") return enhanceAudio(body.url, res);
   res.writeHead(404).end();
 }).listen(8080);
