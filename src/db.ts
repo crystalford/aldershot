@@ -11,6 +11,11 @@ export interface Project {
   created_at: number;
 }
 
+export interface ProjectWithThumb extends Project {
+  thumb_r2_key: string | null;
+  thumb_duration: number | null;
+}
+
 export type VideoStatus = "uploaded" | "transcribing" | "ready" | "failed";
 
 export interface Video {
@@ -59,10 +64,24 @@ export async function createProject(db: D1Database, name: string): Promise<Proje
   return project;
 }
 
-export async function listProjects(db: D1Database): Promise<Project[]> {
+/** Each project's card needs a real frame, not just a name — so this joins
+ *  in the earliest-added video's r2_key/duration (whichever video would
+ *  show first in that project's own list) for the client to grab a thumbnail
+ *  from client-side (see public/thumb.js), same as every other thumbnail in
+ *  the app. No video yet → both fields are null and the card shows a
+ *  placeholder. */
+export async function listProjects(db: D1Database): Promise<ProjectWithThumb[]> {
   const { results } = await db
-    .prepare(`SELECT id, name, created_at FROM projects ORDER BY created_at DESC`)
-    .all<Project>();
+    .prepare(
+      `SELECT p.id, p.name, p.created_at,
+              v.r2_key AS thumb_r2_key, v.duration AS thumb_duration
+       FROM projects p
+       LEFT JOIN videos v ON v.id = (
+         SELECT id FROM videos WHERE project_id = p.id ORDER BY ord ASC, created_at ASC LIMIT 1
+       )
+       ORDER BY p.created_at DESC`,
+    )
+    .all<ProjectWithThumb>();
   return results ?? [];
 }
 

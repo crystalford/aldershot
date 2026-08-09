@@ -28,6 +28,21 @@ const esc = UI.esc;
 // Filenames aren't URI-encoded, but tolerate old records that were — never throw.
 const filenameOf = (v) => { try { return decodeURIComponent(v || "video"); } catch { return v || "video"; } };
 
+// A real frame instead of a text row — every project/clip card in the app
+// renders one of these. Grabbed client-side via Thumb.grab (see thumb.js);
+// caller must run Thumb.hydrate() on the container once the markup is in
+// the DOM. No source video yet → a plain placeholder, same treatment as
+// the video-list's own .vthumb.
+function frameThumbHTML(r2Key, duration, atSeconds) {
+  const durBadge = duration ? `<span class="frame-dur">${fmt(duration)}</span>` : "";
+  if (!r2Key) return `<div class="frame-thumb">${ic("video")}</div>`;
+  const t = atSeconds ?? Math.min(2, (duration || 4) / 4);
+  return `<div class="frame-thumb">
+    <img data-thumb-src="${esc(mediaUrl(r2Key))}" data-thumb-t="${t}" alt="" />
+    <div class="frame-play">${ic("play")}</div>${durBadge}
+  </div>`;
+}
+
 // ── API ──────────────────────────────────────────────────────────────
 const api = {
   listProjects: () => fetch("/api/projects").then((r) => r.json()),
@@ -121,11 +136,13 @@ async function showProjects() {
   projects.forEach((p) => {
     const card = document.createElement("button");
     card.className = "card";
-    card.innerHTML = `<div class="card-title">${esc(p.name)}</div><div class="card-sub">${new Date(p.created_at).toLocaleString()}</div>`;
+    card.innerHTML = `${frameThumbHTML(p.thumb_r2_key, p.thumb_duration)}
+      <div class="card-body"><div class="card-title">${esc(p.name)}</div><div class="card-sub">${new Date(p.created_at).toLocaleString()}</div></div>`;
     card.onclick = () => openProject(p.id);
     grid.appendChild(card);
   });
   grid.appendChild(add);
+  Thumb.hydrate(grid);
 }
 
 async function newProject() {
@@ -2135,7 +2152,7 @@ function stopLibraryPlayback() {
 
 async function showLibrary() {
   location.hash = "#/library";
-  setCrumbs([{ label: "Library" }]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   stopLibraryPlayback();
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
   let tags = [], clips = [];
@@ -2224,13 +2241,20 @@ function renderLibraryGrid(clips) {
     card.querySelector(".clip-delete").onclick = () => deleteLibraryClip(c.id);
     hydrateSegLabels(card, c.segments);
   });
+  Thumb.hydrate(el);
 }
 function clipCard(c, i) {
   const segParts = c.segments.map((s, si) => `<span class="sg-seg" data-seg="${si}">${fmt(s.start)}</span>`).join(`<span class="sg-arrow">→</span>`);
   // What's actually on screen, not just what's said/tagged — surfaced so
   // visual tagging is visibly useful, not silently indexed.
   const visualCaptions = [...new Set(c.segments.flatMap((s) => (s.visualTags || []).map((t) => t.caption).filter(Boolean)))].slice(0, 2);
+  const first = c.segments[0];
+  const thumb = first
+    ? frameThumbHTML(first.r2Key, first.end - first.start, (first.start + first.end) / 2)
+    : frameThumbHTML(null);
   return `<div class="clip-card" data-i="${i}">
+    ${thumb}
+    <div class="clip-body">
     <div class="sg-top"><span class="sg-type ${c.kind === "ai-detected" ? "theme" : "callback"}">${c.kind === "ai-detected" ? "AI-detected" : "Manual"}</span><span class="sg-title">${esc(c.title)}</span></div>
     ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
     ${visualCaptions.length ? `<div class="sg-visual">${visualCaptions.map((cap) => `👁 ${esc(cap)}`).join(" · ")}</div>` : ""}
@@ -2240,6 +2264,7 @@ function clipCard(c, i) {
       <button class="btn small ghost clip-preview">${ic("play")} Preview</button>
       <button class="btn small accent clip-add-project">${ic("plus")} Add to project</button>
       <button class="btn small danger clip-delete">Delete</button>
+    </div>
     </div>
   </div>`;
 }

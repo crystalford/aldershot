@@ -30,6 +30,7 @@ export interface Clip {
 export interface ClipSegmentOut extends Segment {
   projectId: string;
   visualTags: { time: number; caption: string | null; ocrText: string | null }[];
+  r2Key: string | null;
 }
 
 export interface ClipDetail extends Clip {
@@ -129,7 +130,7 @@ export async function createClip(
   return {
     ...clip,
     tags,
-    segments: segments.map((s) => ({ videoId: s.videoId, projectId: s.projectId, start: s.start, end: s.end, reason: s.reason, visualTags: [] })),
+    segments: segments.map((s) => ({ videoId: s.videoId, projectId: s.projectId, start: s.start, end: s.end, reason: s.reason, visualTags: [], r2Key: null })),
   };
 }
 
@@ -140,11 +141,14 @@ async function attachSegmentsAndTags(db: D1Database, clips: Clip[]): Promise<Cli
   const [{ results: segRows }, { results: tagRows }] = await Promise.all([
     db
       .prepare(
-        `SELECT clip_id, project_id, video_id, "start", "end", reason
-         FROM clip_segments WHERE clip_id IN (${placeholders}) ORDER BY clip_id, ord ASC`,
+        // Joined to videos for r2_key so every clip card can show a real frame
+        // (see public/thumb.js) without an extra round trip per card.
+        `SELECT s.clip_id, s.project_id, s.video_id, s."start", s."end", s.reason, v.r2_key
+         FROM clip_segments s LEFT JOIN videos v ON v.id = s.video_id
+         WHERE s.clip_id IN (${placeholders}) ORDER BY s.clip_id, s.ord ASC`,
       )
       .bind(...ids)
-      .all<{ clip_id: string; project_id: string; video_id: string; start: number; end: number; reason: string | null }>(),
+      .all<{ clip_id: string; project_id: string; video_id: string; start: number; end: number; reason: string | null; r2_key: string | null }>(),
     db
       .prepare(`SELECT clip_id, tag FROM clip_tags WHERE clip_id IN (${placeholders}) ORDER BY tag ASC`)
       .bind(...ids)
@@ -160,7 +164,7 @@ async function attachSegmentsAndTags(db: D1Database, clips: Clip[]): Promise<Cli
   for (const r of segRows ?? []) {
     const list = segsByClip.get(r.clip_id) ?? [];
     const visualTags = tagsForRange(r.video_id, r.start, r.end).map((t) => ({ time: t.time, caption: t.caption, ocrText: t.ocrText }));
-    list.push({ videoId: r.video_id, projectId: r.project_id, start: r.start, end: r.end, reason: r.reason ?? undefined, visualTags });
+    list.push({ videoId: r.video_id, projectId: r.project_id, start: r.start, end: r.end, reason: r.reason ?? undefined, visualTags, r2Key: r.r2_key });
     segsByClip.set(r.clip_id, list);
   }
   const tagsByClip = new Map<string, string[]>();

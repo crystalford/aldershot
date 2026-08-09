@@ -119,17 +119,48 @@ main { flex: 1; min-height: 0; overflow: auto; }
 .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
 .card {
-  text-align: left; background: linear-gradient(180deg, var(--panel), var(--bg2));
-  border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+  text-align: left; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 0;
   cursor: pointer; color: var(--bone); transition: .16s var(--ease); position: relative; overflow: hidden;
+  display: flex; flex-direction: column;
 }
-.card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); opacity: 0; transition: opacity .2s; }
+.card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); opacity: 0; transition: opacity .2s; z-index: 2; }
 .card:hover { border-color: var(--line2); transform: translateY(-2px); box-shadow: var(--shadow); }
 .card:hover::before { opacity: 1; }
+.card-body { padding: 13px 15px 15px; }
 .card-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .card-sub { color: var(--faint); font-size: 12px; }
-.card-new { border-style: dashed; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--dim); min-height: 92px; }
+.card-new {
+  border-style: dashed; padding: 18px;
+  display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--dim); min-height: 92px;
+}
 .card-new:hover { color: var(--accent); border-color: rgba(91, 140, 255, .5); }
+
+/* ── real-frame thumbnails (project cards, clip cards) ────── */
+.frame-thumb {
+  position: relative; aspect-ratio: 16 / 9; overflow: hidden; flex: none;
+  background: linear-gradient(135deg, var(--panel2), var(--bg2));
+  border-bottom: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--faint);
+}
+.frame-thumb img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  opacity: 0; transition: opacity .35s var(--ease);
+}
+.frame-thumb img.loaded { opacity: 1; }
+.frame-thumb > svg { width: 24px; height: 24px; opacity: .4; }
+.frame-play {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: rgba(255, 255, 255, .95); opacity: 0; transition: opacity .15s var(--ease); pointer-events: none;
+}
+.frame-play svg { width: 28px; height: 28px; fill: currentColor; filter: drop-shadow(0 2px 6px rgba(0,0,0,.55)); }
+.card:hover .frame-play, .clip-card:hover .frame-play { opacity: 1; }
+.frame-dur {
+  position: absolute; right: 7px; bottom: 7px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px; letter-spacing: .01em; font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, .6); color: #fff; padding: 2px 6px; border-radius: 4px;
+}
 
 /* ── editor ─────────────────────────────────────────────── */
 .editor-shell { display: flex; flex-direction: column; height: 100%; }
@@ -461,10 +492,12 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .tag-count { color: var(--faint); font-variant-numeric: tabular-nums; }
 .library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 8px; }
 .clip-card {
-  border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; background: var(--panel);
-  display: flex; flex-direction: column; transition: border-color .15s, transform .15s var(--ease);
+  border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--panel);
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
+  transition: border-color .15s, transform .15s var(--ease);
 }
 .clip-card:hover { border-color: var(--line2); transform: translateY(-1px); }
+.clip-body { padding: 13px 14px; display: flex; flex-direction: column; flex: 1; }
 
 /* ── toasts ─────────────────────────────────────────────── */
 #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: flex; flex-direction: column; gap: 10px; max-width: min(380px, 90vw); }
