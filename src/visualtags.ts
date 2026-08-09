@@ -35,6 +35,7 @@ export async function ensureVisualTagSchema(db: D1Database): Promise<void> {
 
 export async function createVisualTag(
   db: D1Database,
+  userId: string,
   input: { videoId: string; projectId: string; time: number; caption?: string | null; ocrText?: string | null },
 ): Promise<VisualTag> {
   const tag: VisualTag = {
@@ -48,18 +49,24 @@ export async function createVisualTag(
   };
   await db
     .prepare(
-      `INSERT INTO visual_tags (id, video_id, project_id, "time", caption, ocr_text, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO visual_tags (id, video_id, project_id, "time", caption, ocr_text, created_at, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(tag.id, tag.videoId, tag.projectId, tag.time, tag.caption, tag.ocrText, tag.createdAt)
+    .bind(tag.id, tag.videoId, tag.projectId, tag.time, tag.caption, tag.ocrText, tag.createdAt, userId)
     .run();
   return tag;
 }
 
 /** Every visual tag for a set of videos, grouped by video id — one query
  *  regardless of how many videos/segments the caller needs to resolve, so
- *  listClips()/getClip() don't N+1 per segment. */
-export async function visualTagsByVideo(db: D1Database, videoIds: string[]): Promise<Map<string, VisualTag[]>> {
+ *  listClips()/getClip() don't N+1 per segment. Scoped to the caller's own
+ *  account even though every videoId passed in already belongs to clips the
+ *  caller owns — defense in depth against a future caller forgetting that. */
+export async function visualTagsByVideo(
+  db: D1Database,
+  userId: string,
+  videoIds: string[],
+): Promise<Map<string, VisualTag[]>> {
   const map = new Map<string, VisualTag[]>();
   if (!videoIds.length) return map;
   const ids = [...new Set(videoIds)];
@@ -67,9 +74,9 @@ export async function visualTagsByVideo(db: D1Database, videoIds: string[]): Pro
   const { results } = await db
     .prepare(
       `SELECT id, video_id, project_id, "time", caption, ocr_text, created_at
-       FROM visual_tags WHERE video_id IN (${placeholders}) ORDER BY video_id, "time" ASC`,
+       FROM visual_tags WHERE video_id IN (${placeholders}) AND user_id = ? ORDER BY video_id, "time" ASC`,
     )
-    .bind(...ids)
+    .bind(...ids, userId)
     .all<{ id: string; video_id: string; project_id: string; time: number; caption: string | null; ocr_text: string | null; created_at: number }>();
   for (const r of results ?? []) {
     const tag: VisualTag = { id: r.id, videoId: r.video_id, projectId: r.project_id, time: r.time, caption: r.caption, ocrText: r.ocr_text, createdAt: r.created_at };

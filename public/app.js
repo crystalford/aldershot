@@ -4,6 +4,20 @@ const $ = (s, r = document) => r.querySelector(s);
 const main = $("#main");
 const toast = (m, o) => UI.toast(m, o);
 
+// Every /api/* route (besides /api/auth/* itself) now requires a session —
+// a 401 anywhere means it expired mid-use, so bounce back to sign-in instead
+// of leaving every individual call site to notice on its own.
+const _rawFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const res = await _rawFetch(input, init);
+  const url = typeof input === "string" ? input : input.url;
+  if (res.status === 401 && !url.includes("/api/auth/")) {
+    toast("Your session expired — sign in again.", { type: "error" });
+    showLogin();
+  }
+  return res;
+};
+
 const fmt = (t) => {
   if (!isFinite(t) || t < 0) t = 0;
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
@@ -2388,14 +2402,82 @@ function discoverCard(s, i) {
   </div>`;
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────
+const authApi = {
+  session: () => fetch("/api/auth/get-session").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  signUp: (email, password) =>
+    fetch("/api/auth/sign-up/email", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password, name: email.split("@")[0] || email }),
+    }),
+  signIn: (email, password) =>
+    fetch("/api/auth/sign-in/email", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  signOut: () => fetch("/api/auth/sign-out", { method: "POST" }),
+};
+
+let authMode = "signin";
+function showLogin() {
+  $("#headerActions").innerHTML = "";
+  setCrumbs([]); setStats("");
+  $("#logoutBtn").style.display = "none";
+  const isSignup = authMode === "signup";
+  main.innerHTML = `
+    <div class="auth-pad">
+      <div class="auth-card">
+        <h1>${isSignup ? "Create your account" : "Sign in"}</h1>
+        <div class="sub">${isSignup ? "Your projects and clips are private to your account." : "Welcome back."}</div>
+        <form id="authForm">
+          <label class="modal-label">Email</label>
+          <input class="modal-input" id="authEmail" type="email" autocomplete="email" required />
+          <label class="modal-label" style="margin-top:12px;">Password</label>
+          <input class="modal-input" id="authPassword" type="password" minlength="8"
+                 autocomplete="${isSignup ? "new-password" : "current-password"}" required />
+          <button class="btn primary" type="submit" style="margin-top:16px;">${isSignup ? "Create account" : "Sign in"}</button>
+        </form>
+        <div class="auth-switch">
+          ${isSignup ? "Already have an account?" : "New here?"}
+          <a href="#" id="authSwitch">${isSignup ? "Sign in" : "Create one"}</a>
+        </div>
+      </div>
+    </div>`;
+  $("#authEmail").focus();
+  $("#authSwitch").onclick = (e) => { e.preventDefault(); authMode = isSignup ? "signin" : "signup"; showLogin(); };
+  $("#authForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $("#authEmail").value.trim();
+    const password = $("#authPassword").value;
+    if (!email || !password) return;
+    const btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true;
+    try {
+      const res = await (isSignup ? authApi.signUp(email, password) : authApi.signIn(email, password));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error?.message || "Check your email and password.");
+      onAuthenticated();
+    } catch (err) {
+      toast(err.message || "Couldn't sign in", { type: "error" });
+      btn.disabled = false;
+    }
+  };
+}
+
+function onAuthenticated() {
+  $("#logoutBtn").style.display = "";
+  route();
+}
+
 // ── boot ─────────────────────────────────────────────────────────────
 $("#home").onclick = showProjects;
 $("#home").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
 $("#libraryNav").onclick = showLibrary;
+$("#logoutBtn").onclick = async () => { await authApi.signOut(); location.hash = ""; showLogin(); };
 function route() {
   if (location.hash === "#/library") return showLibrary();
   const m = location.hash.match(/^#\/p\/([\w-]+)/);
   if (m) openProject(m[1]); else showProjects();
 }
 window.addEventListener("hashchange", route);
-route();
+authApi.session().then((session) => (session?.user ? onAuthenticated() : showLogin()));

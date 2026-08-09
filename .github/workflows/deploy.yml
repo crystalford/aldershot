@@ -1,9 +1,10 @@
 name: Deploy to Cloudflare
 
 # Runs on GitHub's servers (which can reach Cloudflare) and deploys Aldershot to
-# your workers.dev subdomain. Add two repo secrets first:
+# your workers.dev subdomain. Add three repo secrets first:
 #   CLOUDFLARE_API_TOKEN   — a scoped token (Edit Workers + D1:Edit + Workers AI:Edit)
 #   CLOUDFLARE_ACCOUNT_ID  — your account id
+#   BETTER_AUTH_SECRET     — any random string (e.g. `openssl rand -base64 32`), signs auth sessions
 # Then this runs automatically on push to this branch (or via "Run workflow").
 
 on:
@@ -27,6 +28,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
         run: |
           set -euo pipefail
 
@@ -66,3 +68,4 @@ jobs:
           put_secret R2_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
           put_secret R2_ACCESS_KEY_ID "${R2_ACCESS_KEY_ID:-}"
           put_secret R2_SECRET_ACCESS_KEY "${R2_SECRET_ACCESS_KEY:-}"
+          put_secret BETTER_AUTH_SECRET "${BETTER_AUTH_SECRET:-}"
