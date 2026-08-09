@@ -1973,11 +1973,17 @@ async function previewShort(s) {
   const stop = () => { if (p.currentTime >= s.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
   p.addEventListener("timeupdate", stop);
 }
+// Produces a publish-ready short: vertical (9:16) reframe + burned-in
+// karaoke captions from the source video's own transcript, not just a raw
+// trim — see render.js's renderShort for the actual ffmpeg work.
 async function produceShort(s, btn) {
   const v = state.videos.find((x) => x.id === s.videoId); if (!v) return;
   const prev = btn.innerHTML; btn.disabled = true;
   try {
-    const blob = await Renderer.renderShort({ r2_key: v.r2_key, start: s.start, end: s.end }, (msg) => { btn.textContent = msg; });
+    const blob = await Renderer.renderShort(
+      { r2_key: v.r2_key, start: s.start, end: s.end, words: v.words || [] },
+      (msg) => { btn.textContent = msg; },
+    );
     downloadBlob(blob, safeName(s.title) + ".mp4");
     toast("Short produced — downloading", { type: "success" });
   } catch (err) { toast(err.message || "Produce failed", { type: "error" }); }
