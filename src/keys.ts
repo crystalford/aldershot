@@ -12,6 +12,12 @@ export const exportKey = (pid: string, name: string) => `projects/${pid}/exports
  *  enhance-audio container remuxes into mp4 (copied video + re-encoded
  *  AAC audio) rather than trying to preserve every possible input container. */
 export const enhancedAudioKey = (pid: string, vid: string) => `projects/${pid}/videos/${vid}/enhanced.mp4`;
+/** Version history for the Cut/Timeline — the one piece of project state a
+ *  single AI action (auto-arrange, direct edit, compose) can wholesale
+ *  replace, so it's the one worth snapshotting. Timestamp is the sortable,
+ *  listable part of the key (see historyPrefix/listing in index.ts). */
+export const timelineHistoryPrefix = (pid: string) => `projects/${pid}/history/`;
+export const timelineHistoryKey = (pid: string, ts: number) => `${timelineHistoryPrefix(pid)}${ts}.json`;
 
 /** Best-effort file extension from a filename, then content-type, else mp4. */
 export function pickExt(filename: string | undefined, contentType: string | undefined): string {

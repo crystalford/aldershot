@@ -36,7 +36,7 @@ import {
   type NewClipSegment,
 } from "./clips";
 import { ensureVisualTagSchema, createVisualTag } from "./visualtags";
-import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey } from "./keys";
+import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey, timelineHistoryPrefix, timelineHistoryKey } from "./keys";
 import {
   arrangeTimeline,
   directedArrange,
@@ -132,16 +132,76 @@ app.get("/api/projects/:id", async (c) => {
   return c.json({ project, videos: withWords, timeline, shorts, suggestions });
 });
 
+const TIMELINE_HISTORY_LIMIT = 20;
+
+// Archives whatever's currently at timelineKey(pid) (if anything) before
+// it's about to be overwritten, then prunes to the newest
+// TIMELINE_HISTORY_LIMIT snapshots. Called from every path that replaces
+// the live timeline — manual saves, auto-arrange, direct edit, restoring a
+// past version — so "can I get back to what I had before this AI run
+// rewrote everything" always has an answer without any route needing to
+// remember to opt in.
+async function archiveTimeline(bucket: R2Bucket, pid: string): Promise<void> {
+  const current = await bucket.get(timelineKey(pid));
+  if (!current) return;
+  const body = await current.text();
+  // An explicit empty {coldOpen:[],body:[]} (or a project that's never had
+  // a timeline written) isn't a version worth keeping.
+  try {
+    const parsed = JSON.parse(body) as Timeline;
+    if (!(parsed.coldOpen?.length || parsed.body?.length)) return;
+  } catch { return; }
+  await bucket.put(timelineHistoryKey(pid, Date.now()), body, { httpMetadata: { contentType: "application/json" } });
+
+  const listed = await bucket.list({ prefix: timelineHistoryPrefix(pid) });
+  const sorted = listed.objects.map((o) => o.key).sort().reverse(); // newest (largest timestamp) first
+  const stale = sorted.slice(TIMELINE_HISTORY_LIMIT);
+  if (stale.length) await bucket.delete(stale);
+}
+
 // Persist the manually-edited / arranged long-form timeline.
 app.put("/api/projects/:id/timeline", async (c) => {
   await ensureSchema(c.env.DB);
   const id = c.req.param("id");
   if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
   const timeline = await c.req.json<Timeline>();
+  await archiveTimeline(c.env.MEDIA, id);
   await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
     httpMetadata: { contentType: "application/json" },
   });
   return c.json({ ok: true });
+});
+
+// Version history for the Cut/Timeline — every save archives whatever it's
+// about to overwrite first (see archiveTimeline below), so nothing here
+// needs a separate "checkpoint" trigger the client has to remember to call.
+app.get("/api/projects/:id/history", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const listed = await c.env.MEDIA.list({ prefix: timelineHistoryPrefix(id) });
+  const versions = listed.objects
+    .map((o) => ({ timestamp: Number(o.key.slice(timelineHistoryPrefix(id).length, -".json".length)), size: o.size }))
+    .filter((v) => Number.isFinite(v.timestamp))
+    .sort((a, b) => b.timestamp - a.timestamp);
+  return c.json({ versions });
+});
+
+app.post("/api/projects/:id/history/:timestamp/restore", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  const ts = Number(c.req.param("timestamp"));
+  if (!Number.isFinite(ts)) return c.json({ error: "invalid version" }, 400);
+  const snapshot = await readJson<Timeline>(c.env.MEDIA, timelineHistoryKey(id, ts));
+  if (!snapshot) return c.json({ error: "that version is gone" }, 404);
+  // Restoring is itself just another overwrite — archive the current state
+  // first so restoring is never a one-way trip either.
+  await archiveTimeline(c.env.MEDIA, id);
+  await c.env.MEDIA.put(timelineKey(id), JSON.stringify(snapshot), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return c.json({ ok: true, timeline: snapshot });
 });
 
 // Upload one video into a project. Body = raw bytes; x-filename / x-duration headers.
@@ -412,6 +472,7 @@ app.post("/api/projects/:id/arrange", async (c) => {
   if (!ready.length) return c.json({ error: "no transcribed videos to arrange yet" }, 400);
   try {
     const timeline = await arrangeTimeline(c.env, ready);
+    await archiveTimeline(c.env.MEDIA, id);
     await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
       httpMetadata: { contentType: "application/json" },
     });
@@ -433,6 +494,7 @@ app.post("/api/projects/:id/direct", async (c) => {
   if (!ready.length) return c.json({ error: "no transcribed videos to work from yet" }, 400);
   try {
     const timeline = await directedArrange(c.env, ready, instruction);
+    await archiveTimeline(c.env.MEDIA, id);
     await c.env.MEDIA.put(timelineKey(id), JSON.stringify(timeline), {
       httpMetadata: { contentType: "application/json" },
     });

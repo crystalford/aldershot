@@ -1572,6 +1572,60 @@ function saveTimeline() {
   return fetch(`/api/projects/${state.project.id}/timeline`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(state.timeline || { coldOpen: [], body: [] }) });
 }
 
+// Version history for the Cut — every save already archives whatever it
+// replaces server-side (see archiveTimeline in src/index.ts), so this is
+// just a browsing/restore surface. Lives in the command palette rather
+// than another sidebar button — the sidebar's already tight on room.
+const relativeTime = (ts) => {
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+};
+async function viewHistory() {
+  if (!state.project) return;
+  let versions = [];
+  try {
+    versions = (await fetch(`/api/projects/${state.project.id}/history`).then((r) => r.json())).versions || [];
+  } catch { toast("Couldn't load version history", { type: "error" }); return; }
+
+  await UI.modal({
+    title: "Version history",
+    bodyHTML: !versions.length
+      ? `<p class="modal-text">No earlier versions yet — one gets saved automatically every time the Cut changes.</p>`
+      : `<div class="history-list">${versions.map((v) => `
+          <div class="history-row">
+            <span>${esc(relativeTime(v.timestamp))}</span>
+            <button class="btn small ghost history-restore" data-ts="${v.timestamp}">Restore</button>
+          </div>`).join("")}</div>`,
+    dismissValue: null,
+    actions: [{ label: "Close", resolve: null }],
+    onOpen: (card, done) => {
+      card.querySelectorAll(".history-restore").forEach((btn) => {
+        btn.onclick = async () => {
+          if (!(await UI.confirm({
+            title: "Restore this version?",
+            message: "Your current Cut is saved to history too when you do this, so it isn't a one-way trip.",
+            confirmText: "Restore",
+          }))) return;
+          try {
+            const res = await fetch(`/api/projects/${state.project.id}/history/${btn.dataset.ts}/restore`, { method: "POST" });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || res.statusText);
+            state.timeline = data.timeline;
+            renderTimeline(); updateStats();
+            toast("Version restored", { type: "success" });
+            done(null);
+          } catch (err) { toast(err.message || "Restore failed", { type: "error" }); }
+        };
+      });
+    },
+  });
+}
+
 // ── Bridges — AI-written narration for gaps in the assembled cut, recorded
 // straight into the timeline. The last piece of the video-essay workflow:
 // Compose/Auto-arrange/manual editing gets you the clips in order, this
@@ -2609,6 +2663,7 @@ async function buildCommands() {
       { label: "Trim long pauses", group: "Edit", action: () => $("#trimPauses")?.click() },
       { label: "Show cuts", group: "Edit", action: () => $("#showCuts")?.click() },
       { label: "Text only", group: "Edit", action: () => $("#textOnly")?.click() },
+      { label: "Version history", group: "Edit", action: viewHistory },
       { label: "Export", group: "Edit", action: () => $("#export")?.click() },
       { label: "Auto-arrange", group: "AI", action: () => $("#arrange")?.click() },
       { label: "Suggested edits", group: "AI", action: () => $("#suggestEdits")?.click() },

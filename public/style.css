@@ -610,6 +610,11 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 20px 18px; }
 .enhance-compare { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
 .enhance-col audio { width: 100%; height: 34px; }
+.history-list { display: flex; flex-direction: column; gap: 7px; max-height: 320px; overflow-y: auto; }
+.history-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; color: var(--dim);
+}
 
 /* ── command palette ────────────────────────────────────── */
 .palette-overlay {
