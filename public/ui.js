@@ -104,5 +104,75 @@ window.UI = (() => {
     });
   }
 
-  return { toast, modal, confirm, prompt, esc };
+  // ── Command palette (promise) ─────────────────────────────────────
+  // items: [{ label, hint?, group?, action }]. Resolves the chosen item's
+  // `action` result, or null if dismissed. Filters by substring on `label`
+  // (falling back to `group`) — no fuzzy-match library, the command list is
+  // short enough that substring-as-you-type is plenty.
+  function palette(items) {
+    return new Promise((resolve) => {
+      const rootEl = root("modal-root");
+      const overlay = document.createElement("div");
+      overlay.className = "palette-overlay";
+      overlay.innerHTML = `<div class="palette" role="dialog" aria-modal="true">
+        <input class="palette-input" placeholder="Type a command or search projects…" autocomplete="off" spellcheck="false" />
+        <div class="palette-list" role="listbox"></div>
+      </div>`;
+      rootEl.appendChild(overlay);
+      const input = overlay.querySelector(".palette-input");
+      const list = overlay.querySelector(".palette-list");
+      let filtered = items;
+      let active = 0;
+
+      const renderList = () => {
+        list.innerHTML = filtered.length
+          ? filtered.map((it, i) => `<div class="palette-item${i === active ? " on" : ""}" data-i="${i}" role="option">
+              <span class="palette-item-label">${esc(it.label)}</span>
+              ${it.hint ? `<span class="palette-item-hint">${esc(it.hint)}</span>` : ""}
+            </div>`).join("")
+          : `<div class="palette-empty">No matching commands</div>`;
+        list.querySelectorAll(".palette-item").forEach((el) => {
+          el.onmouseenter = () => { active = Number(el.dataset.i); highlight(); };
+          el.onclick = () => choose(Number(el.dataset.i));
+        });
+      };
+      // Re-highlight without a full re-render, so hover/arrow-key movement
+      // doesn't rebuild the DOM (and re-trigger :hover) on every keystroke.
+      const highlight = () => {
+        list.querySelectorAll(".palette-item").forEach((el, i) => el.classList.toggle("on", i === active));
+        list.querySelector(".palette-item.on")?.scrollIntoView({ block: "nearest" });
+      };
+      const filterList = () => {
+        const q = input.value.trim().toLowerCase();
+        filtered = !q ? items : items.filter((it) => it.label.toLowerCase().includes(q) || it.group?.toLowerCase().includes(q));
+        active = 0;
+        renderList();
+      };
+
+      let closed = false;
+      const done = (val) => {
+        if (closed) return; closed = true;
+        document.removeEventListener("keydown", onKey);
+        overlay.classList.remove("in");
+        setTimeout(() => overlay.remove(), 150);
+        resolve(val);
+      };
+      const choose = (i) => { const it = filtered[i]; done(it || null); };
+
+      const onKey = (e) => {
+        if (e.key === "Escape") { done(null); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, filtered.length - 1); highlight(); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); highlight(); }
+        else if (e.key === "Enter") { e.preventDefault(); choose(active); }
+      };
+      document.addEventListener("keydown", onKey);
+      overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) done(null); });
+      input.addEventListener("input", filterList);
+
+      renderList();
+      requestAnimationFrame(() => { overlay.classList.add("in"); input.focus(); });
+    });
+  }
+
+  return { toast, modal, confirm, prompt, palette, esc };
 })();

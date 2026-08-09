@@ -2423,10 +2423,60 @@ function discoverCard(s, i) {
   </div>`;
 }
 
+// ── Command palette ──────────────────────────────────────────────────
+// Reuses whatever the current view already wired up rather than
+// duplicating any handler: an in-editor command is just "click the real
+// toolbar button", so it shows the same loading state a click would and
+// can never drift out of sync with what that button actually does.
+async function buildCommands() {
+  const cmds = [
+    { label: "Go to Projects", group: "Navigate", action: showProjects },
+    { label: "Go to Library", group: "Navigate", action: showLibrary },
+    { label: "New project", group: "Navigate", action: newProject },
+  ];
+  if (state.project) {
+    cmds.push(
+      { label: "Save", group: "Edit", action: () => $("#save")?.click() },
+      { label: "Play edit", group: "Edit", action: () => $("#playEdit")?.click() },
+      { label: "Stop", group: "Edit", action: () => $("#stopEdit")?.click() },
+      { label: "Undo", hint: "⌘Z", group: "Edit", action: () => $("#undoBtn")?.click() },
+      { label: "Redo", hint: "⌘⇧Z", group: "Edit", action: () => $("#redoBtn")?.click() },
+      { label: "Remove fillers", group: "Edit", action: () => $("#removeFillers")?.click() },
+      { label: "Trim long pauses", group: "Edit", action: () => $("#trimPauses")?.click() },
+      { label: "Show cuts", group: "Edit", action: () => $("#showCuts")?.click() },
+      { label: "Text only", group: "Edit", action: () => $("#textOnly")?.click() },
+      { label: "Export", group: "Edit", action: () => $("#export")?.click() },
+      { label: "Auto-arrange", group: "AI", action: () => $("#arrange")?.click() },
+      { label: "Suggested edits", group: "AI", action: () => $("#suggestEdits")?.click() },
+      { label: "Find shorts", group: "AI", action: () => $("#findShorts")?.click() },
+      { label: "Find bridges", group: "AI", action: () => $("#findBridges")?.click() },
+    );
+  }
+  if (location.hash === "#/library") {
+    cmds.push({ label: "Discover clips across my library", group: "AI", action: () => $("#discoverBtn")?.click() });
+  }
+  try {
+    const { projects } = await api.listProjects();
+    for (const p of projects || []) {
+      if (p.id !== state.project?.id) cmds.push({ label: p.name, hint: "Project", group: "Projects", action: () => openProject(p.id) });
+    }
+  } catch { /* palette still works without the project list */ }
+  return cmds;
+}
+async function openCommandPalette() {
+  if ($(".palette-overlay")) return; // already open
+  const chosen = await UI.palette(await buildCommands());
+  chosen?.action?.();
+}
+
 // ── boot ─────────────────────────────────────────────────────────────
 $("#home").onclick = showProjects;
 $("#home").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
 $("#libraryNav").onclick = showLibrary;
+$("#paletteTrigger").onclick = openCommandPalette;
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCommandPalette(); }
+});
 function route() {
   if (location.hash === "#/library") return showLibrary();
   const m = location.hash.match(/^#\/p\/([\w-]+)/);

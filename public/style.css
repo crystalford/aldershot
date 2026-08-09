@@ -85,6 +85,19 @@ a { color: var(--accent); text-decoration: none; }
   cursor: pointer; padding: 6px 4px; margin-left: 4px; border-radius: 6px; transition: color .15s;
 }
 .nav-link:hover { color: var(--bone); }
+.palette-trigger {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg2); border: 1px solid var(--line2); border-radius: 8px;
+  color: var(--faint); font: inherit; font-size: 12.5px; padding: 6px 8px 6px 10px;
+  cursor: pointer; margin-left: 4px; transition: border-color .15s, color .15s;
+}
+.palette-trigger:hover { border-color: rgba(91, 140, 255, .4); color: var(--dim); }
+.palette-trigger svg { width: 13px; height: 13px; flex: none; }
+.palette-trigger-kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+  border: 1px solid var(--line2); border-radius: 4px; padding: 1px 5px; color: var(--faint);
+}
+@media (max-width: 780px) { .palette-trigger span:not(.palette-trigger-kbd) { display: none; } }
 .crumbs { display: flex; align-items: center; gap: 9px; color: var(--dim); font-size: 13px; min-width: 0; }
 .crumbs .sep { color: var(--line2); }
 .crumbs a { color: var(--dim); transition: color .15s; }
@@ -581,6 +594,39 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .modal-input { width: 100%; background: var(--bg2); border: 1px solid var(--line2); color: var(--bone); border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 14px; }
 .modal-input:focus { outline: none; border-color: var(--accent); }
 .modal-foot { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 20px 18px; }
+
+/* ── command palette ────────────────────────────────────── */
+.palette-overlay {
+  position: fixed; inset: 0; z-index: 90; display: flex; justify-content: center;
+  padding: 20px; padding-top: 14vh;
+  background: rgba(6, 6, 8, .6); backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .15s var(--ease);
+}
+.palette-overlay.in { opacity: 1; }
+.palette {
+  width: min(560px, 100%); max-height: 60vh; background: var(--panel); border: 1px solid var(--line2);
+  border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+  transform: translateY(-8px) scale(.98); transition: transform .15s var(--ease);
+}
+.palette-overlay.in .palette { transform: none; }
+.palette-input {
+  border: none; border-bottom: 1px solid var(--line); background: transparent; color: var(--bone);
+  font: inherit; font-size: 15px; padding: 15px 18px; width: 100%;
+}
+.palette-input:focus { outline: none; }
+.palette-list { overflow-y: auto; padding: 6px; }
+.palette-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--secondary);
+}
+.palette-item.on { background: var(--accent-soft); color: var(--bone); }
+.palette-item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item-hint {
+  flex: none; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+  color: var(--faint); border: 1px solid var(--line2); border-radius: 5px; padding: 1px 6px;
+}
+.palette-item.on .palette-item-hint { color: var(--accent); border-color: rgba(91, 140, 255, .4); }
+.palette-empty { padding: 22px 12px; text-align: center; color: var(--faint); font-size: 13px; }
 
 @media (max-width: 1080px) {
   .editor { grid-template-columns: 200px 1fr; }
