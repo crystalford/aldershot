@@ -390,6 +390,71 @@ interface ReactionReply {
   reason?: string;
 }
 
+// ── Essay act-by-act drafting ─────────────────────────────────────────
+// Powers the Essay Builder's "Build it act by act" flow — a small,
+// conversational alternative to a single black-box "Generate outline"
+// button. One call proposes exactly ONE candidate beat for ONE named act,
+// grounded against the same saved-clip menu as composeFromClips whenever a
+// real clip fits; otherwise it drafts a short narration line instead (a
+// generative script *draft* the user reviews/edits, same as
+// generateBridges — not presented as fact, so inventing the line's wording
+// is fine even though clip picks must still cite a real [id]).
+const ACT_HINTS: Record<string, string> = {
+  hook: "Hook — grab attention immediately, pose the question or tension the piece will explore.",
+  setup: "Setup — establish the context/characters/stakes a viewer needs before the argument develops.",
+  development: "Development — build the case with concrete evidence, escalating specificity.",
+  turn: "Turn — introduce a complication, contradiction, or twist that recontextualizes everything before it.",
+  resolution: "Resolution — land the payoff/conclusion the whole piece has been building toward.",
+};
+
+export interface ActDraftCandidate {
+  kind: "clip" | "vo";
+  clipId?: string;
+  text: string;
+  reason: string;
+}
+interface ActDraftReply {
+  kind?: string;
+  clipId?: string | null;
+  text?: string;
+  reason?: string;
+}
+
+export async function draftEssayActBeat(
+  env: Env,
+  premise: string,
+  act: string,
+  existingBeatTexts: string[],
+  clips: ComposableClip[],
+): Promise<ActDraftCandidate | null> {
+  const menu = buildClipMenu(clips);
+  const hint = ACT_HINTS[act] || act;
+  const already = existingBeatTexts.length
+    ? `Beats already drafted elsewhere in this essay (don't repeat these):\n${existingBeatTexts.map((t) => `- ${t}`).join("\n")}\n\n`
+    : "";
+  const system =
+    "You are a sharp documentary editor drafting ONE beat at a time for a video essay, act by act. " +
+    "Prefer a real clip from the library when one genuinely fits — cite it by its [id], never invent a " +
+    "clip or timestamp. Only propose a short new narration line (kind \"vo\") when no clip in the library " +
+    "actually serves this act — narration is a draft the user will review and can re-record, so it's fine " +
+    "to write it yourself, but keep it one or two sentences in a natural spoken voice, not a summary.";
+  const user =
+    `Essay premise: "${premise.trim()}"\n\n` +
+    `Draft the next beat for this act: ${hint}\n\n` +
+    already +
+    (clips.length ? `Clips available:\n${menu}\n\n` : "No clips are saved in the library yet — you'll have to propose narration.\n\n") +
+    'Return ONLY JSON: {"kind":"clip","clipId":"clip-uuid","reason":"why this clip fits, one sentence"} ' +
+    'OR {"kind":"vo","text":"the narration line","reason":"why narration instead of a clip, one sentence"}';
+
+  const reply = await runJson<ActDraftReply>(env, system, user);
+  if (reply.kind === "clip" && reply.clipId) {
+    const match = clips.find((c) => c.id === reply.clipId);
+    if (match) return { kind: "clip", clipId: match.id, text: match.title, reason: reply.reason?.trim() || "" };
+  }
+  if (reply.text?.trim()) return { kind: "vo", text: reply.text.trim(), reason: reply.reason?.trim() || "" };
+  return null;
+}
+
 export async function suggestReactionClip(env: Env, clips: ComposableClip[], line: string): Promise<{ clipId: string; reason: string } | null> {
   if (!clips.length) return null;
   const menu = buildClipMenu(clips);

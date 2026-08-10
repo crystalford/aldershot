@@ -2653,6 +2653,521 @@ function discoverCard(s, i) {
   </div>`;
 }
 
+// ── Essays — the video-essay authoring surface ──────────────────────────
+// A separate top-level view from Sources/Archive: an essay draws clips from
+// the WHOLE archive (not one project), drafted act by act rather than
+// edited as a flat timeline. See src/essays.ts for the data model.
+const ACT_DEFS = [
+  { act: "hook", label: "Hook" },
+  { act: "setup", label: "Setup" },
+  { act: "development", label: "Development" },
+  { act: "turn", label: "Turn" },
+  { act: "resolution", label: "Resolution" },
+];
+const ACT_LABEL = Object.fromEntries(ACT_DEFS.map((a) => [a.act, a.label]));
+let essayState = null;
+
+async function showEssaysList() {
+  location.hash = "#/essays"; setActiveRail("essays");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading essays…</div>`;
+  let essays = [];
+  try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; }
+  catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  main.innerHTML = `<section class="pad">
+    <div class="row-between">
+      <div><h1>Essays</h1><div class="sub">The pieces you're actually directing — each one draws from the whole archive, not one thread.</div></div>
+      <button class="btn primary" id="newEssay">${ic("plus")} New essay</button>
+    </div>
+    <div class="grid" id="essayGrid"></div>
+  </section>`;
+  $("#newEssay").onclick = startNewEssay;
+  const grid = $("#essayGrid");
+  if (!essays.length) {
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No essays yet — describe an idea and the archive gets searched for what already supports it.</div>`;
+  }
+  grid.innerHTML += essays.map(essayCardHTML).join("");
+  wireEssayGrid(essays);
+}
+function essayCardHTML(e) {
+  const matched = e.beats.filter((b) => b.kind === "clip").length;
+  return `<div class="card essay-card" data-id="${e.id}">
+    <div class="card-body">
+      <div class="card-title">${esc(e.title)}</div>
+      <div class="card-sub" style="margin:6px 0 10px;">${esc(e.premise)}</div>
+      ${e.threads.length ? `<div class="tag-rail small">${e.threads.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+      <div class="essay-meta">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
+      <div class="s-actions">
+        <button class="btn small accent essay-open">Open →</button>
+        <button class="btn small danger essay-delete">Delete</button>
+      </div>
+    </div>
+  </div>`;
+}
+function wireEssayGrid(essays) {
+  $$(".essay-card").forEach((card) => {
+    const e = essays.find((x) => x.id === card.dataset.id);
+    card.querySelector(".essay-open").onclick = () => { location.hash = `#/essays/${e.id}`; };
+    card.querySelector(".essay-delete").onclick = async () => {
+      if (!(await UI.confirm({ title: "Delete this essay?", message: "This removes its script and progress permanently.", confirmText: "Delete", danger: true }))) return;
+      await fetch(`/api/essays/${e.id}`, { method: "DELETE" });
+      showEssaysList();
+    };
+  });
+}
+
+async function startNewEssay() {
+  const audienceChoices = ["General audience", "Fans of the channel", "Skeptics / critics", "Newcomers"];
+  const lengthChoices = ["Short (3-5 min)", "Standard (8-10 min)", "Long (15+ min)"];
+  const toneChoices = ["Sardonic", "Earnest", "Analytical", "Playful"];
+  const picked = { audience: null, length: null, tone: null };
+  const chipsHTML = (list, key) => list.map((c) => `<span class="chip-pick" data-key="${key}" data-val="${esc(c)}">${esc(c)}</span>`).join("");
+  const result = await UI.modal({
+    title: "New essay",
+    bodyHTML: `
+      <label class="modal-label">What's the idea?</label>
+      <textarea class="modal-input" id="__ideaText" rows="3" style="width:100%;resize:vertical;" placeholder="e.g. The psychology of Dark Syde Phil, or how tariffs actually hit consumers…"></textarea>
+      <label class="modal-label" style="margin-top:14px;">Audience</label>
+      <div class="chip-row" id="__audienceRow">${chipsHTML(audienceChoices, "audience")}</div>
+      <label class="modal-label" style="margin-top:14px;">Target length</label>
+      <div class="chip-row" id="__lengthRow">${chipsHTML(lengthChoices, "length")}</div>
+      <label class="modal-label" style="margin-top:14px;">Tone</label>
+      <div class="chip-row" id="__toneRow">${chipsHTML(toneChoices, "tone")}</div>
+      <label class="modal-label" style="margin-top:14px;">Grounding threads (optional, comma-separated)</label>
+      <input class="modal-input" id="__threadsInput" placeholder="e.g. gaming rage, parasocial relationships" autocomplete="off" />
+    `,
+    dismissValue: null,
+    onOpen: (card) => {
+      card.querySelectorAll(".chip-pick").forEach((chip) => {
+        chip.onclick = () => {
+          const key = chip.dataset.key;
+          picked[key] = picked[key] === chip.dataset.val ? null : chip.dataset.val;
+          card.querySelectorAll(`.chip-pick[data-key="${key}"]`).forEach((c) => c.classList.toggle("on", c.dataset.val === picked[key]));
+        };
+      });
+      card.querySelector("#__ideaText").focus();
+    },
+    actions: [
+      { label: "Cancel", resolve: null },
+      { label: "Create essay →", variant: "primary", onClick: (done, card) => {
+        const idea = card.querySelector("#__ideaText").value.trim();
+        if (!idea) { toast("Describe the idea first."); return; }
+        const threads = card.querySelector("#__threadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
+        done({ idea, threads });
+      } },
+    ],
+  });
+  if (!result) return;
+  try {
+    const essay = await fetch("/api/essays", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: result.idea.length > 60 ? result.idea.slice(0, 57) + "…" : result.idea,
+        premise: result.idea, audience: picked.audience, targetLength: picked.length, tone: picked.tone, threads: result.threads,
+      }),
+    }).then((r) => r.json());
+    if (essay.error) throw new Error(essay.error);
+    toast("Essay created", { type: "success" });
+    location.hash = `#/essays/${essay.id}`;
+  } catch (err) { toast(err.message || "Couldn't create essay", { type: "error" }); }
+}
+
+async function openEssay(id) {
+  location.hash = `#/essays/${id}`; setActiveRail("essays");
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading essay…</div>`;
+  let essay;
+  try {
+    essay = await fetch(`/api/essays/${id}`).then((r) => r.json());
+    if (essay.error) throw new Error(essay.error);
+  } catch (err) {
+    main.innerHTML = `<div class="pad"><p class="empty">${esc(err.message || "Essay not found")}</p></div>`;
+    return;
+  }
+  const validModes = ["premise", "script", "assemble", "export"];
+  essayState = {
+    essay, mode: validModes.includes(essay.builder_mode) ? essay.builder_mode : "premise",
+    drafting: false, draftAct: null, draftLoading: false, draftCandidate: null,
+    showCoherence: false, finderQuery: "", finderClips: [],
+  };
+  setCrumbs([{ label: "Essays", go: showEssaysList }, { label: essay.title }]);
+  setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  renderEssayShell();
+  loadFinderClips();
+}
+async function reloadEssay() {
+  essayState.essay = await fetch(`/api/essays/${essayState.essay.id}`).then((r) => r.json());
+}
+function setEssayMode(mode) {
+  essayState.mode = mode; essayState.showCoherence = false;
+  fetch(`/api/essays/${essayState.essay.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ builderMode: mode }) }).catch(() => {});
+  renderEssayShell();
+}
+
+function renderEssayShell() {
+  const e = essayState.essay;
+  const modes = [["premise", "1. Premise"], ["script", "2. Script"], ["assemble", "3. Assemble"], ["export", "4. Export"]];
+  const matched = e.beats.filter((b) => b.kind === "clip").length;
+  main.innerHTML = `<div class="essay-shell">
+    <div class="essay-finder">
+      <div class="side-h" style="margin-top:0;">Find clips</div>
+      <div class="empty small">Search the whole archive, then add a clip to whichever act you're building.</div>
+      <input id="finderQuery" class="import-input" style="width:100%;margin:10px 0 8px;" placeholder="Search quotes, episodes…" autocomplete="off" />
+      <select id="finderActPick" class="modal-input" style="width:100%;margin-bottom:10px;">
+        ${ACT_DEFS.map((a) => `<option value="${a.act}">Add to: ${a.label}</option>`).join("")}
+      </select>
+      <div id="finderList" class="essay-finder-list"></div>
+    </div>
+    <div class="essay-main">
+      <div class="essay-main-head">
+        <div class="doc-title" style="margin:0 0 2px;">${esc(e.title)}</div>
+        <div class="empty small">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
+        <div class="essay-tabs">${modes.map(([m, l]) => `<div class="essay-tab${essayState.mode === m ? " on" : ""}" data-mode="${m}">${l}</div>`).join("")}</div>
+      </div>
+      <div class="essay-body" id="essayBody"></div>
+    </div>
+  </div>`;
+  $$(".essay-tab").forEach((t) => { t.onclick = () => setEssayMode(t.dataset.mode); });
+  const q = $("#finderQuery");
+  q.value = essayState.finderQuery;
+  let deb = null;
+  q.addEventListener("input", () => { essayState.finderQuery = q.value; clearTimeout(deb); deb = setTimeout(loadFinderClips, 300); });
+  renderFinderList();
+  renderEssayBody();
+}
+function renderEssayBody() {
+  const body = $("#essayBody"); if (!body) return;
+  if (essayState.mode === "premise") return renderPremiseMode(body);
+  if (essayState.mode === "script") return renderScriptMode(body);
+  if (essayState.mode === "assemble") return renderAssembleMode(body);
+  if (essayState.mode === "export") return renderExportMode(body);
+}
+
+// ── Find-clips sidebar — reuses GET /api/clips's existing q filter ──────
+async function loadFinderClips() {
+  const list = $("#finderList"); if (!list) return;
+  list.innerHTML = `<div class="empty small">Searching…</div>`;
+  try {
+    const params = new URLSearchParams({ limit: "40" });
+    if (essayState.finderQuery.trim()) params.set("q", essayState.finderQuery.trim());
+    essayState.finderClips = (await fetch(`/api/clips?${params}`).then((r) => r.json())).clips || [];
+  } catch { essayState.finderClips = null; }
+  renderFinderList();
+}
+function renderFinderList() {
+  const list = $("#finderList"); if (!list) return;
+  const clips = essayState.finderClips;
+  if (clips === null) { list.innerHTML = `<div class="empty small">Couldn't load clips.</div>`; return; }
+  if (!clips.length) { list.innerHTML = `<div class="empty small">No clips match yet.</div>`; return; }
+  list.innerHTML = clips.map((c, i) => {
+    const dur = c.segments.reduce((s, x) => s + (x.end - x.start), 0);
+    return `<div class="finder-item" data-i="${i}">
+      <div class="finder-item-main">
+        <div class="finder-quote">"${esc(c.title)}"</div>
+        <div class="finder-meta">${c.segments.length} seg · ${fmt(dur)}</div>
+      </div>
+      <button class="finder-add" title="Add to the selected act">+</button>
+    </div>`;
+  }).join("");
+  $$(".finder-item", list).forEach((row) => {
+    const clip = clips[+row.dataset.i];
+    row.querySelector(".finder-item-main").onclick = () => previewClipSegments(clip.segments);
+    row.querySelector(".finder-add").onclick = () => addClipBeat(clip);
+  });
+}
+async function addClipBeat(clip) {
+  const act = $("#finderActPick")?.value || "development";
+  try {
+    const res = await fetch(`/api/essays/${essayState.essay.id}/beats`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ act, kind: "clip", clipId: clip.id, text: clip.title }),
+    }).then((r) => r.json());
+    if (res.error) throw new Error(res.error);
+    await reloadEssay();
+    renderEssayShell();
+    toast(`Added to ${ACT_LABEL[act]}`, { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't add that clip", { type: "error" }); }
+}
+
+// ── Coherence check — rule-based, instant, no AI call needed ────────────
+function checkEssayCoherence(e) {
+  const issues = [];
+  const byAct = Object.fromEntries(ACT_DEFS.map((a) => [a.act, e.beats.filter((b) => b.act === a.act)]));
+  for (const { act, label } of ACT_DEFS) {
+    if (!byAct[act].length) issues.push({ color: "var(--warn)", text: `${label} has no beats yet.` });
+  }
+  if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip")) {
+    issues.push({ color: "var(--warn)", text: "Turn has no grounding clip for its complication — it's narration only so far." });
+  }
+  return issues;
+}
+
+// ── Premise mode + act-by-act drafting ───────────────────────────────────
+function renderPremiseMode(body) {
+  const e = essayState.essay, s = essayState;
+  if (s.drafting) {
+    const idx = ACT_DEFS.findIndex((a) => a.act === s.draftAct) + 1;
+    const c = s.draftCandidate;
+    body.innerHTML = `<div class="pad" style="max-width:640px;">
+      <div class="draft-candidate">
+        <div class="row-between" style="margin-bottom:8px;">
+          <span class="essay-eyebrow">Act ${idx} of ${ACT_DEFS.length} · ${esc(ACT_LABEL[s.draftAct])}</span>
+          <span class="essay-link" id="stopDraft">Stop here</span>
+        </div>
+        ${s.draftLoading
+          ? `<div class="empty small">Thinking…</div>`
+          : c
+            ? `<span class="pill ${c.kind === "clip" ? "matched" : "vo"}">${c.kind === "clip" ? "Matched clip" : "Needs voiceover"}</span>
+               <div class="draft-text">${esc(c.text)}</div>
+               ${c.reason ? `<div class="empty small" style="margin-top:6px;">${esc(c.reason)}</div>` : ""}
+               <div class="s-actions" style="margin-top:12px;">
+                 <button class="btn primary small" id="acceptDraft">Accept, next act →</button>
+                 <button class="btn ghost small" id="regenDraft">Try another</button>
+                 <button class="btn ghost small" id="skipDraft">Skip act</button>
+               </div>`
+            : `<div class="empty small">Couldn't draft anything for this act.</div>
+               <div class="s-actions" style="margin-top:12px;"><button class="btn ghost small" id="skipDraft">Skip act</button></div>`}
+      </div>
+    </div>`;
+    $("#stopDraft").onclick = () => { s.drafting = false; renderEssayBody(); };
+    if (!s.draftLoading) {
+      $("#acceptDraft")?.addEventListener("click", acceptDraft);
+      $("#regenDraft")?.addEventListener("click", () => runActDraft(s.draftAct));
+      $("#skipDraft")?.addEventListener("click", advanceDraft);
+    }
+    return;
+  }
+  const issues = s.showCoherence ? checkEssayCoherence(e) : null;
+  body.innerHTML = `<div class="pad" style="max-width:640px;">
+    <div class="essay-eyebrow">Premise</div>
+    <div class="essay-premise-text">${esc(e.premise)}</div>
+    <div class="essay-meta-row">
+      <div><div class="essay-meta-label">Audience</div><div>${esc(e.audience || "—")}</div></div>
+      <div><div class="essay-meta-label">Target length</div><div>${esc(e.target_length || "—")}</div></div>
+      <div><div class="essay-meta-label">Tone</div><div>${esc(e.tone || "—")}</div></div>
+    </div>
+    ${e.threads.length ? `<div class="tag-rail">${e.threads.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    <div class="s-actions" style="margin-top:22px;">
+      <button class="btn primary" id="startActDraft">Build it act by act →</button>
+      <button class="btn ghost" id="runCoherence">Run coherence check</button>
+    </div>
+    ${issues ? (issues.length
+      ? `<div class="coherence-issues">${issues.map((i) => `<div class="coherence-issue" style="border-left-color:${i.color}">${esc(i.text)}</div>`).join("")}</div>`
+      : `<div class="empty small" style="margin-top:10px;">No issues found — looking solid.</div>`) : ""}
+    <div class="empty small" style="margin-top:14px;max-width:520px;">No script needed to start — you'll go act by act, reacting to one suggestion at a time. Already have a script written? Use Import script in Script mode instead.</div>
+  </div>`;
+  $("#startActDraft").onclick = () => { s.drafting = true; s.draftAct = "hook"; renderEssayBody(); runActDraft("hook"); };
+  $("#runCoherence").onclick = () => { s.showCoherence = true; renderEssayBody(); };
+}
+async function runActDraft(act) {
+  const s = essayState;
+  s.draftAct = act; s.draftLoading = true; s.draftCandidate = null;
+  renderEssayBody();
+  try {
+    const res = await fetch(`/api/essays/${s.essay.id}/draft-act`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ act }),
+    }).then((r) => r.json());
+    if (res.error) throw new Error(res.error);
+    s.draftCandidate = res.candidate;
+  } catch (err) {
+    toast(err.message || "Couldn't draft that act", { type: "error" });
+    s.draftCandidate = null;
+  }
+  s.draftLoading = false;
+  renderEssayBody();
+}
+async function acceptDraft() {
+  const s = essayState, c = s.draftCandidate;
+  if (!c) return advanceDraft();
+  try {
+    const res = await fetch(`/api/essays/${s.essay.id}/beats`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ act: s.draftAct, kind: c.kind, clipId: c.clipId, text: c.text }),
+    }).then((r) => r.json());
+    if (res.error) throw new Error(res.error);
+    await reloadEssay();
+  } catch (err) { toast(err.message || "Couldn't save that beat", { type: "error" }); return; }
+  advanceDraft();
+}
+function advanceDraft() {
+  const s = essayState;
+  const idx = ACT_DEFS.findIndex((a) => a.act === s.draftAct);
+  if (idx >= ACT_DEFS.length - 1) {
+    s.drafting = false;
+    setEssayMode("script");
+    toast("Draft complete — review it in Script mode", { type: "success" });
+    return;
+  }
+  runActDraft(ACT_DEFS[idx + 1].act);
+}
+
+// ── Script mode ──────────────────────────────────────────────────────────
+function renderScriptMode(body) {
+  const e = essayState.essay;
+  body.innerHTML = `<div class="pad" style="max-width:760px;">
+    <div class="row-between">
+      <div class="empty small" style="max-width:460px;">Structured as five acts — import a script, or add clips/voiceover from the sidebar.</div>
+      <button class="btn ghost small" id="toggleImport">Import script</button>
+    </div>
+    <div id="importBox" style="display:none;margin:14px 0;">
+      <textarea class="modal-input" id="importText" rows="6" style="width:100%;resize:vertical;" placeholder="Paste your script, one beat per line…"></textarea>
+      <div class="s-actions" style="margin-top:8px;"><button class="btn primary small" id="matchScript">Match to archive</button></div>
+    </div>
+    ${ACT_DEFS.map((a) => renderActSection(a, e.beats.filter((b) => b.act === a.act))).join("")}
+  </div>`;
+  $("#toggleImport").onclick = () => { const box = $("#importBox"); box.style.display = box.style.display === "none" ? "block" : "none"; };
+  $("#matchScript").onclick = () => importScript($("#importText").value);
+  wireActSections();
+}
+function renderActSection(a, beats) {
+  return `<div class="act-section">
+    <div class="act-head"><span class="essay-eyebrow">${a.label}</span><span class="empty small">${beats.length} beat${beats.length === 1 ? "" : "s"}</span></div>
+    ${beats.length ? beats.map(renderBeatRow).join("") : `<div class="empty small" style="padding:10px 0;">No beats yet — pick "${a.label}" in the sidebar and add a clip, or paste a script above.</div>`}
+  </div>`;
+}
+function renderBeatRow(b) {
+  return `<div class="beat" data-id="${b.id}" style="border-left-color:${b.kind === "clip" ? "var(--good)" : "var(--warn)"}">
+    <div class="beat-top">
+      <span class="pill ${b.kind === "clip" ? "matched" : "vo"}">${b.kind === "clip" ? "Matched" : "Needs voiceover"}</span>
+      <button class="beat-remove" title="Remove">✕</button>
+    </div>
+    <div class="beat-text">${esc(b.text)}</div>
+  </div>`;
+}
+function wireActSections() {
+  $$(".beat").forEach((row) => {
+    row.querySelector(".beat-remove").onclick = async () => {
+      await fetch(`/api/essays/${essayState.essay.id}/beats/${row.dataset.id}`, { method: "DELETE" });
+      await reloadEssay(); renderEssayShell();
+    };
+  });
+}
+// Naive positional bucketing — no AI call needed: N lines split evenly
+// across the 5 acts in order, matching "auto-bucketed by position" from
+// the design brief. A real semantic bucketer is a fast-follow.
+async function importScript(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) { toast("Paste some script text first."); return; }
+  const perAct = Math.ceil(lines.length / ACT_DEFS.length);
+  try {
+    for (let i = 0; i < lines.length; i++) {
+      const act = ACT_DEFS[Math.min(ACT_DEFS.length - 1, Math.floor(i / perAct))].act;
+      await fetch(`/api/essays/${essayState.essay.id}/beats`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ act, kind: "vo", text: lines[i] }),
+      });
+    }
+    await reloadEssay();
+    toast(`Imported ${lines.length} line(s), bucketed by position`, { type: "success" });
+    renderEssayShell();
+  } catch { toast("Import failed partway through", { type: "error" }); }
+}
+
+// ── Assemble mode — flat drag-reorder of clip-grounded beats only; vo
+// beats have no source footage yet (recording is a fast-follow) so they
+// can't join a real render timeline ───────────────────────────────────
+function renderAssembleMode(body) {
+  const e = essayState.essay;
+  const clipBeats = e.beats.filter((b) => b.kind === "clip");
+  const voCount = e.beats.length - clipBeats.length;
+  body.innerHTML = `<div class="pad" style="max-width:760px;">
+    <div class="row-between">
+      <div class="empty small" style="max-width:480px;">Drag ⠿ to reorder — preview and export follow this order.${voCount ? ` ${voCount} voiceover beat(s) aren't renderable yet and are skipped here.` : ""}</div>
+      <button class="btn ghost small" id="assemblePreview" ${clipBeats.length ? "" : "disabled"}>${ic("play")} Preview</button>
+    </div>
+    <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+    <div class="tl" id="assembleList">
+      ${clipBeats.length
+        ? clipBeats.map((b, i) => `<div class="seg" draggable="true" data-i="${i}" data-id="${b.id}">
+            <span class="seg-drag" title="Drag to reorder">⠿</span>
+            <span class="seg-time">${ACT_LABEL[b.act]}</span>
+            <span class="seg-reason">${esc(b.text)}</span>
+            <button class="seg-x" title="Remove">✕</button>
+          </div>`).join("")
+        : `<p class="empty small">Add clips from the sidebar first.</p>`}
+    </div>
+  </div>`;
+  $("#libPreviewPlayer").addEventListener("play", function onPlay() { this.style.display = "block"; });
+  $("#assemblePreview")?.addEventListener("click", async () => {
+    const segs = await resolveClipBeatsToSegments(clipBeats);
+    if (!segs.length) { toast("Nothing to preview yet."); return; }
+    previewClipSegments(segs);
+  });
+  wireAssembleDrag(clipBeats);
+}
+async function resolveClipBeatsToSegments(clipBeats) {
+  const clips = await Promise.all(clipBeats.map((b) => fetch(`/api/clips/${b.clipId}`).then((r) => r.json())));
+  return clips.flatMap((c) => (c.segments || []).map((s) => ({ videoId: s.videoId, start: s.start, end: s.end })));
+}
+function wireAssembleDrag(clipBeats) {
+  let dragI = null;
+  const list = $("#assembleList");
+  list.querySelectorAll(".seg").forEach((row) => {
+    row.querySelector(".seg-x").onclick = async () => {
+      await fetch(`/api/essays/${essayState.essay.id}/beats/${row.dataset.id}`, { method: "DELETE" });
+      await reloadEssay(); renderEssayShell();
+    };
+    row.addEventListener("dragstart", (e) => { dragI = +row.dataset.i; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (e) => { e.preventDefault(); row.classList.add("drag-over"); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault(); row.classList.remove("drag-over");
+      const to = +row.dataset.i;
+      if (dragI === null || to === dragI) return;
+      // Include every beat (not just clip-kind) so ord stays one consistent
+      // sequence — reorderBeats only touches ids present in `order`, and
+      // leaving vo beats out would strand them with stale ord values.
+      const ids = clipBeats.map((b) => b.id);
+      const [moved] = ids.splice(dragI, 1);
+      ids.splice(to, 0, moved);
+      const rest = essayState.essay.beats.filter((b) => b.kind !== "clip").map((b) => b.id);
+      await fetch(`/api/essays/${essayState.essay.id}/beats/reorder`, {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ order: [...ids, ...rest] }),
+      });
+      await reloadEssay(); renderEssayShell();
+    });
+  });
+}
+
+// ── Export mode ──────────────────────────────────────────────────────────
+function renderExportMode(body) {
+  const e = essayState.essay;
+  const clipBeats = e.beats.filter((b) => b.kind === "clip");
+  const voCount = e.beats.length - clipBeats.length;
+  body.innerHTML = `<div class="pad" style="max-width:640px;">
+    <div class="empty small">${clipBeats.length} clip beat(s) assembled${voCount ? ` · ${voCount} voiceover beat(s) not yet renderable` : ""}.</div>
+    <div class="s-actions" style="margin-top:14px;">
+      <button class="btn primary" id="renderExport" ${clipBeats.length ? "" : "disabled"}>${ic("download")} Render 1080p MP4</button>
+      <button class="btn ghost" id="exportScript">Export script (.txt)</button>
+    </div>
+  </div>`;
+  $("#renderExport").onclick = (ev) => exportEssayCut(clipBeats, ev.currentTarget);
+  $("#exportScript").onclick = () => exportEssayScript(e);
+}
+async function exportEssayCut(clipBeats, btn) {
+  const prev = btn.innerHTML; btn.disabled = true;
+  try {
+    const segs = await resolveClipBeatsToSegments(clipBeats);
+    const resolved = await Promise.all(segs.map(async (s) => {
+      const v = await resolveVideo(s.videoId);
+      return v && v.r2_key ? { videoId: s.videoId, r2_key: v.r2_key, start: s.start, end: s.end } : null;
+    }));
+    const clips = resolved.filter(Boolean);
+    if (!clips.length) throw new Error("Nothing renderable yet.");
+    const blob = await Renderer.renderLongform(clips, (msg) => { btn.textContent = msg; });
+    downloadBlob(blob, safeName(essayState.essay.title) + ".mp4");
+    toast("Essay exported — downloading", { type: "success" });
+  } catch (err) { toast(err.message || "Export failed", { type: "error" }); }
+  btn.disabled = false; btn.innerHTML = prev;
+}
+function exportEssayScript(e) {
+  const lines = ACT_DEFS.flatMap((a) => {
+    const beats = e.beats.filter((b) => b.act === a.act);
+    return beats.length ? [a.label.toUpperCase(), ...beats.map((b) => `  ${b.text}`), ""] : [];
+  });
+  downloadBlob(new Blob([lines.join("\n")], { type: "text/plain" }), safeName(e.title) + "-script.txt");
+}
+
 // ── Command palette ──────────────────────────────────────────────────
 // Reuses whatever the current view already wired up rather than
 // duplicating any handler: an in-editor command is just "click the real
@@ -2716,7 +3231,7 @@ const RAIL_ITEMS = [
   { view: "sources", label: "Sources", icon: "upload" },
   { view: "threads", label: "Threads", icon: "threads", desc: "Per-thread clip counts, growth trend, and color coding — the analytics/ranking view for everything the Archive has clustered." },
   { view: "discover", label: "Discover", icon: "globe", desc: "Suggests external, internet-sourced clips and sources relevant to a thread, for grounding an essay's claims beyond your own footage." },
-  { view: "essays", label: "Essays", icon: "quill", desc: "The core authoring surface — draft a video essay act by act (Hook → Setup → Development → Turn → Resolution), grounded in real archive clips and citations." },
+  { view: "essays", label: "Essays", icon: "quill" },
   { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
   { view: "generative", label: "Generative", icon: "wand", desc: "Turn a script line into generated cinematic b-roll — context first, then image, then video — saved back into the Archive as a real, thread-matched clip." },
   { view: "clipping", label: "Clipping", icon: "scissors", desc: "Watches a channel and auto-generates short, captioned highlights ranked by how likely they are to land — separate from manually-managed Sources." },
@@ -2768,8 +3283,12 @@ $("#paletteTrigger").onclick = openCommandPalette;
 function route() {
   const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "sources";
   if (view === "archive" || view === "library") return showLibrary();
-  const m = location.hash.match(/^#\/p\/([\w-]+)/);
-  if (m) return openProject(m[1]);
+  const p = location.hash.match(/^#\/p\/([\w-]+)/);
+  if (p) return openProject(p[1]);
+  if (view === "essays") {
+    const e = location.hash.match(/^#\/essays\/([\w-]+)/);
+    return e ? openEssay(e[1]) : showEssaysList();
+  }
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();

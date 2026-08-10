@@ -36,6 +36,21 @@ import {
   type NewClipSegment,
 } from "./clips";
 import { ensureVisualTagSchema, createVisualTag } from "./visualtags";
+import {
+  ensureEssaySchema,
+  createEssay,
+  listEssays,
+  getEssay,
+  updateEssayMeta,
+  deleteEssay,
+  addBeat,
+  updateBeat,
+  deleteBeat,
+  reorderBeats,
+  ACTS,
+  type BeatAct,
+  type BeatKind,
+} from "./essays";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey, timelineHistoryPrefix, timelineHistoryKey } from "./keys";
 import {
   arrangeTimeline,
@@ -45,6 +60,7 @@ import {
   composeFromClips,
   generateBridges,
   suggestReactionClip,
+  draftEssayActBeat,
   type VideoTranscript,
   type SegmentWithText,
 } from "./pipeline/reason";
@@ -903,6 +919,130 @@ app.delete("/api/clips/:id", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
   await deleteClip(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+// ── Essays — the video-essay authoring surface (see src/essays.ts) ────
+app.post("/api/essays", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const body = await c.req
+    .json<{ title?: string; premise?: string; audience?: string; targetLength?: string; tone?: string; threads?: string[] }>()
+    .catch(() => ({}) as { title?: string; premise?: string; audience?: string; targetLength?: string; tone?: string; threads?: string[] });
+  const title = body.title?.trim();
+  const premise = body.premise?.trim();
+  if (!title) return c.json({ error: "give the essay a title" }, 400);
+  if (!premise) return c.json({ error: "describe the idea first" }, 400);
+  const essay = await createEssay(c.env.DB, {
+    title, premise, audience: body.audience?.trim() || null,
+    targetLength: body.targetLength?.trim() || null, tone: body.tone?.trim() || null, threads: body.threads,
+  });
+  return c.json(essay, 201);
+});
+
+app.get("/api/essays", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  return c.json({ essays: await listEssays(c.env.DB) });
+});
+
+app.get("/api/essays/:id", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const essay = await getEssay(c.env.DB, c.req.param("id"));
+  if (!essay) return c.json({ error: "essay not found" }, 404);
+  return c.json(essay);
+});
+
+app.patch("/api/essays/:id", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const id = c.req.param("id");
+  const body = await c.req
+    .json<{ title?: string; premise?: string; audience?: string | null; targetLength?: string | null; tone?: string | null; builderMode?: string; threads?: string[] }>()
+    .catch(() => ({}) as Record<string, never>);
+  const essay = await updateEssayMeta(c.env.DB, id, body);
+  if (!essay) return c.json({ error: "essay not found" }, 404);
+  return c.json(essay);
+});
+
+app.delete("/api/essays/:id", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await deleteEssay(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+// Act-by-act drafting: proposes ONE candidate beat for ONE named act, grounded
+// against the Archive the same way Compose is. Not saved — the client shows
+// Accept & next / Try another / Skip act, and only POSTs /beats on accept.
+app.post("/api/essays/:id/draft-act", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const essay = await getEssay(c.env.DB, c.req.param("id"));
+  if (!essay) return c.json({ error: "essay not found" }, 404);
+  const { act } = await c.req.json<{ act?: string }>().catch(() => ({}) as { act?: string });
+  if (!act || !ACTS.includes(act as BeatAct)) return c.json({ error: `act must be one of: ${ACTS.join(", ")}` }, 400);
+
+  const clips = await listClips(c.env.DB, { limit: 500 });
+  try {
+    const candidate = await draftEssayActBeat(
+      c.env,
+      essay.premise,
+      act,
+      essay.beats.map((b) => b.text).filter(Boolean),
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
+    );
+    if (!candidate) return c.json({ candidate: null });
+    const clip = candidate.kind === "clip" ? clips.find((cl) => cl.id === candidate.clipId) : null;
+    return c.json({
+      candidate: {
+        kind: candidate.kind, text: candidate.kind === "clip" ? clip?.title ?? candidate.text : candidate.text,
+        reason: candidate.reason, clipId: candidate.clipId,
+        clip: clip ? { title: clip.title, tags: clip.tags, segments: clip.segments } : null,
+      },
+    });
+  } catch (err) {
+    return c.json({ error: `draft-act failed: ${err}` }, 502);
+  }
+});
+
+app.post("/api/essays/:id/beats", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const essayId = c.req.param("id");
+  if (!(await getEssay(c.env.DB, essayId))) return c.json({ error: "essay not found" }, 404);
+  const body = await c.req
+    .json<{ act?: string; kind?: string; clipId?: string; text?: string; citations?: string[] }>()
+    .catch(() => ({}) as Record<string, never>);
+  if (!body.act || !ACTS.includes(body.act as BeatAct)) return c.json({ error: `act must be one of: ${ACTS.join(", ")}` }, 400);
+  const kind: BeatKind = body.kind === "clip" ? "clip" : "vo";
+  if (kind === "clip") {
+    await ensureClipSchema(c.env.DB);
+    if (!body.clipId || !(await getClip(c.env.DB, body.clipId))) return c.json({ error: "clip not found" }, 400);
+  }
+  const text = body.text?.trim() ?? "";
+  if (kind === "vo" && !text) return c.json({ error: "a voiceover beat needs script text" }, 400);
+  const beat = await addBeat(c.env.DB, essayId, { act: body.act as BeatAct, kind, clipId: kind === "clip" ? body.clipId : null, text, citations: body.citations });
+  return c.json(beat, 201);
+});
+
+app.put("/api/essays/:id/beats/reorder", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const essayId = c.req.param("id");
+  const { order } = await c.req.json<{ order?: string[] }>().catch(() => ({}) as { order?: string[] });
+  if (!Array.isArray(order)) return c.json({ error: "order must be an array of beat ids" }, 400);
+  await reorderBeats(c.env.DB, essayId, order);
+  const essay = await getEssay(c.env.DB, essayId);
+  return c.json(essay ?? { error: "essay not found" }, essay ? 200 : 404);
+});
+
+app.put("/api/essays/:id/beats/:beatId", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const { text, citations } = await c.req.json<{ text?: string; citations?: string[] }>().catch(() => ({}) as { text?: string; citations?: string[] });
+  const beat = await updateBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"), { text, citations });
+  if (!beat) return c.json({ error: "beat not found" }, 404);
+  return c.json(beat);
+});
+
+app.delete("/api/essays/:id/beats/:beatId", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await deleteBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"));
   return c.json({ ok: true });
 });
 

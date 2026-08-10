@@ -699,9 +699,71 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .palette-item.on .palette-item-hint { color: var(--accent); border-color: rgba(138, 123, 212, .4); }
 .palette-empty { padding: 22px 12px; text-align: center; color: var(--faint); font-size: 13px; }
 
+/* ── essays ─────────────────────────────────────────────── */
+.essay-card { padding: 0; }
+.essay-meta { font-size: 11px; color: var(--faint); font-family: var(--font-mono); margin: 10px 0; }
+
+.essay-shell { display: flex; flex: 1; min-height: 0; }
+.essay-finder {
+  width: 270px; flex: none; border-right: 1px solid var(--line); padding: 18px 16px;
+  overflow-y: auto; background: var(--bg);
+}
+.essay-finder-list { display: flex; flex-direction: column; gap: 8px; }
+.finder-item {
+  display: flex; gap: 8px; align-items: flex-start; padding: 10px; border-radius: 3px;
+  background: var(--panel); border: 1px solid var(--line);
+}
+.finder-item-main { flex: 1; min-width: 0; cursor: pointer; }
+.finder-quote { font: italic 400 12.5px/1.4 var(--font-serif); color: var(--bone); }
+.finder-meta { font-size: 10.5px; color: var(--faint); font-family: var(--font-mono); margin-top: 5px; }
+.finder-add {
+  flex: none; width: 22px; height: 22px; border-radius: 3px; border: 1px solid var(--line2);
+  background: none; color: var(--bone); font-size: 14px; cursor: pointer; display: grid; place-items: center;
+}
+.finder-add:hover { background: var(--accent-soft); border-color: rgba(138, 123, 212, .5); color: var(--accent); }
+
+.essay-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.essay-main-head { padding: 22px 30px 0; border-bottom: 1px solid var(--line); }
+.essay-tabs { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--line2); border-radius: 3px; padding: 2px; width: fit-content; margin: 14px 0 -1px; }
+.essay-tab { padding: 5px 11px; font-size: 11.5px; border-radius: 3px; cursor: pointer; color: var(--dim); }
+.essay-tab:hover { color: var(--bone); }
+.essay-tab.on { background: var(--panel2); color: var(--bone); }
+.essay-body { flex: 1; overflow-y: auto; }
+
+.essay-eyebrow { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.essay-premise-text { font: italic 400 16px/1.6 var(--font-serif); color: var(--bone); margin: 8px 0 20px; }
+.essay-meta-row { display: flex; gap: 30px; margin-bottom: 20px; }
+.essay-meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: 4px; }
+.essay-link { font-size: 11.5px; color: var(--dim); cursor: pointer; }
+.essay-link:hover { color: var(--bone); }
+
+.draft-candidate { max-width: 520px; background: var(--panel); border: 1px solid var(--line2); border-radius: 3px; padding: 18px; }
+.draft-text { font: italic 400 14px/1.6 var(--font-serif); color: var(--bone); margin-top: 8px; }
+.coherence-issues { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+.coherence-issue { font-size: 11.5px; color: var(--secondary); padding: 8px 12px; background: var(--panel); border-left: 2px solid; border-radius: 3px; }
+
+.act-section { margin-bottom: 26px; }
+.act-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line2); padding-bottom: 8px; }
+.beat { border-left: 2px solid var(--line2); padding-left: 14px; margin-top: 14px; }
+.beat-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.beat-text { font: italic 400 14px/1.6 var(--font-serif); color: var(--bone); margin-top: 6px; }
+.beat-remove { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px; flex: none; }
+.beat-remove:hover { color: var(--bad); }
+.pill.matched { color: var(--good); background: rgba(143, 201, 143, .13); }
+.pill.vo { color: var(--warn); background: rgba(224, 196, 106, .13); }
+
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-pick {
+  font-size: 11.5px; padding: 5px 11px; border-radius: 3px; border: 1px solid var(--line2);
+  color: var(--secondary); cursor: pointer; transition: .12s var(--ease);
+}
+.chip-pick:hover { border-color: var(--faint); color: var(--bone); }
+.chip-pick.on { color: var(--accent); border-color: rgba(138, 123, 212, .5); background: var(--accent-soft); }
+
 @media (max-width: 1080px) {
   .editor { grid-template-columns: 200px 1fr; }
   .tools { display: none; }
+  .essay-finder { display: none; }
 }
 @media (max-width: 780px) {
   .editor { grid-template-columns: 1fr; }
