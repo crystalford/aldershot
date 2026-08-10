@@ -2445,7 +2445,7 @@ function renderTagRail(tags) {
   const el = $("#tagRail"); if (!el) return;
   if (!tags.length) { el.innerHTML = ""; return; }
   el.innerHTML = tags.map((t) =>
-    `<span class="tag-chip${state.libraryTag === t.tag ? " on" : ""}" data-tag="${esc(t.tag)}">${esc(t.tag)} <span class="tag-count">${t.count}</span></span>`,
+    `<span class="tag-chip${state.libraryTag === t.tag ? " on" : ""}" data-tag="${esc(t.tag)}" style="border-left:2px solid ${colorForTag(t.tag)}">${esc(t.tag)} <span class="tag-count">${t.count}</span></span>`,
   ).join("");
   el.querySelectorAll(".tag-chip").forEach((chip) => {
     chip.onclick = () => {
@@ -2499,7 +2499,7 @@ function clipCard(c, i) {
     ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
     ${visualCaptions.length ? `<div class="sg-visual">${visualCaptions.map((cap) => `👁 ${esc(cap)}`).join(" · ")}</div>` : ""}
     <div class="sg-segs">${segParts}</div>
-    ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
     <div class="s-actions">
       <button class="btn small ghost clip-preview">${ic("play")} Preview</button>
       <button class="btn small accent clip-add-project">${ic("plus")} Add to project</button>
@@ -2653,6 +2653,90 @@ function discoverCard(s, i) {
   </div>`;
 }
 
+// ── Threads — the analytics/ranking surface ─────────────────────────────
+// v1 is derived from clip tags (see src/threads.ts for why: real semantic
+// clustering needs a vector index, a later phase, not something to fake
+// here) — auto-detected only, never user-created; rename/merge are the only
+// mutations. colorForTag mirrors the server's hash+palette exactly so a
+// tag's color matches everywhere it's shown (this rail view, Archive's tag
+// chips, essay thread tags) without an extra round trip.
+const THREAD_PALETTE = ["#8fbf7f", "#d48a7b", "#7ba7d4", "#c9a86a", "#a889c9", "#6fb8a8", "#c97f9e", "#9fae6a", "#7f9bd4", "#d4a37b"];
+function colorForTag(tag) {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (Math.imul(h, 31) + tag.charCodeAt(i)) >>> 0;
+  return THREAD_PALETTE[h % THREAD_PALETTE.length];
+}
+async function fetchThreads() {
+  try { return (await fetch("/api/threads").then((r) => r.json())).threads || []; }
+  catch { return []; }
+}
+async function showThreadsView() {
+  location.hash = "#/threads"; setActiveRail("threads");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading threads…</div>`;
+  const threads = await fetchThreads();
+  main.innerHTML = `<section class="pad">
+    <div class="row-between">
+      <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected from what's tagged across the Archive. Rename or merge, but a new one only appears once something's actually tagged that way.</div></div>
+    </div>
+    <div class="grid" id="threadGrid"></div>
+  </section>`;
+  const grid = $("#threadGrid");
+  if (!threads.length) {
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No threads yet — tag a clip in the Archive and one appears here automatically.</div>`;
+    return;
+  }
+  grid.innerHTML = threads.map(threadCardHTML).join("");
+  wireThreadGrid(threads);
+}
+function threadCardHTML(t) {
+  const maxWeek = Math.max(1, ...t.weeklyGrowth);
+  const bars = t.weeklyGrowth.map((n) => `<div class="growth-bar" style="height:${Math.max(3, (n / maxWeek) * 100)}%;background:${t.color}"></div>`).join("");
+  return `<div class="card thread-card" data-tag="${esc(t.tag)}" style="border-left:2px solid ${t.color}">
+    <div class="card-body">
+      <div class="row-between" style="margin-bottom:0;">
+        <div class="card-title thread-name" title="Click to rename">${esc(t.name)}</div>
+        <span class="essay-meta">${t.clipCount} clip${t.clipCount === 1 ? "" : "s"}</span>
+      </div>
+      <div class="growth-chart">${bars}</div>
+      ${t.sampleQuotes.length ? `<div class="thread-quotes">${t.sampleQuotes.map((q) => `<div class="finder-quote">"${esc(q)}"</div>`).join("")}</div>` : ""}
+      <div class="s-actions">
+        <button class="btn small ghost thread-rename">Rename</button>
+        <button class="btn small ghost thread-merge">Merge into…</button>
+      </div>
+    </div>
+  </div>`;
+}
+function wireThreadGrid(threads) {
+  $$(".thread-card").forEach((card) => {
+    const t = threads.find((x) => x.tag === card.dataset.tag);
+    const rename = async () => {
+      const name = await UI.prompt({ title: "Rename thread", label: "Display name", value: t.name, confirmText: "Rename" });
+      if (name === null || !name.trim()) return;
+      await fetch(`/api/threads/${encodeURIComponent(t.tag)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+      toast("Thread renamed", { type: "success" });
+      showThreadsView();
+    };
+    card.querySelector(".thread-name").onclick = rename;
+    card.querySelector(".thread-rename").onclick = rename;
+    card.querySelector(".thread-merge").onclick = async () => {
+      const others = threads.filter((x) => x.tag !== t.tag);
+      if (!others.length) { toast("There's only one thread — nothing to merge into."); return; }
+      const options = others.map((o) => `<option value="${esc(o.tag)}">${esc(o.name)}</option>`).join("");
+      const intoTag = await UI.modal({
+        title: `Merge "${t.name}" into…`,
+        bodyHTML: `<label class="modal-label">Every clip tagged "${esc(t.name)}" will also be tagged with the thread you pick — this can't be undone.</label><select class="modal-input" id="__mergePick" style="margin-top:10px;">${options}</select>`,
+        dismissValue: null,
+        actions: [{ label: "Cancel", resolve: null }, { label: "Merge", variant: "danger", onClick: (done, card2) => done(card2.querySelector("#__mergePick").value) }],
+      });
+      if (!intoTag) return;
+      await fetch(`/api/threads/${encodeURIComponent(t.tag)}/merge`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intoTag }) });
+      toast("Threads merged", { type: "success" });
+      showThreadsView();
+    };
+  });
+}
+
 // ── Essays — the video-essay authoring surface ──────────────────────────
 // A separate top-level view from Sources/Archive: an essay draws clips from
 // the WHOLE archive (not one project), drafted act by act rather than
@@ -2695,7 +2779,7 @@ function essayCardHTML(e) {
     <div class="card-body">
       <div class="card-title">${esc(e.title)}</div>
       <div class="card-sub" style="margin:6px 0 10px;">${esc(e.premise)}</div>
-      ${e.threads.length ? `<div class="tag-rail small">${e.threads.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+      ${e.threads.length ? `<div class="tag-rail small">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="essay-meta">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
       <div class="s-actions">
         <button class="btn small accent essay-open">Open →</button>
@@ -2720,8 +2804,13 @@ async function startNewEssay() {
   const audienceChoices = ["General audience", "Fans of the channel", "Skeptics / critics", "Newcomers"];
   const lengthChoices = ["Short (3-5 min)", "Standard (8-10 min)", "Long (15+ min)"];
   const toneChoices = ["Sardonic", "Earnest", "Analytical", "Playful"];
+  const existingThreads = await fetchThreads();
+  const pickedThreads = new Set();
   const picked = { audience: null, length: null, tone: null };
   const chipsHTML = (list, key) => list.map((c) => `<span class="chip-pick" data-key="${key}" data-val="${esc(c)}">${esc(c)}</span>`).join("");
+  const threadChipsHTML = existingThreads
+    .map((t) => `<span class="chip-pick" data-thread="${esc(t.tag)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`)
+    .join("");
   const result = await UI.modal({
     title: "New essay",
     bodyHTML: `
@@ -2733,16 +2822,24 @@ async function startNewEssay() {
       <div class="chip-row" id="__lengthRow">${chipsHTML(lengthChoices, "length")}</div>
       <label class="modal-label" style="margin-top:14px;">Tone</label>
       <div class="chip-row" id="__toneRow">${chipsHTML(toneChoices, "tone")}</div>
-      <label class="modal-label" style="margin-top:14px;">Grounding threads (optional, comma-separated)</label>
-      <input class="modal-input" id="__threadsInput" placeholder="e.g. gaming rage, parasocial relationships" autocomplete="off" />
+      <label class="modal-label" style="margin-top:14px;">Grounding threads (optional)</label>
+      ${existingThreads.length ? `<div class="chip-row" id="__threadsRow">${threadChipsHTML}</div>` : ""}
+      <input class="modal-input" id="__threadsInput" style="margin-top:8px;" placeholder="${existingThreads.length ? "Not listed above? Add one, comma-separated…" : "e.g. gaming rage, parasocial relationships"}" autocomplete="off" />
     `,
     dismissValue: null,
     onOpen: (card) => {
-      card.querySelectorAll(".chip-pick").forEach((chip) => {
+      card.querySelectorAll(".chip-pick[data-key]").forEach((chip) => {
         chip.onclick = () => {
           const key = chip.dataset.key;
           picked[key] = picked[key] === chip.dataset.val ? null : chip.dataset.val;
           card.querySelectorAll(`.chip-pick[data-key="${key}"]`).forEach((c) => c.classList.toggle("on", c.dataset.val === picked[key]));
+        };
+      });
+      card.querySelectorAll(".chip-pick[data-thread]").forEach((chip) => {
+        chip.onclick = () => {
+          const tag = chip.dataset.thread;
+          if (pickedThreads.has(tag)) pickedThreads.delete(tag); else pickedThreads.add(tag);
+          chip.classList.toggle("on", pickedThreads.has(tag));
         };
       });
       card.querySelector("#__ideaText").focus();
@@ -2752,8 +2849,8 @@ async function startNewEssay() {
       { label: "Create essay →", variant: "primary", onClick: (done, card) => {
         const idea = card.querySelector("#__ideaText").value.trim();
         if (!idea) { toast("Describe the idea first."); return; }
-        const threads = card.querySelector("#__threadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
-        done({ idea, threads });
+        const custom = card.querySelector("#__threadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
+        done({ idea, threads: [...pickedThreads, ...custom] });
       } },
     ],
   });
@@ -2945,7 +3042,7 @@ function renderPremiseMode(body) {
       <div><div class="essay-meta-label">Target length</div><div>${esc(e.target_length || "—")}</div></div>
       <div><div class="essay-meta-label">Tone</div><div>${esc(e.tone || "—")}</div></div>
     </div>
-    ${e.threads.length ? `<div class="tag-rail">${e.threads.map((t) => `<span class="tag-chip">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${e.threads.length ? `<div class="tag-rail">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
     <div class="s-actions" style="margin-top:22px;">
       <button class="btn primary" id="startActDraft">Build it act by act →</button>
       <button class="btn ghost" id="runCoherence">Run coherence check</button>
@@ -3229,7 +3326,7 @@ async function openCommandPalette() {
 const RAIL_ITEMS = [
   { view: "archive", label: "Archive", icon: "archive" },
   { view: "sources", label: "Sources", icon: "upload" },
-  { view: "threads", label: "Threads", icon: "threads", desc: "Per-thread clip counts, growth trend, and color coding — the analytics/ranking view for everything the Archive has clustered." },
+  { view: "threads", label: "Threads", icon: "threads" },
   { view: "discover", label: "Discover", icon: "globe", desc: "Suggests external, internet-sourced clips and sources relevant to a thread, for grounding an essay's claims beyond your own footage." },
   { view: "essays", label: "Essays", icon: "quill" },
   { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
@@ -3289,6 +3386,7 @@ function route() {
     const e = location.hash.match(/^#\/essays\/([\w-]+)/);
     return e ? openEssay(e[1]) : showEssaysList();
   }
+  if (view === "threads") return showThreadsView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();

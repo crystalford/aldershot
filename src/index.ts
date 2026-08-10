@@ -51,6 +51,7 @@ import {
   type BeatAct,
   type BeatKind,
 } from "./essays";
+import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey, timelineHistoryPrefix, timelineHistoryKey } from "./keys";
 import {
   arrangeTimeline,
@@ -1043,6 +1044,31 @@ app.put("/api/essays/:id/beats/:beatId", async (c) => {
 app.delete("/api/essays/:id/beats/:beatId", async (c) => {
   await ensureEssaySchema(c.env.DB);
   await deleteBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"));
+  return c.json({ ok: true });
+});
+
+// ── Threads — auto-derived from clip tags, not user-created (see src/threads.ts) ──
+app.get("/api/threads", async (c) => {
+  await ensureClipSchema(c.env.DB);
+  await ensureThreadSchema(c.env.DB);
+  return c.json({ threads: await listThreads(c.env.DB) });
+});
+
+app.patch("/api/threads/:tag", async (c) => {
+  await ensureThreadSchema(c.env.DB);
+  const { name } = await c.req.json<{ name?: string }>().catch(() => ({}) as { name?: string });
+  if (!name?.trim()) return c.json({ error: "give the thread a name" }, 400);
+  await renameThread(c.env.DB, c.req.param("tag").trim().toLowerCase(), name.trim());
+  return c.json({ ok: true });
+});
+
+app.post("/api/threads/:tag/merge", async (c) => {
+  await ensureClipSchema(c.env.DB);
+  await ensureEssaySchema(c.env.DB);
+  await ensureThreadSchema(c.env.DB);
+  const { intoTag } = await c.req.json<{ intoTag?: string }>().catch(() => ({}) as { intoTag?: string });
+  if (!intoTag?.trim()) return c.json({ error: "pick a thread to merge into" }, 400);
+  await mergeThreads(c.env.DB, c.req.param("tag").trim().toLowerCase(), intoTag.trim().toLowerCase());
   return c.json({ ok: true });
 });
 

@@ -699,6 +699,15 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .palette-item.on .palette-item-hint { color: var(--accent); border-color: rgba(138, 123, 212, .4); }
 .palette-empty { padding: 22px 12px; text-align: center; color: var(--faint); font-size: 13px; }
 
+/* ── threads ────────────────────────────────────────────── */
+.thread-card { padding: 0; cursor: default; }
+.thread-card:hover { transform: none; box-shadow: none; }
+.thread-name { cursor: pointer; }
+.thread-name:hover { color: var(--accent); }
+.growth-chart { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin: 12px 0; }
+.growth-bar { flex: 1; border-radius: 1px; min-height: 3px; opacity: .85; }
+.thread-quotes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+
 /* ── essays ─────────────────────────────────────────────── */
 .essay-card { padding: 0; }
 .essay-meta { font-size: 11px; color: var(--faint); font-family: var(--font-mono); margin: 10px 0; }
