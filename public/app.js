@@ -1,6 +1,7 @@
 // Aldershot — project console. Multi-video projects: upload a batch, transcribe
 // each, edit as text, AI-arrange a long-form cut, and mine for shorts.
 const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const main = $("#main");
 const toast = (m, o) => UI.toast(m, o);
 
@@ -22,6 +23,17 @@ const ICON = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5 21 8v8l-5-2.5z"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+  // rail icons
+  archive: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
+  upload: '<path d="M12 16V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+  threads: '<circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M8.1 7 15.9 11M8.1 17 15.9 13"/>',
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 4 5.4 4 8.5s-1.4 5.9-4 8.5c-2.6-2.6-4-5.4-4-8.5s1.4-5.9 4-8.5z"/>',
+  quill: '<path d="M4 20c4-.5 13-2.5 15.5-13.5C13.5 8 9 12 7 17"/><path d="M4 20l2.2-5.4"/>',
+  clapper: '<path d="M3 10 19.5 6l1 4L4 14z"/><rect x="3" y="10" width="18" height="10" rx="1"/><path d="M8 10 6 6M14 10l-2-4"/>',
+  wand: '<path d="M5 19 17 7"/><path d="M17 3v3M20.5 4.5h-3M12 6l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
+  scissors: '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M7.6 7.4 20 20M20 4 12 12M7.6 16.6l2-2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.4M12 18.6V21M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3 12h2.4M18.6 12H21M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const esc = UI.esc;
@@ -121,7 +133,7 @@ function setStats(t) {
 
 // ── Projects view ────────────────────────────────────────────────────
 async function showProjects() {
-  location.hash = "#/"; setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  location.hash = "#/"; setActiveRail("sources"); setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading projects…</div>`;
   let projects = [];
   try { projects = (await api.listProjects()).projects || []; }
@@ -129,7 +141,7 @@ async function showProjects() {
   main.innerHTML = `
     <section class="pad">
       <div class="row-between">
-        <div><h1>Projects</h1><div class="sub">Each project holds the videos you cut together.</div></div>
+        <div><h1>Sources</h1><div class="sub">Raw uploads — each one holds the videos you cut together.</div></div>
         <button class="btn primary" id="new">${ic("plus")} New project</button>
       </div>
       <div class="grid" id="grid"></div>
@@ -167,7 +179,7 @@ async function newProject() {
 
 // ── Project view ─────────────────────────────────────────────────────
 async function openProject(id) {
-  location.hash = `#/p/${id}`;
+  location.hash = `#/p/${id}`; setActiveRail("sources");
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading project…</div>`;
   const data = await api.getProject(id);
   if (data.error) { main.innerHTML = `<div class="pad"><p class="empty">${esc(data.error)}</p></div>`; return; }
@@ -178,7 +190,7 @@ async function openProject(id) {
   state.suggestions = data.suggestions;
   state.bridges = null;
   state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
-  setCrumbs([{ label: "Projects", go: showProjects }, { label: data.project.name }]);
+  setCrumbs([{ label: "Sources", go: showProjects }, { label: data.project.name }]);
   renderProject();
 }
 
@@ -2378,7 +2390,7 @@ function stopLibraryPlayback() {
 }
 
 async function showLibrary() {
-  location.hash = "#/library";
+  location.hash = "#/archive"; setActiveRail("archive");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   stopLibraryPlayback();
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
@@ -2394,8 +2406,8 @@ async function showLibrary() {
   main.innerHTML = `
     <section class="pad">
       <div class="row-between">
-        <div><h1>Library</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay.</div></div>
-        <button class="btn primary" id="discoverBtn">${ic("sparkle")} Discover clips across my library</button>
+        <div><h1>Archive</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay.</div></div>
+        <button class="btn primary" id="discoverBtn">${ic("sparkle")} Find related clips across my archive</button>
       </div>
 
       <div class="direct-box-wrap" style="margin-top:16px;">
@@ -2648,10 +2660,15 @@ function discoverCard(s, i) {
 // can never drift out of sync with what that button actually does.
 async function buildCommands() {
   const cmds = [
-    { label: "Go to Projects", group: "Navigate", action: showProjects },
-    { label: "Go to Library", group: "Navigate", action: showLibrary },
+    { label: "Go to Archive", group: "Navigate", action: showLibrary },
+    { label: "Go to Sources", group: "Navigate", action: showProjects },
     { label: "New project", group: "Navigate", action: newProject },
   ];
+  for (const item of [...RAIL_ITEMS, ...RAIL_BOTTOM]) {
+    if (item.view !== "archive" && item.view !== "sources") {
+      cmds.push({ label: `Go to ${item.label}`, group: "Navigate", action: () => go(item.view) });
+    }
+  }
   if (state.project) {
     cmds.push(
       { label: "Save", group: "Edit", action: () => $("#save")?.click() },
@@ -2671,8 +2688,8 @@ async function buildCommands() {
       { label: "Find bridges", group: "AI", action: () => $("#findBridges")?.click() },
     );
   }
-  if (location.hash === "#/library") {
-    cmds.push({ label: "Discover clips across my library", group: "AI", action: () => $("#discoverBtn")?.click() });
+  if (location.hash === "#/archive" || location.hash === "#/library") {
+    cmds.push({ label: "Find related clips across my archive", group: "AI", action: () => $("#discoverBtn")?.click() });
   }
   try {
     const { projects } = await api.listProjects();
@@ -2688,18 +2705,74 @@ async function openCommandPalette() {
   chosen?.action?.();
 }
 
+// ── left rail — persistent nav across every top-level surface. Per the
+// design brief only Archive/Sources are wired to real views; the rest are
+// destinations that exist so the whole shape of the product is visible and
+// navigable, not four separate builds bolted onto the old header. No
+// keyboard shortcuts anywhere (including the palette) — reachable only by
+// clicking the rail/search icon, per explicit design direction. ──────────
+const RAIL_ITEMS = [
+  { view: "archive", label: "Archive", icon: "archive" },
+  { view: "sources", label: "Sources", icon: "upload" },
+  { view: "threads", label: "Threads", icon: "threads", desc: "Per-thread clip counts, growth trend, and color coding — the analytics/ranking view for everything the Archive has clustered." },
+  { view: "discover", label: "Discover", icon: "globe", desc: "Suggests external, internet-sourced clips and sources relevant to a thread, for grounding an essay's claims beyond your own footage." },
+  { view: "essays", label: "Essays", icon: "quill", desc: "The core authoring surface — draft a video essay act by act (Hook → Setup → Development → Turn → Resolution), grounded in real archive clips and citations." },
+  { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
+  { view: "generative", label: "Generative", icon: "wand", desc: "Turn a script line into generated cinematic b-roll — context first, then image, then video — saved back into the Archive as a real, thread-matched clip." },
+  { view: "clipping", label: "Clipping", icon: "scissors", desc: "Watches a channel and auto-generates short, captioned highlights ranked by how likely they are to land — separate from manually-managed Sources." },
+];
+const RAIL_BOTTOM = [
+  { view: "settings", label: "Settings", icon: "gear", desc: "Profile, team, billing, and integrations." },
+  { view: "trash", label: "Trash", icon: "trash", desc: "Deleted essays and sources — restore anything you didn't mean to remove." },
+];
+function buildRail() {
+  const render = (items, el) => {
+    el.innerHTML = "";
+    for (const item of items) {
+      const btn = document.createElement("button");
+      btn.className = "rail-btn"; btn.dataset.view = item.view; btn.title = item.label;
+      btn.innerHTML = ic(item.icon);
+      btn.onclick = () => go(item.view);
+      el.appendChild(btn);
+    }
+  };
+  render(RAIL_ITEMS, $("#railTop"));
+  render(RAIL_BOTTOM, $("#railBottom"));
+}
+function setActiveRail(view) {
+  $$(".rail-btn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+}
+function renderStub(item) {
+  setActiveRail(item.view);
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<div class="stub-view"><div class="stub-card">
+    ${ic(item.icon)}
+    <div class="stub-title">${esc(item.label)}</div>
+    <div class="stub-desc">${esc(item.desc)}</div>
+    <div class="stub-tag">Coming in a later phase</div>
+  </div></div>`;
+}
+// "sources" calls showProjects() directly rather than via a hash — showProjects()
+// itself normalizes location.hash to "#/", so routing it through "#/sources"
+// would fire a second hashchange (and a second fetch) once that normalization lands.
+function go(view) {
+  if (view === "sources") return showProjects();
+  location.hash = `#/${view}`;
+}
+
 // ── boot ─────────────────────────────────────────────────────────────
-$("#home").onclick = showProjects;
-$("#home").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
-$("#libraryNav").onclick = showLibrary;
+buildRail();
+$("#railHome").onclick = showProjects;
+$("#railHome").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
 $("#paletteTrigger").onclick = openCommandPalette;
-document.addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCommandPalette(); }
-});
 function route() {
-  if (location.hash === "#/library") return showLibrary();
+  const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "sources";
+  if (view === "archive" || view === "library") return showLibrary();
   const m = location.hash.match(/^#\/p\/([\w-]+)/);
-  if (m) openProject(m[1]); else showProjects();
+  if (m) return openProject(m[1]);
+  const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
+  if (stub && stub.desc) return renderStub(stub);
+  showProjects();
 }
 window.addEventListener("hashchange", route);
 route();
