@@ -2679,13 +2679,13 @@ async function showThreadsView() {
   const threads = await fetchThreads();
   main.innerHTML = `<section class="pad">
     <div class="row-between">
-      <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected from what's tagged across the Archive. Rename or merge, but a new one only appears once something's actually tagged that way.</div></div>
+      <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected by theme across the Archive (what a clip's about, not just what it's tagged). Rename or merge, but a new one only appears once clips actually cluster that way.</div></div>
     </div>
     <div class="grid" id="threadGrid"></div>
   </section>`;
   const grid = $("#threadGrid");
   if (!threads.length) {
-    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No threads yet — tag a clip in the Archive and one appears here automatically.</div>`;
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No threads yet — save a couple of clips to the Archive and related ones will cluster here automatically.</div>`;
     return;
   }
   grid.innerHTML = threads.map(threadCardHTML).join("");
@@ -2694,7 +2694,7 @@ async function showThreadsView() {
 function threadCardHTML(t) {
   const maxWeek = Math.max(1, ...t.weeklyGrowth);
   const bars = t.weeklyGrowth.map((n) => `<div class="growth-bar" style="height:${Math.max(3, (n / maxWeek) * 100)}%;background:${t.color}"></div>`).join("");
-  return `<div class="card thread-card" data-tag="${esc(t.tag)}" style="border-left:2px solid ${t.color}">
+  return `<div class="card thread-card" data-id="${esc(t.id)}" style="border-left:2px solid ${t.color}">
     <div class="card-body">
       <div class="row-between" style="margin-bottom:0;">
         <div class="card-title thread-name" title="Click to rename">${esc(t.name)}</div>
@@ -2711,28 +2711,28 @@ function threadCardHTML(t) {
 }
 function wireThreadGrid(threads) {
   $$(".thread-card").forEach((card) => {
-    const t = threads.find((x) => x.tag === card.dataset.tag);
+    const t = threads.find((x) => x.id === card.dataset.id);
     const rename = async () => {
       const name = await UI.prompt({ title: "Rename thread", label: "Display name", value: t.name, confirmText: "Rename" });
       if (name === null || !name.trim()) return;
-      await fetch(`/api/threads/${encodeURIComponent(t.tag)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+      await fetch(`/api/threads/${encodeURIComponent(t.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
       toast("Thread renamed", { type: "success" });
       showThreadsView();
     };
     card.querySelector(".thread-name").onclick = rename;
     card.querySelector(".thread-rename").onclick = rename;
     card.querySelector(".thread-merge").onclick = async () => {
-      const others = threads.filter((x) => x.tag !== t.tag);
+      const others = threads.filter((x) => x.id !== t.id);
       if (!others.length) { toast("There's only one thread — nothing to merge into."); return; }
-      const options = others.map((o) => `<option value="${esc(o.tag)}">${esc(o.name)}</option>`).join("");
-      const intoTag = await UI.modal({
+      const options = others.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
+      const intoId = await UI.modal({
         title: `Merge "${t.name}" into…`,
-        bodyHTML: `<label class="modal-label">Every clip tagged "${esc(t.name)}" will also be tagged with the thread you pick — this can't be undone.</label><select class="modal-input" id="__mergePick" style="margin-top:10px;">${options}</select>`,
+        bodyHTML: `<label class="modal-label">Every clip in "${esc(t.name)}" will join the thread you pick — this can't be undone.</label><select class="modal-input" id="__mergePick" style="margin-top:10px;">${options}</select>`,
         dismissValue: null,
         actions: [{ label: "Cancel", resolve: null }, { label: "Merge", variant: "danger", onClick: (done, card2) => done(card2.querySelector("#__mergePick").value) }],
       });
-      if (!intoTag) return;
-      await fetch(`/api/threads/${encodeURIComponent(t.tag)}/merge`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intoTag }) });
+      if (!intoId) return;
+      await fetch(`/api/threads/${encodeURIComponent(t.id)}/merge`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ intoId }) });
       toast("Threads merged", { type: "success" });
       showThreadsView();
     };
@@ -2811,7 +2811,7 @@ async function startNewEssay() {
   const picked = { audience: null, length: null, tone: null };
   const chipsHTML = (list, key) => list.map((c) => `<span class="chip-pick" data-key="${key}" data-val="${esc(c)}">${esc(c)}</span>`).join("");
   const threadChipsHTML = existingThreads
-    .map((t) => `<span class="chip-pick" data-thread="${esc(t.tag)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`)
+    .map((t) => `<span class="chip-pick" data-thread="${esc(t.id)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`)
     .join("");
   const result = await UI.modal({
     title: "New essay",
@@ -3416,7 +3416,7 @@ async function saveShotFlow(shotId) {
     title: "Save to the Archive",
     bodyHTML: `
       <label class="modal-label">Which threads does this belong to? (optional)</label>
-      ${threads.length ? `<div class="chip-row" id="__saveThreadsRow">${threads.map((t) => `<span class="chip-pick" data-thread="${esc(t.tag)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`).join("")}</div>` : ""}
+      ${threads.length ? `<div class="chip-row" id="__saveThreadsRow">${threads.map((t) => `<span class="chip-pick" data-thread="${esc(t.name)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`).join("")}</div>` : ""}
       <input class="modal-input" id="__saveThreadsInput" style="margin-top:8px;" placeholder="Add one, comma-separated…" autocomplete="off" />
     `,
     dismissValue: null,

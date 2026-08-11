@@ -37,7 +37,17 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
+  ],
+
+  // Clip embeddings — powers Threads' semantic clustering (src/embeddings.ts,
+  // src/threads.ts) instead of exact-tag-string matching. One-time setup:
+  //   wrangler vectorize create aldershot-clips --dimensions=768 --metric=cosine
+  // (768 = @cf/baai/bge-base-en-v1.5's output size, see src/models.ts). Until
+  // that's run, VECTORIZE is simply absent and Threads falls back to the old
+  // tag-equality grouping — nothing breaks either way.
+  "vectorize": [
+    { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
   ]
 
-  // Later phases: Cron Triggers (Radar), Vectorize (trend/style search), AI Gateway.
+  // Later phases: Cron Triggers (Radar), AI Gateway.
 }

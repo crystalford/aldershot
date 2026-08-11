@@ -55,6 +55,7 @@ import {
   type BeatKind,
 } from "./essays";
 import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
+import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
 import {
   ensureGenerativeSchema,
   createScene,
@@ -81,10 +82,7 @@ import { resolveMedia } from "./import";
 import { presignPut, presignGet } from "./r2sign";
 import { wrapPcm, byteOffsetForSecond, durationFromWavSize } from "./wav";
 
-async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | null> {
-  const obj = await bucket.get(key);
-  return obj ? await obj.json<T>() : null;
-}
+import { readJson } from "./r2json";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -739,6 +737,7 @@ app.post("/api/clips", async (c) => {
     segments,
     tags: body.tags,
   });
+  await embedAndIndexClip(c.env, clip); // enrichment, not required — see embeddings.ts
   return c.json(clip, 201);
 });
 
@@ -865,6 +864,7 @@ app.patch("/api/clips/:id", async (c) => {
     .catch(() => ({}) as { title?: string; description?: string; tags?: string[] });
   const clip = await updateClip(c.env.DB, c.req.param("id"), body);
   if (!clip) return c.json({ error: "clip not found" }, 404);
+  if (body.title !== undefined || body.description !== undefined) await embedAndIndexClip(c.env, clip);
   return c.json(clip);
 });
 
@@ -925,13 +925,21 @@ app.post("/api/clips/:id/visual-tags", async (c) => {
       console.error("[visual-tags] frame failed:", err);
     }
   }
+  // Re-embed now that "what's on screen" is part of the clip's text — title/
+  // description alone (the only thing embedded at creation time) misses it.
+  if (created.length) {
+    const fresh = await getClip(c.env.DB, clipId);
+    if (fresh) await embedAndIndexClip(c.env, fresh);
+  }
   return c.json({ tags: created });
 });
 
 app.delete("/api/clips/:id", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
-  await deleteClip(c.env.DB, c.req.param("id"));
+  const id = c.req.param("id");
+  await deleteClip(c.env.DB, id);
+  await removeClipEmbedding(c.env, id);
   return c.json({ ok: true });
 });
 
@@ -1059,28 +1067,30 @@ app.delete("/api/essays/:id/beats/:beatId", async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Threads — auto-derived from clip tags, not user-created (see src/threads.ts) ──
+// ── Threads — auto-derived by clustering clip embeddings, not user-created
+// (see src/threads.ts; falls back to exact-tag grouping until Vectorize is
+// configured and at least one clip is embedded) ──
 app.get("/api/threads", async (c) => {
   await ensureClipSchema(c.env.DB);
   await ensureThreadSchema(c.env.DB);
-  return c.json({ threads: await listThreads(c.env.DB) });
+  return c.json({ threads: await listThreads(c.env, c.env.DB) });
 });
 
-app.patch("/api/threads/:tag", async (c) => {
+app.patch("/api/threads/:id", async (c) => {
   await ensureThreadSchema(c.env.DB);
   const { name } = await c.req.json<{ name?: string }>().catch(() => ({}) as { name?: string });
   if (!name?.trim()) return c.json({ error: "give the thread a name" }, 400);
-  await renameThread(c.env.DB, c.req.param("tag").trim().toLowerCase(), name.trim());
+  await renameThread(c.env.DB, c.req.param("id").trim(), name.trim());
   return c.json({ ok: true });
 });
 
-app.post("/api/threads/:tag/merge", async (c) => {
+app.post("/api/threads/:id/merge", async (c) => {
   await ensureClipSchema(c.env.DB);
   await ensureEssaySchema(c.env.DB);
   await ensureThreadSchema(c.env.DB);
-  const { intoTag } = await c.req.json<{ intoTag?: string }>().catch(() => ({}) as { intoTag?: string });
-  if (!intoTag?.trim()) return c.json({ error: "pick a thread to merge into" }, 400);
-  await mergeThreads(c.env.DB, c.req.param("tag").trim().toLowerCase(), intoTag.trim().toLowerCase());
+  const { intoId } = await c.req.json<{ intoId?: string }>().catch(() => ({}) as { intoId?: string });
+  if (!intoId?.trim()) return c.json({ error: "pick a thread to merge into" }, 400);
+  await mergeThreads(c.env.DB, c.req.param("id").trim(), intoId.trim());
   return c.json({ ok: true });
 });
 

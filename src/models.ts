@@ -29,4 +29,7 @@ export const MODELS = {
   animate: "google/veo-3.1-fast",
   /** Text-to-speech — native. Not wired into any route yet. */
   voice: "@cf/deepgram/aura-2-en",
+  /** Text embeddings — native. Powers Threads' semantic clustering (see
+   *  src/embeddings.ts); 768 dimensions, matches the Vectorize index config. */
+  embed: "@cf/baai/bge-base-en-v1.5",
 } as const;
