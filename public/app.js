@@ -2739,6 +2739,81 @@ function wireThreadGrid(threads) {
   });
 }
 
+// ── Discover — external, internet-sourced grounding for an essay's claims,
+// beyond the user's own Archive footage. v1 source is Wikipedia's search API
+// (see src/discover.ts) — real, dereferenceable results only, never an
+// invented source. Each result carries an inline "Add to essay" select. ────
+async function showDiscoverView() {
+  location.hash = "#/discover"; setActiveRail("discover");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<section class="pad">
+    <div><h1>Discover</h1><div class="sub">Search the open web for real sources to ground an essay's claims — every result is a real page, not a guess.</div></div>
+    <div class="import" style="max-width:520px;flex-direction:row;gap:8px;margin-top:16px;">
+      <input class="import-input" id="discoverQuery" placeholder="e.g. the psychology of parasocial relationships" autocomplete="off" />
+      <button class="btn accent" id="discoverGo">${ic("globe")} Search</button>
+    </div>
+    <div id="discoverResults" style="margin-top:20px;"></div>
+  </section>`;
+  const run = () => runDiscoverSearch($("#discoverQuery").value);
+  $("#discoverGo").onclick = run;
+  $("#discoverQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  $("#discoverQuery").focus();
+}
+async function runDiscoverSearch(query) {
+  query = (query || "").trim();
+  if (!query) return;
+  const el = $("#discoverResults");
+  el.innerHTML = `<div class="loading"><span class="spinner"></span> Searching…</div>`;
+  let results = [];
+  try {
+    const res = await fetch("/api/discover/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    results = data.results || [];
+  } catch (err) {
+    el.innerHTML = `<p class="empty">${esc(err.message || "Search failed")}</p>`;
+    return;
+  }
+  if (!results.length) { el.innerHTML = `<p class="empty">No real sources turned up for that — try rephrasing.</p>`; return; }
+
+  let essays = [];
+  try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; } catch { essays = []; }
+
+  const essayOptions = essays.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
+  el.innerHTML = `<div class="discover-grid">${results.map((r, i) => `
+    <div class="card discover-card" data-i="${i}">
+      <div class="card-body">
+        <div class="card-title">${esc(r.title)}</div>
+        <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>
+        <div class="discover-extract">${esc(r.extract)}</div>
+        ${essays.length
+          ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
+          : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
+      </div>
+    </div>`).join("")}</div>`;
+
+  el.querySelectorAll(".discover-add").forEach((sel) => {
+    sel.onchange = async () => {
+      const essayId = sel.value;
+      if (!essayId) return;
+      const r = results[+sel.dataset.i];
+      sel.disabled = true;
+      try {
+        const res = await fetch("/api/discover/add-to-essay", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ essayId, query, candidate: r }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        toast(`Added to "${essays.find((e) => e.id === essayId)?.title || "essay"}"`, { type: "success" });
+      } catch (err) {
+        toast(err.message || "Couldn't add to essay", { type: "error" });
+      }
+      sel.disabled = false; sel.value = "";
+    };
+  });
+}
+
 // ── Essays — the video-essay authoring surface ──────────────────────────
 // A separate top-level view from Sources/Archive: an essay draws clips from
 // the WHOLE archive (not one project), drafted act by act rather than
@@ -3563,7 +3638,7 @@ const RAIL_ITEMS = [
   { view: "archive", label: "Archive", icon: "archive" },
   { view: "sources", label: "Sources", icon: "upload" },
   { view: "threads", label: "Threads", icon: "threads" },
-  { view: "discover", label: "Discover", icon: "globe", desc: "Suggests external, internet-sourced clips and sources relevant to a thread, for grounding an essay's claims beyond your own footage." },
+  { view: "discover", label: "Discover", icon: "globe" },
   { view: "essays", label: "Essays", icon: "quill" },
   { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
   { view: "generative", label: "Generative", icon: "wand" },
@@ -3854,6 +3929,7 @@ function route() {
     return e ? openEssay(e[1]) : showEssaysList();
   }
   if (view === "threads") return showThreadsView();
+  if (view === "discover") return showDiscoverView();
   if (view === "generative") return showGenerativeView();
   if (view === "clipping") return showClippingView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);

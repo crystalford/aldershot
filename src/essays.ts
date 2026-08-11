@@ -4,16 +4,17 @@
  * → Resolution) into a script of beats, then assembled and exported. Kept as
  * its own file/tables, same split-by-entity convention as clips.ts/visualtags.ts.
  *
- * A beat is either:
- *   - kind "clip": grounded to a real, already-saved Archive clip (clip_id) —
+ * A beat is one of three kinds:
+ *   - "clip": grounded to a real, already-saved Archive clip (clip_id) —
  *     never an invented one, same discipline as composeFromClips/reason.ts.
- *   - kind "vo": a proposed narration line with no source footage yet. This is
+ *   - "vo": a proposed narration line with no source footage yet. This is
  *     GENERATIVE text (like generateBridges' narration), not a factual claim,
  *     so it's fine for the model to draft it — the user reviews/edits it.
- * Recording real voiceover audio for "vo" beats, and a third "research" kind
- * grounded in Discover, are both deferred — Discover/Clipping/Generative are
- * still stubs (see public/app.js RAIL_ITEMS), so there's nothing to ground a
- * "research" beat against yet, and mic-capture-for-VO is a fast-follow.
+ *   - "research": grounded to a real DiscoverResult (discover_result_id) —
+ *     same non-invented discipline as "clip", see src/discover.ts.
+ * Recording real voiceover audio for "vo" beats is deferred (mic-capture-
+ * for-VO is a fast-follow); "research" beats are wired now that Discover
+ * (src/discover.ts) exists to ground them against.
  *
  * One flat `ord` per essay does double duty: Script mode groups beats by
  * `act` and sorts by `ord` within that group; Assemble mode ignores the
@@ -21,7 +22,7 @@
  */
 
 export type BeatAct = "hook" | "setup" | "development" | "turn" | "resolution";
-export type BeatKind = "clip" | "vo";
+export type BeatKind = "clip" | "vo" | "research";
 export const ACTS: BeatAct[] = ["hook", "setup", "development", "turn", "resolution"];
 
 export interface Essay {
@@ -43,6 +44,7 @@ export interface EssayBeat {
   ord: number;
   kind: BeatKind;
   clipId: string | null;
+  discoverResultId: string | null;
   text: string;
   citations: string[];
   createdAt: number;
@@ -92,6 +94,12 @@ export async function ensureEssaySchema(db: D1Database): Promise<void> {
     ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_essay_beats_essay ON essay_beats (essay_id, ord)`),
   ]);
+  // discover_result_id is new — a table created before "research" beats
+  // existed needs it added on, same ALTER-if-absent pattern as db.ts's `kind`.
+  const cols = await db.prepare(`PRAGMA table_info(essay_beats)`).all<{ name: string }>();
+  if (!(cols.results ?? []).some((c) => c.name === "discover_result_id")) {
+    await db.prepare(`ALTER TABLE essay_beats ADD COLUMN discover_result_id TEXT`).run();
+  }
 }
 
 export async function createEssay(
@@ -130,11 +138,11 @@ interface EssayRow {
 }
 interface BeatRow {
   id: string; essay_id: string; act: string; ord: number; kind: string;
-  clip_id: string | null; text: string; citations: string; created_at: number;
+  clip_id: string | null; discover_result_id: string | null; text: string; citations: string; created_at: number;
 }
 const toBeat = (r: BeatRow): EssayBeat => ({
   id: r.id, essayId: r.essay_id, act: r.act as BeatAct, ord: r.ord, kind: r.kind as BeatKind,
-  clipId: r.clip_id, text: r.text, citations: JSON.parse(r.citations || "[]"), createdAt: r.created_at,
+  clipId: r.clip_id, discoverResultId: r.discover_result_id, text: r.text, citations: JSON.parse(r.citations || "[]"), createdAt: r.created_at,
 });
 
 async function attachThreadsAndBeats(db: D1Database, essays: EssayRow[]): Promise<EssayDetail[]> {
@@ -205,17 +213,18 @@ export async function deleteEssay(db: D1Database, id: string): Promise<void> {
 export async function addBeat(
   db: D1Database,
   essayId: string,
-  input: { act: BeatAct; kind: BeatKind; clipId?: string | null; text: string; citations?: string[] },
+  input: { act: BeatAct; kind: BeatKind; clipId?: string | null; discoverResultId?: string | null; text: string; citations?: string[] },
 ): Promise<EssayBeat> {
   const { results } = await db.prepare(`SELECT COALESCE(MAX(ord), -1) as maxOrd FROM essay_beats WHERE essay_id = ?`).bind(essayId).all<{ maxOrd: number }>();
   const ord = (results?.[0]?.maxOrd ?? -1) + 1;
   const beat: EssayBeat = {
     id: crypto.randomUUID(), essayId, act: input.act, ord, kind: input.kind,
-    clipId: input.clipId ?? null, text: input.text, citations: input.citations ?? [], createdAt: Date.now(),
+    clipId: input.clipId ?? null, discoverResultId: input.discoverResultId ?? null,
+    text: input.text, citations: input.citations ?? [], createdAt: Date.now(),
   };
   await db
-    .prepare(`INSERT INTO essay_beats (id, essay_id, act, ord, kind, clip_id, text, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(beat.id, beat.essayId, beat.act, beat.ord, beat.kind, beat.clipId, beat.text, JSON.stringify(beat.citations), beat.createdAt)
+    .prepare(`INSERT INTO essay_beats (id, essay_id, act, ord, kind, clip_id, discover_result_id, text, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(beat.id, beat.essayId, beat.act, beat.ord, beat.kind, beat.clipId, beat.discoverResultId, beat.text, JSON.stringify(beat.citations), beat.createdAt)
     .run();
   await db.prepare(`UPDATE essays SET updated_at = ? WHERE id = ?`).bind(Date.now(), essayId).run();
   return beat;

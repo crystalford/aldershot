@@ -190,6 +190,14 @@ a { color: var(--accent); text-decoration: none; }
   background: rgba(0,0,0,.55); border-radius: 2px; padding: 1px 4px;
 }
 
+/* ── Discover — real, external sources ──────────────────────────────── */
+.discover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.discover-card { cursor: default; }
+.discover-url { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-bottom: 8px; word-break: break-all; }
+.discover-url:hover { color: var(--accent); }
+.discover-extract { font-size: 13px; color: var(--dim); line-height: 1.5; margin-bottom: 12px; max-height: 6.5em; overflow: hidden; }
+.discover-add { width: 100%; }
+
 /* ── stub views — destinations not yet built ───────────────── */
 .stub-view { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; }
 .stub-card { max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }

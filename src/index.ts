@@ -56,6 +56,7 @@ import {
 } from "./essays";
 import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
 import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
+import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, type DiscoverCandidate } from "./discover";
 import {
   ensureGenerativeSchema,
   createScene,
@@ -1065,6 +1066,42 @@ app.delete("/api/essays/:id/beats/:beatId", async (c) => {
   await ensureEssaySchema(c.env.DB);
   await deleteBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"));
   return c.json({ ok: true });
+});
+
+// ── Discover — external, internet-sourced grounding for an essay's claims
+// (see src/discover.ts). Search returns transient candidates; add-to-essay
+// persists the one the user picks and creates the "research" beat that
+// grounds to it, same review-then-commit shape as /api/clips/discover. ──
+app.post("/api/discover/search", async (c) => {
+  const { query } = await c.req.json<{ query?: string }>().catch(() => ({}) as { query?: string });
+  if (!query?.trim()) return c.json({ error: "what do you want to research?" }, 400);
+  try {
+    const results = await searchWikipedia(query.trim());
+    return c.json({ results });
+  } catch (err) {
+    return c.json({ error: `search failed: ${err}` }, 502);
+  }
+});
+
+app.post("/api/discover/add-to-essay", async (c) => {
+  await ensureDiscoverSchema(c.env.DB);
+  await ensureEssaySchema(c.env.DB);
+  const body = await c.req
+    .json<{ essayId?: string; act?: BeatAct; query?: string; candidate?: DiscoverCandidate }>()
+    .catch(() => ({}) as { essayId?: string; act?: BeatAct; query?: string; candidate?: DiscoverCandidate });
+  if (!body.essayId) return c.json({ error: "pick an essay first" }, 400);
+  if (!body.candidate?.title || !body.candidate?.url || !body.candidate?.extract) return c.json({ error: "missing result" }, 400);
+  if (!(await getEssay(c.env.DB, body.essayId))) return c.json({ error: "essay not found" }, 404);
+
+  const result = await saveDiscoverResult(c.env.DB, body.query?.trim() || body.candidate.title, body.candidate);
+  const beat = await addBeat(c.env.DB, body.essayId, {
+    act: body.act && ACTS.includes(body.act) ? body.act : "development",
+    kind: "research",
+    discoverResultId: result.id,
+    text: result.title,
+    citations: [result.url],
+  });
+  return c.json({ result, beat }, 201);
 });
 
 // ── Threads — auto-derived by clustering clip embeddings, not user-created
