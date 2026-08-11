@@ -3142,15 +3142,21 @@ async function addClipBeat(clip) {
   } catch (err) { toast(err.message || "Couldn't add that clip", { type: "error" }); }
 }
 
-// ── Coherence check — rule-based, instant, no AI call needed ────────────
+// ── Coherence check — rule-based, instant, no AI call needed. Advisory
+// only — nothing here blocks drafting, importing, or exporting. `kind:
+// "empty"` issues are skipped when surfaced inline in Script mode's act
+// sections (renderActSection already shows an empty act plainly via its
+// own "No beats yet" hint; repeating it as a warning would be redundant),
+// but still show up in Premise mode's aggregate check, which has no such
+// per-act empty state of its own.
 function checkEssayCoherence(e) {
   const issues = [];
   const byAct = Object.fromEntries(ACT_DEFS.map((a) => [a.act, e.beats.filter((b) => b.act === a.act)]));
   for (const { act, label } of ACT_DEFS) {
-    if (!byAct[act].length) issues.push({ color: "var(--warn)", text: `${label} has no beats yet.` });
+    if (!byAct[act].length) issues.push({ act, kind: "empty", color: "var(--warn)", text: `${label} has no beats yet.` });
   }
   if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip")) {
-    issues.push({ color: "var(--warn)", text: "Turn has no grounding clip for its complication — it's narration only so far." });
+    issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "Turn has no grounding clip for its complication — it's narration only so far." });
   }
   return issues;
 }
@@ -3257,6 +3263,10 @@ function advanceDraft() {
 // ── Script mode ──────────────────────────────────────────────────────────
 function renderScriptMode(body) {
   const e = essayState.essay;
+  // Advisory, always-on — cheap and rule-based (see checkEssayCoherence), so
+  // there's no need to gate it behind a button the way Premise mode does.
+  const issuesByAct = {};
+  checkEssayCoherence(e).forEach((i) => { (issuesByAct[i.act] ||= []).push(i); });
   body.innerHTML = `<div class="pad" style="max-width:760px;">
     <div class="row-between">
       <div class="empty small" style="max-width:460px;">Structured as five acts — import a script, or add clips/voiceover from the sidebar.</div>
@@ -3266,15 +3276,20 @@ function renderScriptMode(body) {
       <textarea class="modal-input" id="importText" rows="6" style="width:100%;resize:vertical;" placeholder="Paste your script, one beat per line…"></textarea>
       <div class="s-actions" style="margin-top:8px;"><button class="btn primary small" id="matchScript">Match to archive</button></div>
     </div>
-    ${ACT_DEFS.map((a) => renderActSection(a, e.beats.filter((b) => b.act === a.act))).join("")}
+    ${ACT_DEFS.map((a) => renderActSection(a, e.beats.filter((b) => b.act === a.act), issuesByAct[a.act])).join("")}
   </div>`;
   $("#toggleImport").onclick = () => { const box = $("#importBox"); box.style.display = box.style.display === "none" ? "block" : "none"; };
   $("#matchScript").onclick = () => importScript($("#importText").value);
   wireActSections();
 }
-function renderActSection(a, beats) {
+function renderActSection(a, beats, issues) {
+  // "empty" issues are redundant here — an empty act already says so via
+  // its own hint below — so only the more specific ones (e.g. Turn missing
+  // its grounding clip) surface inline. Advisory only, never a gate.
+  const inline = (issues || []).filter((i) => i.kind !== "empty");
   return `<div class="act-section">
     <div class="act-head"><span class="essay-eyebrow">${a.label}</span><span class="empty small">${beats.length} beat${beats.length === 1 ? "" : "s"}</span></div>
+    ${inline.length ? `<div class="coherence-issues" style="margin:0 0 10px;">${inline.map((i) => `<div class="coherence-issue" style="border-left-color:${i.color}">${esc(i.text)}</div>`).join("")}</div>` : ""}
     ${beats.length ? beats.map(renderBeatRow).join("") : `<div class="empty small" style="padding:10px 0;">No beats yet — pick "${a.label}" in the sidebar and add a clip, or paste a script above.</div>`}
   </div>`;
 }
