@@ -8,10 +8,9 @@
  */
 import type { Env } from "../env";
 import type { Word, Segment, Timeline, Short, EditSuggestion } from "../transcript/edl";
+import { MODELS } from "../models";
 
-// Capable, fast Workers AI text model. Exact id to confirm against the live
-// catalog (feasibility doc lists Llama available natively).
-const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const MODEL = MODELS.writer;
 // Was 500 — too low for a real long-form recording (a 66-minute talk alone runs
 // ~600-700 sentences), which would silently drop the back half of the video
 // exactly where cross-video "callback" candidates are most likely to live.
@@ -388,6 +387,75 @@ export async function generateBridges(env: Env, segments: SegmentWithText[], goa
 interface ReactionReply {
   clipId?: string | null;
   reason?: string;
+}
+
+// ── Generative scene-building ──────────────────────────────────────────
+// "Context first, then image, then video" (see Generative's design brief) —
+// this function is the "context" step: turn a script line into ONE
+// consistent scene description (same location/light/palette across every
+// cut) plus N individual shot descriptions. Like generateBridges, this is
+// genuinely GENERATIVE content, not grounded against a menu of real things —
+// there's nothing to cite an [id] from here, the whole point is drafting new
+// descriptive text for an image model to render. The "register" the design
+// brief calls for (an internal emotional/thematic read of the line) is
+// deliberately never surfaced as its own field in the reply — it only shows
+// up baked into the prose of world/shot descriptions, matching the brief's
+// explicit rejection of exposing that as a separate labeled picker.
+export interface SceneWorld {
+  location: string;
+  light: string;
+  palette: string;
+}
+export interface SceneShot {
+  index: number;
+  type: string; // short label, e.g. "establishing", "detail", "reaction"
+  description: string;
+  weight: string; // framing, e.g. "wide", "medium close-up"
+  motion: string; // what should move in the animate step
+}
+export interface SceneDraft {
+  world: SceneWorld;
+  shots: SceneShot[];
+}
+interface SceneReply {
+  world?: { location?: string; light?: string; palette?: string };
+  shots?: { type?: string; description?: string; weight?: string; motion?: string }[];
+}
+
+export async function draftSceneShots(env: Env, line: string, cutCount: number): Promise<SceneDraft> {
+  const n = Math.min(4, Math.max(1, Math.round(cutCount)));
+  const system =
+    "You are a cinematographer breaking a single line from a video essay's script into b-roll. " +
+    "Read the line for its emotional and thematic register, then design ONE consistent cinematic " +
+    "scene — same location, same light, same color palette — described concretely enough for an " +
+    "image model to render, in plain visual prose (no camera jargon dump, no separate labeled " +
+    "fields). Never mention the register or your interpretation directly — it should only show up " +
+    "baked into how you describe the scene.";
+  const user =
+    `The line: "${line.trim()}"\n\n` +
+    `Design ${n} shot(s) of one consistent scene for this line. Return ONLY JSON:\n` +
+    '{"world":{"location":"...","light":"...","palette":"..."},' +
+    '"shots":[{"type":"establishing","description":"concrete visual description, one or two sentences",' +
+    '"weight":"wide|medium|close-up etc.","motion":"what moves for the animate step, one short phrase"}]}\n\n' +
+    `Exactly ${n} entries in "shots".`;
+
+  const reply = await runJson<SceneReply>(env, system, user);
+  const world: SceneWorld = {
+    location: reply.world?.location?.trim() || "an unspecified location",
+    light: reply.world?.light?.trim() || "natural light",
+    palette: reply.world?.palette?.trim() || "neutral tones",
+  };
+  const shots: SceneShot[] = (reply.shots ?? []).slice(0, n).map((s, i) => ({
+    index: i,
+    type: s.type?.trim() || "shot",
+    description: s.description?.trim() || line.trim(),
+    weight: s.weight?.trim() || "medium",
+    motion: s.motion?.trim() || "slow push-in",
+  }));
+  while (shots.length < n) {
+    shots.push({ index: shots.length, type: "shot", description: line.trim(), weight: "medium", motion: "slow push-in" });
+  }
+  return { world, shots };
 }
 
 // ── Essay act-by-act drafting ─────────────────────────────────────────

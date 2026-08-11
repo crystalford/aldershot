@@ -1,117 +1,92 @@
 /**
- * Aldershot — Cinematic Compiler (v0 spine)
+ * Aldershot — Generative media backbone (text -> image -> video -> voice).
  *
- * Turns an intentional, art-directed shot spec into media via the
- * text -> image -> video backbone (see docs/design/architecture.md):
- *   1. synthPrompt  — compile the cinematic axes into a model prompt
- *   2. generateStill — FLUX.2 (native, neuron-billed): lock the *look* cheaply
- *   3. animate       — Wan 2.7 I2V (partner): add motion to the locked frame
- *   4. narrate       — Aura-2 (native): voiceover
- * Every asset lands in R2. Assembly (ffmpeg in Containers) is the next layer.
+ * Deliberately NOT parameterized by exposed cinematic axes (lens/angle/
+ * lighting/etc as separate user-facing fields) — an earlier version of this
+ * file was, and that's exactly the shape the design brief rejected ("felt
+ * like a form"). Whatever register/look a scene needs is derived upstream
+ * (see reason.ts's draftSceneShots) into a single plain prompt string;
+ * this file only knows how to turn a prompt into media and store it in R2.
  *
- * NOTE: exact Workers AI request/response shapes for the partner video model
- * still need confirming against the live catalog (flagged in feasibility doc §5).
- * Calls below are written to the documented shapes and marked where uncertain.
+ * NOTE: exact Workers AI request/response shapes for FLUX.2's reference-image
+ * field and the Veo partner model are unconfirmed against the live catalog
+ * (network access to developers.cloudflare.com is blocked in this sandbox) —
+ * written to the most likely documented shape, output validated at each call
+ * site so a wrong guess fails loudly instead of silently misbehaving.
  */
 
 import type { Env } from "../env";
+import { MODELS } from "../models";
 
-/**
- * Workers AI runner with loosened typing. Several model schemas used here
- * (FLUX.2 fields, the partner Wan 2.7 I2V) are still being confirmed against
- * the live catalog, so we call through a permissive signature and validate the
- * output shape at each call site.
- */
 const runAI = (env: Env) =>
   env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
-/** The controlled axes of a single intentional shot — the anti-"stock" spec. */
-export interface ShotSpec {
-  subject: string; // who/what is in frame
-  blocking: string; // where they are / how arranged
-  lens: string; // e.g. "35mm", "85mm telephoto", "anamorphic wide"
-  cameraAngle: string; // height + angle, e.g. "low angle, slightly canted"
-  movement: string; // e.g. "slow push-in", "locked-off static"
-  lighting: string; // setup + key direction, e.g. "low-key, hard key from window left"
-  palette: string; // color story, e.g. "desaturated teal + amber practicals"
-  texture: string; // film stock / grain, e.g. "70s 16mm grain, halation"
-  mood: string; // emotional register
-  intent: string; // what the shot *means* — its symbolic purpose
-  motion?: string; // what should move in the I2V step
-  durationSeconds?: number; // target clip length
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  return btoa(binary);
 }
 
-/** Model IDs — see docs/research/feasibility.md for hosting/billing notes. */
-export const MODELS = {
-  still: "@cf/black-forest-labs/flux-2-dev", // native, neuron-billed
-  animate: "alibaba/wan-2.7-i2v", // partner, pass-through (cheap I2V for B-roll)
-  voice: "@cf/deepgram/aura-2-en", // native, neuron-billed
-} as const;
-
-/** Compile the cinematic axes into a single, intentional image prompt. */
-export function synthPrompt(spec: ShotSpec): string {
-  return [
-    spec.subject,
-    spec.blocking,
-    `${spec.lens} lens`,
-    spec.cameraAngle,
-    `lighting: ${spec.lighting}`,
-    `color: ${spec.palette}`,
-    `texture: ${spec.texture}`,
-    `mood: ${spec.mood}`,
-  ].join(", ");
+async function readImageB64(env: Env, r2Key: string): Promise<string> {
+  const obj = await env.MEDIA.get(r2Key);
+  if (!obj) throw new Error(`Reference image not found in R2: ${r2Key}`);
+  return toBase64(await obj.arrayBuffer());
 }
 
-/** Step 2 — lock the look as a still. Returns the R2 key. */
+/** Step 1 — generate a still from a prompt. `referenceImageKeys` (up to 4,
+ *  R2 keys of earlier stills in the same scene) are passed along so FLUX.2
+ *  can hold the same look — this is the actual consistency mechanism behind
+ *  "one scene, multiple cuts," not a second model call. Returns the R2 key. */
 export async function generateStill(
   env: Env,
   shotId: string,
-  spec: ShotSpec,
+  prompt: string,
+  referenceImageKeys: string[] = [],
 ): Promise<string> {
-  const prompt = synthPrompt(spec);
-  const result = (await runAI(env)(MODELS.still, { prompt })) as { image?: string };
-  // FLUX returns a base64 image; decode and persist.
-  if (!result.image) throw new Error("FLUX returned no image");
+  const referenceImages = await Promise.all(referenceImageKeys.slice(0, 4).map((k) => readImageB64(env, k)));
+  const input: Record<string, unknown> = { prompt };
+  if (referenceImages.length) input.image = referenceImages;
+  const result = (await runAI(env)(MODELS.stills, input)) as { image?: string };
+  if (!result.image) throw new Error("FLUX.2 returned no image");
   const bytes = Uint8Array.from(atob(result.image), (c) => c.charCodeAt(0));
-  const key = `shots/${shotId}/still.png`;
+  const key = `generative/${shotId}/still.png`;
   await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "image/png" } });
   return key;
 }
 
-/** Step 3 — animate the locked frame. Returns the R2 key of the clip. */
+/** Step 2 — animate a locked still into a clip via the Veo partner model
+ *  (see src/models.ts — no native/Neuron-billed video model exists today).
+ *  Returns the R2 key of the rendered clip. */
 export async function animate(
   env: Env,
   shotId: string,
   stillKey: string,
-  spec: ShotSpec,
+  motionPrompt: string,
+  durationSeconds: number,
+  aspectRatio: "16:9" | "9:16" | "1:1",
 ): Promise<string> {
-  const still = await env.MEDIA.get(stillKey);
-  if (!still) throw new Error(`Still not found: ${stillKey}`);
-  const image = await still.arrayBuffer();
-  // TODO: confirm partner I2V input schema (image encoding, motion/duration params).
+  const image = await readImageB64(env, stillKey);
   const result = (await runAI(env)(MODELS.animate, {
-    image: [...new Uint8Array(image)],
-    prompt: spec.motion ?? spec.intent,
-    duration: spec.durationSeconds ?? 5,
-  })) as { video?: ReadableStream };
-  if (!result.video) throw new Error("I2V model returned no video");
-  const key = `shots/${shotId}/clip.mp4`;
-  await env.MEDIA.put(key, result.video, { httpMetadata: { contentType: "video/mp4" } });
+    image,
+    prompt: motionPrompt,
+    duration: durationSeconds,
+    aspect_ratio: aspectRatio,
+  })) as { video?: ReadableStream | ArrayBuffer };
+  if (!result.video) throw new Error("Veo returned no video");
+  const key = `generative/${shotId}/clip.mp4`;
+  await env.MEDIA.put(key, result.video as ReadableStream, { httpMetadata: { contentType: "video/mp4" } });
   return key;
 }
 
-/** Narration — voiceover for a beat. Returns the R2 key of the audio. */
+/** Voiceover for a beat/line — native, Neuron-billed. Not wired into the
+ *  Generative UI yet (no route calls this today); kept for the essay
+ *  voiceover-recording fast-follow this was originally built toward. */
 export async function narrate(env: Env, beatId: string, text: string): Promise<string> {
   const result = (await runAI(env)(MODELS.voice, { text })) as { audio?: ReadableStream };
   if (!result.audio) throw new Error("Aura returned no audio");
   const key = `beats/${beatId}/vo.mp3`;
   await env.MEDIA.put(key, result.audio, { httpMetadata: { contentType: "audio/mpeg" } });
   return key;
-}
-
-/** v0 spine: run one shot end-to-end (still -> clip). Proves the Studio works. */
-export async function runShot(env: Env, shotId: string, spec: ShotSpec) {
-  const stillKey = await generateStill(env, shotId, spec);
-  const clipKey = await animate(env, shotId, stillKey, spec);
-  return { stillKey, clipKey };
 }

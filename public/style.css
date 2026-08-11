@@ -699,6 +699,35 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .palette-item.on .palette-item-hint { color: var(--accent); border-color: rgba(138, 123, 212, .4); }
 .palette-empty { padding: 22px 12px; text-align: center; color: var(--faint); font-size: 13px; }
 
+/* ── generative ─────────────────────────────────────────── */
+.gen-shell { display: flex; flex: 1; min-height: 0; }
+.gen-main { flex: 1; min-width: 0; overflow-y: auto; }
+.gen-sidebar { width: 260px; flex: none; border-left: 1px solid var(--line); padding: 22px 18px; background: var(--bg); overflow-y: auto; }
+.gen-linebox { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 16px; }
+.gen-world {
+  display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 16px; padding: 10px 14px;
+  background: var(--panel); border-radius: 3px; border-left: 2px solid var(--accent);
+  font-size: 11px; color: var(--secondary);
+}
+.gen-world-label { color: var(--faint); }
+.gen-shots { border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.gen-shot { display: flex; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); align-items: center; }
+.gen-shot:last-child { border-bottom: none; }
+.gen-shot-thumb {
+  width: 96px; height: 56px; flex: none; background: var(--bg2); border-radius: 3px; border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--faint);
+}
+.gen-shot-thumb svg { width: 16px; height: 16px; }
+.gen-shot-body { flex: 1; min-width: 0; }
+.gen-shot-type { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.gen-shot-desc { font-size: 12.5px; color: var(--bone); margin-top: 3px; }
+.gen-shot-meta { font-size: 10px; color: var(--faint); margin-top: 3px; }
+.gen-shot-actions { flex: none; }
+.gen-saved-count { font: italic 500 22px var(--font-serif); color: var(--bone); margin-bottom: 10px; }
+.gen-recent-item { padding-left: 10px; }
+.gen-recent-thread { font-size: 10px; color: var(--faint); }
+.gen-recent-desc { font-size: 10.5px; color: var(--secondary); line-height: 1.4; margin-top: 2px; }
+
 /* ── threads ────────────────────────────────────────────── */
 .thread-card { padding: 0; cursor: default; }
 .thread-card:hover { transform: none; box-shadow: none; }
@@ -773,6 +802,7 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
   .editor { grid-template-columns: 200px 1fr; }
   .tools { display: none; }
   .essay-finder { display: none; }
+  .gen-sidebar { display: none; }
 }
 @media (max-width: 780px) {
   .editor { grid-template-columns: 1fr; }

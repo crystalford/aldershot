@@ -5,9 +5,12 @@
  */
 import type { Env } from "./env";
 
+export type ProjectKind = "source" | "generative";
+
 export interface Project {
   id: string;
   name: string;
+  kind: ProjectKind;
   created_at: number;
 }
 
@@ -37,6 +40,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
       `CREATE TABLE IF NOT EXISTS projects (
          id TEXT PRIMARY KEY,
          name TEXT NOT NULL,
+         kind TEXT NOT NULL DEFAULT 'source',
          created_at INTEGER NOT NULL
        )`,
     ),
@@ -53,15 +57,33 @@ export async function ensureSchema(db: D1Database): Promise<void> {
        )`,
     ),
   ]);
+  // `kind` is new — a table created before this column existed needs it added
+  // on. SQLite has no `ADD COLUMN IF NOT EXISTS`, so check first.
+  const cols = await db.prepare(`PRAGMA table_info(projects)`).all<{ name: string }>();
+  if (!(cols.results ?? []).some((c) => c.name === "kind")) {
+    await db.prepare(`ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'source'`).run();
+  }
 }
 
-export async function createProject(db: D1Database, name: string): Promise<Project> {
-  const project: Project = { id: crypto.randomUUID(), name, created_at: Date.now() };
+export async function createProject(db: D1Database, name: string, kind: ProjectKind = "source"): Promise<Project> {
+  const project: Project = { id: crypto.randomUUID(), name, kind, created_at: Date.now() };
   await db
-    .prepare(`INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)`)
-    .bind(project.id, project.name, project.created_at)
+    .prepare(`INSERT INTO projects (id, name, kind, created_at) VALUES (?, ?, ?, ?)`)
+    .bind(project.id, project.name, project.kind, project.created_at)
     .run();
   return project;
+}
+
+/** The single scratch project that owns every video registered by the
+ *  Generative feature (a generated b-roll clip still needs a real `videos`
+ *  row to become a real Archive clip — see src/generative.ts) — created
+ *  lazily on first use, reused after that. Filtered out of the Sources grid
+ *  (see listProjects) so it never shows up as a confusing empty "project"
+ *  a user would try to open. */
+export async function getOrCreateGenerativeProject(db: D1Database): Promise<Project> {
+  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'generative' LIMIT 1`).first<Project>();
+  if (existing) return existing;
+  return createProject(db, "Generative", "generative");
 }
 
 /** Each project's card needs a real frame, not just a name — so this joins
@@ -73,12 +95,13 @@ export async function createProject(db: D1Database, name: string): Promise<Proje
 export async function listProjects(db: D1Database): Promise<ProjectWithThumb[]> {
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.name, p.created_at,
+      `SELECT p.id, p.name, p.kind, p.created_at,
               v.r2_key AS thumb_r2_key, v.duration AS thumb_duration
        FROM projects p
        LEFT JOIN videos v ON v.id = (
          SELECT id FROM videos WHERE project_id = p.id ORDER BY ord ASC, created_at ASC LIMIT 1
        )
+       WHERE p.kind = 'source'
        ORDER BY p.created_at DESC`,
     )
     .all<ProjectWithThumb>();
@@ -86,7 +109,7 @@ export async function listProjects(db: D1Database): Promise<ProjectWithThumb[]> 
 }
 
 export async function getProject(db: D1Database, id: string): Promise<Project | null> {
-  return db.prepare(`SELECT id, name, created_at FROM projects WHERE id = ?`).bind(id).first<Project>();
+  return db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE id = ?`).bind(id).first<Project>();
 }
 
 export async function addVideo(

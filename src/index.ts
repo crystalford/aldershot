@@ -6,7 +6,8 @@
 import { Hono } from "hono";
 import { getContainer } from "@cloudflare/containers";
 import type { Env } from "./env";
-import { runShot, narrate, type ShotSpec } from "./pipeline/compiler";
+import { MODELS } from "./models";
+import { narrate } from "./pipeline/compiler";
 import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
 import type { Word, Timeline, Segment } from "./transcript/edl";
 
@@ -22,6 +23,7 @@ import {
   getVideo,
   setVideoStatus,
   setVideoR2Key,
+  getOrCreateGenerativeProject,
 } from "./db";
 import {
   ensureClipSchema,
@@ -52,6 +54,15 @@ import {
   type BeatKind,
 } from "./essays";
 import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
+import {
+  ensureGenerativeSchema,
+  createScene,
+  getScene,
+  generateShotImage,
+  generateShotVideo,
+  saveShotToArchive,
+  isAspect,
+} from "./generative";
 import { videoSourceKey, transcriptKey, timelineKey, shortsKey, suggestionsKey, jobKey, pickExt, enhancedAudioKey, timelineHistoryPrefix, timelineHistoryKey } from "./keys";
 import {
   arrangeTimeline,
@@ -892,8 +903,8 @@ app.post("/api/clips/:id/visual-tags", async (c) => {
     if (!projectId) continue;
     try {
       const [captionRes, ocrRes] = await Promise.all([
-        c.env.AI.run("@cf/moondream/moondream3.1-9B-A2B", { task: "caption", image: f.image, caption_length: "normal", stream: false }) as Promise<{ caption?: string }>,
-        c.env.AI.run("@cf/moondream/moondream3.1-9B-A2B", {
+        c.env.AI.run(MODELS.vision, { task: "caption", image: f.image, caption_length: "normal", stream: false }) as Promise<{ caption?: string }>,
+        c.env.AI.run(MODELS.vision, {
           task: "query",
           image: f.image,
           question: "Transcribe any text visible in this image. Respond with an empty string if there is none.",
@@ -1072,6 +1083,72 @@ app.post("/api/threads/:tag/merge", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Generative — script line -> one consistent scene -> b-roll (see src/generative.ts) ──
+// Lets the client scope its "Saved to the Archive" feed to Generative's own
+// clips via ?projectId=, without conflating them with unrelated AI-detected
+// clips saved elsewhere (Suggested Edits also uses kind="ai-detected").
+app.get("/api/generative/project", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json(await getOrCreateGenerativeProject(c.env.DB));
+});
+
+app.post("/api/generative/scenes", async (c) => {
+  await ensureGenerativeSchema(c.env.DB);
+  const body = await c.req
+    .json<{ line?: string; cutCount?: number; aspect?: string; durationSeconds?: number }>()
+    .catch(() => ({}) as { line?: string; cutCount?: number; aspect?: string; durationSeconds?: number });
+  if (!body.line?.trim()) return c.json({ error: "give the scene a script line to build from" }, 400);
+  const aspect = isAspect(body.aspect) ? body.aspect : "16:9";
+  const durationSeconds = Math.min(10, Math.max(2, Math.round(body.durationSeconds ?? 5)));
+  const cutCount = Math.min(4, Math.max(1, Math.round(body.cutCount ?? 1)));
+  try {
+    const scene = await createScene(c.env, c.env.DB, { line: body.line, cutCount, aspect, durationSeconds });
+    return c.json(scene, 201);
+  } catch (err) {
+    return c.json({ error: `couldn't build the scene: ${err}` }, 502);
+  }
+});
+
+app.get("/api/generative/scenes/:id", async (c) => {
+  await ensureGenerativeSchema(c.env.DB);
+  const scene = await getScene(c.env.DB, c.req.param("id"));
+  if (!scene) return c.json({ error: "scene not found" }, 404);
+  return c.json(scene);
+});
+
+app.post("/api/generative/scenes/:id/shots/:shotId/generate-image", async (c) => {
+  await ensureGenerativeSchema(c.env.DB);
+  try {
+    const shot = await generateShotImage(c.env, c.env.DB, c.req.param("id"), c.req.param("shotId"));
+    return c.json(shot);
+  } catch (err) {
+    return c.json({ error: `image generation failed: ${err}` }, 502);
+  }
+});
+
+app.post("/api/generative/scenes/:id/shots/:shotId/generate-video", async (c) => {
+  await ensureGenerativeSchema(c.env.DB);
+  try {
+    const shot = await generateShotVideo(c.env, c.env.DB, c.req.param("id"), c.req.param("shotId"));
+    return c.json(shot);
+  } catch (err) {
+    return c.json({ error: `video generation failed: ${err}` }, 502);
+  }
+});
+
+app.post("/api/generative/scenes/:id/shots/:shotId/save", async (c) => {
+  await ensureSchema(c.env.DB); // projects.kind — getOrCreateGenerativeProject needs it
+  await ensureGenerativeSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  const { tags } = await c.req.json<{ tags?: string[] }>().catch(() => ({}) as { tags?: string[] });
+  try {
+    const clip = await saveShotToArchive(c.env.DB, c.req.param("id"), c.req.param("shotId"), tags ?? []);
+    return c.json(clip, 201);
+  } catch (err) {
+    return c.json({ error: `save failed: ${err}` }, 502);
+  }
+});
+
 // ── Transcript Editor (legacy single-file) ───────────────────────────
 // Upload audio/video -> R2 + Whisper -> word-level transcript.
 app.post("/api/transcribe", async (c) => {
@@ -1086,13 +1163,6 @@ app.post("/api/transcribe", async (c) => {
 app.post("/api/export", (c) =>
   c.json({ error: "export renders in the browser now — use the console's Export / Produce" }, 501),
 );
-
-// ── Studio (v0 spine) ────────────────────────────────────────────────
-app.post("/api/shot", async (c) => {
-  const spec = await c.req.json<ShotSpec>();
-  const shotId = crypto.randomUUID();
-  return c.json({ shotId, ...(await runShot(c.env, shotId, spec)) });
-});
 
 app.post("/api/narrate", async (c) => {
   const { text } = await c.req.json<{ text: string }>();

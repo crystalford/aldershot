@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import type { Word } from "./edl";
 import { durationFromWavSize } from "../wav";
+import { MODELS } from "../models";
 
 export interface TranscriptResult {
   mediaKey: string;
@@ -22,7 +23,7 @@ function toBase64(buf: ArrayBuffer): string {
 
 async function runWhisper(env: Env, audio: unknown): Promise<WhisperResult> {
   const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  return (await run("@cf/openai/whisper-large-v3-turbo", { audio })) as WhisperResult;
+  return (await run(MODELS.transcribe, { audio })) as WhisperResult;
 }
 
 // Whisper's word-level timestamps (`res.words[].word`) commonly come back as

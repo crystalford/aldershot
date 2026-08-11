@@ -3265,6 +3265,240 @@ function exportEssayScript(e) {
   downloadBlob(new Blob([lines.join("\n")], { type: "text/plain" }), safeName(e.title) + "-script.txt");
 }
 
+// ── Generative — script line -> one consistent scene -> b-roll ─────────
+// "Context first, then image, then video" per the design brief — the model
+// derives whatever emotional/thematic register a line needs internally;
+// none of that shows up as a labeled field here, only in the prose it
+// writes (see reason.ts's draftSceneShots). A saved cut becomes a real
+// Archive clip via the scratch "Generative" project (src/db.ts).
+let genState = null;
+let genProjectId = null;
+
+async function showGenerativeView() {
+  location.hash = "#/generative"; setActiveRail("generative");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  genState = { scene: null, cutCount: 2, aspect: "16:9", duration: 5, line: "", building: false, beatChips: [] };
+  main.innerHTML = `<div class="gen-shell">
+    <div class="gen-main" id="genMain"></div>
+    <div class="gen-sidebar" id="genSidebar"></div>
+  </div>`;
+  renderGenerativeMain();
+  renderGenerativeSidebar();
+  loadEssayBeatChips();
+  loadGenerativeRecent();
+}
+
+async function loadEssayBeatChips() {
+  try {
+    const essays = (await fetch("/api/essays").then((r) => r.json())).essays || [];
+    genState.beatChips = essays.flatMap((e) => e.beats.filter((b) => b.kind === "vo").map((b) => ({ text: b.text, essay: e.title })));
+  } catch { genState.beatChips = []; }
+  renderGenerativeMain();
+}
+
+function renderGenerativeMain() {
+  const el = $("#genMain"); if (!el) return;
+  const s = genState;
+  el.innerHTML = `<div class="pad" style="max-width:760px;">
+    <h1>Generative</h1>
+    <div class="sub">Turns a script line into cinema, not stock footage. Context comes first, then image, then video — each cut saved back into the Archive as a real, thread-matched clip.</div>
+    <div class="gen-linebox">
+      <div class="essay-eyebrow" style="margin-bottom:8px;">Script line</div>
+      <textarea class="modal-input" id="genLine" rows="3" style="width:100%;font-family:var(--font-serif);font-style:italic;resize:vertical;" ${s.scene ? "disabled" : ""} placeholder="Paste a line from an essay's script, or write one — e.g. &quot;He drove home from the factory in the dark.&quot;">${esc(s.line)}</textarea>
+      ${s.beatChips.length && !s.scene ? `<div class="chip-row" style="margin-top:10px;">${s.beatChips.slice(0, 6).map((b, i) => `<span class="chip-pick" data-beat="${i}" title="${esc(b.essay)}">${esc(b.text.length > 44 ? b.text.slice(0, 41) + "…" : b.text)}</span>`).join("")}</div>` : ""}
+      <div style="margin-top:14px;">
+        ${s.scene
+          ? `<button class="btn ghost small" id="newScene">← Start a new scene</button>`
+          : `<button class="btn primary" id="buildScene" ${s.building ? "disabled" : ""}>${s.building ? "Building…" : "Build the scene →"}</button>`}
+      </div>
+    </div>
+    <div id="genSceneArea"></div>
+  </div>`;
+  if (!s.scene) {
+    $("#genLine").addEventListener("input", (e) => { s.line = e.target.value; });
+    $$(".chip-pick[data-beat]", el).forEach((chip) => {
+      chip.onclick = () => { s.line = s.beatChips[+chip.dataset.beat].text; renderGenerativeMain(); };
+    });
+    $("#buildScene").onclick = buildScene;
+  } else {
+    $("#newScene").onclick = () => { genState.scene = null; genState.line = ""; renderGenerativeMain(); renderGenerativeSidebar(); };
+  }
+  renderSceneArea();
+}
+
+async function buildScene() {
+  const s = genState;
+  if (!s.line.trim()) { toast("Paste or write a script line first."); return; }
+  s.building = true; renderGenerativeMain();
+  try {
+    const scene = await fetch("/api/generative/scenes", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ line: s.line, cutCount: s.cutCount, aspect: s.aspect, durationSeconds: s.duration }),
+    }).then((r) => r.json());
+    if (scene.error) throw new Error(scene.error);
+    s.scene = scene;
+    toast(`Scene built — ${scene.shots.length} cut(s)`, { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't build the scene", { type: "error" }); }
+  s.building = false;
+  renderGenerativeMain();
+  renderGenerativeSidebar();
+}
+
+function renderSceneArea() {
+  const el = $("#genSceneArea"); if (!el) return;
+  const scene = genState.scene;
+  if (!scene) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div style="margin-top:24px;">
+    <div class="essay-eyebrow" style="color:var(--accent);">One scene, ${scene.shots.length} cut(s) — nothing below is generated yet</div>
+    <div class="gen-world">
+      <span><span class="gen-world-label">Where:</span> ${esc(scene.location)}</span>
+      <span><span class="gen-world-label">Light:</span> ${esc(scene.light)}</span>
+      <span><span class="gen-world-label">Palette:</span> ${esc(scene.palette)}</span>
+    </div>
+    <div class="gen-shots" id="genShots">${scene.shots.map(shotRowHTML).join("")}</div>
+  </div>`;
+  wireShotRows();
+}
+function shotStatusIcon(shot) {
+  if (shot.status === "saved") return `<span style="color:var(--good);font-size:9px;">saved ✓</span>`;
+  if (shot.status === "image_generating") return `<span class="empty small">image…</span>`;
+  if (shot.status === "video_generating") return `<span class="empty small">video…</span>`;
+  if (shot.status === "failed") return `<span style="color:var(--bad);font-size:9px;">failed</span>`;
+  if (shot.videoR2Key) return ic("play");
+  return ic("video");
+}
+function shotRowHTML(shot) {
+  let action = "";
+  if (shot.status === "idle" || (shot.status === "failed" && !shot.imageR2Key)) {
+    action = `<button class="btn small ghost shot-action" data-action="image">Generate image</button>`;
+  } else if (shot.status === "image_ready" || (shot.status === "failed" && shot.imageR2Key && !shot.videoR2Key)) {
+    action = `<button class="btn small ghost shot-action" data-action="video">Animate to video</button>`;
+  } else if (shot.status === "video_ready") {
+    action = `<button class="btn small primary shot-action" data-action="save">Save</button>`;
+  }
+  return `<div class="gen-shot" data-id="${shot.id}">
+    <div class="gen-shot-thumb">${shotStatusIcon(shot)}</div>
+    <div class="gen-shot-body">
+      <div class="gen-shot-type">${esc(shot.type)} · Cut ${shot.ord + 1}</div>
+      <div class="gen-shot-desc">${esc(shot.description)}</div>
+      <div class="gen-shot-meta">${esc(shot.weight)} · ${esc(shot.motion)}${shot.error ? ` · <span style="color:var(--bad)">${esc(shot.error)}</span>` : ""}</div>
+    </div>
+    <div class="gen-shot-actions">${action}</div>
+  </div>`;
+}
+function wireShotRows() {
+  $$(".gen-shot").forEach((row) => {
+    const btn = row.querySelector(".shot-action");
+    if (!btn) return;
+    btn.onclick = () => handleShotAction(row.dataset.id, btn.dataset.action);
+  });
+}
+async function handleShotAction(shotId, action) {
+  if (action === "save") return saveShotFlow(shotId);
+  const endpoint = action === "image" ? "generate-image" : "generate-video";
+  try {
+    const shot = await fetch(`/api/generative/scenes/${genState.scene.id}/shots/${shotId}/${endpoint}`, { method: "POST" }).then((r) => r.json());
+    if (shot.error) throw new Error(shot.error);
+  } catch (err) { toast(err.message || "That step failed", { type: "error" }); }
+  await reloadScene();
+}
+async function reloadScene() {
+  const scene = await fetch(`/api/generative/scenes/${genState.scene.id}`).then((r) => r.json());
+  if (!scene.error) genState.scene = scene;
+  renderSceneArea();
+}
+async function saveShotFlow(shotId) {
+  const threads = await fetchThreads();
+  const picked = new Set();
+  const result = await UI.modal({
+    title: "Save to the Archive",
+    bodyHTML: `
+      <label class="modal-label">Which threads does this belong to? (optional)</label>
+      ${threads.length ? `<div class="chip-row" id="__saveThreadsRow">${threads.map((t) => `<span class="chip-pick" data-thread="${esc(t.tag)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`).join("")}</div>` : ""}
+      <input class="modal-input" id="__saveThreadsInput" style="margin-top:8px;" placeholder="Add one, comma-separated…" autocomplete="off" />
+    `,
+    dismissValue: null,
+    onOpen: (card) => {
+      card.querySelectorAll(".chip-pick[data-thread]").forEach((chip) => {
+        chip.onclick = () => {
+          const tag = chip.dataset.thread;
+          if (picked.has(tag)) picked.delete(tag); else picked.add(tag);
+          chip.classList.toggle("on", picked.has(tag));
+        };
+      });
+    },
+    actions: [
+      { label: "Cancel", resolve: null },
+      { label: "Save", variant: "primary", onClick: (done, card) => {
+        const custom = card.querySelector("#__saveThreadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
+        done([...picked, ...custom]);
+      } },
+    ],
+  });
+  if (result === null) return;
+  try {
+    const clip = await fetch(`/api/generative/scenes/${genState.scene.id}/shots/${shotId}/save`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tags: result }),
+    }).then((r) => r.json());
+    if (clip.error) throw new Error(clip.error);
+    toast("Saved to the Archive", { type: "success" });
+    await reloadScene();
+    loadGenerativeRecent();
+  } catch (err) { toast(err.message || "Save failed", { type: "error" }); }
+}
+
+function renderGenerativeSidebar() {
+  const el = $("#genSidebar"); if (!el) return;
+  const s = genState;
+  const locked = !!s.scene;
+  el.innerHTML = `
+    <div class="side-h" style="margin-top:0;">Generation settings</div>
+    <div style="margin-bottom:18px;${locked ? "opacity:.45;" : ""}">
+      <div class="row-between" style="margin-bottom:6px;"><span style="font-size:11.5px;">Number of cuts</span><span class="empty small">${s.cutCount}</span></div>
+      <input type="range" min="1" max="4" step="1" id="genCutCount" value="${s.cutCount}" style="width:100%;" ${locked ? "disabled" : ""}/>
+      <div class="empty small" style="margin-top:4px;">1 = a single generated shot. Up to 4 = one scene played across multiple cuts.</div>
+    </div>
+    <div style="margin-bottom:18px;${locked ? "opacity:.45;pointer-events:none;" : ""}">
+      <div style="font-size:11.5px;margin-bottom:6px;">Aspect ratio</div>
+      <div class="chip-row" id="genAspectRow">${["16:9", "9:16", "1:1"].map((a) => `<span class="chip-pick${s.aspect === a ? " on" : ""}" data-aspect="${a}">${a}</span>`).join("")}</div>
+    </div>
+    <div style="margin-bottom:22px;${locked ? "opacity:.45;pointer-events:none;" : ""}">
+      <div style="font-size:11.5px;margin-bottom:6px;">Duration per cut</div>
+      <div class="chip-row" id="genDurationRow">${[3, 5, 8].map((d) => `<span class="chip-pick${s.duration === d ? " on" : ""}" data-duration="${d}">${d}s</span>`).join("")}</div>
+    </div>
+    <div style="border-top:1px solid var(--line);padding-top:16px;">
+      <div class="side-h" style="margin-top:0;">Saved to the Archive</div>
+      <div id="genSavedCount" class="gen-saved-count">–</div>
+      <div id="genRecentList" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+  `;
+  $$(".chip-pick[data-aspect]", el).forEach((chip) => { chip.onclick = () => { s.aspect = chip.dataset.aspect; renderGenerativeSidebar(); }; });
+  $$(".chip-pick[data-duration]", el).forEach((chip) => { chip.onclick = () => { s.duration = +chip.dataset.duration; renderGenerativeSidebar(); }; });
+  const cutSlider = $("#genCutCount");
+  if (cutSlider) cutSlider.addEventListener("input", () => { s.cutCount = +cutSlider.value; renderGenerativeSidebar(); });
+  renderGenerativeRecentInto();
+}
+let genRecentCache = null;
+async function loadGenerativeRecent() {
+  try {
+    if (!genProjectId) genProjectId = (await fetch("/api/generative/project").then((r) => r.json())).id;
+    genRecentCache = (await fetch(`/api/clips?projectId=${genProjectId}&limit=500`).then((r) => r.json())).clips || [];
+  } catch { genRecentCache = null; }
+  renderGenerativeRecentInto();
+}
+function renderGenerativeRecentInto() {
+  const countEl = $("#genSavedCount"); const listEl = $("#genRecentList");
+  if (!countEl || !listEl) return;
+  if (genRecentCache === null) { countEl.textContent = "–"; listEl.innerHTML = ""; return; }
+  countEl.textContent = String(genRecentCache.length);
+  listEl.innerHTML = genRecentCache.length
+    ? genRecentCache.slice(0, 5).map((c) => `<div class="gen-recent-item" style="border-left:2px solid ${c.tags[0] ? colorForTag(c.tags[0]) : "var(--faint)"}">
+        <div class="gen-recent-thread">${c.tags[0] ? esc(c.tags[0]) : "untagged"}</div>
+        <div class="gen-recent-desc">${esc(c.description || c.title)}</div>
+      </div>`).join("")
+    : `<div class="empty small">Nothing generated yet.</div>`;
+}
+
 // ── Command palette ──────────────────────────────────────────────────
 // Reuses whatever the current view already wired up rather than
 // duplicating any handler: an in-editor command is just "click the real
@@ -3330,7 +3564,7 @@ const RAIL_ITEMS = [
   { view: "discover", label: "Discover", icon: "globe", desc: "Suggests external, internet-sourced clips and sources relevant to a thread, for grounding an essay's claims beyond your own footage." },
   { view: "essays", label: "Essays", icon: "quill" },
   { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
-  { view: "generative", label: "Generative", icon: "wand", desc: "Turn a script line into generated cinematic b-roll — context first, then image, then video — saved back into the Archive as a real, thread-matched clip." },
+  { view: "generative", label: "Generative", icon: "wand" },
   { view: "clipping", label: "Clipping", icon: "scissors", desc: "Watches a channel and auto-generates short, captioned highlights ranked by how likely they are to land — separate from manually-managed Sources." },
 ];
 const RAIL_BOTTOM = [
@@ -3387,6 +3621,7 @@ function route() {
     return e ? openEssay(e[1]) : showEssaysList();
   }
   if (view === "threads") return showThreadsView();
+  if (view === "generative") return showGenerativeView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();
