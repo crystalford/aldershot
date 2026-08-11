@@ -16,6 +16,10 @@ import {
   ensureSchema,
   createProject,
   listProjects,
+  listTrashedProjects,
+  softDeleteProject,
+  restoreProject,
+  permanentlyDeleteProject,
   getProject,
   addVideo,
   listVideos,
@@ -45,9 +49,12 @@ import {
   ensureEssaySchema,
   createEssay,
   listEssays,
+  listTrashedEssays,
+  softDeleteEssay,
+  restoreEssay,
+  permanentlyDeleteEssay,
   getEssay,
   updateEssayMeta,
-  deleteEssay,
   addBeat,
   updateBeat,
   deleteBeat,
@@ -160,6 +167,32 @@ app.get("/api/projects/:id", async (c) => {
   const shorts = await readJson(c.env.MEDIA, shortsKey(id));
   const suggestions = await readJson(c.env.MEDIA, suggestionsKey(id));
   return c.json({ project, videos: withWords, timeline, shorts, suggestions });
+});
+
+// Soft delete — drops out of the Sources grid but stays fully intact
+// (videos, transcript, timeline, shorts all untouched) so Trash can restore
+// it exactly as it was. See permanentlyDeleteProject for the irreversible
+// version, only reachable from Trash itself.
+app.delete("/api/projects/:id", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  await softDeleteProject(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+app.post("/api/projects/:id/restore", async (c) => {
+  await ensureSchema(c.env.DB);
+  const id = c.req.param("id");
+  if (!(await getProject(c.env.DB, id))) return c.json({ error: "project not found" }, 404);
+  await restoreProject(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+app.delete("/api/projects/:id/forever", async (c) => {
+  await ensureSchema(c.env.DB);
+  await permanentlyDeleteProject(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
 });
 
 const TIMELINE_HISTORY_LIMIT = 20;
@@ -995,10 +1028,36 @@ app.patch("/api/essays/:id", async (c) => {
   return c.json(essay);
 });
 
+// Soft delete — see softDeleteEssay in essays.ts. Same "restore-anything-
+// you-didn't-mean-to-remove" contract as the Sources project delete above.
 app.delete("/api/essays/:id", async (c) => {
   await ensureEssaySchema(c.env.DB);
-  await deleteEssay(c.env.DB, c.req.param("id"));
+  await softDeleteEssay(c.env.DB, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+app.post("/api/essays/:id/restore", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await restoreEssay(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.delete("/api/essays/:id/forever", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await permanentlyDeleteEssay(c.env.DB, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+// ── Trash — restore-anything-you-didn't-mean-to-remove for essays and
+// Sources projects, the two things Delete can otherwise lose for good.
+app.get("/api/trash", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureEssaySchema(c.env.DB);
+  const [projects, essays] = await Promise.all([
+    listTrashedProjects(c.env.DB),
+    listTrashedEssays(c.env.DB),
+  ]);
+  return c.json({ projects, essays });
 });
 
 // Act-by-act drafting: proposes ONE candidate beat for ONE named act, grounded

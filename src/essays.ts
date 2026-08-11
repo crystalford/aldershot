@@ -35,6 +35,7 @@ export interface Essay {
   builder_mode: string;
   created_at: number;
   updated_at: number;
+  deleted_at: number | null;
 }
 
 export interface EssayBeat {
@@ -110,6 +111,12 @@ export async function ensureEssaySchema(db: D1Database): Promise<void> {
   if (!colNames.has("vo_video_id")) {
     await db.prepare(`ALTER TABLE essay_beats ADD COLUMN vo_video_id TEXT`).run();
   }
+  // deleted_at backs Trash — "Delete" soft-deletes (see softDeleteEssay
+  // below) so it can be undone, same idea as db.ts's projects.deleted_at.
+  const essayCols = await db.prepare(`PRAGMA table_info(essays)`).all<{ name: string }>();
+  if (!(essayCols.results ?? []).some((c) => c.name === "deleted_at")) {
+    await db.prepare(`ALTER TABLE essays ADD COLUMN deleted_at INTEGER`).run();
+  }
 }
 
 export async function createEssay(
@@ -127,6 +134,7 @@ export async function createEssay(
     builder_mode: "premise",
     created_at: now,
     updated_at: now,
+    deleted_at: null,
   };
   const threads = [...new Set((input.threads ?? []).map(normalizeTag).filter(Boolean))];
   await db.batch([
@@ -144,7 +152,7 @@ export async function createEssay(
 interface EssayRow {
   id: string; title: string; premise: string; audience: string | null;
   target_length: string | null; tone: string | null; builder_mode: string;
-  created_at: number; updated_at: number;
+  created_at: number; updated_at: number; deleted_at: number | null;
 }
 interface BeatRow {
   id: string; essay_id: string; act: string; ord: number; kind: string;
@@ -171,13 +179,20 @@ async function attachThreadsAndBeats(db: D1Database, essays: EssayRow[]): Promis
   for (const r of beatRows ?? []) beatsByEssay.set(r.essay_id, [...(beatsByEssay.get(r.essay_id) ?? []), toBeat(r)]);
   return essays.map((e) => ({
     id: e.id, title: e.title, premise: e.premise, audience: e.audience, target_length: e.target_length,
-    tone: e.tone, builder_mode: e.builder_mode, created_at: e.created_at, updated_at: e.updated_at,
+    tone: e.tone, builder_mode: e.builder_mode, created_at: e.created_at, updated_at: e.updated_at, deleted_at: e.deleted_at,
     threads: threadsByEssay.get(e.id) ?? [], beats: beatsByEssay.get(e.id) ?? [],
   }));
 }
 
 export async function listEssays(db: D1Database): Promise<EssayDetail[]> {
-  const { results } = await db.prepare(`SELECT * FROM essays ORDER BY updated_at DESC`).all<EssayRow>();
+  const { results } = await db.prepare(`SELECT * FROM essays WHERE deleted_at IS NULL ORDER BY updated_at DESC`).all<EssayRow>();
+  return attachThreadsAndBeats(db, results ?? []);
+}
+
+/** Trash — essays whose deleted_at is set, newest-removed first. See
+ *  softDeleteEssay/restoreEssay below; nothing here is a hard delete. */
+export async function listTrashedEssays(db: D1Database): Promise<EssayDetail[]> {
+  const { results } = await db.prepare(`SELECT * FROM essays WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`).all<EssayRow>();
   return attachThreadsAndBeats(db, results ?? []);
 }
 
@@ -213,7 +228,19 @@ export async function updateEssayMeta(
   return getEssay(db, id);
 }
 
-export async function deleteEssay(db: D1Database, id: string): Promise<void> {
+/** "Delete" from the Essays list is a soft delete — it drops out of
+ *  listEssays but stays fully intact (script, beats, threads) so Trash can
+ *  restore it exactly as it was. See permanentlyDeleteEssay for the actual
+ *  irreversible removal, only ever called from Trash. */
+export async function softDeleteEssay(db: D1Database, id: string): Promise<void> {
+  await db.prepare(`UPDATE essays SET deleted_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+}
+
+export async function restoreEssay(db: D1Database, id: string): Promise<void> {
+  await db.prepare(`UPDATE essays SET deleted_at = NULL WHERE id = ?`).bind(id).run();
+}
+
+export async function permanentlyDeleteEssay(db: D1Database, id: string): Promise<void> {
   await db.batch([
     db.prepare(`DELETE FROM essay_threads WHERE essay_id = ?`).bind(id),
     db.prepare(`DELETE FROM essay_beats WHERE essay_id = ?`).bind(id),

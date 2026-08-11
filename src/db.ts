@@ -12,6 +12,7 @@ export interface Project {
   name: string;
   kind: ProjectKind;
   created_at: number;
+  deleted_at: number | null;
 }
 
 export interface ProjectWithThumb extends Project {
@@ -60,13 +61,18 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   // `kind` is new — a table created before this column existed needs it added
   // on. SQLite has no `ADD COLUMN IF NOT EXISTS`, so check first.
   const cols = await db.prepare(`PRAGMA table_info(projects)`).all<{ name: string }>();
-  if (!(cols.results ?? []).some((c) => c.name === "kind")) {
+  const colNames = new Set((cols.results ?? []).map((c) => c.name));
+  if (!colNames.has("kind")) {
     await db.prepare(`ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'source'`).run();
+  }
+  // deleted_at backs Trash — see softDeleteProject/restoreProject below.
+  if (!colNames.has("deleted_at")) {
+    await db.prepare(`ALTER TABLE projects ADD COLUMN deleted_at INTEGER`).run();
   }
 }
 
 export async function createProject(db: D1Database, name: string, kind: ProjectKind = "source"): Promise<Project> {
-  const project: Project = { id: crypto.randomUUID(), name, kind, created_at: Date.now() };
+  const project: Project = { id: crypto.randomUUID(), name, kind, created_at: Date.now(), deleted_at: null };
   await db
     .prepare(`INSERT INTO projects (id, name, kind, created_at) VALUES (?, ?, ?, ?)`)
     .bind(project.id, project.name, project.kind, project.created_at)
@@ -81,7 +87,7 @@ export async function createProject(db: D1Database, name: string, kind: ProjectK
  *  (see listProjects) so it never shows up as a confusing empty "project"
  *  a user would try to open. */
 export async function getOrCreateGenerativeProject(db: D1Database): Promise<Project> {
-  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'generative' LIMIT 1`).first<Project>();
+  const existing = await db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE kind = 'generative' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Generative", "generative");
 }
@@ -91,7 +97,7 @@ export async function getOrCreateGenerativeProject(db: D1Database): Promise<Proj
  *  Filtered out of the Sources grid (see listProjects) since it's reached
  *  through its own dedicated surface, not opened like a normal project. */
 export async function getOrCreateClippingProject(db: D1Database): Promise<Project> {
-  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'clipping' LIMIT 1`).first<Project>();
+  const existing = await db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE kind = 'clipping' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Clipping", "clipping");
 }
@@ -103,7 +109,7 @@ export async function getOrCreateClippingProject(db: D1Database): Promise<Projec
  *  project the way Sources are. Filtered out of the Sources grid (see
  *  listProjects) for the same reason the other scratch projects are. */
 export async function getOrCreateVoiceoverProject(db: D1Database): Promise<Project> {
-  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'voiceover' LIMIT 1`).first<Project>();
+  const existing = await db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE kind = 'voiceover' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Voiceover", "voiceover");
 }
@@ -114,7 +120,7 @@ export async function getOrCreateVoiceoverProject(db: D1Database): Promise<Proje
  *  archive the way a podcast-episode upload is (see the design brief).
  *  Filtered out of the Sources grid for the same reason. */
 export async function getOrCreateStudioProject(db: D1Database): Promise<Project> {
-  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'studio' LIMIT 1`).first<Project>();
+  const existing = await db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE kind = 'studio' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Studio", "studio");
 }
@@ -128,21 +134,60 @@ export async function getOrCreateStudioProject(db: D1Database): Promise<Project>
 export async function listProjects(db: D1Database): Promise<ProjectWithThumb[]> {
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.name, p.kind, p.created_at,
+      `SELECT p.id, p.name, p.kind, p.created_at, p.deleted_at,
               v.r2_key AS thumb_r2_key, v.duration AS thumb_duration
        FROM projects p
        LEFT JOIN videos v ON v.id = (
          SELECT id FROM videos WHERE project_id = p.id ORDER BY ord ASC, created_at ASC LIMIT 1
        )
-       WHERE p.kind = 'source'
+       WHERE p.kind = 'source' AND p.deleted_at IS NULL
        ORDER BY p.created_at DESC`,
     )
     .all<ProjectWithThumb>();
   return results ?? [];
 }
 
+/** Trash — soft-deleted source projects, newest-removed first. Scoped to
+ *  kind='source' same as listProjects: the scratch projects (generative/
+ *  clipping/voiceover/studio) are never user-deletable, so they never end
+ *  up here. See softDeleteProject/restoreProject below. */
+export async function listTrashedProjects(db: D1Database): Promise<ProjectWithThumb[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT p.id, p.name, p.kind, p.created_at, p.deleted_at,
+              v.r2_key AS thumb_r2_key, v.duration AS thumb_duration
+       FROM projects p
+       LEFT JOIN videos v ON v.id = (
+         SELECT id FROM videos WHERE project_id = p.id ORDER BY ord ASC, created_at ASC LIMIT 1
+       )
+       WHERE p.kind = 'source' AND p.deleted_at IS NOT NULL
+       ORDER BY p.deleted_at DESC`,
+    )
+    .all<ProjectWithThumb>();
+  return results ?? [];
+}
+
+export async function softDeleteProject(db: D1Database, id: string): Promise<void> {
+  await db.prepare(`UPDATE projects SET deleted_at = ? WHERE id = ?`).bind(Date.now(), id).run();
+}
+
+export async function restoreProject(db: D1Database, id: string): Promise<void> {
+  await db.prepare(`UPDATE projects SET deleted_at = NULL WHERE id = ?`).bind(id).run();
+}
+
+/** Irreversible — only ever called from Trash, never from the Sources grid's
+ *  own delete action (that's softDeleteProject). Videos/timeline/shorts JSON
+ *  in R2 are deliberately left behind, same "don't bother reclaiming" call
+ *  version history and enhanced-audio remuxes already make elsewhere. */
+export async function permanentlyDeleteProject(db: D1Database, id: string): Promise<void> {
+  await db.batch([
+    db.prepare(`DELETE FROM videos WHERE project_id = ?`).bind(id),
+    db.prepare(`DELETE FROM projects WHERE id = ?`).bind(id),
+  ]);
+}
+
 export async function getProject(db: D1Database, id: string): Promise<Project | null> {
-  return db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE id = ?`).bind(id).first<Project>();
+  return db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE id = ?`).bind(id).first<Project>();
 }
 
 export async function addVideo(
@@ -186,12 +231,18 @@ export async function listVideos(db: D1Database, projectId: string): Promise<Vid
 }
 
 /** Every ready video across every project — feeds the account-wide clip
- *  discovery pass (unlike listVideos, not scoped to a single project_id). */
+ *  discovery pass (unlike listVideos, not scoped to a single project_id).
+ *  Excludes videos whose project is in Trash — deleting a source is
+ *  supposed to actually pull it out of active discovery, not just hide its
+ *  card, even though the row itself sticks around for restore. */
 export async function listAllReadyVideos(db: D1Database): Promise<Video[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
-       FROM videos WHERE status = 'ready' ORDER BY created_at ASC`,
+      `SELECT v.id, v.project_id, v.filename, v.r2_key, v.duration, v.status, v.ord, v.created_at
+       FROM videos v
+       JOIN projects p ON p.id = v.project_id
+       WHERE v.status = 'ready' AND p.deleted_at IS NULL
+       ORDER BY v.created_at ASC`,
     )
     .all<Video>();
   return results ?? [];

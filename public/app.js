@@ -163,11 +163,19 @@ async function showProjects() {
       ${skeletonCardHTML("card", "card-body")}${skeletonCardHTML("card", "card-body")}`;
   }
   projects.forEach((p) => {
-    const card = document.createElement("button");
+    const card = document.createElement("div");
     card.className = "card";
-    card.innerHTML = `${frameThumbHTML(p.thumb_r2_key, p.thumb_duration)}
+    card.innerHTML = `<button class="card-delete" title="Delete — goes to Trash">${ic("trash")}</button>
+      ${frameThumbHTML(p.thumb_r2_key, p.thumb_duration)}
       <div class="card-body"><div class="card-title">${esc(p.name)}</div><div class="card-sub">${new Date(p.created_at).toLocaleString()}</div></div>`;
     card.onclick = () => openProject(p.id);
+    card.querySelector(".card-delete").onclick = async (e) => {
+      e.stopPropagation();
+      if (!(await UI.confirm({ title: "Delete this source?", message: "It moves to Trash, where you can restore it later.", confirmText: "Delete", danger: true }))) return;
+      await fetch(`/api/projects/${p.id}`, { method: "DELETE" });
+      toast("Moved to Trash", { type: "success" });
+      showProjects();
+    };
     grid.appendChild(card);
   });
   grid.appendChild(add);
@@ -2950,8 +2958,9 @@ function wireEssayGrid(essays) {
     const e = essays.find((x) => x.id === card.dataset.id);
     card.querySelector(".essay-open").onclick = () => { location.hash = `#/essays/${e.id}`; };
     card.querySelector(".essay-delete").onclick = async () => {
-      if (!(await UI.confirm({ title: "Delete this essay?", message: "This removes its script and progress permanently.", confirmText: "Delete", danger: true }))) return;
+      if (!(await UI.confirm({ title: "Delete this essay?", message: "It moves to Trash, where you can restore it later.", confirmText: "Delete", danger: true }))) return;
       await fetch(`/api/essays/${e.id}`, { method: "DELETE" });
+      toast("Moved to Trash", { type: "success" });
       showEssaysList();
     };
   });
@@ -3773,7 +3782,7 @@ const RAIL_ITEMS = [
 ];
 const RAIL_BOTTOM = [
   { view: "settings", label: "Settings", icon: "gear", desc: "Profile, team, billing, and integrations." },
-  { view: "trash", label: "Trash", icon: "trash", desc: "Deleted essays and sources — restore anything you didn't mean to remove." },
+  { view: "trash", label: "Trash", icon: "trash" },
 ];
 function buildRail() {
   const render = (items, el) => {
@@ -4059,6 +4068,64 @@ async function showStudioView() {
   renderProject();
 }
 
+// ── Trash — restore-anything-you-didn't-mean-to-remove for essays and
+// Sources projects, the two things Delete elsewhere can otherwise lose for
+// good (version history already covers overwrites, but not a deletion).
+async function showTrashView() {
+  location.hash = "#/trash"; setActiveRail("trash");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading trash…</div>`;
+  let data;
+  try { data = await fetch("/api/trash").then((r) => r.json()); }
+  catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  const projects = data.projects || [], essays = data.essays || [];
+  main.innerHTML = `<section class="pad">
+    <div><h1>Trash</h1><div class="sub">Restore anything you didn't mean to remove.</div></div>
+    <div class="tools-h" style="margin-top:22px;">Sources</div>
+    ${projects.length ? `<div class="grid" id="trashProjects"></div>` : `<div class="empty-note">Nothing here.</div>`}
+    <div class="tools-h" style="margin-top:26px;">Essays</div>
+    ${essays.length ? `<div class="grid" id="trashEssays"></div>` : `<div class="empty-note">Nothing here.</div>`}
+  </section>`;
+  const trashCard = (title, sub, kind, id, thumbHTML) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `${thumbHTML || ""}
+      <div class="card-body">
+        <div class="card-title">${esc(title)}</div>
+        <div class="card-sub">${esc(sub)}</div>
+        <div class="s-actions" style="margin-top:10px;">
+          <button class="btn small accent trash-restore">Restore</button>
+          <button class="btn small danger trash-forever">Delete forever</button>
+        </div>
+      </div>`;
+    card.querySelector(".trash-restore").onclick = async () => {
+      await fetch(`/api/${kind}/${id}/restore`, { method: "POST" });
+      toast("Restored", { type: "success" });
+      showTrashView();
+    };
+    card.querySelector(".trash-forever").onclick = async () => {
+      if (!(await UI.confirm({ title: "Delete forever?", message: "This can't be undone.", confirmText: "Delete forever", danger: true }))) return;
+      await fetch(`/api/${kind}/${id}/forever`, { method: "DELETE" });
+      toast("Deleted forever", { type: "success" });
+      showTrashView();
+    };
+    return card;
+  };
+  if (projects.length) {
+    const grid = $("#trashProjects");
+    projects.forEach((p) => {
+      grid.appendChild(trashCard(p.name, `Deleted ${new Date(p.deleted_at).toLocaleString()}`, "projects", p.id, frameThumbHTML(p.thumb_r2_key, p.thumb_duration)));
+    });
+    Thumb.hydrate(grid);
+  }
+  if (essays.length) {
+    const grid = $("#trashEssays");
+    essays.forEach((e) => {
+      grid.appendChild(trashCard(e.title, `Deleted ${new Date(e.deleted_at).toLocaleString()}`, "essays", e.id));
+    });
+  }
+}
+
 // "sources" calls showProjects() directly rather than via a hash — showProjects()
 // itself normalizes location.hash to "#/", so routing it through "#/sources"
 // would fire a second hashchange (and a second fetch) once that normalization lands.
@@ -4100,6 +4167,7 @@ function route() {
   if (view === "generative") return showGenerativeView();
   if (view === "clipping") return showClippingView();
   if (view === "studio") return showStudioView();
+  if (view === "trash") return showTrashView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();

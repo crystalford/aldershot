@@ -285,6 +285,15 @@ main { flex: 1; min-height: 0; overflow: auto; }
   display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--dim); min-height: 92px;
 }
 .card-new:hover { color: var(--accent); border-color: rgba(138, 123, 212, .5); }
+.card-delete {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  width: 26px; height: 26px; display: grid; place-items: center;
+  background: rgba(10, 10, 12, .55); border: 1px solid var(--line); border-radius: 6px;
+  color: var(--faint); opacity: 0; transition: opacity .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease);
+}
+.card:hover .card-delete { opacity: 1; }
+.card-delete:hover { color: var(--bad); border-color: var(--bad); }
+.card-delete svg { width: 14px; height: 14px; }
 
 /* ── real-frame thumbnails (project cards, clip cards) ────── */
 .frame-thumb {
