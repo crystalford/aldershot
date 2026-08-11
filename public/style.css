@@ -152,6 +152,7 @@ a { color: var(--accent); text-decoration: none; }
 .clip-back {
   display: flex; align-items: center; justify-content: center; width: 30px; height: 30px;
   border-radius: 3px; color: var(--faint); flex: none; transition: color .15s, background .15s;
+  background: none; border: none; cursor: pointer; padding: 0;
 }
 .clip-back:hover { color: var(--bone); background: var(--panel); }
 .clip-back svg { width: 17px; height: 17px; }
