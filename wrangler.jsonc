@@ -37,17 +37,22 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
-  ],
+  ]
 
   // Clip embeddings — powers Threads' semantic clustering (src/embeddings.ts,
-  // src/threads.ts) instead of exact-tag-string matching. One-time setup:
-  //   wrangler vectorize create aldershot-clips --dimensions=768 --metric=cosine
-  // (768 = @cf/baai/bge-base-en-v1.5's output size, see src/models.ts). Until
-  // that's run, VECTORIZE is simply absent and Threads falls back to the old
-  // tag-equality grouping — nothing breaks either way.
-  "vectorize": [
-    { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
-  ]
+  // src/threads.ts) instead of exact-tag-string matching. Unlike Containers/
+  // R2/D1, `wrangler deploy` HARD-FAILS if a declared vectorize index doesn't
+  // already exist (confirmed live: error code 10159, "index ... was not
+  // found") — so this binding must stay commented out, not just optionally
+  // absent, until the index is actually created. One-time setup, in order:
+  //   1. wrangler vectorize create aldershot-clips --dimensions=768 --metric=cosine
+  //      (needs a token with Vectorize edit permission — not yet granted)
+  //   2. THEN uncomment the block below and deploy.
+  // Until both of those happen, env.VECTORIZE is simply undefined and
+  // threads.ts falls back to the old tag-equality grouping automatically.
+  // "vectorize": [
+  //   { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
+  // ]
 
   // Later phases: Cron Triggers (Radar), AI Gateway.
 }
