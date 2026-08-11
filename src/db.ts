@@ -5,7 +5,7 @@
  */
 import type { Env } from "./env";
 
-export type ProjectKind = "source" | "generative";
+export type ProjectKind = "source" | "generative" | "clipping";
 
 export interface Project {
   id: string;
@@ -84,6 +84,16 @@ export async function getOrCreateGenerativeProject(db: D1Database): Promise<Proj
   const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'generative' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Generative", "generative");
+}
+
+/** The single scratch project that owns every video dropped into the
+ *  focused Clipping page — same idea as getOrCreateGenerativeProject.
+ *  Filtered out of the Sources grid (see listProjects) since it's reached
+ *  through its own dedicated surface, not opened like a normal project. */
+export async function getOrCreateClippingProject(db: D1Database): Promise<Project> {
+  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'clipping' LIMIT 1`).first<Project>();
+  if (existing) return existing;
+  return createProject(db, "Clipping", "clipping");
 }
 
 /** Each project's card needs a real frame, not just a name — so this joins

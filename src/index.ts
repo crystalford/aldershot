@@ -24,6 +24,7 @@ import {
   setVideoStatus,
   setVideoR2Key,
   getOrCreateGenerativeProject,
+  getOrCreateClippingProject,
 } from "./db";
 import {
   ensureClipSchema,
@@ -1090,6 +1091,13 @@ app.post("/api/threads/:tag/merge", async (c) => {
 app.get("/api/generative/project", async (c) => {
   await ensureSchema(c.env.DB);
   return c.json(await getOrCreateGenerativeProject(c.env.DB));
+});
+
+// ── Clipping — the focused upload-in/mine-for-shorts page (public/app.js
+// showClippingView). One scratch project per account, same idea as Generative's. ──
+app.get("/api/clipping/project", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json(await getOrCreateClippingProject(c.env.DB));
 });
 
 app.post("/api/generative/scenes", async (c) => {

@@ -34,6 +34,7 @@ const ICON = {
   scissors: '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M7.6 7.4 20 20M20 4 12 12M7.6 16.6l2-2"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.4M12 18.6V21M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3 12h2.4M18.6 12H21M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
+  back: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const esc = UI.esc;
@@ -70,6 +71,7 @@ const api = {
   createProject: (name) =>
     fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
   getProject: (id) => fetch(`/api/projects/${id}`).then((r) => r.json()),
+  getClippingProject: () => fetch("/api/clipping/project").then((r) => r.json()),
   async transcribe(vid, wav) {
     const res = await fetch(`/api/videos/${vid}/transcribe`, { method: "POST", headers: { "content-type": "audio/wav" }, body: wav });
     const data = await res.json();
@@ -3565,7 +3567,7 @@ const RAIL_ITEMS = [
   { view: "essays", label: "Essays", icon: "quill" },
   { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
   { view: "generative", label: "Generative", icon: "wand" },
-  { view: "clipping", label: "Clipping", icon: "scissors", desc: "Watches a channel and auto-generates short, captioned highlights ranked by how likely they are to land — separate from manually-managed Sources." },
+  { view: "clipping", label: "Clipping", icon: "scissors" },
 ];
 const RAIL_BOTTOM = [
   { view: "settings", label: "Settings", icon: "gear", desc: "Profile, team, billing, and integrations." },
@@ -3598,6 +3600,176 @@ function renderStub(item) {
     <div class="stub-tag">Coming in a later phase</div>
   </div></div>`;
 }
+
+// ── Clipping — a focused, chrome-free page for one job: drop in footage,
+// get ranked, publish-ready shorts back. Everything runs through the same
+// project/video/shorts machinery as Sources (see getOrCreateClippingProject
+// in src/db.ts) — this is a dedicated frontend surface over it, not a
+// separate pipeline. Its own lean upload/list/shorts functions below (not
+// handleFiles/pollTranscription/renderShorts) because those are wired to
+// the full editor — pollTranscription in particular calls renderProject()
+// on success, which would blow away this page's DOM.
+async function showClippingView() {
+  location.hash = "#/clipping"; setFocused(true);
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
+  let project;
+  try {
+    project = await api.getClippingProject();
+    if (project.error) throw new Error(project.error);
+  } catch {
+    main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`;
+    return;
+  }
+  const data = await api.getProject(project.id);
+  if (data.error) { main.innerHTML = `<div class="pad"><p class="empty">${esc(data.error)}</p></div>`; return; }
+  state.project = data.project;
+  state.videos = (data.videos || []).map((v) => ({ ...v }));
+  state.shorts = data.shorts;
+  state.selected = null;
+  renderClippingView();
+}
+function renderClippingView() {
+  main.innerHTML = `<div class="clip-view">
+    <div class="clip-head">
+      <button class="clip-back" id="clipBack" title="Back to Aldershot">${ic("back")}</button>
+      <div><div class="clip-title">Clipping</div><div class="clip-sub">Drop in raw footage — get ranked, publish-ready shorts back.</div></div>
+    </div>
+    <div class="clip-body">
+      <div class="dropzone" id="clipDrop">
+        ${ic("plus")}
+        <strong>Drop a video here</strong>
+        <span>or <label class="link">browse<input id="clipFile" type="file" accept="video/*,audio/*" multiple hidden /></label></span>
+        <small>Each one is transcribed and mined for shorts automatically.</small>
+      </div>
+      <div class="clip-list" id="clipList"></div>
+      <video id="clipPlayer" class="clip-player" controls playsinline></video>
+      <div id="clipShorts"></div>
+    </div>
+  </div>`;
+  $("#clipBack").onclick = showProjects;
+  wireClipDropzone();
+  clipRenderList();
+  clipRenderShorts();
+}
+function wireClipDropzone() {
+  const drop = $("#clipDrop");
+  $("#clipFile").addEventListener("change", (e) => clipHandleFiles([...e.target.files]));
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => clipHandleFiles([...e.dataTransfer.files]));
+}
+function clipRenderList() {
+  const list = $("#clipList"); if (!list) return;
+  list.innerHTML = state.videos.map((v, i) => {
+    let pill = "", extra = "";
+    if (v.status === "ready") pill = `<span class="pill ready">ready</span>`;
+    else if (v.status === "failed") pill = `<span class="pill bad">failed</span>`;
+    else pill = `<span class="pill work">${esc(v.stage || v.status)}</span>`;
+    if (v.status === "uploading") extra = `<div class="progress"><i style="width:${Math.round((v.pct || 0) * 100)}%"></i></div>`;
+    else if (v.status === "transcribing") extra = `<div class="progress indeterminate"><i></i></div>`;
+    else if (v.status === "failed") extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error || "failed")}</span></div><button class="btn small ghost clip-retry" data-i="${i}">Retry</button>`;
+    else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
+    const thumb = v.r2_key
+      ? `<div class="vthumb"><img data-thumb-src="${esc(mediaUrl(v.r2_key))}" data-thumb-t="${Math.min(2, (v.duration || 4) / 4)}" alt="" /></div>`
+      : `<div class="vthumb placeholder">${ic("video")}</div>`;
+    return `<div class="clip-row"><div class="vrow-top">${thumb}<div class="vrow-info"><div class="vrow-line"><span class="vname">${esc(filenameOf(v.filename))}</span>${pill}</div>${extra}</div></div></div>`;
+  }).join("");
+  list.querySelectorAll(".clip-retry").forEach((btn) => {
+    btn.onclick = () => { const v = state.videos[+btn.dataset.i]; v.error = null; clipPollTranscription(v).catch(() => {}); };
+  });
+  Thumb.hydrate(list);
+}
+async function clipHandleFiles(files) {
+  const media = files.filter((f) => f.type.startsWith("video/") || f.type.startsWith("audio/"));
+  if (files.length && !media.length) toast("Those files aren't video or audio.", { type: "error" });
+  for (const file of media) {
+    const item = { id: null, filename: file.name, status: "uploading", pct: 0, duration: null, words: null };
+    state.videos.push(item); clipRenderList();
+    try {
+      item.duration = await readDuration(file);
+      const pres = await fetch(`/api/projects/${state.project.id}/videos/presign`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+      }).then((r) => r.json());
+      if (pres.error) throw new Error(pres.error);
+      item.id = pres.videoId;
+      item.stage = "uploading…"; clipRenderList();
+      await putToR2(pres.uploadUrl, file, (p) => { item.pct = p; clipRenderList(); });
+      const video = await fetch(`/api/projects/${state.project.id}/videos/confirm`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ videoId: pres.videoId, key: pres.key, filename: file.name, duration: item.duration }),
+      }).then((r) => r.json());
+      if (video.error) throw new Error(video.error);
+      Object.assign(item, video);
+      await clipPollTranscription(item);
+    } catch (err) {
+      item.status = "failed"; item.error = err.message || String(err); clipRenderList();
+      toast(item.error, { type: "error", title: "Upload failed" });
+    }
+  }
+}
+async function clipPollTranscription(item) {
+  item.status = "transcribing";
+  item.stage = "extracting audio — can take several minutes for long videos, keep this tab open…";
+  clipRenderList();
+  const start = await fetch(`/api/videos/${item.id}/transcribe-remote`, { method: "POST" });
+  if (!start.ok) { const d = await start.json().catch(() => ({})); throw new Error(d.error || "couldn't start transcription"); }
+  item.stage = "transcribing…"; clipRenderList();
+  for (let i = 0; i < 2000; i++) {
+    await sleep(1500);
+    const res = await fetch(`/api/videos/${item.id}/transcribe-status`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "status check failed");
+    if (typeof data.progress === "number") { item.stage = `transcribing ${data.progress}%…`; clipRenderList(); }
+    if (data.status === "ready") {
+      item.words = data.words; item.status = "ready"; item.stage = "";
+      clipRenderList();
+      toast(`"${item.filename}" transcribed`, { type: "success" });
+      await clipFindShorts();
+      return;
+    }
+    if (data.status === "failed") throw new Error(data.error || "transcription failed");
+  }
+  throw new Error("transcription timed out");
+}
+async function clipFindShorts() {
+  if (!state.videos.some((v) => v.status === "ready" && v.words)) return;
+  try {
+    const res = await fetch(`/api/projects/${state.project.id}/shorts`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.shorts = data.shorts;
+    clipRenderShorts();
+  } catch (err) { toast(err.message || "Find shorts failed", { type: "error", title: "Shorts" }); }
+}
+function clipRenderShorts() {
+  const el = $("#clipShorts"); if (!el) return;
+  const shorts = state.shorts || [];
+  if (!shorts.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="shorts">
+    <div class="tl-head"><h2>Shorts</h2><span class="empty small">${shorts.length}</span></div>
+    <div class="short-grid">${shorts.map(shortCard).join("")}</div></div>`;
+  shorts.forEach((s, i) => {
+    const card = el.querySelector(`.short[data-i="${i}"]`);
+    card.querySelector(".short-cover").onclick = () => clipPreviewShort(s);
+    card.querySelector(".s-play").onclick = () => clipPreviewShort(s);
+    card.querySelector(".s-prod").onclick = (e) => produceShort(s, e.currentTarget);
+    card.querySelector(".short-dismiss").onclick = (e) => {
+      e.stopPropagation();
+      state.shorts.splice(state.shorts.indexOf(s), 1);
+      clipRenderShorts();
+    };
+  });
+  Thumb.hydrate(el);
+}
+async function clipPreviewShort(s) {
+  const v = state.videos.find((x) => x.id === s.videoId); if (!v) return;
+  const p = $("#clipPlayer"); if (!p) return;
+  await ensureSrc(p, { r2_key: v.r2_key });
+  p.currentTime = s.start; p.play();
+  const stop = () => { if (p.currentTime >= s.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
+  p.addEventListener("timeupdate", stop);
+}
 // "sources" calls showProjects() directly rather than via a hash — showProjects()
 // itself normalizes location.hash to "#/", so routing it through "#/sources"
 // would fire a second hashchange (and a second fetch) once that normalization lands.
@@ -3611,8 +3783,15 @@ buildRail();
 $("#railHome").onclick = showProjects;
 $("#railHome").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
 $("#paletteTrigger").onclick = openCommandPalette;
+// Focused mode strips the rail + top bar for a single-purpose page that
+// isn't part of the dashboard shell (Clipping today). Toggled from route()
+// so every other destination reliably restores the normal chrome.
+function setFocused(on) {
+  $(".shell")?.classList.toggle("focused", !!on);
+}
 function route() {
   const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "sources";
+  setFocused(view === "clipping");
   if (view === "archive" || view === "library") return showLibrary();
   const p = location.hash.match(/^#\/p\/([\w-]+)/);
   if (p) return openProject(p[1]);
@@ -3622,6 +3801,7 @@ function route() {
   }
   if (view === "threads") return showThreadsView();
   if (view === "generative") return showGenerativeView();
+  if (view === "clipping") return showClippingView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();
