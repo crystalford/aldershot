@@ -26,6 +26,7 @@ import {
   getOrCreateGenerativeProject,
   getOrCreateClippingProject,
   getOrCreateVoiceoverProject,
+  getOrCreateStudioProject,
 } from "./db";
 import {
   ensureClipSchema,
@@ -1157,6 +1158,14 @@ app.get("/api/generative/project", async (c) => {
 app.get("/api/clipping/project", async (c) => {
   await ensureSchema(c.env.DB);
   return c.json(await getOrCreateClippingProject(c.env.DB));
+});
+
+// Studio — the lighter, single-video editor for raw footage that isn't part
+// of a themed archive yet (see public/app.js showStudioView). One scratch
+// project per account, same idea as Clipping/Generative/Voiceover's.
+app.get("/api/studio/project", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json(await getOrCreateStudioProject(c.env.DB));
 });
 
 app.post("/api/generative/scenes", async (c) => {

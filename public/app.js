@@ -72,6 +72,7 @@ const api = {
     fetch("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json()),
   getProject: (id) => fetch(`/api/projects/${id}`).then((r) => r.json()),
   getClippingProject: () => fetch("/api/clipping/project").then((r) => r.json()),
+  getStudioProject: () => fetch("/api/studio/project").then((r) => r.json()),
   async transcribe(vid, wav) {
     const res = await fetch(`/api/videos/${vid}/transcribe`, { method: "POST", headers: { "content-type": "audio/wav" }, body: wav });
     const data = await res.json();
@@ -81,7 +82,12 @@ const api = {
 };
 
 // ── State ────────────────────────────────────────────────────────────
-const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, bridges: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false, libraryTag: null };
+const state = { project: null, videos: [], timeline: null, shorts: null, suggestions: null, bridges: null, selected: null, trimPausesAbove: null, showCuts: false, textOnly: false, libraryTag: null, studioMode: false };
+// A stand-in for the real toolbar buttons autoArrange/findSuggestions/
+// findShorts expect (they set .classList/.disabled on whatever's passed in)
+// — Studio auto-triggers all three the moment a video's ready, with no
+// button click to hand them a real element.
+const NOOP_BTN = { classList: { add() {}, remove() {} }, disabled: false };
 
 // A continuous run of KEPT words becomes one range from the first word's start
 // to the last word's end — this preserves every natural pause inside it. A
@@ -262,6 +268,16 @@ function renderProject() {
               <button class="btn ghost" id="save">${ic("save")} Save</button>
             </div>
 
+            ${state.studioMode ? `
+            <button class="btn ghost" id="startEssay" style="width:100%">${ic("sparkle")} Start as essay</button>
+            <div class="tools-h">Suggested cuts</div>
+            <div id="suggest" class="tool-panel"></div>
+            <div class="tools-h">Clip candidates</div>
+            <div id="timeline" class="tool-panel"></div>
+            <div id="bridges" class="tool-panel"></div>
+            <div class="tools-h">Video ideas</div>
+            <div id="shorts" class="tool-panel"></div>
+            ` : `
             <div class="tools-h">AI tools</div>
             <div class="tools-actions col">
               <button class="btn" id="arrange">${ic("sparkle")} Auto-arrange</button>
@@ -286,6 +302,7 @@ function renderProject() {
             <div id="bridges" class="tool-panel" data-panel="cut"></div>
             <div id="suggest" class="tool-panel" data-panel="suggest" hidden></div>
             <div id="shorts" class="tool-panel" data-panel="shorts" hidden></div>
+            `}
           </div>
         </aside>
       </div>
@@ -320,14 +337,17 @@ function renderProject() {
   selectVideo(state.selected);
   $("#playEdit").onclick = playEdit;
   $("#stopEdit").onclick = stopEdit;
-  $("#arrange").onclick = (e) => autoArrange(e.currentTarget);
-  $("#findShorts").onclick = (e) => findShorts(e.currentTarget);
-  $("#findBridges").onclick = (e) => findBridges(e.currentTarget);
-  $("#suggestEdits").onclick = (e) => findSuggestions(e.currentTarget);
-  $("#directBtn").onclick = (e) => runDirectedEdit(e.currentTarget);
-  $("#directInput").addEventListener("keydown", (e) => {
+  $("#arrange")?.addEventListener("click", (e) => autoArrange(e.currentTarget));
+  $("#findShorts")?.addEventListener("click", (e) => findShorts(e.currentTarget));
+  $("#findBridges")?.addEventListener("click", (e) => findBridges(e.currentTarget));
+  $("#suggestEdits")?.addEventListener("click", (e) => findSuggestions(e.currentTarget));
+  $("#directBtn")?.addEventListener("click", (e) => runDirectedEdit(e.currentTarget));
+  $("#directInput")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runDirectedEdit($("#directBtn")); }
   });
+  // "Start as essay" is a plain escape hatch, not a Studio-specific flow —
+  // reuse the same New Essay wizard the Essays list uses.
+  $("#startEssay")?.addEventListener("click", startNewEssay);
   $("#export").onclick = (e) => exportCut(e.currentTarget);
   $("#save").onclick = (e) => saveEdit(e.currentTarget);
   $("#importBtn").onclick = importFromUrl;
@@ -361,11 +381,15 @@ function renderProject() {
 
 // ── Tabbed results dock (Cut / Suggestions / Shorts) in the right rail ──
 function wireToolsTabs() {
-  $("#toolsTabs").querySelectorAll(".tool-tab").forEach((tab) => {
+  $("#toolsTabs")?.querySelectorAll(".tool-tab").forEach((tab) => {
     tab.onclick = () => switchToolsTab(tab.dataset.tab);
   });
 }
 function switchToolsTab(name) {
+  // Studio's sidebar has no tabs — its three sections (Suggested cuts / Clip
+  // candidates / Video ideas) are always visible side by side, so there's
+  // nothing to switch.
+  if (state.studioMode) return;
   $("#toolsTabs")?.querySelectorAll(".tool-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
   document.querySelectorAll(".tool-panel").forEach((p) => { p.hidden = p.dataset.panel !== name; });
 }
@@ -1497,7 +1521,9 @@ async function runDirectedEdit(btn) {
 function renderTimeline() {
   const el = $("#timeline"); if (!el) return;
   if (!hasTimeline()) {
-    el.innerHTML = `<p class="empty small">No arranged cut yet. Use Auto-arrange/Direct the edit above, or select text in the transcript and choose <b>Add to Cut</b> — segments land here and you can drag ⠿ to reorder them.</p>`;
+    el.innerHTML = state.studioMode
+      ? `<p class="empty small">Add a video and it's transcribed and arranged automatically — or select text in the transcript and choose <b>Add to Cut</b> to build one by hand.</p>`
+      : `<p class="empty small">No arranged cut yet. Use Auto-arrange/Direct the edit above, or select text in the transcript and choose <b>Add to Cut</b> — segments land here and you can drag ⠿ to reorder them.</p>`;
     return;
   }
   const t = state.timeline;
@@ -2217,6 +2243,13 @@ async function pollTranscription(item) {
       if (!state.selected) state.selected = item.id;
       renderProject();
       toast(`“${item.filename}” transcribed`, { type: "success" });
+      // Studio is the "lighter" framing — no manual button-clicking to
+      // populate its three sidebar sections, they fill in on their own.
+      if (state.studioMode) {
+        autoArrange(NOOP_BTN).catch(() => {});
+        findSuggestions(NOOP_BTN).catch(() => {});
+        findShorts(NOOP_BTN).catch(() => {});
+      }
       return;
     }
     if (data.status === "failed") throw new Error(data.error || "transcription failed");
@@ -3719,7 +3752,7 @@ const RAIL_ITEMS = [
   { view: "threads", label: "Threads", icon: "threads" },
   { view: "discover", label: "Discover", icon: "globe" },
   { view: "essays", label: "Essays", icon: "quill" },
-  { view: "studio", label: "Studio", icon: "clapper", desc: "A lighter, single-video rough-cut editor for raw footage that isn't part of a themed archive yet — for now, open a source below to edit it." },
+  { view: "studio", label: "Studio", icon: "clapper" },
   { view: "generative", label: "Generative", icon: "wand" },
   { view: "clipping", label: "Clipping", icon: "scissors" },
 ];
@@ -3978,6 +4011,39 @@ async function clipLoadReelVideo(v, short) {
     p.addEventListener("timeupdate", stop);
   }
 }
+// ── Studio — the lighter single-video editor for a raw take that isn't part
+// of a themed archive yet. Reuses the same project shell as a Sources
+// project almost entirely (renderProject(), same upload/transcribe pipeline,
+// same transcript editor) — see state.studioMode, which only swaps the
+// tools-aside markup and disables tab-switching so its three sections
+// (Suggested cuts / Clip candidates / Video ideas) sit side by side. Backed
+// by its own scratch project (kind='studio'), same pattern as Clipping's.
+async function showStudioView() {
+  location.hash = "#/studio";
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
+  let project;
+  try {
+    project = await api.getStudioProject();
+    if (project.error) throw new Error(project.error);
+  } catch {
+    main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`;
+    return;
+  }
+  const data = await api.getProject(project.id);
+  if (data.error) { main.innerHTML = `<div class="pad"><p class="empty">${esc(data.error)}</p></div>`; return; }
+  state.project = data.project;
+  state.videos = (data.videos || []).map((v) => ({ ...v }));
+  state.timeline = data.timeline;
+  state.shorts = data.shorts;
+  state.suggestions = data.suggestions;
+  state.bridges = null;
+  state.studioMode = true;
+  state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
+  setCrumbs([{ label: "Aldershot", go: showProjects }, { label: "Studio" }]);
+  setStats("A lighter editor for one raw take — kept separate from the Archive");
+  renderProject();
+}
+
 // "sources" calls showProjects() directly rather than via a hash — showProjects()
 // itself normalizes location.hash to "#/", so routing it through "#/sources"
 // would fire a second hashchange (and a second fetch) once that normalization lands.
@@ -3997,9 +4063,16 @@ $("#paletteTrigger").onclick = openCommandPalette;
 function setFocused(on) {
   $(".shell")?.classList.toggle("focused", !!on);
 }
+// Studio's lighter framing: rail out of the way, top bar (and its crumbs,
+// the way back) kept — distinct from Clipping's fully chrome-free mode.
+function setRailHidden(on) {
+  $(".shell")?.classList.toggle("rail-hidden", !!on);
+}
 function route() {
   const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "sources";
   setFocused(view === "clipping");
+  setRailHidden(view === "studio");
+  if (view !== "studio") state.studioMode = false;
   if (view === "archive" || view === "library") return showLibrary();
   const p = location.hash.match(/^#\/p\/([\w-]+)/);
   if (p) return openProject(p[1]);
@@ -4011,6 +4084,7 @@ function route() {
   if (view === "discover") return showDiscoverView();
   if (view === "generative") return showGenerativeView();
   if (view === "clipping") return showClippingView();
+  if (view === "studio") return showStudioView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();

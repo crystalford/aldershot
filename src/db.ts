@@ -5,7 +5,7 @@
  */
 import type { Env } from "./env";
 
-export type ProjectKind = "source" | "generative" | "clipping" | "voiceover";
+export type ProjectKind = "source" | "generative" | "clipping" | "voiceover" | "studio";
 
 export interface Project {
   id: string;
@@ -106,6 +106,17 @@ export async function getOrCreateVoiceoverProject(db: D1Database): Promise<Proje
   const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'voiceover' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Voiceover", "voiceover");
+}
+
+/** The single scratch project Studio's raw, not-yet-themed takes live in —
+ *  same idea as the other getOrCreate*Project functions. Deliberately
+ *  separate from Sources: a stray screen recording isn't part of a themed
+ *  archive the way a podcast-episode upload is (see the design brief).
+ *  Filtered out of the Sources grid for the same reason. */
+export async function getOrCreateStudioProject(db: D1Database): Promise<Project> {
+  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'studio' LIMIT 1`).first<Project>();
+  if (existing) return existing;
+  return createProject(db, "Studio", "studio");
 }
 
 /** Each project's card needs a real frame, not just a name — so this joins

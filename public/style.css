@@ -142,6 +142,10 @@ a { color: var(--accent); text-decoration: none; }
    (Clipping today; the same toggle is meant to be reused for Studio/
    Generative/Essays landing pages later) ───────────────────────────── */
 .shell.focused .rail, .shell.focused .bar { display: none; }
+/* Studio wants the rail out of the way but keeps the top bar (crumbs) as
+   its way back — a lighter framing, not a fully chrome-free one like
+   Clipping's. */
+.shell.rail-hidden .rail { display: none; }
 
 /* ── Clipping — focused upload → transcribe → shorts page ──────────── */
 .clip-view { flex: 1; overflow: auto; }
