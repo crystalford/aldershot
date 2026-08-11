@@ -242,7 +242,7 @@ function renderProject() {
             <span id="selCount"></span>
             <span class="sel-toolbar-div"></span>
             <button class="chip-btn" id="selAddCut" title="Add this selection to the Cut list, where you can drag it into any order">Add to Cut</button>
-            <button class="chip-btn" id="selSaveClip" title="Save this selection to the cross-project Clip Library">Save to Library</button>
+            <button class="chip-btn" id="selSaveClip" title="Save this selection to the cross-project Archive">Save to Archive</button>
             <button class="chip-btn" id="selReaction" title="Find a clip already in your library that would land as a reaction/cutaway right after this line">Reaction clip</button>
             <button class="chip-btn" id="selDelete">Delete</button>
             <button class="chip-btn" id="selClear">Clear</button>
@@ -1547,7 +1547,7 @@ function renderTimeline() {
       <span class="seg-time">${fmt(s.start)}–${fmt(s.end)}</span>
       <span class="seg-src">${esc(name)}</span>
       <span class="seg-reason">${esc(s.reason || "")}</span>
-      <button class="seg-save" title="Save to the cross-project Clip Library">${ic("save")}</button>
+      <button class="seg-save" title="Save to the cross-project Archive">${ic("save")}</button>
       <button class="seg-x" title="Remove">✕</button></div>`;
   };
   el.innerHTML = `<div class="tl">
@@ -2031,7 +2031,7 @@ function suggestionCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${parts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save" title="Save to the cross-project Clip Library">Save</button><button class="btn small accent sg-apply">Add to Cut</button><button class="btn small ghost icon-only sg-dismiss" title="Dismiss">✕</button></div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save" title="Save to the cross-project Archive">Save</button><button class="btn small accent sg-apply">Add to Cut</button><button class="btn small ghost icon-only sg-dismiss" title="Dismiss">✕</button></div>
   </div>`;
 }
 async function previewSuggestion(s) {
@@ -2370,7 +2370,7 @@ function hydrateSegLabels(root, segments) {
 // bodyHTML+actions (no new modal component needed).
 async function promptClipDetails(defaults = {}) {
   return UI.modal({
-    title: "Save to Library",
+    title: "Save to Archive",
     bodyHTML: `
       <label class="modal-label">Title</label>
       <input class="modal-input" id="__clipTitle" value="${esc(defaults.title || "")}" placeholder="e.g. Darkside Phil raging at chat" autocomplete="off" />
@@ -2406,7 +2406,7 @@ async function saveClipToLibrary(segments, defaults = {}) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
-    toast("Saved to Library", { type: "success" });
+    toast("Saved to Archive", { type: "success" });
     captureVisualTags(data.id, segments); // enrichment, not awaited — a saved clip doesn't wait on it
   } catch (err) { toast(err.message || "Couldn't save clip", { type: "error" }); }
 }
@@ -2559,7 +2559,7 @@ async function reloadLibraryGrid() {
 function renderLibraryGrid(clips) {
   const el = $("#libraryGrid"); if (!el) return;
   if (!clips.length) {
-    el.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No clips saved yet — select text in a project's transcript and choose <b>Save to Library</b>, save a Suggested Edit, or run Discover above.</div>
+    el.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No clips saved yet — select text in a project's transcript and choose <b>Save to Archive</b>, save a Suggested Edit, or run Discover above.</div>
       ${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}`;
     return;
   }
@@ -2599,7 +2599,7 @@ function clipCard(c, i) {
   </div>`;
 }
 async function deleteLibraryClip(id) {
-  if (!(await UI.confirm({ title: "Delete this clip?", message: "This removes it from the Library permanently — it doesn't affect the source video.", confirmText: "Delete", danger: true }))) return;
+  if (!(await UI.confirm({ title: "Delete this clip?", message: "This removes it from the Archive permanently — it doesn't affect the source video.", confirmText: "Delete", danger: true }))) return;
   try {
     const res = await fetch(`/api/clips/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
@@ -2739,7 +2739,7 @@ function discoverCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${segParts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small accent sg-save">Save to Library</button></div>
+    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small accent sg-save">Save to Archive</button></div>
   </div>`;
 }
 

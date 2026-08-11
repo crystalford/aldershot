@@ -6,7 +6,7 @@
 > is the one part that survived and became the actual product. **See the
 > root `README.md` for the current feature set**, and the published
 > design spec linked from it for the current visual direction (dark,
-> blue accent, Bricolage Grotesque + IBM Plex Sans — not the amber/serif
+> violet accent, Bricolage Grotesque + IBM Plex Sans — not the amber/serif
 > direction below).
 
 _How the thing looks, feels, and works. Web-first; native app later._

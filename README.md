@@ -57,17 +57,17 @@ this transcript.
 generated from the same Whisper timestamps), entirely in the browser via
 ffmpeg.wasm.
 
-**Clip Library.** A persistent, cross-project library of saved clips —
-save a selection from any project's transcript, tag it, search it later.
+**Archive.** A persistent, cross-project library of saved clips — save a
+selection from any project's transcript, tag it, search it later.
 **Discover** finds new candidates across every project's transcripts at
-once. **Compose** drafts a full video essay directly from the saved
-library via a plain-language instruction — the model only ever picks and
-orders real clip ids, never invents a timestamp. **Reaction clips**
-suggests an existing library clip that lands as a cutaway right after a
-line you select.
+once. **Compose** drafts a full video essay directly from the archive via
+a plain-language instruction — the model only ever picks and orders real
+clip ids, never invents a timestamp. **Reaction clips** suggests an
+existing archived clip that lands as a cutaway right after a line you
+select.
 
 **Visual tagging.** Keyframes get captioned and OCR'd (Moondream, Workers
-AI) whenever a clip is saved, so clips and the library search surface
+AI) whenever a clip is saved, so clips and the archive search surface
 what's *on screen*, not just what's said.
 
 **Enhance audio.** One-click denoise + EQ + leveling + loudness
@@ -131,7 +131,7 @@ Arrangement: `PUT /api/projects/:id/timeline` · `POST
 `POST /api/projects/:id/bridges` · `GET /api/projects/:id/history` +
 `POST /api/projects/:id/history/:timestamp/restore`.
 
-Clip Library: `POST /api/clips` · `GET /api/clips[/:id]` · `PATCH
+Archive: `POST /api/clips` · `GET /api/clips[/:id]` · `PATCH
 /api/clips/:id` · `DELETE /api/clips/:id` · `GET /api/clips/tags` ·
 `POST /api/clips/discover` · `POST /api/clips/compose` · `POST
 /api/projects/:id/reaction-clip` · `POST /api/clips/:id/visual-tags`.
