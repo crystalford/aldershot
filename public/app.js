@@ -3609,6 +3609,11 @@ function renderStub(item) {
 // handleFiles/pollTranscription/renderShorts) because those are wired to
 // the full editor — pollTranscription in particular calls renderProject()
 // on success, which would blow away this page's DOM.
+// The reel: which short is "on" in the big player, and which video is loaded
+// there when nothing's been found yet (raw-footage-only mode). Module-level
+// because it's UI focus state, not data — reset fresh on every page visit.
+let clipActiveShortIndex = 0;
+let clipReelVideoId = null;
 async function showClippingView() {
   location.hash = "#/clipping"; setFocused(true);
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
@@ -3626,6 +3631,7 @@ async function showClippingView() {
   state.videos = (data.videos || []).map((v) => ({ ...v }));
   state.shorts = data.shorts;
   state.selected = null;
+  clipActiveShortIndex = 0; clipReelVideoId = null;
   renderClippingView();
 }
 function renderClippingView() {
@@ -3642,8 +3648,11 @@ function renderClippingView() {
         <small>Each one is transcribed and mined for shorts automatically.</small>
       </div>
       <div class="clip-list" id="clipList"></div>
-      <video id="clipPlayer" class="clip-player" controls playsinline></video>
-      <div id="clipShorts"></div>
+      <div class="clip-reel" id="clipReel" hidden>
+        <video id="clipPlayer" class="clip-player" controls playsinline></video>
+        <div class="reel-info" id="clipReelInfo"></div>
+        <div class="reel-strip" id="clipReelStrip"></div>
+      </div>
     </div>
   </div>`;
   $("#clipBack").onclick = showProjects;
@@ -3658,17 +3667,24 @@ function wireClipDropzone() {
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
   drop.addEventListener("drop", (e) => clipHandleFiles([...e.dataTransfer.files]));
 }
+// Only videos still in flight (uploading/transcribing/failed) get a row here —
+// the moment one's ready it graduates into the reel below instead of sitting
+// as a name-and-pill row next to its own playable footage. See Reel 00/02 of
+// the design brief: a list row is "the system" (renders the database); the
+// reel is "the app" (renders the content).
 function clipRenderList() {
+  $("#clipDrop")?.classList.toggle("compact", state.videos.length > 0);
   const list = $("#clipList"); if (!list) return;
-  list.innerHTML = state.videos.map((v, i) => {
+  const inFlight = state.videos.filter((v) => v.status !== "ready");
+  if (!inFlight.length) { list.innerHTML = ""; return; }
+  list.innerHTML = inFlight.map((v) => {
+    const i = state.videos.indexOf(v);
     let pill = "", extra = "";
-    if (v.status === "ready") pill = `<span class="pill ready">ready</span>`;
-    else if (v.status === "failed") pill = `<span class="pill bad">failed</span>`;
+    if (v.status === "failed") pill = `<span class="pill bad">failed</span>`;
     else pill = `<span class="pill work">${esc(v.stage || v.status)}</span>`;
     if (v.status === "uploading") extra = `<div class="progress"><i style="width:${Math.round((v.pct || 0) * 100)}%"></i></div>`;
     else if (v.status === "transcribing") extra = `<div class="progress indeterminate"><i></i></div>`;
     else if (v.status === "failed") extra = `<div class="vmeta"><span style="color:var(--bad)">${esc(v.error || "failed")}</span></div><button class="btn small ghost clip-retry" data-i="${i}">Retry</button>`;
-    else if (v.status === "ready") extra = `<div class="vmeta">${v.duration ? fmt(v.duration) + " · " : ""}${(v.words || []).length} words</div>`;
     const thumb = v.r2_key
       ? `<div class="vthumb"><img data-thumb-src="${esc(mediaUrl(v.r2_key))}" data-thumb-t="${Math.min(2, (v.duration || 4) / 4)}" alt="" /></div>`
       : `<div class="vthumb placeholder">${ic("video")}</div>`;
@@ -3724,6 +3740,7 @@ async function clipPollTranscription(item) {
     if (data.status === "ready") {
       item.words = data.words; item.status = "ready"; item.stage = "";
       clipRenderList();
+      clipReelVideoId = item.id; clipRenderShorts(); // show the raw footage immediately, before AI runs
       toast(`"${item.filename}" transcribed`, { type: "success" });
       await clipFindShorts();
       return;
@@ -3739,36 +3756,73 @@ async function clipFindShorts() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
     state.shorts = data.shorts;
+    clipActiveShortIndex = 0;
     clipRenderShorts();
   } catch (err) { toast(err.message || "Find shorts failed", { type: "error", title: "Shorts" }); }
 }
+// The reel: your footage IS the interface, not a report about it. Before any
+// short is found, the player just holds whatever you most recently finished
+// transcribing, playable and scrubbable — proof you're looking at real
+// content, not a status row. Once shorts exist, they're marks you step
+// through one at a time (each one loads + plays its own moment directly in
+// the same big player), never a grid of cards you scan and hover-preview.
 function clipRenderShorts() {
-  const el = $("#clipShorts"); if (!el) return;
+  const reel = $("#clipReel"); if (!reel) return;
   const shorts = state.shorts || [];
-  if (!shorts.length) { el.innerHTML = ""; return; }
-  el.innerHTML = `<div class="shorts">
-    <div class="tl-head"><h2>Shorts</h2><span class="empty small">${shorts.length}</span></div>
-    <div class="short-grid">${shorts.map(shortCard).join("")}</div></div>`;
-  shorts.forEach((s, i) => {
-    const card = el.querySelector(`.short[data-i="${i}"]`);
-    card.querySelector(".short-cover").onclick = () => clipPreviewShort(s);
-    card.querySelector(".s-play").onclick = () => clipPreviewShort(s);
-    card.querySelector(".s-prod").onclick = (e) => produceShort(s, e.currentTarget);
-    card.querySelector(".short-dismiss").onclick = (e) => {
-      e.stopPropagation();
-      state.shorts.splice(state.shorts.indexOf(s), 1);
-      clipRenderShorts();
-    };
+  const ready = state.videos.filter((v) => v.status === "ready" && v.r2_key);
+  if (!shorts.length && !ready.length) { reel.hidden = true; return; }
+  reel.hidden = false;
+  const info = $("#clipReelInfo"), strip = $("#clipReelStrip");
+
+  if (!shorts.length) {
+    const v = ready.find((x) => x.id === clipReelVideoId) || ready[ready.length - 1];
+    clipLoadReelVideo(v, null);
+    info.innerHTML = `<div class="reel-hint">Mining "${esc(filenameOf(v.filename))}" for shorts…</div>`;
+    strip.innerHTML = "";
+    return;
+  }
+
+  if (clipActiveShortIndex >= shorts.length) clipActiveShortIndex = 0;
+  const active = shorts[clipActiveShortIndex];
+  const v = state.videos.find((x) => x.id === active.videoId);
+  clipLoadReelVideo(v, active);
+  info.innerHTML = `
+    <div class="reel-title">${esc(active.title)}</div>
+    <div class="reel-hook">${esc(active.hook || "")}</div>
+    <div class="reel-actions">
+      <button class="btn small accent" id="reelProduce">${ic("download")} Produce</button>
+      <button class="btn small ghost" id="reelDismiss">Not this one</button>
+    </div>`;
+  $("#reelProduce").onclick = (e) => produceShort(active, e.currentTarget);
+  $("#reelDismiss").onclick = () => {
+    state.shorts.splice(clipActiveShortIndex, 1);
+    if (clipActiveShortIndex >= state.shorts.length) clipActiveShortIndex = Math.max(0, state.shorts.length - 1);
+    clipRenderShorts();
+  };
+
+  strip.innerHTML = shorts.map((s, i) => {
+    const sv = state.videos.find((x) => x.id === s.videoId);
+    const thumbUrl = sv && sv.r2_key ? mediaUrl(sv.r2_key) : "";
+    return `<button class="reel-mark${i === clipActiveShortIndex ? " on" : ""}" data-i="${i}" title="${esc(s.title)}">
+      ${thumbUrl ? `<img data-thumb-src="${esc(thumbUrl)}" data-thumb-t="${Math.max(0.1, s.start).toFixed(1)}" alt="" />` : ""}
+      <span class="reel-mark-dur">${Math.round(s.end - s.start)}s</span>
+    </button>`;
+  }).join("");
+  strip.querySelectorAll(".reel-mark").forEach((btn) => {
+    btn.onclick = () => { clipActiveShortIndex = +btn.dataset.i; clipRenderShorts(); };
   });
-  Thumb.hydrate(el);
+  Thumb.hydrate(strip);
 }
-async function clipPreviewShort(s) {
-  const v = state.videos.find((x) => x.id === s.videoId); if (!v) return;
+async function clipLoadReelVideo(v, short) {
+  if (!v) return;
+  clipReelVideoId = v.id;
   const p = $("#clipPlayer"); if (!p) return;
   await ensureSrc(p, { r2_key: v.r2_key });
-  p.currentTime = s.start; p.play();
-  const stop = () => { if (p.currentTime >= s.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
-  p.addEventListener("timeupdate", stop);
+  if (short) {
+    p.currentTime = short.start; p.play();
+    const stop = () => { if (p.currentTime >= short.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
+    p.addEventListener("timeupdate", stop);
+  }
 }
 // "sources" calls showProjects() directly rather than via a hash — showProjects()
 // itself normalizes location.hash to "#/", so routing it through "#/sources"

@@ -169,6 +169,29 @@ a { color: var(--accent); text-decoration: none; }
 .clip-player { width: 100%; max-height: 60vh; border-radius: var(--radius); background: #000; }
 .clip-player:not([src]) { display: none; }
 
+/* ── the reel — footage as the interface, not a report about it. One big
+   player, one moment at a time; found shorts are marks you step through,
+   never a scannable grid of cards. ────────────────────────────────────── */
+.clip-reel { display: flex; flex-direction: column; gap: 14px; }
+.reel-info { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.reel-title { font: italic 500 22px var(--font-serif); color: var(--bone); }
+.reel-hook { font-size: 13.5px; color: var(--dim); margin-top: 4px; max-width: 56ch; }
+.reel-hint { font-size: 13.5px; color: var(--faint); }
+.reel-actions { display: flex; gap: 8px; flex: none; }
+.reel-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.reel-mark {
+  position: relative; flex: none; width: 92px; height: 58px; border-radius: var(--radius);
+  overflow: hidden; background: var(--panel); border: 1.5px solid transparent; cursor: pointer; padding: 0;
+}
+.reel-mark img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .75; transition: opacity .15s; }
+.reel-mark:hover img { opacity: .9; }
+.reel-mark.on { border-color: var(--accent); }
+.reel-mark.on img { opacity: 1; }
+.reel-mark-dur {
+  position: absolute; right: 4px; bottom: 3px; font-size: 9.5px; font-weight: 600; color: #fff;
+  background: rgba(0,0,0,.55); border-radius: 2px; padding: 1px 4px;
+}
+
 /* ── stub views — destinations not yet built ───────────────── */
 .stub-view { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; }
 .stub-card { max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -331,12 +354,22 @@ main { flex: 1; min-height: 0; overflow: auto; }
 
 .dropzone {
   border: 1.5px dashed var(--line2); border-radius: var(--radius); padding: 22px; text-align: center;
-  display: flex; flex-direction: column; gap: 5px; color: var(--dim); transition: .16s var(--ease);
+  display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--dim); transition: .16s var(--ease);
 }
+.dropzone svg { width: 26px; height: 26px; flex: none; }
 .dropzone.over { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.01); }
 .dropzone strong { color: var(--bone); font-weight: 600; }
 .dropzone small { font-size: 12px; color: var(--faint); }
 .dropzone .link { color: var(--accent); cursor: pointer; }
+/* Once there's real content on the page, the empty-state dropzone recedes to
+   a slim add-more strip instead of continuing to dominate the page above it —
+   an empty invitation shouldn't outweigh the footage once footage exists. */
+.dropzone.compact {
+  flex-direction: row; justify-content: center; padding: 10px 16px; gap: 8px;
+}
+.dropzone.compact svg { width: 15px; height: 15px; }
+.dropzone.compact strong { font-size: 13px; }
+.dropzone.compact small { display: none; }
 
 .import { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
 .import-input { width: 100%; box-sizing: border-box; background: var(--bg2); border: 1px solid var(--line2); color: var(--bone); border-radius: 3px; padding: 8px 11px; font: inherit; font-size: 13px; }
