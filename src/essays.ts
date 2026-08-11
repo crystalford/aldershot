@@ -45,6 +45,11 @@ export interface EssayBeat {
   kind: BeatKind;
   clipId: string | null;
   discoverResultId: string | null;
+  /** The recorded take backing a "vo" beat — a real videos.id, transcribed
+   *  through the same pipeline as any upload (see recordAndAttachVoiceover
+   *  in app.js). Null until recorded; Assemble/Export only include a vo
+   *  beat once this is set. */
+  voVideoId: string | null;
   text: string;
   citations: string[];
   createdAt: number;
@@ -94,11 +99,16 @@ export async function ensureEssaySchema(db: D1Database): Promise<void> {
     ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_essay_beats_essay ON essay_beats (essay_id, ord)`),
   ]);
-  // discover_result_id is new — a table created before "research" beats
-  // existed needs it added on, same ALTER-if-absent pattern as db.ts's `kind`.
+  // discover_result_id / vo_video_id are new — a table created before
+  // "research" beats or voiceover recording existed needs them added on,
+  // same ALTER-if-absent pattern as db.ts's `kind`.
   const cols = await db.prepare(`PRAGMA table_info(essay_beats)`).all<{ name: string }>();
-  if (!(cols.results ?? []).some((c) => c.name === "discover_result_id")) {
+  const colNames = new Set((cols.results ?? []).map((c) => c.name));
+  if (!colNames.has("discover_result_id")) {
     await db.prepare(`ALTER TABLE essay_beats ADD COLUMN discover_result_id TEXT`).run();
+  }
+  if (!colNames.has("vo_video_id")) {
+    await db.prepare(`ALTER TABLE essay_beats ADD COLUMN vo_video_id TEXT`).run();
   }
 }
 
@@ -138,11 +148,13 @@ interface EssayRow {
 }
 interface BeatRow {
   id: string; essay_id: string; act: string; ord: number; kind: string;
-  clip_id: string | null; discover_result_id: string | null; text: string; citations: string; created_at: number;
+  clip_id: string | null; discover_result_id: string | null; vo_video_id: string | null;
+  text: string; citations: string; created_at: number;
 }
 const toBeat = (r: BeatRow): EssayBeat => ({
   id: r.id, essayId: r.essay_id, act: r.act as BeatAct, ord: r.ord, kind: r.kind as BeatKind,
-  clipId: r.clip_id, discoverResultId: r.discover_result_id, text: r.text, citations: JSON.parse(r.citations || "[]"), createdAt: r.created_at,
+  clipId: r.clip_id, discoverResultId: r.discover_result_id, voVideoId: r.vo_video_id,
+  text: r.text, citations: JSON.parse(r.citations || "[]"), createdAt: r.created_at,
 });
 
 async function attachThreadsAndBeats(db: D1Database, essays: EssayRow[]): Promise<EssayDetail[]> {
@@ -213,18 +225,18 @@ export async function deleteEssay(db: D1Database, id: string): Promise<void> {
 export async function addBeat(
   db: D1Database,
   essayId: string,
-  input: { act: BeatAct; kind: BeatKind; clipId?: string | null; discoverResultId?: string | null; text: string; citations?: string[] },
+  input: { act: BeatAct; kind: BeatKind; clipId?: string | null; discoverResultId?: string | null; voVideoId?: string | null; text: string; citations?: string[] },
 ): Promise<EssayBeat> {
   const { results } = await db.prepare(`SELECT COALESCE(MAX(ord), -1) as maxOrd FROM essay_beats WHERE essay_id = ?`).bind(essayId).all<{ maxOrd: number }>();
   const ord = (results?.[0]?.maxOrd ?? -1) + 1;
   const beat: EssayBeat = {
     id: crypto.randomUUID(), essayId, act: input.act, ord, kind: input.kind,
-    clipId: input.clipId ?? null, discoverResultId: input.discoverResultId ?? null,
+    clipId: input.clipId ?? null, discoverResultId: input.discoverResultId ?? null, voVideoId: input.voVideoId ?? null,
     text: input.text, citations: input.citations ?? [], createdAt: Date.now(),
   };
   await db
-    .prepare(`INSERT INTO essay_beats (id, essay_id, act, ord, kind, clip_id, discover_result_id, text, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(beat.id, beat.essayId, beat.act, beat.ord, beat.kind, beat.clipId, beat.discoverResultId, beat.text, JSON.stringify(beat.citations), beat.createdAt)
+    .prepare(`INSERT INTO essay_beats (id, essay_id, act, ord, kind, clip_id, discover_result_id, vo_video_id, text, citations, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(beat.id, beat.essayId, beat.act, beat.ord, beat.kind, beat.clipId, beat.discoverResultId, beat.voVideoId, beat.text, JSON.stringify(beat.citations), beat.createdAt)
     .run();
   await db.prepare(`UPDATE essays SET updated_at = ? WHERE id = ?`).bind(Date.now(), essayId).run();
   return beat;
@@ -234,7 +246,7 @@ export async function updateBeat(
   db: D1Database,
   essayId: string,
   beatId: string,
-  patch: { text?: string; citations?: string[] },
+  patch: { text?: string; citations?: string[]; voVideoId?: string | null },
 ): Promise<EssayBeat | null> {
   const existing = await db.prepare(`SELECT id FROM essay_beats WHERE id = ? AND essay_id = ?`).bind(beatId, essayId).first<{ id: string }>();
   if (!existing) return null;
@@ -242,6 +254,7 @@ export async function updateBeat(
   const params: unknown[] = [];
   if (patch.text !== undefined) { fields.push("text = ?"); params.push(patch.text); }
   if (patch.citations !== undefined) { fields.push("citations = ?"); params.push(JSON.stringify(patch.citations)); }
+  if (patch.voVideoId !== undefined) { fields.push("vo_video_id = ?"); params.push(patch.voVideoId); }
   if (fields.length) await db.prepare(`UPDATE essay_beats SET ${fields.join(", ")} WHERE id = ?`).bind(...params, beatId).run();
   const row = await db.prepare(`SELECT * FROM essay_beats WHERE id = ?`).bind(beatId).first<BeatRow>();
   return row ? toBeat(row) : null;

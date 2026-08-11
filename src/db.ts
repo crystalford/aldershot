@@ -5,7 +5,7 @@
  */
 import type { Env } from "./env";
 
-export type ProjectKind = "source" | "generative" | "clipping";
+export type ProjectKind = "source" | "generative" | "clipping" | "voiceover";
 
 export interface Project {
   id: string;
@@ -94,6 +94,18 @@ export async function getOrCreateClippingProject(db: D1Database): Promise<Projec
   const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'clipping' LIMIT 1`).first<Project>();
   if (existing) return existing;
   return createProject(db, "Clipping", "clipping");
+}
+
+/** The single scratch project that owns every recorded essay voiceover take
+ *  — same idea as getOrCreateGenerativeProject/getOrCreateClippingProject.
+ *  A vo beat's recording needs a real videos row (upload -> transcribe,
+ *  same pipeline as any clip) to reuse, and Essays aren't scoped to any one
+ *  project the way Sources are. Filtered out of the Sources grid (see
+ *  listProjects) for the same reason the other scratch projects are. */
+export async function getOrCreateVoiceoverProject(db: D1Database): Promise<Project> {
+  const existing = await db.prepare(`SELECT id, name, kind, created_at FROM projects WHERE kind = 'voiceover' LIMIT 1`).first<Project>();
+  if (existing) return existing;
+  return createProject(db, "Voiceover", "voiceover");
 }
 
 /** Each project's card needs a real frame, not just a name — so this joins

@@ -1700,7 +1700,7 @@ async function recordAndInsertBridge(bridge, btn) {
   const prevText = btn.textContent;
   btn.disabled = true; btn.textContent = "Uploading…";
   try {
-    const item = await uploadAndTranscribeBridge(blob, (msg) => { btn.textContent = msg; });
+    const item = await uploadAndTranscribeTake(blob, state.project.id, (msg) => { btn.textContent = msg; });
     if (!item.words || !item.words.length) throw new Error("That recording came back empty — try again.");
     if (!state.timeline) state.timeline = { coldOpen: [], body: [] };
     state.timeline.coldOpen = state.timeline.coldOpen || [];
@@ -1721,6 +1721,49 @@ async function recordAndInsertBridge(bridge, btn) {
     toast(err.message || "Couldn't record that bridge", { type: "error" });
     btn.disabled = false; btn.textContent = prevText;
   }
+}
+
+// Records a take for one essay "vo" beat's script line and attaches it —
+// same record/upload/transcribe path as recordAndInsertBridge, just landing
+// on essay_beats.vo_video_id instead of a project timeline segment, since a
+// vo beat has no timeline of its own until Assemble.
+async function recordAndAttachVoiceover(beat, btn) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    toast("Recording isn't supported in this browser.", { type: "error" });
+    return;
+  }
+  const blob = await recordVoiceover(beat);
+  if (!blob) return; // cancelled
+  const prevText = btn.textContent;
+  btn.disabled = true; btn.textContent = "Uploading…";
+  try {
+    const proj = await fetch("/api/essays/voiceover-project").then((r) => r.json());
+    if (proj.error) throw new Error(proj.error);
+    const item = await uploadAndTranscribeTake(blob, proj.id, (msg) => { btn.textContent = msg; });
+    if (!item.words || !item.words.length) throw new Error("That recording came back empty — try again.");
+    const res = await fetch(`/api/essays/${essayState.essay.id}/beats/${beat.id}`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ voVideoId: item.id }),
+    });
+    const updated = await res.json();
+    if (!res.ok) throw new Error(updated.error || res.statusText);
+    await reloadEssay(); renderEssayShell();
+    toast("Voiceover recorded", { type: "success" });
+  } catch (err) {
+    toast(err.message || "Couldn't record that voiceover", { type: "error" });
+    btn.disabled = false; btn.textContent = prevText;
+  }
+}
+function recordVoiceover(beat) {
+  return UI.modal({
+    title: "Record your voiceover",
+    bodyHTML: `
+      <p class="modal-text" style="font-size:15px;line-height:1.6;">${esc(beat.text)}</p>
+      <video id="__recPreview" autoplay muted playsinline style="width:100%;max-height:220px;background:#000;border-radius:9px;margin:10px 0;object-fit:cover;"></video>
+      <div id="__recStatus" style="color:var(--dim);font-size:12.5px;">Choose camera + mic or voice only, then record.</div>
+    `,
+    dismissValue: null,
+    onOpen: (card, done) => wireRecorder(card, done),
+  });
 }
 
 // Picks a MediaRecorder mimeType the browser actually supports, falling back
@@ -1881,20 +1924,24 @@ function wireEnhance(card, done, v) {
 
 // Uploads a recorded Blob through the exact same pipeline any dropped-in
 // video file uses (presign → direct-to-R2 PUT → confirm → server-side
-// transcribe), so a recorded bridge becomes a completely normal project
-// video — visible in the sidebar, editable like anything else.
-async function uploadAndTranscribeBridge(blob, onProgress) {
-  const file = new File([blob], `bridge-${Date.now()}.webm`, { type: blob.type || "video/webm" });
+// transcribe), so a recorded take becomes a completely normal video —
+// visible in the sidebar, editable like anything else. Takes a projectId
+// explicitly (not state.project.id) so a VO beat's recording, which has no
+// open project at all, can reuse this exact path — see
+// recordAndAttachVoiceover, which uploads into the Voiceover scratch
+// project the same way Bridges uploads into whichever project is open.
+async function uploadAndTranscribeTake(blob, projectId, onProgress) {
+  const file = new File([blob], `take-${Date.now()}.webm`, { type: blob.type || "video/webm" });
   onProgress?.("Reading…");
   const duration = await readDuration(file);
   onProgress?.("Uploading…");
-  const pres = await fetch(`/api/projects/${state.project.id}/videos/presign`, {
+  const pres = await fetch(`/api/projects/${projectId}/videos/presign`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ filename: file.name, contentType: file.type || "video/webm" }),
   }).then((r) => r.json());
   if (pres.error) throw new Error(pres.error);
   await putToR2(pres.uploadUrl, file, () => {});
-  const video = await fetch(`/api/projects/${state.project.id}/videos/confirm`, {
+  const video = await fetch(`/api/projects/${projectId}/videos/confirm`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ videoId: pres.videoId, key: pres.key, filename: file.name, duration }),
   }).then((r) => r.json());
@@ -3199,12 +3246,24 @@ function renderActSection(a, beats) {
   </div>`;
 }
 function renderBeatRow(b) {
-  return `<div class="beat" data-id="${b.id}" style="border-left-color:${b.kind === "clip" ? "var(--good)" : "var(--warn)"}">
+  const recorded = b.kind === "vo" && b.voVideoId;
+  const borderColor = b.kind === "clip" ? "var(--good)" : b.kind === "research" ? "var(--info-teal)" : recorded ? "var(--good)" : "var(--warn)";
+  const pill = b.kind === "clip" ? `<span class="pill matched">Matched</span>`
+    : b.kind === "research" ? `<span class="pill info">Research</span>`
+    : recorded ? `<span class="pill matched">Recorded</span>`
+    : `<span class="pill vo">Needs voiceover</span>`;
+  const extra = b.kind === "vo"
+    ? `<div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-record" data-id="${b.id}">${ic("video")} ${recorded ? "Re-record" : "Record"}</button></div>`
+    : b.kind === "research" && b.citations?.[0]
+      ? `<a class="discover-url" href="${esc(b.citations[0])}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">${esc(b.citations[0])}</a>`
+      : "";
+  return `<div class="beat" data-id="${b.id}" style="border-left-color:${borderColor}">
     <div class="beat-top">
-      <span class="pill ${b.kind === "clip" ? "matched" : "vo"}">${b.kind === "clip" ? "Matched" : "Needs voiceover"}</span>
+      ${pill}
       <button class="beat-remove" title="Remove">✕</button>
     </div>
     <div class="beat-text">${esc(b.text)}</div>
+    ${extra}
   </div>`;
 }
 function wireActSections() {
@@ -3213,6 +3272,10 @@ function wireActSections() {
       await fetch(`/api/essays/${essayState.essay.id}/beats/${row.dataset.id}`, { method: "DELETE" });
       await reloadEssay(); renderEssayShell();
     };
+    row.querySelector(".beat-record")?.addEventListener("click", (e) => {
+      const beat = essayState.essay.beats.find((b) => b.id === row.dataset.id);
+      if (beat) recordAndAttachVoiceover(beat, e.currentTarget);
+    });
   });
 }
 // Naive positional bucketing — no AI call needed: N lines split evenly
@@ -3236,43 +3299,58 @@ async function importScript(text) {
   } catch { toast("Import failed partway through", { type: "error" }); }
 }
 
-// ── Assemble mode — flat drag-reorder of clip-grounded beats only; vo
-// beats have no source footage yet (recording is a fast-follow) so they
-// can't join a real render timeline ───────────────────────────────────
+// ── Assemble mode — flat drag-reorder of every beat with real media: clip
+// beats (always) and vo beats once recorded (see recordAndAttachVoiceover).
+// research beats ground a claim in the script, not a moment in the cut, so
+// they never join the render timeline. ─────────────────────────────────
+const isRenderable = (b) => b.kind === "clip" || (b.kind === "vo" && b.voVideoId);
 function renderAssembleMode(body) {
   const e = essayState.essay;
-  const clipBeats = e.beats.filter((b) => b.kind === "clip");
-  const voCount = e.beats.length - clipBeats.length;
+  const renderable = e.beats.filter(isRenderable);
+  const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
   body.innerHTML = `<div class="pad" style="max-width:760px;">
     <div class="row-between">
-      <div class="empty small" style="max-width:480px;">Drag ⠿ to reorder — preview and export follow this order.${voCount ? ` ${voCount} voiceover beat(s) aren't renderable yet and are skipped here.` : ""}</div>
-      <button class="btn ghost small" id="assemblePreview" ${clipBeats.length ? "" : "disabled"}>${ic("play")} Preview</button>
+      <div class="empty small" style="max-width:480px;">Drag ⠿ to reorder — preview and export follow this order.${unrecordedVo ? ` ${unrecordedVo} voiceover beat(s) still need recording — record them in Script first.` : ""}</div>
+      <button class="btn ghost small" id="assemblePreview" ${renderable.length ? "" : "disabled"}>${ic("play")} Preview</button>
     </div>
     <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
     <div class="tl" id="assembleList">
-      ${clipBeats.length
-        ? clipBeats.map((b, i) => `<div class="seg" draggable="true" data-i="${i}" data-id="${b.id}">
+      ${renderable.length
+        ? renderable.map((b, i) => `<div class="seg" draggable="true" data-i="${i}" data-id="${b.id}">
             <span class="seg-drag" title="Drag to reorder">⠿</span>
-            <span class="seg-time">${ACT_LABEL[b.act]}</span>
+            <span class="seg-time">${ACT_LABEL[b.act]}${b.kind === "vo" ? " · VO" : ""}</span>
             <span class="seg-reason">${esc(b.text)}</span>
             <button class="seg-x" title="Remove">✕</button>
           </div>`).join("")
-        : `<p class="empty small">Add clips from the sidebar first.</p>`}
+        : `<p class="empty small">Add clips from the sidebar, or record a voiceover in Script, first.</p>`}
     </div>
   </div>`;
   $("#libPreviewPlayer").addEventListener("play", function onPlay() { this.style.display = "block"; });
   $("#assemblePreview")?.addEventListener("click", async () => {
-    const segs = await resolveClipBeatsToSegments(clipBeats);
+    const segs = await resolveBeatsToSegments(renderable);
     if (!segs.length) { toast("Nothing to preview yet."); return; }
     previewClipSegments(segs);
   });
-  wireAssembleDrag(clipBeats);
+  wireAssembleDrag(renderable);
 }
-async function resolveClipBeatsToSegments(clipBeats) {
-  const clips = await Promise.all(clipBeats.map((b) => fetch(`/api/clips/${b.clipId}`).then((r) => r.json())));
-  return clips.flatMap((c) => (c.segments || []).map((s) => ({ videoId: s.videoId, start: s.start, end: s.end })));
+async function resolveBeatsToSegments(beats) {
+  const lists = await Promise.all(beats.map(async (b) => {
+    if (b.kind === "clip") {
+      const c = await fetch(`/api/clips/${b.clipId}`).then((r) => r.json());
+      return (c.segments || []).map((s) => ({ videoId: s.videoId, start: s.start, end: s.end }));
+    }
+    if (b.kind === "vo" && b.voVideoId) {
+      const v = await resolveVideo(b.voVideoId);
+      // Kept range only (first-to-last word), same convention as a recorded
+      // bridge — trims whatever silence Whisper didn't hear as speech off
+      // either end, rather than the whole raw take.
+      if (v?.words?.length) return [{ videoId: b.voVideoId, start: v.words[0].start, end: v.words[v.words.length - 1].end }];
+    }
+    return [];
+  }));
+  return lists.flat();
 }
-function wireAssembleDrag(clipBeats) {
+function wireAssembleDrag(renderable) {
   let dragI = null;
   const list = $("#assembleList");
   list.querySelectorAll(".seg").forEach((row) => {
@@ -3288,13 +3366,14 @@ function wireAssembleDrag(clipBeats) {
       e.preventDefault(); row.classList.remove("drag-over");
       const to = +row.dataset.i;
       if (dragI === null || to === dragI) return;
-      // Include every beat (not just clip-kind) so ord stays one consistent
-      // sequence — reorderBeats only touches ids present in `order`, and
-      // leaving vo beats out would strand them with stale ord values.
-      const ids = clipBeats.map((b) => b.id);
+      // Include every beat (not just renderable ones) so ord stays one
+      // consistent sequence — reorderBeats only touches ids present in
+      // `order`, and leaving other beats out would strand them with stale
+      // ord values.
+      const ids = renderable.map((b) => b.id);
       const [moved] = ids.splice(dragI, 1);
       ids.splice(to, 0, moved);
-      const rest = essayState.essay.beats.filter((b) => b.kind !== "clip").map((b) => b.id);
+      const rest = essayState.essay.beats.filter((b) => !isRenderable(b)).map((b) => b.id);
       await fetch(`/api/essays/${essayState.essay.id}/beats/reorder`, {
         method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ order: [...ids, ...rest] }),
       });
@@ -3306,22 +3385,22 @@ function wireAssembleDrag(clipBeats) {
 // ── Export mode ──────────────────────────────────────────────────────────
 function renderExportMode(body) {
   const e = essayState.essay;
-  const clipBeats = e.beats.filter((b) => b.kind === "clip");
-  const voCount = e.beats.length - clipBeats.length;
+  const renderable = e.beats.filter(isRenderable);
+  const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
   body.innerHTML = `<div class="pad" style="max-width:640px;">
-    <div class="empty small">${clipBeats.length} clip beat(s) assembled${voCount ? ` · ${voCount} voiceover beat(s) not yet renderable` : ""}.</div>
+    <div class="empty small">${renderable.length} beat(s) assembled${unrecordedVo ? ` · ${unrecordedVo} voiceover beat(s) still need recording` : ""}.</div>
     <div class="s-actions" style="margin-top:14px;">
-      <button class="btn primary" id="renderExport" ${clipBeats.length ? "" : "disabled"}>${ic("download")} Render 1080p MP4</button>
+      <button class="btn primary" id="renderExport" ${renderable.length ? "" : "disabled"}>${ic("download")} Render 1080p MP4</button>
       <button class="btn ghost" id="exportScript">Export script (.txt)</button>
     </div>
   </div>`;
-  $("#renderExport").onclick = (ev) => exportEssayCut(clipBeats, ev.currentTarget);
+  $("#renderExport").onclick = (ev) => exportEssayCut(renderable, ev.currentTarget);
   $("#exportScript").onclick = () => exportEssayScript(e);
 }
-async function exportEssayCut(clipBeats, btn) {
+async function exportEssayCut(renderable, btn) {
   const prev = btn.innerHTML; btn.disabled = true;
   try {
-    const segs = await resolveClipBeatsToSegments(clipBeats);
+    const segs = await resolveBeatsToSegments(renderable);
     const resolved = await Promise.all(segs.map(async (s) => {
       const v = await resolveVideo(s.videoId);
       return v && v.r2_key ? { videoId: s.videoId, r2_key: v.r2_key, start: s.start, end: s.end } : null;

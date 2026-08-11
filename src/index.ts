@@ -25,6 +25,7 @@ import {
   setVideoR2Key,
   getOrCreateGenerativeProject,
   getOrCreateClippingProject,
+  getOrCreateVoiceoverProject,
 } from "./db";
 import {
   ensureClipSchema,
@@ -966,6 +967,15 @@ app.get("/api/essays", async (c) => {
   return c.json({ essays: await listEssays(c.env.DB) });
 });
 
+// Scratch project every recorded voiceover take uploads into — see
+// getOrCreateVoiceoverProject in db.ts for why Essays needs one of these
+// (mirrors /api/generative/project and /api/clipping/project). Registered
+// before /api/essays/:id below so that :id wildcard doesn't shadow it.
+app.get("/api/essays/voiceover-project", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json(await getOrCreateVoiceoverProject(c.env.DB));
+});
+
 app.get("/api/essays/:id", async (c) => {
   await ensureEssaySchema(c.env.DB);
   const essay = await getEssay(c.env.DB, c.req.param("id"));
@@ -1056,8 +1066,10 @@ app.put("/api/essays/:id/beats/reorder", async (c) => {
 
 app.put("/api/essays/:id/beats/:beatId", async (c) => {
   await ensureEssaySchema(c.env.DB);
-  const { text, citations } = await c.req.json<{ text?: string; citations?: string[] }>().catch(() => ({}) as { text?: string; citations?: string[] });
-  const beat = await updateBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"), { text, citations });
+  const { text, citations, voVideoId } = await c.req
+    .json<{ text?: string; citations?: string[]; voVideoId?: string | null }>()
+    .catch(() => ({}) as { text?: string; citations?: string[]; voVideoId?: string | null });
+  const beat = await updateBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"), { text, citations, voVideoId });
   if (!beat) return c.json({ error: "beat not found" }, 404);
   return c.json(beat);
 });

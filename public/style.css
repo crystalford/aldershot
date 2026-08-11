@@ -859,6 +859,7 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .beat-remove:hover { color: var(--bad); }
 .pill.matched { color: var(--good); background: rgba(143, 201, 143, .13); }
 .pill.vo { color: var(--warn); background: rgba(224, 196, 106, .13); }
+.pill.info { color: var(--info-teal); background: rgba(127, 184, 189, .13); }
 
 .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip-pick {
