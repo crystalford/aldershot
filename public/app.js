@@ -24,6 +24,7 @@ const ICON = {
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5 21 8v8l-5-2.5z"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
   mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4M8 21h8"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   // rail icons — copied literally (viewBox/path/stroke-width) from the
   // prototype's own inline SVGs per the round-3 handoff's fidelity contract
   // ("you are not designing, you are transcribing").
@@ -383,14 +384,14 @@ function renderProject() {
             </div>
 
             ${state.studioMode ? `
-            <button class="btn ghost" id="startEssay" style="width:100%">${ic("sparkle")} Start as essay</button>
-            <div class="tools-h">Suggested cuts</div>
+            <div class="tools-h" style="color:#e0c46a">Suggested cuts</div>
             <div id="suggest" class="tool-panel"></div>
-            <div class="tools-h">Clip candidates</div>
+            <div class="tools-h" style="color:#7fb8bd">Clip candidates</div>
+            <div id="shorts" class="tool-panel"></div>
+            <div class="tools-h" style="color:#8a7bd4">Video ideas</div>
             <div id="timeline" class="tool-panel"></div>
             <div id="bridges" class="tool-panel"></div>
-            <div class="tools-h">Video ideas</div>
-            <div id="shorts" class="tool-panel"></div>
+            <button class="btn ghost" id="startEssay" style="width:100%;margin-top:10px;">${ic("sparkle")} Start as essay →</button>
             ` : `
             <div class="tools-h">AI tools</div>
             <div class="tools-actions col">
@@ -2740,6 +2741,7 @@ function clipCard(c, i) {
     ${visualCaptions.length ? `<div class="sg-visual">${visualCaptions.map((cap) => `👁 ${esc(cap)}`).join(" · ")}</div>` : ""}
     <div class="sg-segs">${segParts}</div>
     ${c.tags.length ? `<div class="tag-rail small">${c.tags.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${c.usedInEssays ? `<div class="clip-used-in">Used in ${c.usedInEssays} essay${c.usedInEssays === 1 ? "" : "s"}</div>` : ""}
     <div class="s-actions">
       <button class="btn small ghost clip-preview">${ic("play")} Preview</button>
       <button class="btn small accent clip-add-project">${ic("plus")} Add to project</button>
@@ -3897,6 +3899,7 @@ function renderSceneArea() {
   const el = $("#genSceneArea"); if (!el) return;
   const scene = genState.scene;
   if (!scene) { el.innerHTML = ""; return; }
+  const refLocked = scene.shots.some((s) => s.imageR2Key);
   el.innerHTML = `<div style="margin-top:24px;">
     <div class="essay-eyebrow" style="color:var(--accent);">One scene, ${scene.shots.length} cut(s) — nothing below is generated yet</div>
     <div class="gen-world">
@@ -3904,6 +3907,7 @@ function renderSceneArea() {
       <span><span class="gen-world-label">Light:</span> ${esc(scene.light)}</span>
       <span><span class="gen-world-label">Palette:</span> ${esc(scene.palette)}</span>
     </div>
+    ${refLocked ? `<div class="gen-ref-locked">${ic("lock")} Reference still locked — every later cut reuses this look, so the scene holds together.</div>` : ""}
     <div class="gen-shots" id="genShots">${scene.shots.map(shotRowHTML).join("")}</div>
   </div>`;
   wireShotRows();
@@ -3924,6 +3928,8 @@ function shotRowHTML(shot) {
     action = `<button class="btn small ghost shot-action" data-action="video">Animate to video</button>`;
   } else if (shot.status === "video_ready") {
     action = `<button class="btn small primary shot-action" data-action="save">Save</button>`;
+  } else if (shot.status === "saved") {
+    action = `<button class="btn small ghost shot-action" data-action="archive">View in Archive →</button>`;
   }
   return `<div class="gen-shot" data-id="${shot.id}">
     <div class="gen-shot-thumb">${shotStatusIcon(shot)}</div>
@@ -3944,6 +3950,7 @@ function wireShotRows() {
 }
 async function handleShotAction(shotId, action) {
   if (action === "save") return saveShotFlow(shotId);
+  if (action === "archive") return showLibrary();
   const endpoint = action === "image" ? "generate-image" : "generate-video";
   try {
     const shot = await fetch(`/api/generative/scenes/${genState.scene.id}/shots/${shotId}/${endpoint}`, { method: "POST" }).then((r) => r.json());
@@ -4545,6 +4552,31 @@ buildRail();
 $("#railHome").onclick = showDeskView;
 $("#railHome").onkeydown = (e) => { if (e.key === "Enter") showDeskView(); };
 $("#paletteTrigger").onclick = openCommandPalette;
+$("#railNotif").innerHTML = ic("bell");
+$("#railNotif").onclick = toggleNotifPanel;
+
+// Reuses the Desk's own "since you were last here" digest (GET /api/desk)
+// as the notification feed — same real events, same deep links, just
+// reachable from anywhere instead of only the home view.
+async function toggleNotifPanel() {
+  const panel = $("#notifPanel");
+  if (!panel.hidden) { panel.hidden = true; return; }
+  panel.hidden = false;
+  panel.innerHTML = `<div class="notif-head">Notifications</div><div class="notif-list" id="notifList"><div class="loading"><span class="spinner"></span></div></div>`;
+  let digest = [];
+  try { ({ digest } = await fetch("/api/desk").then((r) => r.json())); } catch { digest = []; }
+  const list = $("#notifList");
+  if (!digest.length) { list.innerHTML = `<div class="notif-empty">Nothing new since last time.</div>`; return; }
+  list.innerHTML = digest.map((d, i) => `<div class="notif-row" data-i="${i}"><span class="notif-dot" style="background:${d.color}"></span><span>${esc(d.text)}</span></div>`).join("");
+  list.querySelectorAll(".notif-row").forEach((row) => {
+    row.onclick = () => { panel.hidden = true; deskGo(digest[+row.dataset.i].go); };
+  });
+}
+document.addEventListener("click", (e) => {
+  const panel = $("#notifPanel");
+  if (!panel || panel.hidden) return;
+  if (!panel.contains(e.target) && e.target.id !== "railNotif" && !e.target.closest?.("#railNotif")) panel.hidden = true;
+});
 // Focused mode strips the rail + top bar for a single-purpose page that
 // isn't part of the dashboard shell (Clipping today). Toggled from route()
 // so every other destination reliably restores the normal chrome.

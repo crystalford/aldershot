@@ -292,6 +292,25 @@ export async function deleteBeat(db: D1Database, essayId: string, beatId: string
   await db.prepare(`DELETE FROM essay_beats WHERE id = ? AND essay_id = ?`).bind(beatId, essayId).run();
 }
 
+/** How many distinct essays reference each clip via a "clip"-kind beat —
+ *  feeds the Archive's "Used in N essays" badge. Returns an empty map for
+ *  an empty input rather than issuing a pointless query. */
+export async function countClipUsage(db: D1Database, clipIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const ids = [...new Set(clipIds)];
+  if (!ids.length) return map;
+  const placeholders = ids.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(
+      `SELECT clip_id, COUNT(DISTINCT essay_id) as n FROM essay_beats
+       WHERE kind = 'clip' AND clip_id IN (${placeholders}) GROUP BY clip_id`,
+    )
+    .bind(...ids)
+    .all<{ clip_id: string; n: number }>();
+  for (const r of results ?? []) map.set(r.clip_id, r.n);
+  return map;
+}
+
 /** Assigns sequential ord 0..n-1 to a full reordered list of this essay's beat ids. */
 export async function reorderBeats(db: D1Database, essayId: string, order: string[]): Promise<void> {
   const { results } = await db.prepare(`SELECT id FROM essay_beats WHERE essay_id = ?`).bind(essayId).all<{ id: string }>();

@@ -62,6 +62,7 @@ import {
   updateBeat,
   deleteBeat,
   reorderBeats,
+  countClipUsage,
   ACTS,
   type BeatAct,
   type BeatKind,
@@ -872,6 +873,7 @@ app.get("/api/clips", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
   await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
+  await ensureEssaySchema(c.env.DB);
   const { tag, projectId, videoId, kind, q, limit, offset } = c.req.query();
   const clips = await listClips(c.env.DB, {
     tag,
@@ -882,7 +884,8 @@ app.get("/api/clips", async (c) => {
     limit: limit ? Number(limit) : undefined,
     offset: offset ? Number(offset) : undefined,
   });
-  return c.json({ clips });
+  const usage = await countClipUsage(c.env.DB, clips.map((cl) => cl.id));
+  return c.json({ clips: clips.map((cl) => ({ ...cl, usedInEssays: usage.get(cl.id) ?? 0 })) });
 });
 
 app.get("/api/clips/:id", async (c) => {
