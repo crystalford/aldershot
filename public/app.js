@@ -451,10 +451,13 @@ function renderProject() {
 
             ${state.studioMode ? `
             <div class="tools-h" style="color:#e0c46a">Suggested cuts</div>
+            <div class="tools-subcopy">Dead air, false starts, asides — each matches a tinted range in the transcript.</div>
             <div id="suggest" class="tool-panel"></div>
             <div class="tools-h" style="color:#7fb8bd">Clip candidates</div>
+            <div class="tools-subcopy">Standalone moments worth posting on their own. Nothing joins the Archive unless you send it.</div>
             <div id="shorts" class="tool-panel"></div>
             <div class="tools-h" style="color:#8a7bd4">Video ideas</div>
+            <div class="tools-subcopy">Starting one creates an essay draft — the only way anything here reaches the wider production pipeline.</div>
             <div id="timeline" class="tool-panel"></div>
             <div id="bridges" class="tool-panel"></div>
             <button class="btn ghost" id="startEssay" style="width:100%;margin-top:10px;">${ic("sparkle")} Start as essay →</button>
@@ -1657,6 +1660,37 @@ function highlightTranscriptSegments(segments) {
 function clearTranscriptHighlight() {
   document.querySelectorAll(".word.ai-highlight").forEach((el) => el.classList.remove("ai-highlight"));
 }
+// Studio's "Suggested cuts" persistent tint — stays on until the range is
+// cut or the suggestion is dismissed, unlike the hover-only .ai-highlight
+// every other card uses. Segment-range word lookup is shared with that
+// same mechanism (wordIndicesInRange).
+function tintSuggestedRange(segments, on) {
+  for (const seg of segments) {
+    const v = state.videos.find((x) => x.id === seg.videoId);
+    if (!v || !v.words) continue;
+    for (const i of wordIndicesInRange(v, seg.start, seg.end)) {
+      ensureWordMounted(v, i);
+      v._wordEls?.[i]?.classList.toggle("ai-suggested", on);
+    }
+  }
+}
+// Cuts (or restores) every word in a suggestion's range in one click —
+// Studio's dead-air-removal mechanic, distinct from "Add to Cut" (which
+// keeps the range, by adding it to the arranged Cut).
+function toggleSuggestionCut(s, btn) {
+  const nowCutting = btn.dataset.cut !== "1";
+  for (const seg of s.segments) {
+    const v = state.videos.find((x) => x.id === seg.videoId);
+    if (!v || !v.words) continue;
+    for (const i of wordIndicesInRange(v, seg.start, seg.end)) {
+      v.words[i].deleted = nowCutting;
+      syncWordClass(v, i);
+    }
+  }
+  btn.dataset.cut = nowCutting ? "1" : "0";
+  btn.textContent = nowCutting ? "Cut ✓" : "Cut it";
+  updateStats(); renderRuler(); refreshSearchIfActive();
+}
 // Hover-only by design (no scroll-into-view) — a list of a dozen suggestion/
 // short cards means the mouse crosses many of them just moving down the
 // page, and yanking the transcript's scroll position on every pass would
@@ -1761,7 +1795,7 @@ function renderTimeline() {
       <button class="seg-x" title="Remove">✕</button></div>`;
   };
   el.innerHTML = `<div class="tl">
-    <div class="tl-head"><h2>Arranged cut</h2><button class="btn ghost small" id="clearTl">Clear</button></div>
+    <div class="tl-head">${state.studioMode ? "" : "<h2>Arranged cut</h2>"}<button class="btn ghost small" id="clearTl">Clear</button></div>
     <p class="tl-hint">Drag ⠿ to reorder — playback and export follow this order.</p>
     ${(t.coldOpen || []).length ? `<div class="tl-label">Cold open</div>${t.coldOpen.map((s, i) => seg(s, "coldOpen", i)).join("")}` : ""}
     ${(t.body || []).length ? `<div class="tl-label">Body</div>${t.body.map((s, i) => seg(s, "body", i)).join("")}` : ""}
@@ -2261,19 +2295,25 @@ function renderSuggestions() {
   const suggestions = state.suggestions || [];
   if (!suggestions.length) { el.innerHTML = ""; return; }
   el.innerHTML = `<div class="suggestions">
-    <div class="tl-head"><h2>Suggested edits</h2><span class="empty small">${suggestions.length}</span></div>
+    ${state.studioMode ? "" : `<div class="tl-head"><h2>Suggested edits</h2><span class="empty small">${suggestions.length}</span></div>`}
     ${suggestions.map((s, i) => suggestionCard(s, i)).join("")}
   </div>`;
   suggestions.forEach((s, i) => {
     const card = el.querySelector(`.suggestion[data-i="${i}"]`);
     card.querySelector(".sg-preview").onclick = () => previewSuggestion(s);
-    card.querySelector(".sg-apply").onclick = (e) => applySuggestion(s, e.currentTarget);
+    card.querySelector(".sg-apply")?.addEventListener("click", (e) => applySuggestion(s, e.currentTarget));
     card.querySelector(".sg-save").onclick = () => saveClipToLibrary(s.segments, { title: s.title, description: s.why, kind: "ai-detected" });
     card.querySelector(".sg-dismiss").onclick = () => {
+      if (state.studioMode) tintSuggestedRange(s.segments, false);
       state.suggestions.splice(state.suggestions.indexOf(s), 1);
       renderSuggestions();
     };
-    wireCardHighlight(card, s.segments);
+    if (state.studioMode) {
+      tintSuggestedRange(s.segments, true);
+      card.querySelector(".sg-cut").onclick = (e) => toggleSuggestionCut(s, e.currentTarget);
+    } else {
+      wireCardHighlight(card, s.segments);
+    }
   });
 }
 function suggestionCard(s, i) {
@@ -2285,7 +2325,14 @@ function suggestionCard(s, i) {
     <div class="sg-top"><span class="sg-type ${s.type}">${SUGGEST_TYPE_LABEL[s.type] || s.type}</span><span class="sg-title">${esc(s.title)}</span></div>
     <div class="sg-why">${esc(s.why)}</div>
     <div class="sg-segs">${parts}</div>
-    <div class="s-actions"><button class="btn small ghost sg-preview">${ic("play")} Preview</button><button class="btn small ghost sg-save" title="Save to the cross-project Archive">Save</button><button class="btn small accent sg-apply">Add to Cut</button><button class="btn small ghost icon-only sg-dismiss" title="Dismiss">✕</button></div>
+    <div class="s-actions">
+      <button class="btn small ghost sg-preview">${ic("play")} Preview</button>
+      <button class="btn small ghost sg-save" title="Save to the cross-project Archive">Save</button>
+      ${state.studioMode
+        ? `<button class="btn small accent sg-cut" data-cut="0">Cut it</button>`
+        : `<button class="btn small accent sg-apply">Add to Cut</button>`}
+      <button class="btn small ghost icon-only sg-dismiss" title="Dismiss">✕</button>
+    </div>
   </div>`;
 }
 async function previewSuggestion(s) {
@@ -2327,7 +2374,7 @@ function renderShorts() {
   const shorts = state.shorts || [];
   if (!shorts.length) { el.innerHTML = ""; return; }
   el.innerHTML = `<div class="shorts">
-    <div class="tl-head"><h2>Suggested shorts</h2><span class="empty small">${shorts.length}</span></div>
+    ${state.studioMode ? "" : `<div class="tl-head"><h2>Suggested shorts</h2><span class="empty small">${shorts.length}</span></div>`}
     <div class="short-grid">${shorts.map(shortCard).join("")}</div></div>`;
   shorts.forEach((s, i) => {
     const card = el.querySelector(`.short[data-i="${i}"]`);
@@ -2339,9 +2386,28 @@ function renderShorts() {
       state.shorts.splice(state.shorts.indexOf(s), 1);
       renderShorts();
     };
+    card.querySelector(".s-archive")?.addEventListener("click", (e) => sendStudioShortToArchive(s, e.currentTarget));
     wireCardHighlight(card, [{ videoId: s.videoId, start: s.start, end: s.end }]);
   });
   Thumb.hydrate(el);
+}
+// Studio's "Clip candidates" was the one of its three sections with no
+// in-panel path to the Archive at all (Suggested cuts' sg-save and Video
+// ideas' seg-save both already have one) — saves the short's own range as
+// a real manual clip, same underlying call every other "Save" button uses.
+async function sendStudioShortToArchive(s, btn) {
+  if (btn.dataset.sent === "1") return;
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/clips", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: s.title, description: s.hook || "", kind: "ai-detected", segments: [{ videoId: s.videoId, start: s.start, end: s.end }] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    btn.dataset.sent = "1"; btn.textContent = "In Archive ✓";
+    toast("Sent to Archive", { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't send to Archive", { type: "error" }); btn.disabled = false; }
 }
 function shortCard(s, i) {
   const v = state.videos.find((x) => x.id === s.videoId);
@@ -2362,7 +2428,11 @@ function shortCard(s, i) {
       <div class="s-title">${esc(s.title)}</div>
       <div class="s-hook">${esc(s.hook || "")}</div>
       <div class="s-meta">${fmt(s.start)}–${fmt(s.end)} · ${esc(src)}</div>
-      <div class="s-actions"><button class="btn small ghost s-play">${ic("play")} Preview</button><button class="btn small accent s-prod">${ic("download")} Produce</button></div>
+      <div class="s-actions">
+        <button class="btn small ghost s-play">${ic("play")} Preview</button>
+        <button class="btn small accent s-prod">${ic("download")} Produce</button>
+        ${state.studioMode ? `<button class="btn small ghost s-archive">Send to Archive</button>` : ""}
+      </div>
     </div>
   </div>`;
 }
@@ -5152,7 +5222,7 @@ async function showStudioView() {
   state.studioMode = true;
   state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
   setCrumbs([{ label: "Aldershot", go: showProjects }, { label: "Studio" }]);
-  setStats("A lighter editor for one raw take — kept separate from the Archive");
+  setStats("A lighter editor for one raw take — kept separate from the Archive. Nothing here joins a thread or theme cluster unless you explicitly send it there.");
   renderProject();
 }
 

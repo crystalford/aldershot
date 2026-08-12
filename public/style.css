@@ -669,6 +669,8 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
    talking about, right in the transcript — a distinct hue (violet, unused
    elsewhere) so it never reads as "currently playing" or "search match". */
 .word.ai-highlight { background: rgba(127, 184, 189, .22); box-shadow: inset 0 -2px 0 var(--info-teal); border-radius: 2px; }
+.word.ai-suggested { background: rgba(224, 196, 106, .08); border-radius: 2px; }
+.tools-subcopy { font-size: 10.5px; color: rgba(243, 237, 228, .4); margin: 0 0 8px; line-height: 1.4; }
 .seg.ai-highlight { border-color: var(--info-teal); box-shadow: inset 0 0 0 1px var(--info-teal); }
 
 /* Caret — clicking without dragging lands here (Backspace/Delete act on the
