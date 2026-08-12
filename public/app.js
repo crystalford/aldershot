@@ -5159,12 +5159,20 @@ function clipRenderShorts() {
   const active = shorts[clipActiveShortIndex];
   const v = state.videos.find((x) => x.id === active.videoId);
   clipLoadReelVideo(v, active);
+  const score = typeof active.score === "number" ? active.score : null;
+  const tier = score == null ? "" : score >= 80 ? "hot" : score >= 55 ? "warm" : "cool";
   info.innerHTML = `
-    <div class="reel-title">${esc(active.title)}</div>
-    <div class="reel-hook">${esc(active.hook || "")}</div>
+    <div class="reel-info-main">
+      <div class="reel-title-row">
+        <div class="reel-title">${esc(active.title)}</div>
+        ${score != null ? `<span class="short-score ${tier}">${score}% score</span>` : ""}
+      </div>
+      ${v ? `<div class="reel-source">${esc(filenameOf(v.filename))}</div>` : ""}
+      <div class="reel-hook">${esc(active.hook || "")}</div>
+    </div>
     <div class="reel-actions">
       <button class="btn small accent" id="reelProduce">${ic("download")} Produce</button>
-      <button class="btn small ghost" id="reelSend">${active.sentToArchive ? "In Archive ✓" : "Send to Archive"}</button>
+      <button class="btn small ghost" id="reelSend">${active.sentToArchive ? "Sent to Archive ✓" : "Send to Archive"}</button>
       <button class="btn small ghost" id="reelDismiss">Not this one</button>
     </div>`;
   $("#reelProduce").onclick = (e) => produceShort(active, e.currentTarget);
@@ -5178,9 +5186,11 @@ function clipRenderShorts() {
   strip.innerHTML = shorts.map((s, i) => {
     const sv = state.videos.find((x) => x.id === s.videoId);
     const thumbUrl = sv && sv.r2_key ? mediaUrl(sv.r2_key) : "";
+    const markScore = typeof s.score === "number" ? s.score : null;
     return `<button class="reel-mark${i === clipActiveShortIndex ? " on" : ""}" data-i="${i}" title="${esc(s.title)}">
       ${thumbUrl ? `<img data-thumb-src="${esc(thumbUrl)}" data-thumb-t="${Math.max(0.1, s.start).toFixed(1)}" alt="" />` : ""}
-      <span class="reel-mark-dur">${Math.round(s.end - s.start)}s</span>
+      ${markScore != null ? `<span class="reel-mark-score">${markScore}</span>` : ""}
+      <span class="reel-mark-dur">${fmt(s.end - s.start)}</span>
     </button>`;
   }).join("");
   strip.querySelectorAll(".reel-mark").forEach((btn) => {

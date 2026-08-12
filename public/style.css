@@ -189,7 +189,10 @@ a { color: var(--accent); text-decoration: none; }
    never a scannable grid of cards. ────────────────────────────────────── */
 .clip-reel { display: flex; flex-direction: column; gap: 14px; }
 .reel-info { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.reel-info-main { flex: 1; min-width: 0; }
+.reel-title-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .reel-title { font: italic 500 22px var(--font-serif); color: var(--bone); }
+.reel-source { font: 11px var(--font-mono); color: var(--faint); margin-top: 4px; }
 .reel-hook { font-size: 13.5px; color: var(--dim); margin-top: 4px; max-width: 56ch; }
 .reel-hint { font-size: 13.5px; color: var(--faint); }
 .reel-actions { display: flex; gap: 8px; flex: none; }
@@ -204,6 +207,10 @@ a { color: var(--accent); text-decoration: none; }
 .reel-mark.on img { opacity: 1; }
 .reel-mark-dur {
   position: absolute; right: 4px; bottom: 3px; font-size: 9.5px; font-weight: 600; color: #fff;
+  background: rgba(0,0,0,.55); border-radius: 2px; padding: 1px 4px;
+}
+.reel-mark-score {
+  position: absolute; left: 4px; top: 3px; font-size: 9.5px; font-weight: 600; color: var(--warn);
   background: rgba(0,0,0,.55); border-radius: 2px; padding: 1px 4px;
 }
 
