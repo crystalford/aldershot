@@ -327,6 +327,24 @@ export async function composeFromClips(env: Env, clips: ComposableClip[], instru
   return { coldOpen, body };
 }
 
+// ── Source AI summary — a one-time, cached exec summary of a source video's
+// own transcript, shown on the Sources detail page. Purely extractive-in-
+// spirit (summarizes what's actually said), not a claim-generating call. ──
+export async function summarizeTranscript(env: Env, words: Word[]): Promise<string | null> {
+  const text = words.map((w) => w.text).join(" ").trim();
+  if (!text) return null;
+  const system =
+    "You write a two-sentence executive summary of a video transcript for someone deciding whether to use " +
+    "it as source footage. Be concrete about what's actually said/covered — no vague filler.";
+  const user = `Transcript:\n${text.slice(0, 6000)}\n\nReturn ONLY JSON: {"summary":"two sentences"}`;
+  try {
+    const reply = await runJson<{ summary?: string }>(env, system, user);
+    return reply.summary?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Thread description — a one-time, cached classification + one-sentence
 // synopsis for a Threads card, derived only from that thread's own sample
 // clip titles (never invents details beyond what the titles suggest). Kind

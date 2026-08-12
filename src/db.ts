@@ -18,6 +18,7 @@ export interface Project {
 export interface ProjectWithThumb extends Project {
   thumb_r2_key: string | null;
   thumb_duration: number | null;
+  status?: "transcribing" | "queued" | "failed" | "ready" | "empty";
 }
 
 export type VideoStatus = "uploaded" | "transcribing" | "ready" | "failed";
@@ -31,6 +32,7 @@ export interface Video {
   status: VideoStatus;
   ord: number;
   created_at: number;
+  summary?: string | null;
 }
 
 /** Create tables if absent. Idempotent — safe to call on every request so the
@@ -68,6 +70,11 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   // deleted_at backs Trash — see softDeleteProject/restoreProject below.
   if (!colNames.has("deleted_at")) {
     await db.prepare(`ALTER TABLE projects ADD COLUMN deleted_at INTEGER`).run();
+  }
+  const videoCols = await db.prepare(`PRAGMA table_info(videos)`).all<{ name: string }>();
+  const videoColNames = new Set((videoCols.results ?? []).map((c) => c.name));
+  if (!videoColNames.has("summary")) {
+    await db.prepare(`ALTER TABLE videos ADD COLUMN summary TEXT`).run();
   }
 }
 
@@ -131,11 +138,26 @@ export async function getOrCreateStudioProject(db: D1Database): Promise<Project>
  *  from client-side (see public/thumb.js), same as every other thumbnail in
  *  the app. No video yet → both fields are null and the card shows a
  *  placeholder. */
+/** Worst-case pipeline status across a project's videos, priority order
+ *  transcribing > queued > failed > ready > empty — surfaced on the
+ *  Sources grid so a card shows what's still processing without opening
+ *  it (the underlying per-video status already existed and already
+ *  powered the Desk's "sources processing" stat; this just exposes it
+ *  per-card too). */
+const PROJECT_STATUS_CASE = `(SELECT CASE
+    WHEN EXISTS(SELECT 1 FROM videos v2 WHERE v2.project_id = p.id AND v2.status = 'transcribing') THEN 'transcribing'
+    WHEN EXISTS(SELECT 1 FROM videos v2 WHERE v2.project_id = p.id AND v2.status = 'uploaded') THEN 'queued'
+    WHEN EXISTS(SELECT 1 FROM videos v2 WHERE v2.project_id = p.id AND v2.status = 'failed') THEN 'failed'
+    WHEN EXISTS(SELECT 1 FROM videos v2 WHERE v2.project_id = p.id) THEN 'ready'
+    ELSE 'empty'
+  END) AS status`;
+
 export async function listProjects(db: D1Database): Promise<ProjectWithThumb[]> {
   const { results } = await db
     .prepare(
       `SELECT p.id, p.name, p.kind, p.created_at, p.deleted_at,
-              v.r2_key AS thumb_r2_key, v.duration AS thumb_duration
+              v.r2_key AS thumb_r2_key, v.duration AS thumb_duration,
+              ${PROJECT_STATUS_CASE}
        FROM projects p
        LEFT JOIN videos v ON v.id = (
          SELECT id FROM videos WHERE project_id = p.id ORDER BY ord ASC, created_at ASC LIMIT 1
@@ -247,7 +269,7 @@ export async function addVideo(
 export async function listVideos(db: D1Database, projectId: string): Promise<Video[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at
+      `SELECT id, project_id, filename, r2_key, duration, status, ord, created_at, summary
        FROM videos WHERE project_id = ? ORDER BY ord ASC, created_at ASC`,
     )
     .bind(projectId)
@@ -311,6 +333,10 @@ export async function getVideo(db: D1Database, id: string): Promise<Video | null
 
 export async function setVideoStatus(db: D1Database, id: string, status: VideoStatus): Promise<void> {
   await db.prepare(`UPDATE videos SET status = ? WHERE id = ?`).bind(status, id).run();
+}
+
+export async function setVideoSummary(db: D1Database, id: string, summary: string): Promise<void> {
+  await db.prepare(`UPDATE videos SET summary = ? WHERE id = ?`).bind(summary, id).run();
 }
 
 /** Repoints a video at a different R2 object — used by "Apply enhanced

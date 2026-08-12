@@ -29,6 +29,7 @@ import {
   listAllReadyVideos,
   getVideo,
   setVideoStatus,
+  setVideoSummary,
   setVideoR2Key,
   getOrCreateGenerativeProject,
   getOrCreateClippingProject,
@@ -44,6 +45,7 @@ import {
   deleteClip,
   listAllTags,
   visualSummaryOf,
+  countClipsByProject,
   type ClipKind,
   type NewClipSegment,
 } from "./clips";
@@ -91,6 +93,7 @@ import {
   draftEssayActBeat,
   askArchive,
   matchDiscoverToThreads,
+  summarizeTranscript,
   type VideoTranscript,
   type SegmentWithText,
 } from "./pipeline/reason";
@@ -153,7 +156,9 @@ app.post("/api/projects", async (c) => {
 
 app.get("/api/projects", async (c) => {
   await ensureSchema(c.env.DB);
-  return c.json({ projects: await listProjects(c.env.DB) });
+  await ensureClipSchema(c.env.DB);
+  const [projects, clipCounts] = await Promise.all([listProjects(c.env.DB), countClipsByProject(c.env.DB)]);
+  return c.json({ projects: projects.map((p) => ({ ...p, clipCount: clipCounts.get(p.id) ?? 0 })) });
 });
 
 app.get("/api/projects/:id", async (c) => {
@@ -164,10 +169,17 @@ app.get("/api/projects/:id", async (c) => {
 
   const videos = await listVideos(c.env.DB, id);
   const withWords = await Promise.all(
-    videos.map(async (v) => ({
-      ...v,
-      words: v.status === "ready" ? await readJson(c.env.MEDIA, transcriptKey(id, v.id)) : null,
-    })),
+    videos.map(async (v) => {
+      const words = v.status === "ready" ? await readJson<Word[]>(c.env.MEDIA, transcriptKey(id, v.id)) : null;
+      // Lazily generate + cache an AI summary for a ready video that doesn't
+      // have one yet — best-effort, never blocks the page from loading.
+      let summary = v.summary ?? null;
+      if (!summary && words?.length) {
+        summary = await summarizeTranscript(c.env, words);
+        if (summary) await setVideoSummary(c.env.DB, v.id, summary);
+      }
+      return { ...v, words, summary };
+    }),
   );
   const timeline = await readJson<Timeline>(c.env.MEDIA, timelineKey(id));
   const shorts = await readJson(c.env.MEDIA, shortsKey(id));

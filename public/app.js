@@ -147,34 +147,79 @@ function setStats(t) {
 }
 
 // ── Projects view ────────────────────────────────────────────────────
+const SOURCE_STATUS_LABEL = { ready: "Ready", transcribing: "Transcribing", queued: "Queued", failed: "Failed", empty: "Empty" };
+const SOURCE_STATUS_COLOR = { ready: "#8fc98f", transcribing: "#e0c46a", queued: "#7fb8bd", failed: "#a85454", empty: "var(--faint)" };
 async function showProjects() {
-  location.hash = "#/"; setActiveRail("sources"); setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  location.hash = "#/sources"; setActiveRail("sources"); setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  state.sourceStatusFilter = state.sourceStatusFilter || null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading projects…</div>`;
   let projects = [];
   try { projects = (await api.listProjects()).projects || []; }
   catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  const statsLine = projects.length ? `${projects.length} source${projects.length === 1 ? "" : "s"} — ${projects.reduce((s, p) => s + (p.clipCount || 0), 0)} clips extracted so far.` : "";
   main.innerHTML = `
     <section class="pad">
       <div class="row-between">
-        <div><h1>Sources</h1><div class="sub">Raw uploads — each one holds the videos you cut together.</div></div>
-        <button class="btn primary" id="new">${ic("plus")} New project</button>
+        <div><h1>Sources</h1><div class="sub">Raw uploads — each one holds the videos you cut together. ${statsLine ? `<span class="archive-stats">${esc(statsLine)}</span>` : ""}</div></div>
+        <div style="display:flex;gap:8px;">
+          <input id="quickAddUrl" class="import-input" placeholder="https://youtube.com/watch?v=…" style="width:240px;" autocomplete="off" />
+          <button class="btn ghost" id="quickAdd">${ic("plus")} Add source</button>
+          <button class="btn primary" id="new">${ic("plus")} New project</button>
+        </div>
       </div>
+      <div class="essay-link" id="toClippingLink">Want shorts cut from one of these? → Clipping</div>
+      <div class="tag-rail" id="sourceStatusRail"></div>
       <div class="grid" id="grid"></div>
     </section>`;
   $("#new").onclick = newProject;
-  const grid = $("#grid");
+  $("#quickAdd").onclick = () => quickAddSourceUrl($("#quickAddUrl").value);
+  $("#quickAddUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); quickAddSourceUrl($("#quickAddUrl").value); } });
+  $("#toClippingLink").onclick = () => showClippingView();
+  renderSourceStatusRail(projects);
+  renderSourceGrid(projects);
+}
+
+function renderSourceStatusRail(allProjects) {
+  const el = $("#sourceStatusRail"); if (!el) return;
+  const counts = {};
+  allProjects.forEach((p) => { counts[p.status || "empty"] = (counts[p.status || "empty"] || 0) + 1; });
+  const statuses = Object.keys(SOURCE_STATUS_LABEL).filter((s) => counts[s]);
+  if (!statuses.length) { el.innerHTML = ""; return; }
+  el.innerHTML = statuses.map((s) =>
+    `<span class="tag-chip${state.sourceStatusFilter === s ? " on" : ""}" data-status="${s}" style="border-left:2px solid ${SOURCE_STATUS_COLOR[s]}">${SOURCE_STATUS_LABEL[s]} <span class="tag-count">${counts[s]}</span></span>`,
+  ).join("");
+  el.querySelectorAll(".tag-chip").forEach((chip) => {
+    chip.onclick = () => {
+      state.sourceStatusFilter = state.sourceStatusFilter === chip.dataset.status ? null : chip.dataset.status;
+      renderSourceStatusRail(allProjects);
+      renderSourceGrid(allProjects);
+    };
+  });
+}
+
+function renderSourceGrid(allProjects) {
+  const grid = $("#grid"); if (!grid) return;
+  const projects = state.sourceStatusFilter ? allProjects.filter((p) => (p.status || "empty") === state.sourceStatusFilter) : allProjects;
+  grid.innerHTML = "";
   const add = document.createElement("button");
   add.className = "card card-new"; add.innerHTML = `${ic("plus")} New project`; add.onclick = newProject;
-  if (!projects.length) {
+  if (!allProjects.length) {
     grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No projects yet — create one and drop in your videos to get started.</div>
       ${skeletonCardHTML("card", "card-body")}${skeletonCardHTML("card", "card-body")}`;
+  } else if (!projects.length) {
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No sources match that status.</div>`;
   }
   projects.forEach((p) => {
     const card = document.createElement("div");
     card.className = "card";
+    const status = p.status || "empty";
     card.innerHTML = `<button class="card-delete" title="Delete — goes to Trash">${ic("trash")}</button>
+      ${status !== "empty" ? `<span class="source-status-pill" style="color:${SOURCE_STATUS_COLOR[status]};background:${SOURCE_STATUS_COLOR[status]}22;">${SOURCE_STATUS_LABEL[status]}</span>` : ""}
       ${frameThumbHTML(p.thumb_r2_key, p.thumb_duration)}
-      <div class="card-body"><div class="card-title">${esc(p.name)}</div><div class="card-sub">${new Date(p.created_at).toLocaleString()}</div></div>`;
+      <div class="card-body">
+        <div class="card-title">${esc(p.name)}</div>
+        <div class="card-sub">${new Date(p.created_at).toLocaleString()}${p.clipCount ? ` · ${p.clipCount} clip${p.clipCount === 1 ? "" : "s"}` : ""}</div>
+      </div>`;
     card.onclick = () => openProject(p.id);
     card.querySelector(".card-delete").onclick = async (e) => {
       e.stopPropagation();
@@ -198,6 +243,24 @@ async function newProject() {
     toast("Project created", { type: "success" });
     openProject(p.id);
   } catch (err) { toast(err.message || "Couldn't create project", { type: "error" }); }
+}
+
+// One-action quick add straight from the Sources grid — paste a URL, get a
+// new project already importing, no "name it first" modal in between.
+async function quickAddSourceUrl(url) {
+  url = (url || "").trim();
+  if (!url) { toast("Paste a video URL first."); return; }
+  try {
+    const p = await api.createProject("Untitled source");
+    if (p.error) throw new Error(p.error);
+    const res = await fetch(`/api/projects/${p.id}/import`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }),
+    });
+    const video = await res.json();
+    if (!res.ok) throw new Error(video.error || res.statusText);
+    toast("Importing…", { type: "success" });
+    openProject(p.id);
+  } catch (err) { toast(err.message || "Couldn't add that source", { type: "error" }); }
 }
 
 // ── The Desk — the new home surface: what changed since last time, and
@@ -344,9 +407,11 @@ function renderProject() {
           <div class="ruler" id="ruler"></div>
 
           <h1 class="doc-title" id="docTitle">Transcript</h1>
+          <div id="aiSummaryCallout"></div>
 
           <div class="sel-toolbar" id="selToolbar">
             <span id="selCount"></span>
+            <span id="selThreadMatch" class="sel-thread-match"></span>
             <span class="sel-toolbar-div"></span>
             <button class="chip-btn" id="selAddCut" title="Add this selection to the Cut list, where you can drag it into any order">Add to Cut</button>
             <button class="chip-btn" id="selSaveClip" title="Save this selection to the cross-project Archive">Save to Archive</button>
@@ -643,6 +708,13 @@ function selectVideo(id) {
   renderPhraseChips();
   const title = $("#docTitle");
   if (title) title.textContent = v ? filenameOf(v.filename).replace(/\.[a-z0-9]+$/i, "") : "Transcript";
+  const summaryEl = $("#aiSummaryCallout");
+  if (summaryEl) {
+    summaryEl.innerHTML = state.project?.kind !== "source" ? "" : `<div class="ai-summary-callout">
+      <div class="ai-summary-eyebrow">AI summary</div>
+      <div>${v && v.status === "ready" ? esc(v.summary || "AI summary pending — this source hasn't finished analysis yet.") : "AI summary pending — this source hasn't finished analysis yet."}</div>
+    </div>`;
+  }
 }
 
 // ── Filmstrip — a row of real frame thumbnails across the selected video,
@@ -1079,6 +1151,36 @@ function updateSelectionHint() {
   bar.classList.toggle("show", n > 0);
   const countEl = $("#selCount");
   if (countEl) countEl.textContent = n > 0 ? `${n} word${n === 1 ? "" : "s"} selected` : "";
+  updateSelectionThreadMatch();
+}
+// Best-matching existing Archive thread for the current selection, so
+// saving a custom clip carries the same "which thread does this belong to"
+// context the prototype's contextualization panel shows before saving —
+// computed client-side (bag-of-words against cached thread names/sample
+// quotes) rather than a live AI call per keystroke of selection.
+let sourceThreadsCache = null;
+async function ensureSourceThreadsCache() {
+  if (!sourceThreadsCache) sourceThreadsCache = await fetchThreads();
+  return sourceThreadsCache;
+}
+async function updateSelectionThreadMatch() {
+  const el = $("#selThreadMatch"); if (!el) return;
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) { el.textContent = ""; return; }
+  const kept = v.words.slice(v._selStart, v._selEnd + 1).filter((w) => !w.deleted);
+  if (!kept.length) { el.textContent = ""; return; }
+  const text = kept.map((w) => w.text).join(" ");
+  const threads = await ensureSourceThreadsCache();
+  if ($("#selThreadMatch") !== el || v !== state.videos.find((x) => x._selStart != null)) return; // selection moved on while awaiting
+  const lineWords = significantWords(text);
+  let best = null, bestScore = 0;
+  for (const t of threads) {
+    const threadWords = new Set(significantWords(`${t.name} ${(t.sampleQuotes || []).join(" ")}`));
+    let score = 0;
+    for (const w of lineWords) if (threadWords.has(w)) score++;
+    if (score > bestScore) { bestScore = score; best = t; }
+  }
+  el.textContent = bestScore >= 2 ? `Best match: ${best.name}` : "No strong match";
 }
 function deleteSelection() {
   const v = state.videos.find((x) => x._selStart != null);
@@ -4766,11 +4868,7 @@ async function showTrashView() {
   }
 }
 
-// "sources" calls showProjects() directly rather than via a hash — showProjects()
-// itself normalizes location.hash to "#/", so routing it through "#/sources"
-// would fire a second hashchange (and a second fetch) once that normalization lands.
 function go(view) {
-  if (view === "sources") return showProjects();
   location.hash = `#/${view}`;
 }
 

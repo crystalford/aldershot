@@ -267,6 +267,16 @@ export function visualSummaryOf(clip: ClipDetail): string | undefined {
   return captions.length ? captions.slice(0, 2).join("; ") : undefined;
 }
 
+/** Distinct saved-clip count per source project — how many Archive clips
+ *  trace at least one segment back to that project's video(s). Powers the
+ *  Sources grid's per-card clip count. */
+export async function countClipsByProject(db: D1Database): Promise<Map<string, number>> {
+  const { results } = await db
+    .prepare(`SELECT project_id, COUNT(DISTINCT clip_id) as n FROM clip_segments GROUP BY project_id`)
+    .all<{ project_id: string; n: number }>();
+  return new Map((results ?? []).map((r) => [r.project_id, r.n]));
+}
+
 export async function listAllTags(db: D1Database): Promise<{ tag: string; count: number }[]> {
   const { results } = await db
     .prepare(`SELECT tag, COUNT(*) as count FROM clip_tags GROUP BY tag ORDER BY count DESC, tag ASC`)
