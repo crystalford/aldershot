@@ -5,6 +5,7 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const main = $("#main");
 const toast = (m, o) => UI.toast(m, o);
 
+const hostnameOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url || ""; } };
 const fmt = (t) => {
   if (!isFinite(t) || t < 0) t = 0;
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
@@ -3363,7 +3364,7 @@ async function runDiscoverSearch(query) {
         <div class="discover-extract">${esc(r.extract)}</div>
         <div class="discover-action" data-i="${i}">
           ${pending
-            ? `<button class="btn small accent discover-ground" data-i="${i}">Ground this beat →</button>`
+            ? `<button class="btn small discover-ground" data-i="${i}">Ground this beat →</button>`
             : essays.length
               ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
               : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
@@ -3703,17 +3704,32 @@ async function openEssay(id) {
     essay, mode: validModes.includes(essay.builder_mode) ? essay.builder_mode : "premise",
     drafting: false, draftAct: null, draftLoading: false, draftCandidate: null,
     showCoherence: false, finderQuery: "", finderClips: [], finderThread: "", finderType: "", voVideoInfo: {},
-    railTab: "notes", notes: null, comments: null,
+    railTab: "notes", notes: null, comments: null, clipThreadIds: {},
   };
   setCrumbs([{ label: "Essays", go: showEssaysList }, { label: essay.title }]);
   setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   await loadVoVideoInfo();
+  await loadClipThreadIds();
   renderEssayShell();
   loadFinderClips();
 }
 async function reloadEssay() {
   essayState.essay = await fetch(`/api/essays/${essayState.essay.id}`).then((r) => r.json());
   await loadVoVideoInfo();
+  await loadClipThreadIds();
+}
+// Which thread each clip-kind beat's clip belongs to — feeds the coherence
+// check's "leans on a single thread" signal. Fetched once per load/reload,
+// scoped to just the clip ids this essay actually uses.
+async function loadClipThreadIds() {
+  const clipIds = [...new Set(essayState.essay.beats.filter((b) => b.kind === "clip" && b.clipId).map((b) => b.clipId))];
+  if (!clipIds.length) { essayState.clipThreadIds = {}; return; }
+  try {
+    const clips = (await fetch(`/api/clips?withThreads=1&limit=500`).then((r) => r.json())).clips || [];
+    const map = {};
+    for (const c of clips) if (clipIds.includes(c.id) && c.thread) map[c.id] = c.thread.id;
+    essayState.clipThreadIds = map;
+  } catch { essayState.clipThreadIds = {}; }
 }
 // Beats only store a voVideoId — duration/r2_key (for the "take saved ·
 // 0:NN" chip and its ▸ Play button) live on the video row itself. Fetched
@@ -3934,7 +3950,19 @@ function checkEssayCoherence(e) {
     if (!byAct[act].length) issues.push({ act, kind: "empty", color: "var(--warn)", text: `${label} has no beats yet — ${needsHint}` });
   }
   if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip" || (b.kind === "research" && b.discoverResultId))) {
-    issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "Turn has no grounding clip or source for its complication — it's narration only so far." });
+    issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "No clip or source grounds this act's friction yet." });
+  }
+  // The two checks below read the ASSEMBLED cut (renderable beats, in
+  // order) rather than script structure — matching what the prototype's
+  // own coherence check actually inspects, unlike the checks above.
+  const renderable = e.beats.filter(isRenderable);
+  if (renderable.length && renderable.length < 3) {
+    issues.push({ act: null, kind: "short-draft", color: "var(--warn)", text: `This is a short draft — only ${renderable.length} block${renderable.length === 1 ? "" : "s"} in the assembled cut so far.` });
+  }
+  const clipThreadIds = essayState?.clipThreadIds || {};
+  const clipBeatThreads = renderable.filter((b) => b.kind === "clip" && clipThreadIds[b.clipId]).map((b) => clipThreadIds[b.clipId]);
+  if (clipBeatThreads.length >= 2 && new Set(clipBeatThreads).size === 1) {
+    issues.push({ act: null, kind: "single-thread", color: "var(--info-teal)", text: "Every clip in the assembled cut comes from the same thread — consider pulling in another angle." });
   }
   return issues;
 }
@@ -4062,6 +4090,24 @@ function advanceDraft() {
 }
 
 // ── Script mode ──────────────────────────────────────────────────────────
+// Fixed 5-point tension curve (Hook -> Setup -> Development -> Turn ->
+// Resolution), exactly the prototype's shape — this is a stylized "shape of
+// a piece" indicator, not derived from real per-beat data (nothing in this
+// app's data model measures a beat's dramatic tension).
+const TENSION_ARC_POINTS = [30, 45, 70, 90, 55];
+function tensionArcSVG() {
+  const w = 480, h = 80, pad = 10;
+  const step = (w - pad * 2) / (TENSION_ARC_POINTS.length - 1);
+  const pts = TENSION_ARC_POINTS.map((v, i) => `${(pad + i * step).toFixed(1)},${(h - pad - (v / 100) * (h - pad * 2)).toFixed(1)}`).join(" ");
+  const labels = ACT_DEFS.map((a, i) => {
+    const anchor = i === 0 ? "start" : i === ACT_DEFS.length - 1 ? "end" : "middle";
+    return `<text x="${(pad + i * step).toFixed(1)}" y="${h - 1}" text-anchor="${anchor}" font-family="var(--font-mono)" font-size="9" fill="var(--faint)">${esc(a.label)}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="tension-arc" preserveAspectRatio="none" style="width:100%;height:70px;">
+    <polyline points="${pts}" fill="none" stroke="#8a7bd4" stroke-width="1.5" />
+    ${labels}
+  </svg>`;
+}
 function renderScriptMode(body) {
   const e = essayState.essay;
   // Advisory, always-on — cheap and rule-based (see checkEssayCoherence), so
@@ -4069,6 +4115,7 @@ function renderScriptMode(body) {
   const issuesByAct = {};
   checkEssayCoherence(e).forEach((i) => { (issuesByAct[i.act] ||= []).push(i); });
   body.innerHTML = `<div class="pad" style="max-width:760px;">
+    ${tensionArcSVG()}
     <div class="row-between">
       <div class="empty small" style="max-width:460px;">Structured as five acts — import a script, or add clips/voiceover from the sidebar.</div>
       <button class="btn ghost small" id="toggleImport">Import script</button>
@@ -4101,10 +4148,12 @@ function renderBeatRow(b) {
     : b.kind === "research" ? (grounded ? "var(--good)" : "var(--info-teal)")
     : recorded ? "var(--good)" : "var(--warn)";
   const pill = b.kind === "clip" ? `<span class="pill matched">Matched</span>`
-    : b.kind === "research" ? (grounded ? `<span class="pill matched">Grounded to source</span>` : `<span class="pill info">Search web</span>`)
+    : b.kind === "research" ? (grounded ? `<span class="pill matched">Grounded to source</span>` : `<span class="pill info">Search the web</span>`)
     : recorded ? "" // the recorded chip below replaces the bare pill entirely
     : `<span class="pill vo">Needs voiceover</span>`;
   const voInfo = recorded ? essayState?.voVideoInfo?.[b.voVideoId] : null;
+  const citeList = (b.citations || []).length
+    ? `<div class="beat-citations">${b.citations.map((c) => `📎 ${esc(c)}`).join("<br>")}</div>` : "";
   const extra = b.kind === "vo"
     ? (recorded
         ? `<div class="vo-recorded-chip">
@@ -4114,8 +4163,15 @@ function renderBeatRow(b) {
              <button class="btn small ghost beat-record" data-id="${b.id}">Re-record</button>
            </div>`
         : `<div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-record" data-id="${b.id}">${ic("video")} Record</button></div>`)
+      + citeList
+      + `<div class="beat-cite-attach"><input class="modal-input beat-cite-input" placeholder="Attach a supporting source…" autocomplete="off" /><button class="btn small ghost beat-cite-add" data-id="${b.id}">Attach</button></div>`
     : b.kind === "research"
-      ? `${grounded ? `<a class="discover-url" href="${esc(b.citations?.[0] || "")}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">${esc(b.citations?.[0] || "")}</a>` : ""}
+      ? `${grounded
+          ? `<div class="beat-source-card">
+               <div class="beat-source-title">${esc(b.text)}</div>
+               <div class="beat-source-platform">Web · ${esc(hostnameOf(b.citations?.[0]))}</div>
+             </div>`
+          : ""}
          <div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-ground" data-id="${b.id}">${ic("globe")} ${grounded ? "Change source" : "Find a source in Discover"}</button></div>`
       : "";
   return `<div class="beat" data-id="${b.id}" style="border-left-color:${borderColor}">
@@ -4142,6 +4198,21 @@ function wireActSections() {
       if (beat) findSourceForBeat(beat);
     });
     row.querySelector(".vo-play")?.addEventListener("click", (e) => playVoTake(e.currentTarget));
+    row.querySelector(".beat-cite-add")?.addEventListener("click", async () => {
+      const input = row.querySelector(".beat-cite-input");
+      const value = input.value.trim();
+      if (!value) return;
+      const beat = essayState.essay.beats.find((b) => b.id === row.dataset.id);
+      if (!beat) return;
+      try {
+        const res = await fetch(`/api/essays/${essayState.essay.id}/beats/${beat.id}`, {
+          method: "PUT", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ citations: [...(beat.citations || []), value] }),
+        }).then((r) => r.json());
+        if (res.error) throw new Error(res.error);
+        await reloadEssay(); renderEssayBody();
+      } catch (err) { toast(err.message || "Couldn't attach that", { type: "error" }); }
+    });
   });
 }
 // One shared <audio> element, toggled per click — playing a different take

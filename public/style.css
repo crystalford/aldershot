@@ -273,6 +273,10 @@ main { flex: 1; min-height: 0; overflow: auto; }
 .btn.accent:hover { background: rgba(138, 123, 212, .18); border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; }
 .btn.primary:hover { background: var(--accent-hover); }
+/* The one solid-teal CTA in the app — Discover's beat-grounding flow — kept
+   visually distinct from every other .btn.accent (purple) action. */
+.discover-ground { background: var(--info-teal); border-color: var(--info-teal); color: #0b0a08; font-weight: 650; }
+.discover-ground:hover { background: #92c4c8; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--dim); }
 .btn.ghost:hover { background: var(--panel); color: var(--bone); }
 .btn.ghost.accent { background: var(--accent-soft); border-color: rgba(138, 123, 212, .5); color: var(--accent); }
@@ -1033,6 +1037,13 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .beat-text { font: italic 400 14px/1.6 var(--font-serif); color: var(--bone); margin-top: 6px; }
 .beat-remove { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px; flex: none; }
 .beat-remove:hover { color: var(--bad); }
+.tension-arc { display: block; margin-bottom: 18px; }
+.beat-citations { font: 11px var(--font-mono); color: var(--info-teal); margin-top: 6px; line-height: 1.6; }
+.beat-cite-attach { display: flex; gap: 6px; margin-top: 8px; }
+.beat-cite-attach input { flex: 1; }
+.beat-source-card { margin-top: 6px; padding: 8px 10px; background: var(--panel); border-left: 2px solid var(--good); border-radius: 2px; }
+.beat-source-title { font-size: 12.5px; color: var(--bone); }
+.beat-source-platform { font: 10.5px var(--font-mono); color: var(--faint); margin-top: 3px; }
 .pill.matched { color: var(--good); background: rgba(143, 201, 143, .13); }
 .pill.vo { color: var(--warn); background: rgba(224, 196, 106, .13); }
 .pill.info { color: var(--info-teal); background: rgba(127, 184, 189, .13); }
