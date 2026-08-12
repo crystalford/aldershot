@@ -3425,11 +3425,11 @@ async function groundBeatWithResult(pending, candidate, query, btn) {
 // the WHOLE archive (not one project), drafted act by act rather than
 // edited as a flat timeline. See src/essays.ts for the data model.
 const ACT_DEFS = [
-  { act: "hook", label: "Hook" },
-  { act: "setup", label: "Setup" },
-  { act: "development", label: "Development" },
-  { act: "turn", label: "Turn" },
-  { act: "resolution", label: "Resolution" },
+  { act: "hook", label: "Hook", needsHint: "The first 10 seconds — a claim, a question, or a moment strange enough that someone keeps watching." },
+  { act: "setup", label: "Setup", needsHint: "The context a viewer needs before the argument can land — who, what, why this matters now." },
+  { act: "development", label: "Development", needsHint: "The bulk of the evidence — the clips and beats that actually build the case." },
+  { act: "turn", label: "Turn", needsHint: "A complication, counterpoint, or reversal — every act list needs friction here." },
+  { act: "resolution", label: "Resolution", needsHint: "Where it lands — the takeaway, not just a stop." },
 ];
 const ACT_LABEL = Object.fromEntries(ACT_DEFS.map((a) => [a.act, a.label]));
 let essayState = null;
@@ -3930,8 +3930,8 @@ async function addClipBeat(clip) {
 function checkEssayCoherence(e) {
   const issues = [];
   const byAct = Object.fromEntries(ACT_DEFS.map((a) => [a.act, e.beats.filter((b) => b.act === a.act)]));
-  for (const { act, label } of ACT_DEFS) {
-    if (!byAct[act].length) issues.push({ act, kind: "empty", color: "var(--warn)", text: `${label} has no beats yet.` });
+  for (const { act, label, needsHint } of ACT_DEFS) {
+    if (!byAct[act].length) issues.push({ act, kind: "empty", color: "var(--warn)", text: `${label} has no beats yet — ${needsHint}` });
   }
   if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip" || (b.kind === "research" && b.discoverResultId))) {
     issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "Turn has no grounding clip or source for its complication — it's narration only so far." });
@@ -3947,10 +3947,11 @@ function renderPremiseMode(body) {
     const c = s.draftCandidate;
     body.innerHTML = `<div class="pad" style="max-width:640px;">
       <div class="draft-candidate">
-        <div class="row-between" style="margin-bottom:8px;">
+        <div class="row-between" style="margin-bottom:2px;">
           <span class="essay-eyebrow">Act ${idx} of ${ACT_DEFS.length} · ${esc(ACT_LABEL[s.draftAct])}</span>
           <span class="essay-link" id="stopDraft">Stop here</span>
         </div>
+        <div class="empty small" style="margin-bottom:10px;">${esc(ACT_DEFS.find((a) => a.act === s.draftAct)?.needsHint || "")}</div>
         ${s.draftLoading
           ? `<div class="empty small">Thinking…</div>`
           : c
@@ -3975,6 +3976,9 @@ function renderPremiseMode(body) {
     return;
   }
   const issues = s.showCoherence ? checkEssayCoherence(e) : null;
+  const readinessCounts = { matched: 0, needs_vo: 0, search_web: 0 };
+  e.beats.forEach((b) => { const st = beatResolutionStatus(b); if (readinessCounts[st] !== undefined) readinessCounts[st]++; else readinessCounts.matched++; });
+  const readinessTotal = e.beats.length;
   body.innerHTML = `<div class="pad" style="max-width:640px;">
     <div class="essay-eyebrow">Premise</div>
     <div class="essay-premise-text">${esc(e.premise)}</div>
@@ -3983,14 +3987,22 @@ function renderPremiseMode(body) {
       <div><div class="essay-meta-label">Target length</div><div>${esc(e.target_length || "—")}</div></div>
       <div><div class="essay-meta-label">Tone</div><div>${esc(e.tone || "—")}</div></div>
     </div>
-    ${e.threads.length ? `<div class="tag-rail">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${e.threads.length ? `<div class="essay-meta-label" style="margin-bottom:6px;">Grounded in</div><div class="tag-rail">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
+    ${readinessTotal ? `<div class="readiness-bar-wrap">
+      <div class="readiness-bar">
+        <div style="width:${(readinessCounts.matched / readinessTotal) * 100}%;background:${BEAT_STATUS_COLOR.matched}"></div>
+        <div style="width:${(readinessCounts.needs_vo / readinessTotal) * 100}%;background:${BEAT_STATUS_COLOR.needs_vo}"></div>
+        <div style="width:${(readinessCounts.search_web / readinessTotal) * 100}%;background:${BEAT_STATUS_COLOR.search_web}"></div>
+      </div>
+      <div class="empty small" style="margin-top:6px;">${readinessCounts.matched}/${readinessTotal} beats matched to archive · ${readinessCounts.needs_vo} need voiceover · ${readinessCounts.search_web} need external research</div>
+    </div>` : ""}
     <div class="s-actions" style="margin-top:22px;">
       <button class="btn primary" id="startActDraft">Build it act by act →</button>
       <button class="btn ghost" id="runCoherence">Run coherence check</button>
     </div>
     ${issues ? (issues.length
       ? `<div class="coherence-issues">${issues.map((i) => `<div class="coherence-issue" style="border-left-color:${i.color}">${esc(i.text)}</div>`).join("")}</div>`
-      : `<div class="empty small" style="margin-top:10px;">No issues found — looking solid.</div>`) : ""}
+      : `<div class="empty small" style="margin-top:10px;">No structural issues found — the draft reads as balanced across sources and tone.</div>`) : ""}
     <div class="empty small" style="margin-top:14px;max-width:520px;">No script needed to start — you'll go act by act, reacting to one suggestion at a time. Already have a script written? Use Import script in Script mode instead.</div>
   </div>`;
   $("#startActDraft").onclick = () => {
@@ -4079,7 +4091,7 @@ function renderActSection(a, beats, issues) {
   return `<div class="act-section">
     <div class="act-head"><span class="essay-eyebrow">${a.label}</span><span class="empty small">${beats.length} beat${beats.length === 1 ? "" : "s"}</span></div>
     ${inline.length ? `<div class="coherence-issues" style="margin:0 0 10px;">${inline.map((i) => `<div class="coherence-issue" style="border-left-color:${i.color}">${esc(i.text)}</div>`).join("")}</div>` : ""}
-    ${beats.length ? beats.map(renderBeatRow).join("") : `<div class="empty small" style="padding:10px 0;">No beats yet — pick "${a.label}" in the sidebar and add a clip, or paste a script above.</div>`}
+    ${beats.length ? beats.map(renderBeatRow).join("") : `<div class="empty small" style="padding:10px 0;">Empty — ${esc(a.needsHint)} Pick "${esc(a.label)}" in the sidebar and add a clip, or paste a script above.</div>`}
   </div>`;
 }
 function renderBeatRow(b) {

@@ -1013,7 +1013,9 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .essay-rail-footer { flex: none; padding: 12px 16px; border-top: 1px solid var(--line); }
 
 .essay-eyebrow { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
-.essay-premise-text { font: italic 400 16px/1.6 var(--font-serif); color: var(--bone); margin: 8px 0 20px; }
+.essay-premise-text { font: 400 16px/1.6 var(--font-serif); color: var(--bone); margin: 8px 0 20px; }
+.readiness-bar-wrap { margin: 16px 0; max-width: 520px; }
+.readiness-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--bg2); }
 .essay-meta-row { display: flex; gap: 30px; margin-bottom: 20px; }
 .essay-meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: 4px; }
 .essay-link { font-size: 11.5px; color: var(--dim); cursor: pointer; }
