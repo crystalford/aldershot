@@ -104,6 +104,28 @@ export async function ensureEssaySchema(db: D1Database): Promise<void> {
        )`,
     ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_essay_beats_essay ON essay_beats (essay_id, ord)`),
+    // The Builder's right rail -- Notes is a real log of user direction plus
+    // what the AI actually did in response (see POST .../notes), not a
+    // scripted chat; Comments is a plain feedback log with no AI involved.
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS essay_notes (
+         id TEXT PRIMARY KEY,
+         essay_id TEXT NOT NULL,
+         role TEXT NOT NULL DEFAULT 'user',
+         text TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+       )`,
+    ),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_essay_notes_essay ON essay_notes (essay_id, created_at)`),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS essay_comments (
+         id TEXT PRIMARY KEY,
+         essay_id TEXT NOT NULL,
+         text TEXT NOT NULL,
+         created_at INTEGER NOT NULL
+       )`,
+    ),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_essay_comments_essay ON essay_comments (essay_id, created_at)`),
   ]);
   // discover_result_id / vo_video_id are new — a table created before
   // "research" beats or voiceover recording existed needs them added on,
@@ -346,4 +368,51 @@ export async function reorderBeats(db: D1Database, essayId: string, order: strin
     .filter((id) => valid.has(id))
     .map((id, i) => db.prepare(`UPDATE essay_beats SET ord = ? WHERE id = ?`).bind(i, id));
   if (statements.length) await db.batch(statements);
+}
+
+// ── Builder right rail: Notes (direction + what the AI did in response)
+// and Comments (plain feedback log, no AI involved). ────────────────────
+export interface EssayNote {
+  id: string;
+  essayId: string;
+  role: "user" | "system";
+  text: string;
+  createdAt: number;
+}
+export async function listNotes(db: D1Database, essayId: string): Promise<EssayNote[]> {
+  const { results } = await db
+    .prepare(`SELECT id, essay_id, role, text, created_at FROM essay_notes WHERE essay_id = ? ORDER BY created_at ASC`)
+    .bind(essayId)
+    .all<{ id: string; essay_id: string; role: string; text: string; created_at: number }>();
+  return (results ?? []).map((r) => ({ id: r.id, essayId: r.essay_id, role: r.role === "system" ? "system" : "user", text: r.text, createdAt: r.created_at }));
+}
+export async function addNote(db: D1Database, essayId: string, role: "user" | "system", text: string): Promise<EssayNote> {
+  const note: EssayNote = { id: crypto.randomUUID(), essayId, role, text, createdAt: Date.now() };
+  await db
+    .prepare(`INSERT INTO essay_notes (id, essay_id, role, text, created_at) VALUES (?, ?, ?, ?, ?)`)
+    .bind(note.id, note.essayId, note.role, note.text, note.createdAt)
+    .run();
+  return note;
+}
+
+export interface EssayComment {
+  id: string;
+  essayId: string;
+  text: string;
+  createdAt: number;
+}
+export async function listComments(db: D1Database, essayId: string): Promise<EssayComment[]> {
+  const { results } = await db
+    .prepare(`SELECT id, essay_id, text, created_at FROM essay_comments WHERE essay_id = ? ORDER BY created_at ASC`)
+    .bind(essayId)
+    .all<{ id: string; essay_id: string; text: string; created_at: number }>();
+  return (results ?? []).map((r) => ({ id: r.id, essayId: r.essay_id, text: r.text, createdAt: r.created_at }));
+}
+export async function addComment(db: D1Database, essayId: string, text: string): Promise<EssayComment> {
+  const comment: EssayComment = { id: crypto.randomUUID(), essayId, text, createdAt: Date.now() };
+  await db
+    .prepare(`INSERT INTO essay_comments (id, essay_id, text, created_at) VALUES (?, ?, ?, ?)`)
+    .bind(comment.id, comment.essayId, comment.text, comment.createdAt)
+    .run();
+  return comment;
 }

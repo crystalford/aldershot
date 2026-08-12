@@ -3702,7 +3702,8 @@ async function openEssay(id) {
   essayState = {
     essay, mode: validModes.includes(essay.builder_mode) ? essay.builder_mode : "premise",
     drafting: false, draftAct: null, draftLoading: false, draftCandidate: null,
-    showCoherence: false, finderQuery: "", finderClips: [], voVideoInfo: {},
+    showCoherence: false, finderQuery: "", finderClips: [], finderThread: "", finderType: "", voVideoInfo: {},
+    railTab: "notes", notes: null, comments: null,
   };
   setCrumbs([{ label: "Essays", go: showEssaysList }, { label: essay.title }]);
   setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
@@ -3730,16 +3731,29 @@ function setEssayMode(mode) {
   renderEssayShell();
 }
 
-function renderEssayShell() {
+async function renderEssayShell() {
   const e = essayState.essay;
   const modes = [["premise", "1. Premise"], ["script", "2. Script"], ["assemble", "3. Assemble"], ["export", "4. Export"]];
   const matched = e.beats.filter((b) => b.kind === "clip").length;
+  const threads = await ensureSourceThreadsCache();
   main.innerHTML = `<div class="essay-shell">
     <div class="essay-finder">
       <div class="side-h" style="margin-top:0;">Find clips</div>
       <div class="empty small">Search the whole archive, then add a clip to whichever act you're building.</div>
       <input id="finderQuery" class="import-input" style="width:100%;margin:10px 0 8px;" placeholder="Search quotes, episodes…" autocomplete="off" />
-      <select id="finderActPick" class="modal-input" style="width:100%;margin-bottom:10px;">
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <select id="finderThreadPick" class="modal-input" style="flex:1;">
+          <option value="">All threads</option>
+          ${threads.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("")}
+        </select>
+        <select id="finderKindPick" class="modal-input" style="flex:1;">
+          <option value="">All types</option>
+          <option value="manual">Manual</option>
+          <option value="ai-detected">AI-detected</option>
+        </select>
+      </div>
+      <div id="finderCount" class="finder-count"></div>
+      <select id="finderActPick" class="modal-input" style="width:100%;margin:8px 0 10px;">
         ${ACT_DEFS.map((a) => `<option value="${a.act}">Add to: ${a.label}</option>`).join("")}
       </select>
       <div id="finderList" class="essay-finder-list"></div>
@@ -3752,14 +3766,101 @@ function renderEssayShell() {
       </div>
       <div class="essay-body" id="essayBody"></div>
     </div>
+    <div class="essay-rail">
+      <div class="essay-rail-tabs">
+        <div class="essay-rail-tab${essayState.railTab === "notes" ? " on" : ""}" data-tab="notes">Notes</div>
+        <div class="essay-rail-tab${essayState.railTab === "comments" ? " on" : ""}" data-tab="comments">Comments</div>
+      </div>
+      <div class="essay-rail-body" id="essayRailBody"></div>
+      <div class="essay-rail-footer">
+        <span class="essay-link" id="railReviewExport">Review & export →</span>
+      </div>
+    </div>
   </div>`;
   $$(".essay-tab").forEach((t) => { t.onclick = () => setEssayMode(t.dataset.mode); });
+  $("#railReviewExport").onclick = () => setEssayMode("export");
+  $$(".essay-rail-tab").forEach((t) => { t.onclick = () => { essayState.railTab = t.dataset.tab; renderEssayRail(); }; });
   const q = $("#finderQuery");
   q.value = essayState.finderQuery;
   let deb = null;
   q.addEventListener("input", () => { essayState.finderQuery = q.value; clearTimeout(deb); deb = setTimeout(loadFinderClips, 300); });
+  $("#finderThreadPick").value = essayState.finderThread;
+  $("#finderThreadPick").onchange = (ev) => { essayState.finderThread = ev.target.value; renderFinderList(); };
+  $("#finderKindPick").value = essayState.finderType;
+  $("#finderKindPick").onchange = (ev) => { essayState.finderType = ev.target.value; loadFinderClips(); };
   renderFinderList();
   renderEssayBody();
+  renderEssayRail();
+}
+async function renderEssayRail() {
+  const el = $("#essayRailBody"); if (!el) return;
+  $$(".essay-rail-tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === essayState.railTab));
+  if (essayState.railTab === "notes") return renderEssayNotes(el);
+  return renderEssayComments(el);
+}
+async function renderEssayNotes(el) {
+  if (essayState.notes === null) {
+    el.innerHTML = `<div class="empty small">Loading…</div>`;
+    try { essayState.notes = (await fetch(`/api/essays/${essayState.essay.id}/notes`).then((r) => r.json())).notes || []; }
+    catch { essayState.notes = []; }
+  }
+  el.innerHTML = `
+    <div class="empty small" style="margin-bottom:10px;">Direct the piece in plain language — it drafts the next act's beat from across the whole archive.</div>
+    <div class="essay-rail-chat" id="railChat">
+      ${essayState.notes.length ? essayState.notes.map((n) => `<div class="rail-note rail-note-${n.role}">${esc(n.text)}</div>`).join("") : `<div class="empty small">No notes yet.</div>`}
+    </div>
+    <div class="essay-rail-input">
+      <textarea id="railNoteInput" rows="2" placeholder="e.g. Open the Turn with something more personal…"></textarea>
+      <button class="btn primary small" id="railNoteSend">Draft next act →</button>
+    </div>`;
+  const chat = $("#railChat"); if (chat) chat.scrollTop = chat.scrollHeight;
+  $("#railNoteSend").onclick = async () => {
+    const input = $("#railNoteInput");
+    const text = input.value.trim();
+    if (!text) return;
+    const btn = $("#railNoteSend");
+    btn.disabled = true; btn.textContent = "Drafting…";
+    try {
+      const res = await fetch(`/api/essays/${essayState.essay.id}/notes`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      essayState.notes.push(res.userNote, res.systemNote);
+      input.value = "";
+      if (res.beat) { await reloadEssay(); renderEssayBody(); }
+      renderEssayNotes(el);
+    } catch (err) { toast(err.message || "Couldn't send that", { type: "error" }); }
+    btn.disabled = false; btn.textContent = "Draft next act →";
+  };
+}
+async function renderEssayComments(el) {
+  if (essayState.comments === null) {
+    el.innerHTML = `<div class="empty small">Loading…</div>`;
+    try { essayState.comments = (await fetch(`/api/essays/${essayState.essay.id}/comments`).then((r) => r.json())).comments || []; }
+    catch { essayState.comments = []; }
+  }
+  el.innerHTML = `
+    <div class="essay-rail-chat" id="railComments">
+      ${essayState.comments.length ? essayState.comments.map((c) => `<div class="rail-note rail-note-user">${esc(c.text)}</div>`).join("") : `<div class="empty small">No comments yet — leave feedback for a collaborator here.</div>`}
+    </div>
+    <div class="essay-rail-input">
+      <textarea id="railCommentInput" rows="2" placeholder="Leave a comment…"></textarea>
+      <button class="btn small ghost" id="railCommentSend">Post</button>
+    </div>`;
+  $("#railCommentSend").onclick = async () => {
+    const input = $("#railCommentInput");
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      const res = await fetch(`/api/essays/${essayState.essay.id}/comments`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }),
+      }).then((r) => r.json());
+      if (res.error) throw new Error(res.error);
+      essayState.comments.push(res.comment);
+      input.value = "";
+      renderEssayComments(el);
+    } catch (err) { toast(err.message || "Couldn't post that", { type: "error" }); }
+  };
 }
 function renderEssayBody() {
   const body = $("#essayBody"); if (!body) return;
@@ -3774,16 +3875,20 @@ async function loadFinderClips() {
   const list = $("#finderList"); if (!list) return;
   list.innerHTML = `<div class="empty small">Searching…</div>`;
   try {
-    const params = new URLSearchParams({ limit: "40" });
+    const params = new URLSearchParams({ limit: "40", withThreads: "1" });
     if (essayState.finderQuery.trim()) params.set("q", essayState.finderQuery.trim());
+    if (essayState.finderType) params.set("kind", essayState.finderType);
     essayState.finderClips = (await fetch(`/api/clips?${params}`).then((r) => r.json())).clips || [];
   } catch { essayState.finderClips = null; }
   renderFinderList();
 }
 function renderFinderList() {
   const list = $("#finderList"); if (!list) return;
-  const clips = essayState.finderClips;
-  if (clips === null) { list.innerHTML = `<div class="empty small">Couldn't load clips.</div>`; return; }
+  let clips = essayState.finderClips;
+  const countEl = $("#finderCount");
+  if (clips === null) { list.innerHTML = `<div class="empty small">Couldn't load clips.</div>`; if (countEl) countEl.textContent = ""; return; }
+  if (essayState.finderThread) clips = clips.filter((c) => c.thread?.id === essayState.finderThread);
+  if (countEl) countEl.textContent = `${clips.length} matching clip${clips.length === 1 ? "" : "s"}`;
   if (!clips.length) { list.innerHTML = `<div class="empty small">No clips match yet.</div>`; return; }
   list.innerHTML = clips.map((c, i) => {
     const dur = c.segments.reduce((s, x) => s + (x.end - x.start), 0);

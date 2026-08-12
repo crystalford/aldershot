@@ -65,6 +65,10 @@ import {
   deleteBeat,
   reorderBeats,
   countClipUsage,
+  listNotes,
+  addNote,
+  listComments,
+  addComment,
   ACTS,
   type BeatAct,
   type BeatKind,
@@ -1210,7 +1214,7 @@ app.post("/api/essays/:id/draft-act", async (c) => {
   await ensureVisualTagSchema(c.env.DB);
   const essay = await getEssay(c.env.DB, c.req.param("id"));
   if (!essay) return c.json({ error: "essay not found" }, 404);
-  const { act } = await c.req.json<{ act?: string }>().catch(() => ({}) as { act?: string });
+  const { act, direction } = await c.req.json<{ act?: string; direction?: string }>().catch(() => ({}) as { act?: string; direction?: string });
   if (!act || !ACTS.includes(act as BeatAct)) return c.json({ error: `act must be one of: ${ACTS.join(", ")}` }, 400);
 
   const clips = await listClips(c.env.DB, { limit: 500 });
@@ -1221,6 +1225,7 @@ app.post("/api/essays/:id/draft-act", async (c) => {
       act,
       essay.beats.map((b) => b.text).filter(Boolean),
       clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
+      direction,
     );
     if (!candidate) return c.json({ candidate: null });
     const clip = candidate.kind === "clip" ? clips.find((cl) => cl.id === candidate.clipId) : null;
@@ -1302,6 +1307,69 @@ app.post("/api/essays/:id/beats/:beatId/ground", async (c) => {
   });
   if (!beat) return c.json({ error: "beat not found" }, 404);
   return c.json({ result, beat });
+});
+
+// ── Builder right rail: Notes (direct the piece; each post also tries to
+// draft the next undone act using the note as direction, appending a
+// system note describing what actually happened -- no scripted/fake
+// replies) and Comments (a plain feedback log, no AI). ──────────────────
+app.get("/api/essays/:id/notes", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  if (!(await getEssay(c.env.DB, c.req.param("id")))) return c.json({ error: "essay not found" }, 404);
+  return c.json({ notes: await listNotes(c.env.DB, c.req.param("id")) });
+});
+app.post("/api/essays/:id/notes", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const essayId = c.req.param("id");
+  const essay = await getEssay(c.env.DB, essayId);
+  if (!essay) return c.json({ error: "essay not found" }, 404);
+  const { text } = await c.req.json<{ text?: string }>().catch(() => ({}) as { text?: string });
+  if (!text?.trim()) return c.json({ error: "say something first" }, 400);
+  const userNote = await addNote(c.env.DB, essayId, "user", text.trim());
+
+  const nextAct = ACTS.find((a) => !essay.beats.some((b) => b.act === a));
+  if (!nextAct) {
+    const systemNote = await addNote(c.env.DB, essayId, "system", "Every act already has beats — nothing left to draft. See Script mode to review or add more by hand.");
+    return c.json({ userNote, systemNote, beat: null });
+  }
+  const clips = await listClips(c.env.DB, { limit: 500 });
+  try {
+    const candidate = await draftEssayActBeat(
+      c.env, essay.premise, nextAct, essay.beats.map((b) => b.text).filter(Boolean),
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
+      text,
+    );
+    if (!candidate) {
+      const systemNote = await addNote(c.env.DB, essayId, "system", `Couldn't draft anything for ${nextAct} from that — try Script mode to add a beat by hand.`);
+      return c.json({ userNote, systemNote, beat: null });
+    }
+    const beat = await addBeat(c.env.DB, essayId, {
+      act: nextAct as BeatAct, kind: candidate.kind, clipId: candidate.kind === "clip" ? candidate.clipId : null, text: candidate.text ?? "",
+    });
+    const clip = candidate.kind === "clip" ? clips.find((cl) => cl.id === candidate.clipId) : null;
+    const what = candidate.kind === "clip" ? `matched the clip "${clip?.title}"` : candidate.kind === "research" ? `drafted a research beat: "${candidate.text}"` : `drafted narration: "${candidate.text}"`;
+    const systemNote = await addNote(c.env.DB, essayId, "system", `Added to ${nextAct} — ${what}${candidate.reason ? ` (${candidate.reason})` : ""}`);
+    return c.json({ userNote, systemNote, beat });
+  } catch (err) {
+    const systemNote = await addNote(c.env.DB, essayId, "system", `Couldn't draft that — ${err}`);
+    return c.json({ userNote, systemNote, beat: null });
+  }
+});
+
+app.get("/api/essays/:id/comments", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  if (!(await getEssay(c.env.DB, c.req.param("id")))) return c.json({ error: "essay not found" }, 404);
+  return c.json({ comments: await listComments(c.env.DB, c.req.param("id")) });
+});
+app.post("/api/essays/:id/comments", async (c) => {
+  await ensureEssaySchema(c.env.DB);
+  const essayId = c.req.param("id");
+  if (!(await getEssay(c.env.DB, essayId))) return c.json({ error: "essay not found" }, 404);
+  const { text } = await c.req.json<{ text?: string }>().catch(() => ({}) as { text?: string });
+  if (!text?.trim()) return c.json({ error: "write a comment first" }, 400);
+  return c.json({ comment: await addComment(c.env.DB, essayId, text.trim()) }, 201);
 });
 
 // ── Discover — external, internet-sourced grounding for an essay's claims

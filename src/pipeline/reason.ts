@@ -626,12 +626,14 @@ export async function draftEssayActBeat(
   act: string,
   existingBeatTexts: string[],
   clips: ComposableClip[],
+  direction?: string,
 ): Promise<ActDraftCandidate | null> {
   const menu = buildClipMenu(clips);
   const hint = ACT_HINTS[act] || act;
   const already = existingBeatTexts.length
     ? `Beats already drafted elsewhere in this essay (don't repeat these):\n${existingBeatTexts.map((t) => `- ${t}`).join("\n")}\n\n`
     : "";
+  const directionNote = direction?.trim() ? `The user's direction for this beat specifically: "${direction.trim()}"\n\n` : "";
   const system =
     "You are a sharp documentary editor drafting ONE beat at a time for a video essay, act by act. " +
     "Prefer a real clip from the library when one genuinely fits — cite it by its [id], never invent a " +
@@ -645,6 +647,7 @@ export async function draftEssayActBeat(
     `Essay premise: "${premise.trim()}"\n\n` +
     `Draft the next beat for this act: ${hint}\n\n` +
     already +
+    directionNote +
     (clips.length ? `Clips available:\n${menu}\n\n` : "No clips are saved in the library yet — you'll have to propose narration.\n\n") +
     'Return ONLY JSON: {"kind":"clip","clipId":"clip-uuid","reason":"why this clip fits, one sentence"} ' +
     'OR {"kind":"vo","text":"the narration line","reason":"why narration instead of a clip, one sentence"} ' +

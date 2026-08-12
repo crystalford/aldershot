@@ -992,6 +992,26 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .essay-tab.on { background: var(--panel2); color: var(--bone); }
 .essay-body { flex: 1; overflow-y: auto; }
 
+.finder-count { font: 10.5px var(--font-mono); color: var(--faint); margin-bottom: 4px; }
+
+/* ── Builder right rail — Notes / Comments, persistent Review & export ── */
+.essay-rail { width: 300px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--bg); }
+.essay-rail-tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
+.essay-rail-tab { flex: 1; text-align: center; padding: 12px 0; font-size: 12px; color: var(--dim); cursor: pointer; border-bottom: 2px solid transparent; }
+.essay-rail-tab:hover { color: var(--bone); }
+.essay-rail-tab.on { color: var(--bone); border-bottom-color: var(--accent); }
+.essay-rail-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px 16px; overflow: hidden; }
+.essay-rail-chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.rail-note { font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 2px; border-left: 2px solid var(--line2); background: var(--panel); color: var(--secondary); }
+.rail-note-system { font: italic 400 12.5px/1.5 var(--font-serif); border-left-color: var(--accent); color: var(--bone); }
+.essay-rail-input { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.essay-rail-input textarea {
+  width: 100%; resize: vertical; background: var(--panel); border: 1px solid var(--line2); color: var(--bone);
+  border-radius: 2px; padding: 8px 10px; font: inherit; font-size: 12.5px; line-height: 1.4;
+}
+.essay-rail-input textarea:focus { outline: none; border-color: var(--accent); }
+.essay-rail-footer { flex: none; padding: 12px 16px; border-top: 1px solid var(--line); }
+
 .essay-eyebrow { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .essay-premise-text { font: italic 400 16px/1.6 var(--font-serif); color: var(--bone); margin: 8px 0 20px; }
 .essay-meta-row { display: flex; gap: 30px; margin-bottom: 20px; }
@@ -1041,6 +1061,7 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
   .editor { grid-template-columns: 200px 1fr; }
   .tools { display: none; }
   .essay-finder { display: none; }
+  .essay-rail { display: none; }
   .gen-sidebar { display: none; }
 }
 @media (max-width: 780px) {
