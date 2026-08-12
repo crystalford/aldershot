@@ -16,6 +16,7 @@ export type ShotStatus = "idle" | "image_generating" | "image_ready" | "video_ge
 export type Aspect = "16:9" | "9:16" | "1:1";
 const ASPECTS: Aspect[] = ["16:9", "9:16", "1:1"];
 export const isAspect = (a: unknown): a is Aspect => ASPECTS.includes(a as Aspect);
+export type Resolution = "720p" | "1080p";
 
 export interface Scene {
   id: string;
@@ -26,6 +27,7 @@ export interface Scene {
   cutCount: number;
   aspect: Aspect;
   durationSeconds: number;
+  resolution: Resolution;
   createdAt: number;
 }
 export interface Shot {
@@ -36,12 +38,30 @@ export interface Shot {
   description: string;
   weight: string;
   motion: string;
+  /** Resolved once at creation from the shot's own type (see
+   *  shotTypeDuration) -- not the scene-wide "Duration per cut" default,
+   *  which now only acts as the fallback for a type this heuristic
+   *  doesn't recognize. */
+  durationSeconds: number;
   status: ShotStatus;
   imageR2Key: string | null;
   videoR2Key: string | null;
   clipId: string | null;
   error: string | null;
   createdAt: number;
+}
+/** Per-shot-type default duration, matching the prototype's own sample
+ *  data (Establishing 5s, Close-up 3s, Cutaway 3s, Contrast 2s) -- `type`
+ *  is free text from the drafting model, not a strict enum, so this
+ *  matches on keyword rather than exact value. Falls back to the scene's
+ *  own "Duration per cut" setting for any type this doesn't recognize. */
+export function shotTypeDuration(type: string, fallback: number): number {
+  const t = type.toLowerCase();
+  if (t.includes("establish")) return 5;
+  if (t.includes("close")) return 3;
+  if (t.includes("cutaway") || t.includes("cut away")) return 3;
+  if (t.includes("contrast")) return 2;
+  return fallback;
 }
 export interface SceneDetail extends Scene {
   shots: Shot[];
@@ -81,49 +101,64 @@ export async function ensureGenerativeSchema(db: D1Database): Promise<void> {
     ),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_generative_shots_scene ON generative_shots (scene_id, ord)`),
   ]);
+  // duration_seconds / resolution are new -- a table created before per-shot
+  // duration or a resolution setting existed needs them added on, same
+  // PRAGMA table_info-guarded ALTER pattern used throughout this codebase.
+  const shotCols = await db.prepare(`PRAGMA table_info(generative_shots)`).all<{ name: string }>();
+  if (!(shotCols.results ?? []).some((c) => c.name === "duration_seconds")) {
+    await db.prepare(`ALTER TABLE generative_shots ADD COLUMN duration_seconds INTEGER`).run();
+  }
+  const sceneCols = await db.prepare(`PRAGMA table_info(generative_scenes)`).all<{ name: string }>();
+  if (!(sceneCols.results ?? []).some((c) => c.name === "resolution")) {
+    await db.prepare(`ALTER TABLE generative_scenes ADD COLUMN resolution TEXT NOT NULL DEFAULT '1080p'`).run();
+  }
 }
 
 interface SceneRow {
   id: string; line: string; location: string; light: string; palette: string;
-  cut_count: number; aspect: string; duration_seconds: number; created_at: number;
+  cut_count: number; aspect: string; duration_seconds: number; resolution: string | null; created_at: number;
 }
 interface ShotRow {
   id: string; scene_id: string; ord: number; type: string; description: string; weight: string; motion: string;
+  duration_seconds: number | null;
   status: string; image_r2_key: string | null; video_r2_key: string | null; clip_id: string | null; error: string | null; created_at: number;
 }
 const toScene = (r: SceneRow): Scene => ({
   id: r.id, line: r.line, location: r.location, light: r.light, palette: r.palette,
-  cutCount: r.cut_count, aspect: r.aspect as Aspect, durationSeconds: r.duration_seconds, createdAt: r.created_at,
+  cutCount: r.cut_count, aspect: r.aspect as Aspect, durationSeconds: r.duration_seconds,
+  resolution: r.resolution === "720p" ? "720p" : "1080p", createdAt: r.created_at,
 });
 const toShot = (r: ShotRow): Shot => ({
   id: r.id, sceneId: r.scene_id, ord: r.ord, type: r.type, description: r.description, weight: r.weight, motion: r.motion,
+  durationSeconds: r.duration_seconds ?? 5,
   status: r.status as ShotStatus, imageR2Key: r.image_r2_key, videoR2Key: r.video_r2_key, clipId: r.clip_id, error: r.error, createdAt: r.created_at,
 });
 
 export async function createScene(
   env: Env,
   db: D1Database,
-  input: { line: string; cutCount: number; aspect: Aspect; durationSeconds: number },
+  input: { line: string; cutCount: number; aspect: Aspect; durationSeconds: number; resolution?: Resolution },
 ): Promise<SceneDetail> {
   const draft: SceneDraft = await draftSceneShots(env, input.line, input.cutCount);
   const scene: Scene = {
     id: crypto.randomUUID(), line: input.line, location: draft.world.location, light: draft.world.light,
     palette: draft.world.palette, cutCount: draft.shots.length, aspect: input.aspect,
-    durationSeconds: input.durationSeconds, createdAt: Date.now(),
+    durationSeconds: input.durationSeconds, resolution: input.resolution === "720p" ? "720p" : "1080p", createdAt: Date.now(),
   };
   const shots: Shot[] = draft.shots.map((s) => ({
     id: crypto.randomUUID(), sceneId: scene.id, ord: s.index, type: s.type, description: s.description,
-    weight: s.weight, motion: s.motion, status: "idle", imageR2Key: null, videoR2Key: null, clipId: null,
+    weight: s.weight, motion: s.motion, durationSeconds: shotTypeDuration(s.type, input.durationSeconds),
+    status: "idle", imageR2Key: null, videoR2Key: null, clipId: null,
     error: null, createdAt: Date.now(),
   }));
   await db.batch([
     db
-      .prepare(`INSERT INTO generative_scenes (id, line, location, light, palette, cut_count, aspect, duration_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(scene.id, scene.line, scene.location, scene.light, scene.palette, scene.cutCount, scene.aspect, scene.durationSeconds, scene.createdAt),
+      .prepare(`INSERT INTO generative_scenes (id, line, location, light, palette, cut_count, aspect, duration_seconds, resolution, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(scene.id, scene.line, scene.location, scene.light, scene.palette, scene.cutCount, scene.aspect, scene.durationSeconds, scene.resolution, scene.createdAt),
     ...shots.map((s) =>
       db
-        .prepare(`INSERT INTO generative_shots (id, scene_id, ord, type, description, weight, motion, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .bind(s.id, s.sceneId, s.ord, s.type, s.description, s.weight, s.motion, s.status, s.createdAt),
+        .prepare(`INSERT INTO generative_shots (id, scene_id, ord, type, description, weight, motion, duration_seconds, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(s.id, s.sceneId, s.ord, s.type, s.description, s.weight, s.motion, s.durationSeconds, s.status, s.createdAt),
     ),
   ]);
   return { ...scene, shots };
@@ -190,7 +225,13 @@ export async function generateShotVideo(env: Env, db: D1Database, sceneId: strin
   if (!shot.imageR2Key) throw new Error("generate the image first");
   await setShotStatus(db, shotId, { status: "video_generating", error: null });
   try {
-    const videoR2Key = await animate(env, shotId, shot.imageR2Key, shot.motion, scene.durationSeconds, scene.aspect);
+    // Resolution is stored per-scene and shown in the UI, but isn't passed
+    // to animate() -- like the Veo/Workers AI field mapping noted above in
+    // this file's imports (compiler.ts), whether the binding even accepts a
+    // resolution/size parameter is unconfirmed against the live catalog, so
+    // this doesn't guess one rather than silently sending a field Veo
+    // ignores (or errors on).
+    const videoR2Key = await animate(env, shotId, shot.imageR2Key, shot.motion, shot.durationSeconds, scene.aspect);
     await setShotStatus(db, shotId, { status: "video_ready", videoR2Key });
     return { ...shot, status: "video_ready", videoR2Key };
   } catch (err) {
@@ -210,13 +251,13 @@ export async function saveShotToArchive(db: D1Database, sceneId: string, shotId:
   const project = await getOrCreateGenerativeProject(db);
   const video = await addVideo(db, {
     id: crypto.randomUUID(), project_id: project.id, filename: `${shot.type || "shot"}-${shot.id}.mp4`,
-    r2_key: shot.videoR2Key, duration: scene.durationSeconds, status: "ready", ord: 0,
+    r2_key: shot.videoR2Key, duration: shot.durationSeconds, status: "ready", ord: 0,
   });
   const clip = await createClip(db, {
     title: shot.description.length > 80 ? shot.description.slice(0, 77) + "…" : shot.description,
     description: `Generated b-roll — ${scene.location}, ${scene.light}`,
     kind: "ai-detected",
-    segments: [{ videoId: video.id, projectId: project.id, start: 0, end: scene.durationSeconds }],
+    segments: [{ videoId: video.id, projectId: project.id, start: 0, end: shot.durationSeconds }],
     tags,
   });
   await setShotStatus(db, shotId, { status: "saved", clipId: clip.id });

@@ -956,6 +956,7 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .gen-shot-type { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
 .gen-shot-desc { font-size: 12.5px; color: var(--bone); margin-top: 3px; }
 .gen-shot-meta { font-size: 10px; color: var(--faint); margin-top: 3px; }
+.gen-beat-chip { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gen-shot-actions { flex: none; }
 .gen-saved-count { font: italic 500 22px var(--font-serif); color: var(--bone); margin-bottom: 10px; }
 .gen-recent-item { padding-left: 10px; }

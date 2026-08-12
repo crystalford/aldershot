@@ -1534,14 +1534,15 @@ app.get("/api/studio/project", async (c) => {
 app.post("/api/generative/scenes", async (c) => {
   await ensureGenerativeSchema(c.env.DB);
   const body = await c.req
-    .json<{ line?: string; cutCount?: number; aspect?: string; durationSeconds?: number }>()
-    .catch(() => ({}) as { line?: string; cutCount?: number; aspect?: string; durationSeconds?: number });
+    .json<{ line?: string; cutCount?: number; aspect?: string; durationSeconds?: number; resolution?: string }>()
+    .catch(() => ({}) as { line?: string; cutCount?: number; aspect?: string; durationSeconds?: number; resolution?: string });
   if (!body.line?.trim()) return c.json({ error: "give the scene a script line to build from" }, 400);
   const aspect = isAspect(body.aspect) ? body.aspect : "16:9";
   const durationSeconds = Math.min(10, Math.max(2, Math.round(body.durationSeconds ?? 5)));
   const cutCount = Math.min(4, Math.max(1, Math.round(body.cutCount ?? 1)));
+  const resolution = body.resolution === "720p" ? "720p" : "1080p";
   try {
-    const scene = await createScene(c.env, c.env.DB, { line: body.line, cutCount, aspect, durationSeconds });
+    const scene = await createScene(c.env, c.env.DB, { line: body.line, cutCount, aspect, durationSeconds, resolution });
     return c.json(scene, 201);
   } catch (err) {
     return c.json({ error: `couldn't build the scene: ${err}` }, 502);

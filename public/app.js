@@ -2803,11 +2803,11 @@ function stopLibraryPlayback() {
   const p = $("#libPreviewPlayer"); if (p && !p.paused) p.pause();
 }
 
-async function showLibrary() {
+async function showLibrary(presetThreadId) {
   location.hash = "#/archive"; setActiveRail("archive");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   stopLibraryPlayback();
-  state.libraryThread = state.libraryThread || null;
+  state.libraryThread = presetThreadId || state.libraryThread || null;
   state.libraryType = state.libraryType || null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
   let tags = [], clips = [], essays = [];
@@ -4573,7 +4573,7 @@ let genProjectId = null;
 async function showGenerativeView() {
   location.hash = "#/generative"; setActiveRail("generative");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
-  genState = { scene: null, cutCount: 2, aspect: "16:9", duration: 5, line: "", building: false, beatChips: [] };
+  genState = { scene: null, cutCount: 2, aspect: "16:9", duration: 5, resolution: "1080p", line: "", building: false, beatChips: [] };
   main.innerHTML = `<div class="gen-shell">
     <div class="gen-main" id="genMain"></div>
     <div class="gen-sidebar" id="genSidebar"></div>
@@ -4587,7 +4587,13 @@ async function showGenerativeView() {
 async function loadEssayBeatChips() {
   try {
     const essays = (await fetch("/api/essays").then((r) => r.json())).essays || [];
-    genState.beatChips = essays.flatMap((e) => e.beats.filter((b) => b.kind === "vo").map((b) => ({ text: b.text, essay: e.title })));
+    // Per-essay, first 3 vo beats each -- not a flat global top-6 -- so a
+    // single prolific essay can't crowd out every other essay's chips.
+    // threadId carries that essay's first grounding thread, if any, so a
+    // shot built from this chip can later jump "View in Archive" straight
+    // to the relevant thread instead of a hardcoded fallback.
+    genState.beatChips = essays.flatMap((e) =>
+      e.beats.filter((b) => b.kind === "vo").slice(0, 3).map((b) => ({ text: b.text, essay: e.title, threadId: e.threads[0] || null })));
   } catch { genState.beatChips = []; }
   renderGenerativeMain();
 }
@@ -4601,7 +4607,7 @@ function renderGenerativeMain() {
     <div class="gen-linebox">
       <div class="essay-eyebrow" style="margin-bottom:8px;">Script line</div>
       <textarea class="modal-input" id="genLine" rows="3" style="width:100%;font-family:var(--font-serif);font-style:italic;resize:vertical;" ${s.scene ? "disabled" : ""} placeholder="Paste a line from an essay's script, or write one — e.g. &quot;He drove home from the factory in the dark.&quot;">${esc(s.line)}</textarea>
-      ${s.beatChips.length && !s.scene ? `<div class="chip-row" style="margin-top:10px;">${s.beatChips.slice(0, 6).map((b, i) => `<span class="chip-pick" data-beat="${i}" title="${esc(b.essay)}">${esc(b.text.length > 44 ? b.text.slice(0, 41) + "…" : b.text)}</span>`).join("")}</div>` : ""}
+      ${s.beatChips.length && !s.scene ? `<div class="chip-row" style="margin-top:10px;">${s.beatChips.map((b, i) => `<span class="chip-pick gen-beat-chip" data-beat="${i}">${esc(b.essay)} — "${esc(b.text.length > 40 ? b.text.slice(0, 37) + "…" : b.text)}"</span>`).join("")}</div>` : ""}
       <div style="margin-top:14px;">
         ${s.scene
           ? `<button class="btn ghost small" id="newScene">← Start a new scene</button>`
@@ -4611,9 +4617,13 @@ function renderGenerativeMain() {
     <div id="genSceneArea"></div>
   </div>`;
   if (!s.scene) {
-    $("#genLine").addEventListener("input", (e) => { s.line = e.target.value; });
+    $("#genLine").addEventListener("input", (e) => { s.line = e.target.value; s.lastThreadHint = null; });
     $$(".chip-pick[data-beat]", el).forEach((chip) => {
-      chip.onclick = () => { s.line = s.beatChips[+chip.dataset.beat].text; renderGenerativeMain(); };
+      chip.onclick = () => {
+        const picked = s.beatChips[+chip.dataset.beat];
+        s.line = picked.text; s.lastThreadHint = picked.threadId;
+        buildScene();
+      };
     });
     $("#buildScene").onclick = buildScene;
   } else {
@@ -4629,7 +4639,7 @@ async function buildScene() {
   try {
     const scene = await fetch("/api/generative/scenes", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ line: s.line, cutCount: s.cutCount, aspect: s.aspect, durationSeconds: s.duration }),
+      body: JSON.stringify({ line: s.line, cutCount: s.cutCount, aspect: s.aspect, durationSeconds: s.duration, resolution: s.resolution }),
     }).then((r) => r.json());
     if (scene.error) throw new Error(scene.error);
     s.scene = scene;
@@ -4681,7 +4691,7 @@ function shotRowHTML(shot) {
     <div class="gen-shot-body">
       <div class="gen-shot-type">${esc(shot.type)} · Cut ${shot.ord + 1}</div>
       <div class="gen-shot-desc">${esc(shot.description)}</div>
-      <div class="gen-shot-meta">${esc(shot.weight)} · ${esc(shot.motion)}${shot.error ? ` · <span style="color:var(--bad)">${esc(shot.error)}</span>` : ""}</div>
+      <div class="gen-shot-meta">${esc(shot.weight)} · ${esc(shot.motion)} · ${shot.durationSeconds}s${shot.error ? ` · <span style="color:var(--bad)">${esc(shot.error)}</span>` : ""}</div>
     </div>
     <div class="gen-shot-actions">${action}</div>
   </div>`;
@@ -4695,7 +4705,7 @@ function wireShotRows() {
 }
 async function handleShotAction(shotId, action) {
   if (action === "save") return saveShotFlow(shotId);
-  if (action === "archive") return showLibrary();
+  if (action === "archive") return showLibrary(genState.lastThreadHint);
   const endpoint = action === "image" ? "generate-image" : "generate-video";
   try {
     const shot = await fetch(`/api/generative/scenes/${genState.scene.id}/shots/${shotId}/${endpoint}`, { method: "POST" }).then((r) => r.json());
@@ -4767,6 +4777,10 @@ function renderGenerativeSidebar() {
       <div style="font-size:11.5px;margin-bottom:6px;">Duration per cut</div>
       <div class="chip-row" id="genDurationRow">${[3, 5, 8].map((d) => `<span class="chip-pick${s.duration === d ? " on" : ""}" data-duration="${d}">${d}s</span>`).join("")}</div>
     </div>
+    <div style="margin-bottom:22px;${locked ? "opacity:.45;pointer-events:none;" : ""}">
+      <div style="font-size:11.5px;margin-bottom:6px;">Resolution</div>
+      <div class="chip-row" id="genResolutionRow">${["720p", "1080p"].map((r) => `<span class="chip-pick${s.resolution === r ? " on" : ""}" data-resolution="${r}">${r}</span>`).join("")}</div>
+    </div>
     <div style="border-top:1px solid var(--line);padding-top:16px;">
       <div class="side-h" style="margin-top:0;">Saved to the Archive</div>
       <div id="genSavedCount" class="gen-saved-count">–</div>
@@ -4775,6 +4789,7 @@ function renderGenerativeSidebar() {
   `;
   $$(".chip-pick[data-aspect]", el).forEach((chip) => { chip.onclick = () => { s.aspect = chip.dataset.aspect; renderGenerativeSidebar(); }; });
   $$(".chip-pick[data-duration]", el).forEach((chip) => { chip.onclick = () => { s.duration = +chip.dataset.duration; renderGenerativeSidebar(); }; });
+  $$(".chip-pick[data-resolution]", el).forEach((chip) => { chip.onclick = () => { s.resolution = chip.dataset.resolution; renderGenerativeSidebar(); }; });
   const cutSlider = $("#genCutCount");
   if (cutSlider) cutSlider.addEventListener("input", () => { s.cutCount = +cutSlider.value; renderGenerativeSidebar(); });
   renderGenerativeRecentInto();
