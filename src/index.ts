@@ -20,6 +20,7 @@ import {
   softDeleteProject,
   restoreProject,
   permanentlyDeleteProject,
+  listPickableVideos,
   getProject,
   addVideo,
   listVideos,
@@ -1217,6 +1218,44 @@ app.get("/api/generative/project", async (c) => {
 app.get("/api/clipping/project", async (c) => {
   await ensureSchema(c.env.DB);
   return c.json(await getOrCreateClippingProject(c.env.DB));
+});
+
+// Videos already sitting in a Source or a Studio recording — the second of
+// Clipping's two intake paths (the first being a direct upload). No
+// channel-watching here or anywhere else in the app.
+app.get("/api/clipping/pickable-videos", async (c) => {
+  await ensureSchema(c.env.DB);
+  return c.json({ videos: await listPickableVideos(c.env.DB) });
+});
+
+// Points a new Clipping-owned video row at an already-transcribed video's
+// existing r2_key/transcript rather than re-uploading or re-transcribing —
+// same "reference, don't duplicate" idea a Library clip uses for a foreign
+// project's footage.
+app.post("/api/clipping/import-video", async (c) => {
+  await ensureSchema(c.env.DB);
+  const body = await c.req.json<{ videoId?: string }>().catch(() => ({}) as { videoId?: string });
+  const videoId = body.videoId;
+  if (!videoId) return c.json({ error: "videoId required" }, 400);
+  const source = await getVideo(c.env.DB, videoId);
+  if (!source || source.status !== "ready") return c.json({ error: "video not found or not ready" }, 404);
+  const clippingProject = await getOrCreateClippingProject(c.env.DB);
+  const words = await readJson<Word[]>(c.env.MEDIA, transcriptKey(source.project_id, source.id));
+  const clone = await addVideo(c.env.DB, {
+    id: crypto.randomUUID(),
+    project_id: clippingProject.id,
+    filename: source.filename,
+    r2_key: source.r2_key,
+    duration: source.duration,
+    ord: 0,
+    status: "ready",
+  });
+  if (words) {
+    await c.env.MEDIA.put(transcriptKey(clippingProject.id, clone.id), JSON.stringify(words), {
+      httpMetadata: { contentType: "application/json" },
+    });
+  }
+  return c.json({ ...clone, words: words ?? null }, 201);
 });
 
 // Studio — the lighter, single-video editor for raw footage that isn't part

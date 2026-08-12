@@ -3830,6 +3830,11 @@ function renderStub(item) {
 // because it's UI focus state, not data — reset fresh on every page visit.
 let clipActiveShortIndex = 0;
 let clipReelVideoId = null;
+// Videos currently being imported from an existing Source/Studio recording
+// and mined for shorts — a separate "Analyzing for highlights…" queue,
+// distinct from clipList's upload-in-progress rows below.
+let clipAnalyzingQueue = [];
+let clipPickableVideos = [];
 async function showClippingView() {
   location.hash = "#/clipping"; setFocused(true);
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
@@ -3847,14 +3852,15 @@ async function showClippingView() {
   state.videos = (data.videos || []).map((v) => ({ ...v }));
   state.shorts = data.shorts;
   state.selected = null;
-  clipActiveShortIndex = 0; clipReelVideoId = null;
+  clipActiveShortIndex = 0; clipReelVideoId = null; clipAnalyzingQueue = [];
+  clipPickableVideos = await fetch("/api/clipping/pickable-videos").then((r) => r.json()).then((d) => d.videos || []).catch(() => []);
   renderClippingView();
 }
 function renderClippingView() {
   main.innerHTML = `<div class="clip-view">
     <div class="clip-head">
       <button class="clip-back" id="clipBack" title="Back to Aldershot">${ic("back")}</button>
-      <div><div class="clip-title">Clipping</div><div class="clip-sub">Drop in raw footage — get ranked, publish-ready shorts back.</div></div>
+      <div><div class="clip-title">Clipping</div><div class="clip-sub">Feed it a video — an upload, or anything already in Aldershot — and it generates short, captioned highlights ranked by how likely they are to land. Built for reposting, not for the Archive; send anything worth keeping there by hand.</div></div>
     </div>
     <div class="clip-body">
       <div class="dropzone" id="clipDrop">
@@ -3863,6 +3869,14 @@ function renderClippingView() {
         <span>or <label class="link">browse<input id="clipFile" type="file" accept="video/*,audio/*" multiple hidden /></label></span>
         <small>Each one is transcribed and mined for shorts automatically.</small>
       </div>
+      <div class="clip-pick-row">
+        <span class="clip-pick-or">or</span>
+        <select id="clipPickSource" class="clip-pick-select">
+          <option value="">Clip a video already in Aldershot…</option>
+          ${clipPickableVideos.map((v) => `<option value="${esc(v.id)}">${esc(v.project_kind === "studio" ? `Studio — ${v.filename}` : v.filename)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="clip-queue" id="clipQueue"></div>
       <div class="clip-list" id="clipList"></div>
       <div class="clip-reel" id="clipReel" hidden>
         <video id="clipPlayer" class="clip-player" controls playsinline></video>
@@ -3873,8 +3887,51 @@ function renderClippingView() {
   </div>`;
   $("#clipBack").onclick = showProjects;
   wireClipDropzone();
+  $("#clipPickSource").onchange = (e) => {
+    const id = e.target.value; if (!id) return;
+    const v = clipPickableVideos.find((x) => x.id === id);
+    e.target.value = "";
+    if (v) pickExistingClipSource(v);
+  };
   clipRenderList();
+  clipRenderQueue();
   clipRenderShorts();
+}
+function clipRenderQueue() {
+  const el = $("#clipQueue"); if (!el) return;
+  if (!clipAnalyzingQueue.length) { el.innerHTML = ""; return; }
+  el.innerHTML = clipAnalyzingQueue.map((q) => `
+    <div class="clip-queue-chip"><span class="clip-queue-dot"></span><span class="clip-queue-title">${esc(q.title)}</span><span class="clip-queue-label">Analyzing for highlights…</span></div>
+  `).join("");
+}
+// Second of Clipping's two intake paths — reference an already-transcribed
+// video (a Source or a Studio recording) instead of re-uploading it. See
+// POST /api/clipping/import-video: it clones the D1 row + R2 transcript
+// blob, pointing at the SAME source video file, no re-transcription needed.
+async function pickExistingClipSource(v) {
+  if (state.videos.some((x) => x.filename === v.filename && x.duration === v.duration)) {
+    toast("Already in Clipping.");
+    return;
+  }
+  clipAnalyzingQueue.push({ id: v.id, title: v.filename });
+  clipRenderQueue();
+  try {
+    const res = await fetch("/api/clipping/import-video", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ videoId: v.id }),
+    });
+    const clone = await res.json();
+    if (!res.ok) throw new Error(clone.error || "Couldn't import that video");
+    state.videos.push(clone);
+    clipReelVideoId = clone.id;
+    clipRenderShorts();
+    await clipFindShorts();
+  } catch (err) {
+    toast(err.message || "Couldn't analyze that video", { type: "error" });
+  } finally {
+    clipAnalyzingQueue = clipAnalyzingQueue.filter((q) => q.id !== v.id);
+    clipRenderQueue();
+    clipRenderShorts();
+  }
 }
 function wireClipDropzone() {
   const drop = $("#clipDrop");
@@ -4007,9 +4064,11 @@ function clipRenderShorts() {
     <div class="reel-hook">${esc(active.hook || "")}</div>
     <div class="reel-actions">
       <button class="btn small accent" id="reelProduce">${ic("download")} Produce</button>
+      <button class="btn small ghost" id="reelSend">${active.sentToArchive ? "In Archive ✓" : "Send to Archive"}</button>
       <button class="btn small ghost" id="reelDismiss">Not this one</button>
     </div>`;
   $("#reelProduce").onclick = (e) => produceShort(active, e.currentTarget);
+  $("#reelSend").onclick = () => sendHighlightToArchive(active);
   $("#reelDismiss").onclick = () => {
     state.shorts.splice(clipActiveShortIndex, 1);
     if (clipActiveShortIndex >= state.shorts.length) clipActiveShortIndex = Math.max(0, state.shorts.length - 1);
@@ -4039,6 +4098,15 @@ async function clipLoadReelVideo(v, short) {
     const stop = () => { if (p.currentTime >= short.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
     p.addEventListener("timeupdate", stop);
   }
+}
+// Clipping is "built for reposting, not for the Archive" — a found
+// highlight only becomes a real, reusable Archive clip if you explicitly
+// send it there, same as Studio's identical "Send to Archive" pattern.
+async function sendHighlightToArchive(short) {
+  if (short.sentToArchive) return;
+  await saveClipToLibrary([{ videoId: short.videoId, start: short.start, end: short.end }], { title: short.title, description: short.hook, kind: "clipping-highlight" });
+  short.sentToArchive = true;
+  clipRenderShorts();
 }
 // ── Studio — the lighter single-video editor for a raw take that isn't part
 // of a themed archive yet. Reuses the same project shell as a Sources

@@ -190,6 +190,31 @@ export async function getProject(db: D1Database, id: string): Promise<Project | 
   return db.prepare(`SELECT id, name, kind, created_at, deleted_at FROM projects WHERE id = ?`).bind(id).first<Project>();
 }
 
+export interface PickableVideo {
+  id: string;
+  filename: string;
+  duration: number | null;
+  project_name: string;
+  project_kind: ProjectKind;
+}
+
+/** Every ready video that isn't already a Clipping-owned recording — feeds
+ *  Clipping's "pick a video already in Aldershot" intake path (see
+ *  POST /api/clipping/import-video), same "already transcribed, just point
+ *  at it" idea as a Library clip referencing a foreign project's video. */
+export async function listPickableVideos(db: D1Database): Promise<PickableVideo[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT v.id, v.filename, v.duration, p.name AS project_name, p.kind AS project_kind
+       FROM videos v
+       JOIN projects p ON p.id = v.project_id
+       WHERE v.status = 'ready' AND p.deleted_at IS NULL AND p.kind IN ('source', 'studio')
+       ORDER BY v.created_at DESC`,
+    )
+    .all<PickableVideo>();
+  return results ?? [];
+}
+
 export async function addVideo(
   db: D1Database,
   v: Omit<Video, "created_at" | "duration" | "status"> & { duration?: number | null; status?: VideoStatus },
