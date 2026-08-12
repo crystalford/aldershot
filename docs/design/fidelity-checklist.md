@@ -56,7 +56,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 4 | Growth label text ("+N this week") | ✅ | |
 | 5 | Colored initial-letter avatar | ✅ | |
 | 6 | Card accent border-top (not border-left) | ✅ | |
-| 7 | Inline rename (vs. modal) | ❌ | Cosmetic-only interaction difference; modal is functionally equivalent |
+| 7 | Inline rename (vs. modal) | ✅ | True click-to-edit text-swap-to-input, matching the prototype's own mechanic (Enter commits, Escape cancels) |
 | 8 | Merge as inline `<select>` (prototype: preview-only, unapplied) | ⚠️ | Real merge actually applies — functionally ahead of the prototype, not behind |
 
 ## Discover
@@ -68,7 +68,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 3 | "Why it matches" + confidence % | ✅ | Same call |
 | 4 | Thumbnail box + "{platform} · {channel}" line | ✅ | `.discover-thumb` (document icon, since results are Wikipedia articles not video) + "Wikipedia · {hostname}" — real platform/source, not a fabricated channel (Wikipedia has no channel concept) |
 | 5 | Persistent "Added ✓" state | ✅ | |
-| 6 | Search icon inline + onchange trigger | ❌ | Cosmetic; button+Enter is equivalent |
+| 6 | Search icon inline + onchange trigger | ✅ | `.discover-search-bar` — icon inside the input pill, no separate button; triggers on change (blur) and Enter |
 
 ## Sources
 
@@ -137,7 +137,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 2 | Per-shot duration | ✅ | Real: `shotTypeDuration()` keyword-matched, actually used in generation + saved clip length |
 | 3 | Essay-beat chips: per-essay grouping, visible title, auto-advance | ✅ | |
 | 4 | "View in Archive" thread filter | ✅ | Real when the shot came from a beat chip; honestly unfiltered otherwise (no fake "streaming" fallback) |
-| 5 | Saved-feed: last 4 reversed, colored by resolved thread | ⚠️ | Shows 5 not 4, colored by first tag not resolved thread object — minor, not yet fixed |
+| 5 | Saved-feed: last 4 reversed, colored by resolved thread | ✅ | Now `slice(0, 4)` on the already-DESC-ordered list (equivalent to the prototype's slice(-4).reverse()), colored/labeled by `withThreads=1`'s real resolved thread object |
 
 ## Clipping
 

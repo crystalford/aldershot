@@ -243,6 +243,16 @@ a { color: var(--accent); text-decoration: none; }
 .short-card-actions .btn { flex: 1; padding: 6px 4px; font-size: 10.5px; white-space: normal; line-height: 1.25; text-align: center; }
 
 /* ── Discover — real, external sources ──────────────────────────────── */
+.discover-search-bar {
+  display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--line2);
+  border-radius: 2px; padding: 9px 14px; width: 400px; max-width: 100%; margin-top: 16px;
+}
+.discover-search-bar svg { width: 14px; height: 14px; color: var(--faint); flex: none; }
+.discover-search-bar input {
+  border: none; background: transparent; outline: none; font: inherit; font-size: 13px;
+  color: var(--bone); flex: 1; min-width: 0;
+}
+.discover-search-bar input::placeholder { color: var(--faint); }
 .discover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .discover-card { cursor: default; }
 .discover-thumb {
@@ -1045,8 +1055,13 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 /* ── threads ────────────────────────────────────────────── */
 .thread-card { padding: 0; cursor: default; }
 .thread-card:hover { transform: none; box-shadow: none; }
-.thread-name { cursor: pointer; }
-.thread-name:hover { color: var(--accent); }
+.thread-name { cursor: text; }
+.thread-name-edit-ic { font-size: 11px; color: var(--faint); opacity: 0; transition: opacity .15s; }
+.thread-name:hover .thread-name-edit-ic { opacity: 1; }
+.thread-name-input {
+  font: italic 500 18px var(--font-display); background: transparent; border: none;
+  border-bottom: 1px solid; color: var(--bone); outline: none; width: 160px; padding: 0;
+}
 .growth-chart { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin: 12px 0; flex: 1; }
 .growth-bar { flex: 1; border-radius: 1px; min-height: 3px; opacity: .85; }
 .thread-quotes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }

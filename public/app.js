@@ -3484,7 +3484,7 @@ function threadCardHTML(t) {
       <div class="row-between" style="margin-bottom:0;align-items:flex-start;">
         <div style="display:flex;gap:9px;align-items:flex-start;">
           <span class="thread-avatar" style="background:${t.color}22;color:${t.color}">${esc(threadInitials(t.name))}</span>
-          <div class="card-title thread-name" title="Click to rename">${esc(t.name)}</div>
+          <div class="card-title thread-name" title="Click to rename" data-color="${esc(t.color)}"><span class="thread-name-text">${esc(t.name)}</span> <span class="thread-name-edit-ic">✎</span></div>
         </div>
         <span class="essay-meta">${t.clipCount} clip${t.clipCount === 1 ? "" : "s"}</span>
       </div>
@@ -3498,25 +3498,42 @@ function threadCardHTML(t) {
       </div>
       ${t.sampleQuotes.length ? `<div class="thread-quotes">${t.sampleQuotes.map((q) => `<div class="finder-quote">"${esc(q)}"</div>`).join("")}</div>` : ""}
       <div class="s-actions">
-        <button class="btn small ghost thread-rename">Rename</button>
         <button class="btn small ghost thread-merge">Merge into…</button>
       </div>
       <div class="thread-nearmiss-slot"></div>
     </div>
   </div>`;
 }
+// Rename is inline (a text-swap-to-input in place), not a modal — click the
+// name, edit it right there with a colored underline matching the thread,
+// Enter commits, Escape/blur-with-no-change cancels. Matches the prototype's
+// own click-to-edit mechanic exactly, rather than routing through UI.prompt.
 function wireThreadGrid(threads) {
   $$(".thread-card").forEach((card) => {
     const t = threads.find((x) => x.id === card.dataset.id);
-    const rename = async () => {
-      const name = await UI.prompt({ title: "Rename thread", label: "Display name", value: t.name, confirmText: "Rename" });
-      if (name === null || !name.trim()) return;
-      await fetch(`/api/threads/${encodeURIComponent(t.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
-      toast("Thread renamed", { type: "success" });
-      showThreadsView();
+    const nameEl = card.querySelector(".thread-name");
+    const startEdit = (e) => {
+      e.stopPropagation();
+      if (nameEl.querySelector("input")) return;
+      const color = nameEl.dataset.color;
+      nameEl.innerHTML = `<input class="thread-name-input" value="${esc(t.name)}" style="border-bottom-color:${esc(color)}" />`;
+      const input = nameEl.querySelector("input");
+      input.focus(); input.select();
+      const commit = async () => {
+        const name = input.value.trim();
+        input.removeEventListener("blur", commit);
+        if (!name || name === t.name) { nameEl.innerHTML = `<span class="thread-name-text">${esc(t.name)}</span> <span class="thread-name-edit-ic">✎</span>`; return; }
+        await fetch(`/api/threads/${encodeURIComponent(t.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+        toast("Thread renamed", { type: "success" });
+        showThreadsView();
+      };
+      input.addEventListener("keydown", (ke) => {
+        if (ke.key === "Enter") input.blur();
+        else if (ke.key === "Escape") { input.removeEventListener("blur", commit); nameEl.innerHTML = `<span class="thread-name-text">${esc(t.name)}</span> <span class="thread-name-edit-ic">✎</span>`; }
+      });
+      input.addEventListener("blur", commit);
     };
-    card.querySelector(".thread-name").onclick = rename;
-    card.querySelector(".thread-rename").onclick = rename;
+    nameEl.onclick = startEdit;
     card.querySelector(".thread-merge").onclick = async () => {
       const others = threads.filter((x) => x.id !== t.id);
       if (!others.length) { toast("There's only one thread — nothing to merge into."); return; }
@@ -3560,9 +3577,9 @@ async function showDiscoverView() {
   discoverPendingResearch = null;
   main.innerHTML = `<section class="pad">
     <div><h1>Discover</h1><div class="sub">Search the open web for real sources to ground an essay's claims — every result is a real page, not a guess.</div></div>
-    <div class="import" style="max-width:520px;flex-direction:row;gap:8px;margin-top:16px;">
-      <input class="import-input" id="discoverQuery" placeholder="e.g. the psychology of parasocial relationships" autocomplete="off" />
-      <button class="btn accent" id="discoverGo">${ic("globe")} Search</button>
+    <div class="discover-search-bar">
+      ${ic("globe")}
+      <input id="discoverQuery" placeholder="Search the internet for a thread, topic, or claim…" autocomplete="off" />
     </div>
     ${pending ? `<div class="discover-pending-banner">
       <div>Grounding a beat in <b>${esc(pending.essayTitle)}</b> — pick the source below that supports: "${esc(pending.beatText)}"</div>
@@ -3571,7 +3588,7 @@ async function showDiscoverView() {
     <div id="discoverResults" style="margin-top:20px;"></div>
   </section>`;
   const run = () => runDiscoverSearch($("#discoverQuery").value);
-  $("#discoverGo").onclick = run;
+  $("#discoverQuery").addEventListener("change", run);
   $("#discoverQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
   if (pending) {
     $("#discoverQuery").value = pending.beatText;
@@ -5000,7 +5017,10 @@ let genRecentCache = null;
 async function loadGenerativeRecent() {
   try {
     if (!genProjectId) genProjectId = (await fetch("/api/generative/project").then((r) => r.json())).id;
-    genRecentCache = (await fetch(`/api/clips?projectId=${genProjectId}&limit=500`).then((r) => r.json())).clips || [];
+    // withThreads=1 resolves each clip's real cluster thread (see clipThreadMap in
+    // threads.ts) rather than coloring by its first raw tag — a one-time cost per
+    // Generative view load, same tradeoff Archive already accepts for the same call.
+    genRecentCache = (await fetch(`/api/clips?projectId=${genProjectId}&limit=500&withThreads=1`).then((r) => r.json())).clips || [];
   } catch { genRecentCache = null; }
   renderGenerativeRecentInto();
 }
@@ -5009,9 +5029,10 @@ function renderGenerativeRecentInto() {
   if (!countEl || !listEl) return;
   if (genRecentCache === null) { countEl.textContent = "–"; listEl.innerHTML = ""; return; }
   countEl.textContent = String(genRecentCache.length);
+  // Newest first (API already orders by created_at DESC) — last 4 saved, most recent on top.
   listEl.innerHTML = genRecentCache.length
-    ? genRecentCache.slice(0, 5).map((c) => `<div class="gen-recent-item" style="border-left:2px solid ${c.tags[0] ? colorForTag(c.tags[0]) : "var(--faint)"}">
-        <div class="gen-recent-thread">${c.tags[0] ? esc(c.tags[0]) : "untagged"}</div>
+    ? genRecentCache.slice(0, 4).map((c) => `<div class="gen-recent-item" style="border-left:2px solid ${c.thread ? c.thread.color : "var(--faint)"}">
+        <div class="gen-recent-thread">${c.thread ? esc(c.thread.name) : "untagged"}</div>
         <div class="gen-recent-desc">${esc(c.description || c.title)}</div>
       </div>`).join("")
     : `<div class="empty small">Nothing generated yet.</div>`;
