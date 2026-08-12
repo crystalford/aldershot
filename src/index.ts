@@ -90,6 +90,7 @@ import {
   suggestReactionClip,
   draftEssayActBeat,
   askArchive,
+  matchDiscoverToThreads,
   type VideoTranscript,
   type SegmentWithText,
 } from "./pipeline/reason";
@@ -1300,7 +1301,20 @@ app.post("/api/discover/search", async (c) => {
   if (!query?.trim()) return c.json({ error: "what do you want to research?" }, 400);
   try {
     const results = await searchWikipedia(query.trim());
-    return c.json({ results });
+    // Best-effort: tag each result with the archive thread it's most
+    // relevant to, if any — ties Discover's generic search back into the
+    // existing Threads taxonomy the way the design intends. Never blocks
+    // returning results if this fails or there are no threads yet.
+    await ensureThreadSchema(c.env.DB);
+    const threads = await listThreads(c.env, c.env.DB);
+    const matches = await matchDiscoverToThreads(c.env, results, threads.map((t) => ({ id: t.id, name: t.name })));
+    const byId = new Map(threads.map((t) => [t.id, t]));
+    const tagged = results.map((r, i) => {
+      const m = matches.get(i);
+      const thread = m ? byId.get(m.threadId) : undefined;
+      return thread ? { ...r, threadName: thread.name, threadColor: thread.color, confidence: m!.confidence, why: m!.why } : r;
+    });
+    return c.json({ results: tagged });
   } catch (err) {
     return c.json({ error: `search failed: ${err}` }, 502);
   }

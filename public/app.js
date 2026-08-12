@@ -3252,14 +3252,20 @@ async function runDiscoverSearch(query) {
   el.innerHTML = `<div class="discover-grid">${results.map((r, i) => `
     <div class="card discover-card" data-i="${i}">
       <div class="card-body">
-        <div class="card-title">${esc(r.title)}</div>
+        <div class="row-between" style="align-items:flex-start;">
+          <div class="card-title">${esc(r.title)}</div>
+          ${r.threadName ? `<span class="discover-thread-tag" style="color:${r.threadColor};background:${r.threadColor}22;">${esc(r.threadName)}</span>` : ""}
+        </div>
         <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>
+        ${r.why ? `<div class="discover-why">${esc(r.why)}${typeof r.confidence === "number" ? ` <span class="discover-confidence">${r.confidence}% match</span>` : ""}</div>` : ""}
         <div class="discover-extract">${esc(r.extract)}</div>
-        ${pending
-          ? `<button class="btn small accent discover-ground" data-i="${i}">Ground this beat →</button>`
-          : essays.length
-            ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
-            : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
+        <div class="discover-action" data-i="${i}">
+          ${pending
+            ? `<button class="btn small accent discover-ground" data-i="${i}">Ground this beat →</button>`
+            : essays.length
+              ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
+              : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
+        </div>
       </div>
     </div>`).join("")}</div>`;
 
@@ -3283,7 +3289,11 @@ async function runDiscoverSearch(query) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        toast(`Added to "${essays.find((e) => e.id === essayId)?.title || "essay"}"`, { type: "success" });
+        const essayTitle = essays.find((e) => e.id === essayId)?.title || "essay";
+        toast(`Added to "${essayTitle}"`, { type: "success" });
+        const action = el.querySelector(`.discover-action[data-i="${sel.dataset.i}"]`);
+        if (action) action.innerHTML = `<div class="discover-added">Added ✓ — ${esc(essayTitle)}</div>`;
+        return;
       } catch (err) {
         toast(err.message || "Couldn't add to essay", { type: "error" });
       }

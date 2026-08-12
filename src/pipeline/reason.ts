@@ -362,6 +362,48 @@ export async function describeThread(env: Env, name: string, sampleTitles: strin
   }
 }
 
+// ── Discover result -> thread tagging — a single batched call (not one per
+// result) that assigns each generic search result to whichever existing
+// Archive thread it best matches, if any, plus a one-sentence "why" and a
+// 0-100 confidence label. The model only ever picks a real thread id from
+// the menu (or none) — it never invents a thread. ──────────────────────
+interface DiscoverMatchReply {
+  matches?: { index?: number; threadId?: string | null; confidence?: number; why?: string }[];
+}
+export interface DiscoverThreadMatch {
+  threadId: string;
+  confidence: number;
+  why: string;
+}
+export async function matchDiscoverToThreads(
+  env: Env,
+  results: { title: string; extract: string }[],
+  threads: { id: string; name: string }[],
+): Promise<Map<number, DiscoverThreadMatch>> {
+  const map = new Map<number, DiscoverThreadMatch>();
+  if (!results.length || !threads.length) return map;
+  const resultMenu = results.map((r, i) => `[${i}] "${r.title}" — ${r.extract.slice(0, 200)}`).join("\n");
+  const threadMenu = threads.map((t) => `[${t.id}] ${t.name}`).join("\n");
+  const system =
+    "You match search results to the existing topic thread (if any) they're most relevant to, for a " +
+    "video-essay research tool. Only ever pick a threadId from the list given, or null if nothing fits well. " +
+    "Never invent a thread.";
+  const user =
+    `Threads:\n${threadMenu}\n\nSearch results:\n${resultMenu}\n\n` +
+    'Return ONLY JSON: {"matches":[{"index":0,"threadId":"thread-id-or-null","confidence":0-100,"why":"one short sentence"}]}';
+  try {
+    const reply = await runJson<DiscoverMatchReply>(env, system, user);
+    const byId = new Set(threads.map((t) => t.id));
+    for (const m of reply.matches ?? []) {
+      if (typeof m.index !== "number" || !m.threadId || !byId.has(m.threadId)) continue;
+      map.set(m.index, { threadId: m.threadId, confidence: Math.max(0, Math.min(100, Math.round(m.confidence ?? 0))), why: (m.why || "").trim() });
+    }
+  } catch {
+    /* best-effort tagging — Discover results are still fully usable untagged */
+  }
+  return map;
+}
+
 // ── "Ask the archive" — a grounded Q&A read over the saved clip library,
 // same discipline as composeFromClips: the model only ever cites a real
 // clip's [id] plus that clip's own title/description as its "quote" (there's
