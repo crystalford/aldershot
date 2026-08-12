@@ -23,6 +23,7 @@ const ICON = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5 21 8v8l-5-2.5z"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4M8 21h8"/>',
   // rail icons — copied literally (viewBox/path/stroke-width) from the
   // prototype's own inline SVGs per the round-3 handoff's fidelity contract
   // ("you are not designing, you are transcribing").
@@ -1898,7 +1899,9 @@ function recordVoiceover(beat) {
     bodyHTML: `
       <p class="modal-text" style="font-size:15px;line-height:1.6;">${esc(beat.text)}</p>
       <video id="__recPreview" autoplay muted playsinline style="width:100%;max-height:220px;background:#000;border-radius:9px;margin:10px 0;object-fit:cover;"></video>
+      <div class="rec-wave" id="__recWave" hidden></div>
       <div id="__recStatus" style="color:var(--dim);font-size:12.5px;">Choose camera + mic or voice only, then record.</div>
+      <div class="rec-footnote" id="__recFootnote" hidden>Built-in Microphone · saved takes go through the same transcribe pipeline as any clip</div>
     `,
     dismissValue: null,
     onOpen: (card, done) => wireRecorder(card, done),
@@ -1927,18 +1930,27 @@ function recordBridge(bridge) {
     bodyHTML: `
       <p class="modal-text" style="font-size:15px;line-height:1.6;">${esc(bridge.script)}</p>
       <video id="__recPreview" autoplay muted playsinline style="width:100%;max-height:220px;background:#000;border-radius:9px;margin:10px 0;object-fit:cover;"></video>
+      <div class="rec-wave" id="__recWave" hidden></div>
       <div id="__recStatus" style="color:var(--dim);font-size:12.5px;">Choose camera + mic or voice only, then record.</div>
+      <div class="rec-footnote" id="__recFootnote" hidden>Built-in Microphone · saved takes go through the same transcribe pipeline as any clip</div>
     `,
     dismissValue: null,
     onOpen: (card, done) => wireRecorder(card, done),
   });
 }
+const REC_WAVE_BARS = 24;
 function wireRecorder(card, done) {
   const video = card.querySelector("#__recPreview");
   const status = card.querySelector("#__recStatus");
+  const wave = card.querySelector("#__recWave");
+  const footnote = card.querySelector("#__recFootnote");
   const foot = card.querySelector(".modal-foot");
   let stream = null, recorder = null, chunks = [], blob = null, timerInt = null, seconds = 0;
+  let audioCtx = null, analyser = null, waveBars = null, waveRaf = null;
 
+  if (wave && !wave.childElementCount) {
+    wave.innerHTML = Array.from({ length: REC_WAVE_BARS }, () => `<div class="rec-wave-bar"></div>`).join("");
+  }
   const setButtons = (buttons) => {
     foot.innerHTML = "";
     buttons.forEach((b) => {
@@ -1949,15 +1961,43 @@ function wireRecorder(card, done) {
       foot.appendChild(el);
     });
   };
-  const cleanup = () => { clearInterval(timerInt); if (stream) stream.getTracks().forEach((t) => t.stop()); };
+  const stopWave = () => {
+    if (waveRaf) cancelAnimationFrame(waveRaf);
+    waveRaf = null;
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+    analyser = null;
+  };
+  const cleanup = () => { clearInterval(timerInt); stopWave(); if (stream) stream.getTracks().forEach((t) => t.stop()); };
   const showReady = () => {
-    status.textContent = "Choose camera + mic or voice only, then record.";
+    status.innerHTML = "Choose camera + mic or voice only, then record.";
+    if (wave) wave.hidden = true;
+    if (footnote) footnote.hidden = true;
     setButtons([
       { label: "Cancel", onClick: () => { cleanup(); done(null); } },
       { label: "Camera + mic", onClick: () => startRecording(true) },
       { label: "Voice only", variant: "primary", onClick: () => startRecording(false) },
     ]);
   };
+  function startWave() {
+    if (!wave || !waveBars) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+    } catch { return; }
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const step = Math.floor(data.length / waveBars.length) || 1;
+      waveBars.forEach((bar, i) => {
+        const v = data[i * step] || 0;
+        bar.style.height = `${Math.max(3, (v / 255) * 100)}%`;
+      });
+      waveRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
   async function startRecording(withCamera) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: withCamera ? { width: 640, height: 360 } : false });
@@ -1974,7 +2014,9 @@ function wireRecorder(card, done) {
     recorder.onstop = () => {
       blob = new Blob(chunks, { type: recorder.mimeType || (withCamera ? "video/webm" : "audio/webm") });
       video.srcObject = null; video.muted = false; video.controls = true; video.src = URL.createObjectURL(blob);
-      clearInterval(timerInt);
+      clearInterval(timerInt); stopWave();
+      if (wave) wave.hidden = true;
+      if (footnote) footnote.hidden = true;
       status.textContent = "Review your take.";
       setButtons([
         { label: "Retake", onClick: () => { video.controls = false; video.removeAttribute("src"); showReady(); } },
@@ -1983,9 +2025,12 @@ function wireRecorder(card, done) {
     };
     recorder.start();
     seconds = 0;
-    status.textContent = "● Recording… 0:00";
-    timerInt = setInterval(() => { seconds++; status.textContent = `● Recording… ${fmt(seconds)}`; }, 1000);
-    setButtons([{ label: "Stop", variant: "danger", onClick: () => recorder.stop() }]);
+    if (wave) { wave.hidden = false; waveBars = [...wave.querySelectorAll(".rec-wave-bar")]; startWave(); }
+    if (footnote) footnote.hidden = false;
+    status.innerHTML = `<span class="rec-dot"></span> Recording… <span class="rec-time mono">0:00</span>`;
+    const timeEl = () => status.querySelector(".rec-time");
+    timerInt = setInterval(() => { seconds++; const t = timeEl(); if (t) t.textContent = fmt(seconds); }, 1000);
+    setButtons([{ label: "Stop & save", variant: "danger", onClick: () => recorder.stop() }]);
   }
   showReady();
 }
@@ -3268,15 +3313,27 @@ async function openEssay(id) {
   essayState = {
     essay, mode: validModes.includes(essay.builder_mode) ? essay.builder_mode : "premise",
     drafting: false, draftAct: null, draftLoading: false, draftCandidate: null,
-    showCoherence: false, finderQuery: "", finderClips: [],
+    showCoherence: false, finderQuery: "", finderClips: [], voVideoInfo: {},
   };
   setCrumbs([{ label: "Essays", go: showEssaysList }, { label: essay.title }]);
   setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  await loadVoVideoInfo();
   renderEssayShell();
   loadFinderClips();
 }
 async function reloadEssay() {
   essayState.essay = await fetch(`/api/essays/${essayState.essay.id}`).then((r) => r.json());
+  await loadVoVideoInfo();
+}
+// Beats only store a voVideoId — duration/r2_key (for the "take saved ·
+// 0:NN" chip and its ▸ Play button) live on the video row itself. Fetched
+// once per essay load/reload, cached by id so re-renders don't re-fetch.
+async function loadVoVideoInfo() {
+  const ids = [...new Set(essayState.essay.beats.filter((b) => b.kind === "vo" && b.voVideoId).map((b) => b.voVideoId))];
+  const missing = ids.filter((id) => !essayState.voVideoInfo[id]);
+  if (!missing.length) return;
+  const results = await Promise.all(missing.map((id) => fetch(`/api/videos/${id}`).then((r) => r.json()).catch(() => null)));
+  results.forEach((v, i) => { if (v && !v.error) essayState.voVideoInfo[missing[i]] = v; });
 }
 function setEssayMode(mode) {
   essayState.mode = mode; essayState.showCoherence = false;
@@ -3528,10 +3585,18 @@ function renderBeatRow(b) {
     : recorded ? "var(--good)" : "var(--warn)";
   const pill = b.kind === "clip" ? `<span class="pill matched">Matched</span>`
     : b.kind === "research" ? (grounded ? `<span class="pill matched">Grounded to source</span>` : `<span class="pill info">Search web</span>`)
-    : recorded ? `<span class="pill matched">Recorded</span>`
+    : recorded ? "" // the recorded chip below replaces the bare pill entirely
     : `<span class="pill vo">Needs voiceover</span>`;
+  const voInfo = recorded ? essayState?.voVideoInfo?.[b.voVideoId] : null;
   const extra = b.kind === "vo"
-    ? `<div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-record" data-id="${b.id}">${ic("video")} ${recorded ? "Re-record" : "Record"}</button></div>`
+    ? (recorded
+        ? `<div class="vo-recorded-chip">
+             ${ic("mic")}
+             <span>Voiceover take saved${voInfo?.duration ? ` · ${fmt(voInfo.duration)}` : ""}</span>
+             <button class="btn small ghost vo-play" data-video-id="${esc(b.voVideoId)}" ${voInfo?.r2_key ? "" : "disabled"}>▸ Play</button>
+             <button class="btn small ghost beat-record" data-id="${b.id}">Re-record</button>
+           </div>`
+        : `<div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-record" data-id="${b.id}">${ic("video")} Record</button></div>`)
     : b.kind === "research"
       ? `${grounded ? `<a class="discover-url" href="${esc(b.citations?.[0] || "")}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">${esc(b.citations?.[0] || "")}</a>` : ""}
          <div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-ground" data-id="${b.id}">${ic("globe")} ${grounded ? "Change source" : "Find a source in Discover"}</button></div>`
@@ -3559,7 +3624,27 @@ function wireActSections() {
       const beat = essayState.essay.beats.find((b) => b.id === row.dataset.id);
       if (beat) findSourceForBeat(beat);
     });
+    row.querySelector(".vo-play")?.addEventListener("click", (e) => playVoTake(e.currentTarget));
   });
+}
+// One shared <audio> element, toggled per click — playing a different take
+// while one's already going just switches to it, same as any single-player
+// UI. Button label flips ▸ Play / ⏸ Pause to reflect state.
+let voPlayer = null, voPlayerBtn = null;
+function playVoTake(btn) {
+  const info = essayState.voVideoInfo[btn.dataset.videoId];
+  if (!info?.r2_key) return;
+  if (voPlayer && voPlayerBtn === btn && !voPlayer.paused) { voPlayer.pause(); return; }
+  if (!voPlayer) {
+    voPlayer = new Audio();
+    voPlayer.addEventListener("ended", () => { if (voPlayerBtn) voPlayerBtn.textContent = "▸ Play"; });
+    voPlayer.addEventListener("pause", () => { if (voPlayerBtn) voPlayerBtn.textContent = "▸ Play"; });
+  }
+  if (voPlayerBtn && voPlayerBtn !== btn) voPlayerBtn.textContent = "▸ Play";
+  voPlayer.src = mediaUrl(info.r2_key);
+  voPlayer.play();
+  voPlayerBtn = btn;
+  btn.textContent = "⏸ Pause";
 }
 // Naive positional bucketing — no AI call needed: N lines split evenly
 // across the 5 acts in order, matching "auto-bucketed by position" from
@@ -3597,9 +3682,13 @@ function renderAssembleMode(body) {
       <button class="btn ghost small" id="assemblePreview" ${renderable.length ? "" : "disabled"}>${ic("play")} Preview</button>
     </div>
     <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+    ${renderable.length ? `<div class="assemble-legend">
+      <span><span class="assemble-swatch" style="background:var(--good)"></span>A-roll (matched clips)</span>
+      <span><span class="assemble-swatch" style="background:var(--warn)"></span>Voiceover (recorded takes)</span>
+    </div>` : ""}
     <div class="tl" id="assembleList">
       ${renderable.length
-        ? renderable.map((b, i) => `<div class="seg" draggable="true" data-i="${i}" data-id="${b.id}">
+        ? renderable.map((b, i) => `<div class="seg" draggable="true" data-i="${i}" data-id="${b.id}" style="border-left:3px solid ${b.kind === "vo" ? "var(--warn)" : "var(--good)"}">
             <span class="seg-drag" title="Drag to reorder">⠿</span>
             <span class="seg-time">${ACT_LABEL[b.act]}${b.kind === "vo" ? " · VO" : ""}</span>
             <span class="seg-reason">${esc(b.text)}</span>
@@ -3666,12 +3755,33 @@ function wireAssembleDrag(renderable) {
 }
 
 // ── Export mode ──────────────────────────────────────────────────────────
+// Preflight is advisory only — every line below can read "!" and the
+// Render/Export buttons stay fully enabled regardless. It exists to tell
+// you what's still rough, not to gate you from shipping anyway.
+function renderExportPreflight(e) {
+  const groundedResearch = e.beats.filter((b) => b.kind === "research" && b.discoverResultId);
+  const ungroundedResearch = e.beats.filter((b) => b.kind === "research" && !b.discoverResultId).length;
+  const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
+  const lines = [
+    { ok: ungroundedResearch === 0, label: ungroundedResearch === 0 ? "Research beats grounded" : `${ungroundedResearch} research beat${ungroundedResearch > 1 ? "s" : ""} still need${ungroundedResearch === 1 ? "s" : ""} a source` },
+    { ok: unrecordedVo === 0, label: unrecordedVo === 0 ? "Voiceover recorded for every narration beat" : `${unrecordedVo} voiceover beat${unrecordedVo > 1 ? "s" : ""} still need${unrecordedVo === 1 ? "s" : ""} recording` },
+  ];
+  return `<div class="export-preflight">
+    <div class="export-preflight-h">Preflight — advisory, never a gate</div>
+    ${lines.map((l) => `<div class="export-preflight-line ${l.ok ? "ok" : "warn"}">${l.ok ? "✓" : "!"} ${esc(l.label)}</div>`).join("")}
+    ${groundedResearch.length ? `<div class="export-attribution">
+      <div class="export-attribution-h">Attribution required — add these to the description:</div>
+      ${groundedResearch.map((b) => `<div class="export-attribution-line">${esc(b.text)} — <a href="${esc(b.citations?.[0] || "")}" target="_blank" rel="noopener">${esc(b.citations?.[0] || "")}</a></div>`).join("")}
+    </div>` : ""}
+  </div>`;
+}
 function renderExportMode(body) {
   const e = essayState.essay;
   const renderable = e.beats.filter(isRenderable);
   const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
   body.innerHTML = `<div class="pad" style="max-width:640px;">
     <div class="empty small">${renderable.length} beat(s) assembled${unrecordedVo ? ` · ${unrecordedVo} voiceover beat(s) still need recording` : ""}.</div>
+    ${renderExportPreflight(e)}
     <div class="s-actions" style="margin-top:14px;">
       <button class="btn primary" id="renderExport" ${renderable.length ? "" : "disabled"}>${ic("download")} Render 1080p MP4</button>
       <button class="btn ghost" id="exportScript">Export script (.txt)</button>
