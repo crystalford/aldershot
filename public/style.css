@@ -245,7 +245,14 @@ a { color: var(--accent); text-decoration: none; }
 /* ── Discover — real, external sources ──────────────────────────────── */
 .discover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .discover-card { cursor: default; }
-.discover-url { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-bottom: 8px; word-break: break-all; }
+.discover-thumb {
+  aspect-ratio: 16 / 9; max-height: 100px; background: var(--bg2); display: flex;
+  align-items: center; justify-content: center; color: var(--faint); border-bottom: 1px solid var(--line);
+}
+.discover-thumb svg { width: 22px; height: 22px; }
+.discover-platform-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.discover-platform { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
+.discover-url { font-family: var(--font-mono); font-size: 11px; color: var(--faint); word-break: break-all; }
 .discover-url:hover { color: var(--accent); }
 .discover-extract { font-size: 13px; color: var(--dim); line-height: 1.5; margin-bottom: 12px; max-height: 6.5em; overflow: hidden; }
 .discover-thread-tag {

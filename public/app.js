@@ -43,6 +43,7 @@ const ICON = {
   bell: '<path d="M6 8a6 6 0 0112 0c0 4 1.5 6 1.5 6H4.5S6 12 6 8z"/><path d="M9.5 18a2.5 2.5 0 005 0"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 114 2.5c-.6.6-1.5 1-1.5 2.2"/><circle cx="12" cy="17" r=".3" fill="currentColor"/>',
   back: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+  article: '<path d="M6 3h9l3 3v15H6z"/><path d="M18 6h-3V3"/><path d="M9 10h6M9 13.5h6M9 17h3.5"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
 const esc = UI.esc;
@@ -3604,12 +3605,16 @@ async function runDiscoverSearch(query) {
   const essayOptions = essays.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
   el.innerHTML = `<div class="discover-grid">${results.map((r, i) => `
     <div class="card discover-card" data-i="${i}">
+      <div class="discover-thumb">${ic("article")}</div>
       <div class="card-body">
         <div class="row-between" style="align-items:flex-start;">
           <div class="card-title">${esc(r.title)}</div>
           ${r.threadName ? `<span class="discover-thread-tag" style="color:${r.threadColor};background:${r.threadColor}22;">${esc(r.threadName)}</span>` : ""}
         </div>
-        <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>
+        <div class="discover-platform-row">
+          <span class="discover-platform">Wikipedia</span>
+          <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(hostnameOf(r.url))}</a>
+        </div>
         ${r.why ? `<div class="discover-why">${esc(r.why)}${typeof r.confidence === "number" ? ` <span class="discover-confidence">${r.confidence}% match</span>` : ""}</div>` : ""}
         <div class="discover-extract">${esc(r.extract)}</div>
         <div class="discover-action" data-i="${i}">
