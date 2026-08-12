@@ -29,7 +29,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 |---|---|---|---|
 | 1 | Progress bar reflects beat *resolution* (matched/needs-vo/search-web), not beat *kind* | ✅ | Fixed — `beatResolutionStatus()`, app.js |
 | 2 | "Since you were last here" digest: video/clip/discover/highlight entries | ✅ | Real data via GET /api/desk |
-| 3 | Digest: cross-thread cluster surfaced entry | ❌ | No cross-thread clustering concept exists server-side yet — see "Cross-thread clustering" section below, now being built |
+| 3 | Digest: cross-thread cluster surfaced entry | ✅ | `getCrossThreadClusters()`, GET /api/threads/cross |
 | 4 | "Worth your attention": Essay idea, Top highlight, Studio idea | ✅ | All three now real |
 
 ## Archive
@@ -38,7 +38,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 |---|---|---|---|
 | 1 | Clips clustered by thread (not flat grid) | ✅ | `clipThreadMap()`, GET /api/clips?withThreads=1 |
 | 2 | Cluster header: index, title, description, count | ✅ | Synthesized description from real sample clips |
-| 3 | Cluster "Spans" cross-thread indicator | ❌ | Needs cross-thread clustering (see below) |
+| 3 | Cluster "Spans" cross-thread indicator | ✅ | Bridge-clip signal (tag-based union-find), independent of essay data to avoid circularity |
 | 4 | "Ask the archive" Q&A | ✅ | `askArchive()`, POST /api/archive/ask, grounded |
 | 5 | Thread filter chips + type filter chips | ✅ | Type = Manual/AI-detected (real taxonomy; prototype's Dialogue/B-roll/Analysis has no data-model equivalent) |
 | 6 | "See thread breakdown..." cross-nav to Threads | ✅ | |
@@ -79,9 +79,9 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 3 | Grid: thread tag + clip count per card | ⚠️ | Clip count real; thread tag omitted (would force a full clustering pass on every Sources load — see Archive's own opt-in-cost reasoning) |
 | 4 | Cross-nav to Clipping | ✅ | |
 | 5 | Detail: AI-summary callout | ✅ | `summarizeTranscript()`, cached per video |
-| 6 | Detail: lightweight plain-transcript reading pane (not the full editor) | ❌ | Being added — task in flight |
-| 7 | Detail: custom-clip thread-match step | ⚠️ | Best-match label added to selection toolbar; full "Preview & contextualize" gated panel not rebuilt |
-| 8 | Detail: always-on Suggested Edits sidebar | ❌ | Kept as on-demand (click to run) — being reconsidered as part of the reading-pane rebuild |
+| 6 | Detail: lightweight plain-transcript reading pane (not the full editor) | ✅ | New `openSourceReview()` page is now the default landing point; full multi-video editor kept one click away ("Open full editor →") since it's real functionality the prototype's single-video model never needed |
+| 7 | Detail: custom-clip thread-match step | ✅ | `renderCustomClipPanel()` using `bestThreadMatchForText()`; built a working save+essay-picker flow rather than reproducing the prototype's own state-management bug that makes its confirmation unreachable |
+| 8 | Detail: always-on Suggested Edits sidebar | ✅ | `loadSourceSuggestions()` runs automatically on page load in the new review page |
 
 ## Essays List
 
@@ -92,7 +92,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 3 | "est. {duration}" | ✅ | Real sum of resolved beat durations, not a guess |
 | 4 | Whole card clickable | ✅ | |
 | 5 | 3-step wizard (Idea → Clarify → Research preview) | ✅ | Angle chips added alongside Audience (real, kept) |
-| 6 | "Story ideas the archive surfaced" | ❌ | Needs cross-thread clustering — task in flight |
+| 6 | "Story ideas the archive surfaced" | ✅ | Cross-thread clusters with no existing covering essay; "Start this essay →" pre-selects threads in the wizard |
 
 ## Essay Builder shell
 
@@ -122,7 +122,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 
 | # | Item | Status | Why |
 |---|---|---|---|
-| 1 | "My videos" grid (per-recording workspace) | ❌ | Being added — task in flight |
+| 1 | "My videos" grid (per-recording workspace) | ✅ | `renderStudioGrid()`; Suggested-cuts/Clip-candidates filtered per selected video, Video-ideas deliberately left unfiltered (see reasoning below) |
 | 2 | Suggested-cuts persistent tint + click-to-cut | ✅ | Real, Studio-scoped only |
 | 3 | Clip candidates "Send to Archive" | ✅ | |
 | 4 | Subcopy under all 3 headings | ✅ | |
@@ -171,6 +171,7 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 - **No emotional-breakdown / analytical-framing clip tagging** — the 4th coherence check needs this and it exists nowhere in the data model.
 - **No real waveform data** on Archive clip cards.
 - **Veo resolution parameter** — genuinely unconfirmed against the live Workers AI catalog; stored but not sent rather than guessed.
+- **Studio "My videos" grid: Video-ideas panel not filtered per-video** — its drag-reorder/remove logic indexes positionally into `state.timeline[group]`; filtering the displayed list without also switching that to a stable-id lookup would make remove/reorder silently operate on the wrong real segment. Suggested-cuts and Clip-candidates (read-only lists) are filtered; Video-ideas is not, deliberately.
 
 ## Regression guard
 
