@@ -3501,7 +3501,14 @@ function renderPremiseMode(body) {
       : `<div class="empty small" style="margin-top:10px;">No issues found — looking solid.</div>`) : ""}
     <div class="empty small" style="margin-top:14px;max-width:520px;">No script needed to start — you'll go act by act, reacting to one suggestion at a time. Already have a script written? Use Import script in Script mode instead.</div>
   </div>`;
-  $("#startActDraft").onclick = () => { s.drafting = true; s.draftAct = "hook"; renderEssayBody(); runActDraft("hook"); };
+  $("#startActDraft").onclick = () => {
+    // Resume where the user left off — restarting at "hook" unconditionally
+    // used to re-walk acts that already had accepted (and persisted) beats,
+    // producing real duplicate beats on every re-entry.
+    const nextAct = ACT_DEFS.find((a) => !e.beats.some((b) => b.act === a.act));
+    if (!nextAct) { toast("Every act already has beats — see them in Script mode.", { type: "info" }); setEssayMode("script"); return; }
+    s.drafting = true; s.draftAct = nextAct.act; renderEssayBody(); runActDraft(nextAct.act);
+  };
   $("#runCoherence").onclick = () => { s.showCoherence = true; renderEssayBody(); };
 }
 async function runActDraft(act) {
@@ -3535,15 +3542,19 @@ async function acceptDraft() {
   advanceDraft();
 }
 function advanceDraft() {
-  const s = essayState;
-  const idx = ACT_DEFS.findIndex((a) => a.act === s.draftAct);
-  if (idx >= ACT_DEFS.length - 1) {
+  const s = essayState, e = s.essay;
+  let idx = ACT_DEFS.findIndex((a) => a.act === s.draftAct) + 1;
+  // Skip any act that already has beats (e.g. accepted earlier, or added via
+  // Import script while paused) so resuming a stopped draft never re-proposes
+  // a duplicate for an act that's already covered.
+  while (idx < ACT_DEFS.length && e.beats.some((b) => b.act === ACT_DEFS[idx].act)) idx++;
+  if (idx >= ACT_DEFS.length) {
     s.drafting = false;
     setEssayMode("script");
     toast("Draft complete — review it in Script mode", { type: "success" });
     return;
   }
-  runActDraft(ACT_DEFS[idx + 1].act);
+  runActDraft(ACT_DEFS[idx].act);
 }
 
 // ── Script mode ──────────────────────────────────────────────────────────
@@ -3648,23 +3659,48 @@ function playVoTake(btn) {
   voPlayerBtn = btn;
   btn.textContent = "⏸ Pause";
 }
-// Naive positional bucketing — no AI call needed: N lines split evenly
-// across the 5 acts in order, matching "auto-bucketed by position" from
-// the design brief. A real semantic bucketer is a fast-follow.
+const IMPORT_STOPWORDS = new Set(["the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "is", "it", "that", "this", "with", "as", "at", "by", "be", "was", "were", "are", "so", "not", "you", "your", "i", "we", "he", "she", "they"]);
+function significantWords(s) {
+  return (String(s || "").toLowerCase().match(/[a-z0-9']+/g) || []).filter((w) => w.length > 2 && !IMPORT_STOPWORDS.has(w));
+}
+/** Bag-of-words match against the archive, mirroring the prototype's
+ * matchScript(): lines that share ≥2 significant words with a clip's
+ * title/description/tags become "matched" (kind:"clip"); everything else
+ * becomes a needs_vo beat. Acts are still auto-bucketed by line position. */
+function bestClipMatch(line, clips) {
+  const lineWords = significantWords(line);
+  if (!lineWords.length) return null;
+  let best = null, bestScore = 0;
+  for (const c of clips) {
+    const clipWords = new Set(significantWords(`${c.title} ${c.description || ""} ${(c.tags || []).join(" ")}`));
+    let score = 0;
+    for (const w of lineWords) if (clipWords.has(w)) score++;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore >= 2 ? best : null;
+}
 async function importScript(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (!lines.length) { toast("Paste some script text first."); return; }
   const perAct = Math.ceil(lines.length / ACT_DEFS.length);
+  let clips = [];
+  try { clips = (await fetch("/api/clips?limit=500").then((r) => r.json())).clips || []; } catch { /* fall back to all-vo */ }
+  let matched = 0;
   try {
     for (let i = 0; i < lines.length; i++) {
       const act = ACT_DEFS[Math.min(ACT_DEFS.length - 1, Math.floor(i / perAct))].act;
+      const clip = bestClipMatch(lines[i], clips);
+      const body = clip
+        ? { act, kind: "clip", clipId: clip.id, text: lines[i] }
+        : { act, kind: "vo", text: lines[i] };
+      if (clip) matched++;
       await fetch(`/api/essays/${essayState.essay.id}/beats`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ act, kind: "vo", text: lines[i] }),
+        body: JSON.stringify(body),
       });
     }
     await reloadEssay();
-    toast(`Imported ${lines.length} line(s), bucketed by position`, { type: "success" });
+    toast(`Imported ${lines.length} line(s) — ${matched} matched to archive, ${lines.length - matched} need voiceover`, { type: "success" });
     renderEssayShell();
   } catch { toast("Import failed partway through", { type: "error" }); }
 }
