@@ -4860,6 +4860,15 @@ async function buildCommands() {
       if (p.id !== state.project?.id) cmds.push({ label: p.name, hint: "Project", group: "Projects", action: () => openProject(p.id) });
     }
   } catch { /* palette still works without the project list */ }
+  // Jump straight to a named Essay or Thread, not just the generic list view.
+  try {
+    const { essays } = await fetch("/api/essays").then((r) => r.json());
+    for (const e of essays || []) cmds.push({ label: e.title, hint: "Essay", group: "Essays", action: () => { location.hash = `#/essays/${e.id}`; } });
+  } catch { /* palette still works without the essay list */ }
+  try {
+    const threads = await fetchThreads();
+    for (const t of threads) cmds.push({ label: t.name, hint: "Thread", group: "Threads", action: () => showThreadsView() });
+  } catch { /* palette still works without the thread list */ }
   return cmds;
 }
 async function openCommandPalette() {
@@ -5263,7 +5272,7 @@ async function showTrashView() {
   catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
   const projects = data.projects || [], essays = data.essays || [];
   main.innerHTML = `<section class="pad">
-    <div><h1>Trash</h1><div class="sub">Restore anything you didn't mean to remove.</div></div>
+    <div><h1>Trash</h1><div class="sub">Deleted essays and sources — restore anything you didn't mean to remove.</div></div>
     <div class="tools-h" style="margin-top:22px;">Sources</div>
     ${projects.length ? `<div class="grid" id="trashProjects"></div>` : `<div class="empty-note">Nothing here.</div>`}
     <div class="tools-h" style="margin-top:26px;">Essays</div>
