@@ -1118,6 +1118,28 @@ app.get("/api/trash", async (c) => {
   return c.json({ projects, essays });
 });
 
+// ── Settings > Billing & Usage — real aggregate counts standing in for the
+// prototype's 3 usage meters, rather than fabricated numbers: transcription
+// hours from actual transcribed video duration, generation credits from
+// actual saved Generative shots, research lookups from actual Discover
+// results saved. No caps/limits exist in this app, so each meter is shown
+// as a plain count, not a fraction of some invented quota.
+app.get("/api/settings/usage", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureGenerativeSchema(c.env.DB);
+  await ensureDiscoverSchema(c.env.DB);
+  const [transcribed, generated, researched] = await Promise.all([
+    c.env.DB.prepare(`SELECT COALESCE(SUM(duration), 0) as sec FROM videos WHERE status = 'ready'`).first<{ sec: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM generative_shots WHERE status = 'saved'`).first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM discover_results`).first<{ n: number }>(),
+  ]);
+  return c.json({
+    transcriptionHours: Math.round(((transcribed?.sec ?? 0) / 3600) * 10) / 10,
+    generationCredits: generated?.n ?? 0,
+    researchLookups: researched?.n ?? 0,
+  });
+});
+
 // ── The Desk — the app's home surface: what changed since last time, and
 // what's blocking each in-production essay. All 4 stats and every digest
 // row are real counts/rows off existing tables — nothing here is sample

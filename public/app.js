@@ -4886,7 +4886,7 @@ const RAIL_ITEMS = [
   { view: "clipping", label: "Clipping", icon: "scissors" },
 ];
 const RAIL_BOTTOM = [
-  { view: "settings", label: "Settings", icon: "gear", desc: "Profile, team, billing, and integrations." },
+  { view: "settings", label: "Settings", icon: "gear" },
   { view: "trash", label: "Trash", icon: "trash" },
 ];
 function buildRail() {
@@ -5309,6 +5309,77 @@ async function showTrashView() {
   }
 }
 
+// ── Settings — 4 tabs matching the prototype's structure. Profile/Team's
+// own inputs are real form controls but genuinely unbound to anything (no
+// multi-user account model, no invite/email system exists yet), same as
+// the prototype's own scope. Billing & Usage is the one exception: its 3
+// meters show REAL counts from this account's own activity (not invented
+// numbers) -- there's no quota/cap in this app, so each is a plain running
+// total, not a fraction of some fictional limit. Integrations lists real
+// non-connection: no OAuth flow exists for any of them yet.
+const SETTINGS_TABS = ["Profile", "Team", "Billing & Usage", "Integrations"];
+async function showSettingsView() {
+  location.hash = "#/settings"; setActiveRail("settings");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  state.settingsTab = state.settingsTab || "Profile";
+  main.innerHTML = `<section class="pad">
+    <h1>Settings</h1>
+    <div class="essay-tabs" style="margin:14px 0 0;">${SETTINGS_TABS.map((t) => `<div class="essay-tab${state.settingsTab === t ? " on" : ""}" data-tab="${esc(t)}">${esc(t)}</div>`).join("")}</div>
+    <div id="settingsBody" style="max-width:600px;margin-top:22px;"></div>
+  </section>`;
+  $$(".essay-tab").forEach((t) => { t.onclick = () => { state.settingsTab = t.dataset.tab; showSettingsView(); }; });
+  renderSettingsTab();
+}
+async function renderSettingsTab() {
+  const body = $("#settingsBody"); if (!body) return;
+  if (state.settingsTab === "Profile") {
+    body.innerHTML = `
+      <label class="modal-label">Name</label>
+      <input class="modal-input" value="You" style="margin-bottom:16px;" />
+      <label class="modal-label">Email</label>
+      <input class="modal-input" value="you@example.com" />`;
+    return;
+  }
+  if (state.settingsTab === "Team") {
+    body.innerHTML = `
+      <div class="settings-team-row"><span class="settings-avatar">Y</span><div><div class="card-title" style="font-size:14px;">You</div><div class="empty small">Owner</div></div></div>
+      <label class="modal-label" style="margin-top:20px;">Invite a teammate</label>
+      <div style="display:flex;gap:8px;">
+        <input class="modal-input" id="inviteEmail" placeholder="teammate@example.com" autocomplete="off" style="flex:1;" />
+        <button class="btn primary" id="sendInvite">Send invite</button>
+      </div>`;
+    $("#sendInvite").onclick = () => {
+      const email = $("#inviteEmail").value.trim();
+      if (!email) { toast("Enter an email first."); return; }
+      toast(`No team/invite system yet — nothing was sent to ${email}.`);
+    };
+    return;
+  }
+  if (state.settingsTab === "Billing & Usage") {
+    body.innerHTML = `<div class="empty small">Loading usage…</div>`;
+    let usage;
+    try { usage = await fetch("/api/settings/usage").then((r) => r.json()); } catch { usage = null; }
+    if (state.settingsTab !== "Billing & Usage") return; // tab changed while loading
+    if (!usage) { body.innerHTML = `<p class="empty">Couldn't load usage.</p>`; return; }
+    const meters = [
+      ["Transcription hours", usage.transcriptionHours, "hrs transcribed so far"],
+      ["Generation credits", usage.generationCredits, "generated cuts saved to the Archive"],
+      ["External research lookups", usage.researchLookups, "sources saved via Discover"],
+    ];
+    body.innerHTML = meters.map(([label, value, sub]) => `
+      <div class="settings-meter">
+        <div class="row-between"><span style="font-size:12.5px;">${esc(label)}</span><span class="empty small">${value}</span></div>
+        <div class="settings-meter-bar"><div style="width:${Math.min(100, value * 4)}%"></div></div>
+        <div class="empty small" style="margin-top:4px;">${value} ${esc(sub)} — no cap in this app, shown as a running total.</div>
+      </div>`).join("");
+    return;
+  }
+  // Integrations
+  const connectors = [["YouTube", "Not connected"], ["Twitch", "Not connected"], ["Rumble", "Not connected"]];
+  body.innerHTML = connectors.map(([name, status]) => `
+    <div class="settings-team-row"><div class="card-title" style="font-size:14px;flex:1;">${esc(name)}</div><span class="empty small">${esc(status)}</span></div>`).join("");
+}
+
 function go(view) {
   location.hash = `#/${view}`;
 }
@@ -5373,6 +5444,7 @@ function route() {
   if (view === "clipping") return showClippingView();
   if (view === "studio") return showStudioView();
   if (view === "trash") return showTrashView();
+  if (view === "settings") return showSettingsView();
   const stub = RAIL_ITEMS.find((i) => i.view === view) || RAIL_BOTTOM.find((i) => i.view === view);
   if (stub && stub.desc) return renderStub(stub);
   showProjects();

@@ -245,6 +245,18 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
   background: var(--accent-soft); border-radius: 2px; padding: 3px 9px; margin-top: 4px;
 }
+.settings-team-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 2px; margin-bottom: 8px;
+}
+.settings-avatar {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font: 13px var(--font-mono); font-weight: 600; flex: none;
+}
+.settings-meter { margin-bottom: 20px; }
+.settings-meter-bar { height: 6px; border-radius: 3px; background: var(--bg2); margin-top: 6px; overflow: hidden; }
+.settings-meter-bar > div { height: 100%; background: var(--accent); }
+
 .crumbs { display: flex; align-items: center; gap: 9px; color: var(--dim); font-size: 13px; min-width: 0; }
 .crumbs .sep { color: var(--line2); }
 .crumbs a { color: var(--dim); transition: color .15s; }
