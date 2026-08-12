@@ -96,42 +96,55 @@ a { color: var(--accent); text-decoration: none; }
 /* ── shell: persistent left icon rail + thin top bar ───────── */
 .shell { flex: 1; min-height: 0; display: flex; }
 .rail {
-  width: 56px; flex: none; display: flex; flex-direction: column; align-items: center;
-  gap: 4px; padding: 14px 0; background: var(--bg-deep); border-right: 1px solid var(--line);
+  width: 72px; flex: none; display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 18px 0; background: var(--bg-deep); border-right: 1px solid var(--line);
+  overflow-y: auto;
 }
-.rail-mark { cursor: pointer; margin-bottom: 10px; }
+.rail-mark { cursor: pointer; }
 .mark-tile {
-  width: 26px; height: 26px; display: grid; place-items: center; flex: none;
-  background: var(--accent); border-radius: 2px;
+  width: 34px; height: 34px; display: grid; place-items: center; flex: none;
+  background: none; border: 1px solid var(--line2); border-radius: 3px;
+  font: italic 500 18px var(--font-display); color: var(--bone);
 }
-.rail-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.rail-group { display: flex; flex-direction: column; gap: 4px; flex: none; }
 .rail-spacer { flex: 1; }
+/* Main nav items — icon + a visible uppercase label underneath, matching
+   the prototype's own <span style="font-size:9px">LABEL</span> exactly. */
 .rail-btn {
-  width: 38px; height: 38px; display: grid; place-items: center; flex: none;
+  width: 100%; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px;
   background: none; border: none; color: var(--faint); cursor: pointer; border-radius: 2px;
   transition: color .15s, background .15s;
 }
-.rail-btn svg { width: 19px; height: 19px; }
+.rail-btn svg { width: 20px; height: 20px; flex: none; }
+.rail-btn-label { font-size: 9px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .rail-btn:hover { color: var(--bone); background: var(--panel); }
 .rail-btn.on { color: var(--accent); background: var(--accent-soft); }
+/* Small unlabeled icon buttons — search trigger, notifications, help, and
+   the bottom Settings/Trash cluster — matching the prototype's plain small
+   icons below the main nav (no label on any of these). */
+.rail-icon-btn {
+  width: 32px; height: 32px; display: grid; place-items: center; flex: none; padding: 0;
+  background: none; border: none; color: var(--faint); cursor: pointer; border-radius: 2px;
+  transition: color .15s, background .15s;
+}
+.rail-icon-btn svg { width: 16px; height: 16px; }
+.rail-icon-btn:hover { color: var(--bone); background: var(--panel); }
+.rail-icon-btn.on { color: var(--accent); background: var(--accent-soft); }
 .shell-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
-/* ── top bar ────────────────────────────────────────────── */
+/* ── top bar — breadcrumbs/stats/actions for views with in-context
+   navigation (a project, an essay builder); collapses to a thin line when
+   a view (like Desk) has none of the three. Search lives in the rail only
+   (a small icon, see .rail-icon-btn#paletteTrigger) — never a persistent
+   full-width bar, matching the prototype's own search-is-a-rail-icon
+   mechanic exactly. ─────────────────────────────────────────────────── */
 .bar {
-  display: flex; align-items: center; gap: 20px; flex: none;
+  display: flex; align-items: center; gap: 20px; flex: none; min-height: 1px;
   padding: 12px 22px; border-bottom: 1px solid var(--line);
   background: rgba(10, 10, 11, .7); backdrop-filter: blur(12px);
   position: sticky; top: 0; z-index: 20;
 }
-.palette-trigger {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--bg2); border: 1px solid var(--line2); border-radius: 2px;
-  color: var(--faint); font: inherit; font-size: 12.5px; padding: 6px 8px 6px 10px;
-  cursor: pointer; transition: border-color .15s, color .15s;
-}
-.palette-trigger:hover { border-color: rgba(138, 123, 212, .4); color: var(--dim); }
-.palette-trigger svg { width: 13px; height: 13px; flex: none; }
-@media (max-width: 780px) { .palette-trigger span { display: none; } }
+.bar:has(.crumbs:empty):has(.stats:empty):has(.header-actions:empty) { padding: 0; border-color: transparent; }
 
 /* ── focused mode: a single-purpose page with no rail/dashboard chrome
    (Clipping today; the same toggle is meant to be reused for Studio/

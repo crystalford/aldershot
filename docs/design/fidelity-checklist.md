@@ -21,6 +21,35 @@ bug, a marked one is a decision.
 
 Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 
+**A real methodology gap, found and fixed 2026-08-12**: everything below this
+point had been verified by grepping `app.js` for specific behavioral markers
+(does `beatResolutionStatus` exist, does the right string appear) plus
+occasional targeted screenshots of individual views. That approach never once
+rendered the actual prototype file itself and compared it side-by-side against
+the live app's persistent chrome — so it completely missed that the nav rail
+had silently lost its visible text labels, drifted to the wrong icon order,
+and grown an entire persistent "Search or jump to…" header bar that doesn't
+exist in the design at all (search is a small rail icon only, per the
+prototype's own mechanic — and per this codebase's own now-contradicted
+comment above `RAIL_ITEMS`). All three are fixed below. The lesson: render the
+prototype (it's a real interactive React app once its CDN deps are served
+locally — see `scripts/check-fidelity.sh`'s header comment for how) and
+screenshot-diff it directly against the live app before trusting any "done."
+Grep checks are a regression net for fixes already verified this way, not a
+substitute for the verification itself.
+
+---
+
+## Global chrome (rail, header, logo)
+
+| # | Item | Status | Why |
+|---|---|---|---|
+| 1 | Rail: visible uppercase label under each main nav icon | ✅ | Was icon-only (title tooltip only) — a real, previously-uncaught regression. Fixed in `buildRail()` |
+| 2 | Rail: nav item order (Desk/Archive/Sources/Clipping/Studio/Generative/Threads/Essays/Discover) | ✅ | Had drifted to a different order — fixed in `RAIL_ITEMS` |
+| 3 | Rail: 72px width, 34px bordered "A" logo mark, 20px nav icons, 16px small icons | ✅ | Was 56px width, filled accent-color triangle logo, 19px icons |
+| 4 | Search reachable only via a small rail icon (no persistent header bar) | ✅ | A full-width "Search or jump to…" bar had been added to the header — doesn't exist in the prototype at all, and directly contradicted this codebase's own comment above `RAIL_ITEMS` ("reachable only by clicking the rail/search icon"). Removed; search is now `#paletteTrigger`, a small icon in the rail |
+| 5 | Header bar (crumbs/stats/actions) collapses to nothing when empty | ✅ | Kept as real, functional infrastructure (breadcrumbs/stats have no prototype equivalent since it's a flat mockup with no nested navigation state) but now collapses visually on views like Desk that use none of it, instead of showing an empty bar |
+
 ---
 
 ## The Desk

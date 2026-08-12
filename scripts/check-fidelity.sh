@@ -7,11 +7,29 @@
 # still works, only that nobody deleted the line.
 #
 # Usage: scripts/check-fidelity.sh   (run from the repo root)
+#
+# ── Rendering the prototype itself, for a real screenshot diff ─────────────
+# The prototype (docs' design-handoff .dc.html) is a real interactive React
+# app, not a static mockup — but it loads React/ReactDOM/Babel from unpkg.com
+# at runtime, which a sandboxed browser can't always reach directly. To
+# render it in Playwright:
+#   1. curl the three CDN URLs referenced in support.js to local files:
+#      https://unpkg.com/react@18.3.1/umd/react.production.min.js
+#      https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js
+#      https://unpkg.com/@babel/standalone@7.29.0/babel.min.js
+#   2. In Playwright, page.route('https://unpkg.com/**', ...) and fulfill
+#      each from the local file instead of continuing the network request.
+#   3. page.goto('file:///path/to/Aldershot v2.dc.html') and screenshot.
+# This is the only way to catch chrome-level drift (rail labels, icon order,
+# an invented header element) that per-feature grep/behavior checks miss
+# entirely — see "Global chrome" in fidelity-checklist.md for what this
+# caught on 2026-08-12 that months of grep-based checks did not.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_JS="$ROOT/public/app.js"
 STYLE_CSS="$ROOT/public/style.css"
+HTML="$ROOT/public/index.html"
 SRC="$ROOT/src"
 
 fail=0
@@ -29,6 +47,14 @@ check() {
 }
 
 echo "── Fidelity spot-check ──────────────────────────────────────"
+
+# Global chrome
+check "$APP_JS" "rail-btn-label" "Rail nav items have visible text labels"
+check "$APP_JS" '{ view: "clipping", label: "Clipping", icon: "scissors" },
+  { view: "studio"' "Rail nav order matches prototype (Clipping before Studio)"
+check "$HTML" 'mark-tile">A<' "Rail logo is the bordered 'A' mark, not a filled icon tile"
+check "$HTML" 'rail-icon-btn" id="paletteTrigger"' "Search is a small rail icon, not a header bar"
+check "$STYLE_CSS" ".bar:has(.crumbs:empty)" "Header bar collapses when empty (no invented persistent search bar)"
 
 # Desk / Archive / Threads / Discover / Sources
 check "$APP_JS" "beatResolutionStatus" "Desk progress bar reflects resolution, not kind"

@@ -5106,37 +5106,49 @@ async function openCommandPalette() {
 // navigable, not four separate builds bolted onto the old header. No
 // keyboard shortcuts anywhere (including the palette) — reachable only by
 // clicking the rail/search icon, per explicit design direction. ──────────
+// Order and icon choices copied literally from the prototype's own nav rail
+// (Desk, Archive, Sources, Clipping, Studio, Generative, Threads, Essays,
+// Discover) — a prior pass had drifted into a different order.
 const RAIL_ITEMS = [
   { view: "desk", label: "Desk", icon: "desk" },
   { view: "archive", label: "Archive", icon: "archive" },
   { view: "sources", label: "Sources", icon: "upload" },
-  { view: "threads", label: "Threads", icon: "threads" },
-  { view: "discover", label: "Discover", icon: "globe" },
-  { view: "essays", label: "Essays", icon: "quill" },
+  { view: "clipping", label: "Clipping", icon: "scissors" },
   { view: "studio", label: "Studio", icon: "clapper" },
   { view: "generative", label: "Generative", icon: "wand" },
-  { view: "clipping", label: "Clipping", icon: "scissors" },
+  { view: "threads", label: "Threads", icon: "threads" },
+  { view: "essays", label: "Essays", icon: "quill" },
+  { view: "discover", label: "Discover", icon: "globe" },
 ];
 const RAIL_BOTTOM = [
   { view: "settings", label: "Settings", icon: "gear" },
   { view: "trash", label: "Trash", icon: "trash" },
 ];
 function buildRail() {
-  const render = (items, el) => {
-    el.innerHTML = "";
-    for (const item of items) {
-      const btn = document.createElement("button");
-      btn.className = "rail-btn"; btn.dataset.view = item.view; btn.title = item.label;
-      btn.innerHTML = ic(item.icon);
-      btn.onclick = () => go(item.view);
-      el.appendChild(btn);
-    }
-  };
-  render(RAIL_ITEMS, $("#railTop"));
-  render(RAIL_BOTTOM, $("#railBottom"));
+  // Main nav items show a visible label under the icon, matching the
+  // prototype's own <span style="font-size:9px">LABEL</span> exactly —
+  // this was silently icon-only (title tooltip only) before.
+  const top = $("#railTop"); top.innerHTML = "";
+  for (const item of RAIL_ITEMS) {
+    const btn = document.createElement("button");
+    btn.className = "rail-btn"; btn.dataset.view = item.view; btn.title = item.label;
+    btn.innerHTML = `${ic(item.icon)}<span class="rail-btn-label">${esc(item.label)}</span>`;
+    btn.onclick = () => go(item.view);
+    top.appendChild(btn);
+  }
+  // Settings/Trash stay icon-only, matching the prototype's own unlabeled
+  // bottom-cluster icons (bell/help/trash/settings-avatar).
+  const bottom = $("#railBottom"); bottom.innerHTML = "";
+  for (const item of RAIL_BOTTOM) {
+    const btn = document.createElement("button");
+    btn.className = "rail-icon-btn"; btn.dataset.view = item.view; btn.title = item.label;
+    btn.innerHTML = ic(item.icon);
+    btn.onclick = () => go(item.view);
+    bottom.appendChild(btn);
+  }
 }
 function setActiveRail(view) {
-  $$(".rail-btn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
+  $$(".rail-btn, .rail-icon-btn").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
 }
 function renderStub(item) {
   setActiveRail(item.view);
