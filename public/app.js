@@ -221,7 +221,7 @@ function renderSourceGrid(allProjects) {
         <div class="card-title">${esc(p.name)}</div>
         <div class="card-sub">${new Date(p.created_at).toLocaleString()}${p.clipCount ? ` · ${p.clipCount} clip${p.clipCount === 1 ? "" : "s"}` : ""}</div>
       </div>`;
-    card.onclick = () => openProject(p.id);
+    card.onclick = () => openSourceReview(p.id);
     card.querySelector(".card-delete").onclick = async (e) => {
       e.stopPropagation();
       if (!(await UI.confirm({ title: "Delete this source?", message: "It moves to Trash, where you can restore it later.", confirmText: "Delete", danger: true }))) return;
@@ -278,7 +278,7 @@ function deskGo(target) {
   if (target.type === "clipping") return showClippingView();
   if (target.type === "essays") return showEssaysList();
   if (target.type === "studio") return showStudioView();
-  if (target.type === "project") return openProject(target.id);
+  if (target.type === "project") return openSourceReview(target.id);
 }
 async function showDeskView() {
   location.hash = "#/desk"; setActiveRail("desk");
@@ -379,6 +379,168 @@ async function openProject(id) {
   state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
   setCrumbs([{ label: "Sources", go: showProjects }, { label: data.project.name }]);
   renderProject();
+}
+
+// ── Sources review — the lightweight "now viewing" triage page the
+// prototype's Sources detail actually is (a plain-transcript reading pane
+// + always-on Suggested Edits sidebar), landed on FIRST when opening a
+// source from the grid. The full multi-video Cut/Suggestions/Shorts editor
+// (renderProject, above) remains one click away via "Open full editor ->"
+// -- real, valuable functionality this app has that the prototype's
+// single-video-only model never needed, so it isn't removed, just no
+// longer the default landing page for "I just want to see what's here."
+let sourceReviewState = null;
+async function openSourceReview(id) {
+  location.hash = `#/source/${id}`; setActiveRail("sources");
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
+  const data = await api.getProject(id);
+  if (data.error) { main.innerHTML = `<div class="pad"><p class="empty">${esc(data.error)}</p></div>`; return; }
+  state.project = data.project;
+  state.videos = (data.videos || []).map((v) => ({ ...v }));
+  state.timeline = data.timeline;
+  state.shorts = data.shorts;
+  state.suggestions = data.suggestions;
+  state.bridges = null;
+  state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
+  setCrumbs([{ label: "Sources", go: showProjects }, { label: data.project.name }]);
+  sourceReviewState = { videoId: state.selected, range: null, customClip: null };
+  renderSourceReview();
+  loadSourceSuggestions();
+}
+function renderSourceReview() {
+  const p = state.project;
+  const ready = state.videos.filter((v) => v.status === "ready" && v.words);
+  const s = sourceReviewState;
+  if (!s.videoId || !ready.some((v) => v.id === s.videoId)) s.videoId = ready[0]?.id || null;
+  const v = ready.find((x) => x.id === s.videoId) || null;
+  $("#headerActions").innerHTML = `<button class="btn ghost" id="openFullEditor">Open full editor →</button>`;
+  $("#openFullEditor").onclick = () => openProject(p.id);
+  setStats("");
+  main.innerHTML = `<section class="pad source-review">
+    <div class="row-between" style="align-items:flex-start;">
+      <div><h1>${esc(p.name)}</h1><div class="sub">Now viewing — a quick read of what's here, before you dive into editing.</div></div>
+    </div>
+    ${ready.length > 1 ? `<div class="tag-rail" id="reviewVideoSwitch">${ready.map((rv) => `<span class="tag-chip${rv.id === s.videoId ? " on" : ""}" data-vid="${rv.id}">${esc(filenameOf(rv.filename))}</span>`).join("")}</div>` : ""}
+    ${!ready.length ? `<div class="empty-note">Nothing transcribed yet — <span class="essay-link" id="reviewOpenEditor">open the full editor</span> to upload or import a video.</div>` : `
+    <div class="source-review-body">
+      <div class="source-review-main">
+        <div class="ai-summary-callout">
+          <div class="ai-summary-eyebrow">AI summary</div>
+          <div>${esc(v.summary || "AI summary pending — this source hasn't finished analysis yet.")}</div>
+        </div>
+        <div class="source-transcript" id="sourceTranscript"></div>
+        <div id="customClipPanel"></div>
+      </div>
+      <aside class="source-suggest-sidebar">
+        ${ic("sparkle")}<span class="side-h" style="margin:0 0 4px;display:inline-block;">Suggested edits</span>
+        <div id="sourceSuggestList"><div class="empty small">Looking for moments worth flagging…</div></div>
+      </aside>
+    </div>`}
+  </section>`;
+  $("#reviewOpenEditor")?.addEventListener("click", () => openProject(p.id));
+  $$("#reviewVideoSwitch .tag-chip").forEach((chip) => {
+    chip.onclick = () => { s.videoId = chip.dataset.vid; s.range = null; s.customClip = null; renderSourceReview(); loadSourceSuggestions(); };
+  });
+  if (v) renderSourceTranscript(v);
+}
+function renderSourceTranscript(v) {
+  const el = $("#sourceTranscript"); if (!el) return;
+  const paras = groupIntoParagraphs(v.words);
+  el.innerHTML = paras.map((idxs) => {
+    const words = idxs.map((i) => `<span class="src-word" data-i="${i}">${esc(v.words[i].text)}</span>`).join(" ");
+    return `<div class="src-row"><span class="src-time mono">${fmt(v.words[idxs[0]].start)}</span><span class="src-text">${words}</span></div>`;
+  }).join("");
+  const s = sourceReviewState;
+  el.querySelectorAll(".src-word").forEach((wordEl) => {
+    wordEl.onclick = () => {
+      const i = +wordEl.dataset.i;
+      if (s.range == null) { s.range = [i, i]; }
+      else { s.range = [Math.min(s.range[0], i), Math.max(s.range[1], i)]; }
+      renderSourceSelection(v);
+    };
+  });
+  renderSourceSelection(v);
+}
+function renderSourceSelection(v) {
+  const el = $("#sourceTranscript"); if (!el) return;
+  const s = sourceReviewState;
+  el.querySelectorAll(".src-word").forEach((wordEl) => {
+    const i = +wordEl.dataset.i;
+    wordEl.classList.toggle("selected", !!s.range && i >= s.range[0] && i <= s.range[1]);
+  });
+  renderCustomClipPanel(v);
+}
+async function renderCustomClipPanel(v) {
+  const el = $("#customClipPanel"); if (!el) return;
+  const s = sourceReviewState;
+  if (!s.range) { el.innerHTML = ""; return; }
+  const [start, end] = s.range;
+  const text = v.words.slice(start, end + 1).map((w) => w.text).join(" ");
+  el.innerHTML = `<div class="custom-clip-panel">
+    <div class="row-between"><span class="essay-eyebrow">Custom clip selected</span><span class="essay-link" id="clearCustomClip">Clear</span></div>
+    <div class="custom-clip-text">"${esc(text)}"</div>
+    <div id="customClipThreadTag" class="custom-clip-thread">Checking best match…</div>
+    ${s.customClip?.saved
+      ? `<div class="custom-clip-saved">Saved to archive ✓</div>
+         ${state.reviewEssays?.length ? `<select class="modal-input custom-clip-essay" id="customClipEssayPick"><option value="">Add to essay…</option>${state.reviewEssays.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("")}</select>` : ""}`
+      : `<div class="s-actions" style="margin-top:8px;">
+           <button class="btn small ghost" id="previewCustomClip">${ic("play")} Preview & contextualize</button>
+           <button class="btn small accent" id="saveCustomClip">Save to Archive</button>
+         </div>`}
+  </div>`;
+  $("#clearCustomClip").onclick = () => { s.range = null; s.customClip = null; renderSourceSelection(v); };
+  $("#previewCustomClip")?.addEventListener("click", () => previewClipSegments([{ videoId: v.id, start: v.words[start].start, end: v.words[end].end }]));
+  $("#saveCustomClip")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const res = await fetch("/api/clips", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: text.length > 60 ? text.slice(0, 57) + "…" : text, kind: "manual", segments: [{ videoId: v.id, start: v.words[start].start, end: v.words[end].end }] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      s.customClip = { saved: true };
+      if (!state.reviewEssays) { try { state.reviewEssays = (await fetch("/api/essays").then((r) => r.json())).essays || []; } catch { state.reviewEssays = []; } }
+      toast("Saved to Archive", { type: "success" });
+      renderCustomClipPanel(v);
+      $("#customClipEssayPick")?.addEventListener("change", async (ev) => {
+        const essayId = ev.target.value; if (!essayId) return;
+        try {
+          await fetch(`/api/essays/${essayId}/beats`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ act: "development", kind: "clip", clipId: data.id, text: data.title }),
+          });
+          toast("Added to essay", { type: "success" });
+        } catch { toast("Couldn't add to essay", { type: "error" }); }
+        ev.target.value = "";
+      });
+    } catch (err) { toast(err.message || "Couldn't save that clip", { type: "error" }); btn.disabled = false; }
+  });
+  const tagEl = $("#customClipThreadTag");
+  const match = await bestThreadMatchForText(text);
+  if (tagEl) tagEl.innerHTML = match ? `<span class="tag-chip" style="border-left:2px solid ${match.color}">${esc(match.name)}</span>` : `<span class="custom-clip-nomatch">No strong match</span>`;
+}
+async function loadSourceSuggestions() {
+  const el = $("#sourceSuggestList"); if (!el) return;
+  const p = state.project;
+  try {
+    const res = await fetch(`/api/projects/${p.id}/suggest-edits`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    state.suggestions = data.suggestions;
+  } catch { el.innerHTML = `<div class="empty small">Couldn't load suggestions.</div>`; return; }
+  const list = state.suggestions || [];
+  if (!list.length) { el.innerHTML = `<div class="empty small">Nothing flagged for this source yet.</div>`; return; }
+  el.innerHTML = list.map((sug, i) => `<div class="review-suggest-card" data-i="${i}">
+    <div class="sg-top"><span class="sg-type ${sug.type}">${SUGGEST_TYPE_LABEL[sug.type] || sug.type}</span><span class="sg-title">${esc(sug.title)}</span></div>
+    <div class="sg-why">${esc(sug.why)}</div>
+    <div class="s-actions"><button class="btn small ghost rs-preview">${ic("play")} Preview</button><button class="btn small accent rs-save">Save</button></div>
+  </div>`).join("");
+  el.querySelectorAll(".review-suggest-card").forEach((card) => {
+    const sug = list[+card.dataset.i];
+    card.querySelector(".rs-preview").onclick = () => previewSuggestion(sug);
+    card.querySelector(".rs-save").onclick = () => saveClipToLibrary(sug.segments, { title: sug.title, description: sug.why, kind: "ai-detected" });
+  });
 }
 
 function renderProject() {
@@ -1167,16 +1329,13 @@ async function ensureSourceThreadsCache() {
   if (!sourceThreadsCache) sourceThreadsCache = await fetchThreads();
   return sourceThreadsCache;
 }
-async function updateSelectionThreadMatch() {
-  const el = $("#selThreadMatch"); if (!el) return;
-  const v = state.videos.find((x) => x._selStart != null);
-  if (!v) { el.textContent = ""; return; }
-  const kept = v.words.slice(v._selStart, v._selEnd + 1).filter((w) => !w.deleted);
-  if (!kept.length) { el.textContent = ""; return; }
-  const text = kept.map((w) => w.text).join(" ");
+// Shared bag-of-words thread match, client-side (no AI call) — used by both
+// the full editor's selection toolbar label and the Sources review page's
+// custom-clip panel.
+async function bestThreadMatchForText(text) {
   const threads = await ensureSourceThreadsCache();
-  if ($("#selThreadMatch") !== el || v !== state.videos.find((x) => x._selStart != null)) return; // selection moved on while awaiting
   const lineWords = significantWords(text);
+  if (!lineWords.length) return null;
   let best = null, bestScore = 0;
   for (const t of threads) {
     const threadWords = new Set(significantWords(`${t.name} ${(t.sampleQuotes || []).join(" ")}`));
@@ -1184,7 +1343,18 @@ async function updateSelectionThreadMatch() {
     for (const w of lineWords) if (threadWords.has(w)) score++;
     if (score > bestScore) { bestScore = score; best = t; }
   }
-  el.textContent = bestScore >= 2 ? `Best match: ${best.name}` : "No strong match";
+  return bestScore >= 2 ? best : null;
+}
+async function updateSelectionThreadMatch() {
+  const el = $("#selThreadMatch"); if (!el) return;
+  const v = state.videos.find((x) => x._selStart != null);
+  if (!v) { el.textContent = ""; return; }
+  const kept = v.words.slice(v._selStart, v._selEnd + 1).filter((w) => !w.deleted);
+  if (!kept.length) { el.textContent = ""; return; }
+  const text = kept.map((w) => w.text).join(" ");
+  const match = await bestThreadMatchForText(text);
+  if ($("#selThreadMatch") !== el || v !== state.videos.find((x) => x._selStart != null)) return; // selection moved on while awaiting
+  el.textContent = match ? `Best match: ${match.name}` : "No strong match";
 }
 function deleteSelection() {
   const v = state.videos.find((x) => x._selStart != null);
@@ -4857,7 +5027,7 @@ async function buildCommands() {
   try {
     const { projects } = await api.listProjects();
     for (const p of projects || []) {
-      if (p.id !== state.project?.id) cmds.push({ label: p.name, hint: "Project", group: "Projects", action: () => openProject(p.id) });
+      if (p.id !== state.project?.id) cmds.push({ label: p.name, hint: "Project", group: "Projects", action: () => openSourceReview(p.id) });
     }
   } catch { /* palette still works without the project list */ }
   // Jump straight to a named Essay or Thread, not just the generic list view.
@@ -5501,6 +5671,8 @@ function route() {
   if (view === "archive" || view === "library") return showLibrary();
   const p = location.hash.match(/^#\/p\/([\w-]+)/);
   if (p) return openProject(p[1]);
+  const sr = location.hash.match(/^#\/source\/([\w-]+)/);
+  if (sr) return openSourceReview(sr[1]);
   if (view === "essays") {
     const e = location.hash.match(/^#\/essays\/([\w-]+)/);
     return e ? openEssay(e[1]) : showEssaysList();

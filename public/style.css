@@ -353,6 +353,27 @@ main { flex: 1; min-height: 0; overflow: auto; }
 }
 .ai-summary-eyebrow { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--info-teal); margin-bottom: 4px; }
 
+/* ── Sources review — lightweight reading-pane triage page ──────────── */
+.source-review-body { display: flex; gap: 30px; align-items: flex-start; margin-top: 18px; }
+.source-review-main { flex: 1; min-width: 0; }
+.source-suggest-sidebar { width: 320px; flex: none; }
+.source-suggest-sidebar svg { width: 14px; height: 14px; color: var(--accent); vertical-align: -2px; margin-right: 6px; }
+.source-transcript { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.src-row { display: flex; gap: 14px; align-items: baseline; }
+.src-time { flex: none; width: 46px; font-size: 10.5px; color: var(--faint); }
+.src-text { font-size: 13.5px; line-height: 1.7; color: var(--secondary); }
+.src-word { cursor: pointer; border-radius: 2px; padding: 0 1px; }
+.src-word:hover { background: rgba(243, 237, 228, .08); }
+.src-word.selected { background: rgba(127, 184, 189, .22); box-shadow: inset 0 -2px 0 var(--info-teal); color: var(--bone); }
+.custom-clip-panel { margin-top: 18px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line2); border-radius: 2px; }
+.custom-clip-text { font: italic 400 14px/1.6 var(--font-serif); color: var(--bone); margin: 8px 0; }
+.custom-clip-thread { margin: 6px 0; }
+.custom-clip-nomatch { font-size: 11.5px; color: var(--faint); }
+.custom-clip-saved { color: var(--good); font-size: 12.5px; margin-top: 6px; }
+.custom-clip-essay { margin-top: 8px; }
+.review-suggest-card { padding: 12px 0; border-top: 1px solid var(--line); }
+.review-suggest-card:first-of-type { border-top: none; }
+
 /* ── real-frame thumbnails (project cards, clip cards) ────── */
 .frame-thumb {
   position: relative; aspect-ratio: 16 / 9; overflow: hidden; flex: none;
