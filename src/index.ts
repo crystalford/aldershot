@@ -73,7 +73,7 @@ import {
   type BeatAct,
   type BeatKind,
 } from "./essays";
-import { ensureThreadSchema, listThreads, renameThread, mergeThreads, getNearMissForThread, acceptNearMiss, dismissNearMiss, clipThreadMap } from "./threads";
+import { ensureThreadSchema, listThreads, renameThread, mergeThreads, getNearMissForThread, acceptNearMiss, dismissNearMiss, clipThreadMap, getCrossThreadClusters } from "./threads";
 import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
 import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, getMostRecentDiscoverResult, type DiscoverCandidate } from "./discover";
 import {
@@ -1154,7 +1154,7 @@ app.get("/api/desk", async (c) => {
   await ensureThreadSchema(c.env.DB);
   await ensureDiscoverSchema(c.env.DB);
 
-  const [clips, threads, processingCount, recentVideo, recentDiscover, clippingProject, studioProject] = await Promise.all([
+  const [clips, threads, processingCount, recentVideo, recentDiscover, clippingProject, studioProject, crossThread] = await Promise.all([
     listClips(c.env.DB, { limit: 500 }),
     listThreads(c.env, c.env.DB),
     countProcessingSourceVideos(c.env.DB),
@@ -1162,6 +1162,7 @@ app.get("/api/desk", async (c) => {
     getMostRecentDiscoverResult(c.env.DB),
     getOrCreateClippingProject(c.env.DB),
     getOrCreateStudioProject(c.env.DB),
+    getCrossThreadClusters(c.env, c.env.DB),
   ]);
   const clippingShorts = (await readJson<Short[]>(c.env.MEDIA, shortsKey(clippingProject.id))) ?? [];
   const studioVideos = await listVideos(c.env.DB, studioProject.id);
@@ -1186,6 +1187,13 @@ app.get("/api/desk", async (c) => {
       text: `Clipping found ${clippingShorts.length} highlight${clippingShorts.length === 1 ? "" : "s"} in your latest footage`,
       color: "#8fc98f",
       go: { type: "clipping" },
+    });
+  }
+  if (crossThread[0]) {
+    digest.push({
+      text: `New cross-thread cluster surfaced: ${crossThread[0].name} — spans ${crossThread[0].spans.length} threads`,
+      color: "#8a7bd4",
+      go: { type: "threads" },
     });
   }
 
@@ -1450,6 +1458,16 @@ app.get("/api/threads", async (c) => {
   await ensureClipSchema(c.env.DB);
   await ensureThreadSchema(c.env.DB);
   return c.json({ threads: await listThreads(c.env, c.env.DB) });
+});
+
+// Real cross-thread signal (see getCrossThreadClusters) -- powers the
+// Desk's "cross-thread cluster surfaced" digest item, Archive's "Spans"
+// cross-thread indicator, and Essays List's "Story ideas the archive
+// surfaced" suggestions, from one shared computation.
+app.get("/api/threads/cross", async (c) => {
+  await ensureClipSchema(c.env.DB);
+  await ensureThreadSchema(c.env.DB);
+  return c.json({ clusters: await getCrossThreadClusters(c.env, c.env.DB) });
 });
 
 app.patch("/api/threads/:id", async (c) => {

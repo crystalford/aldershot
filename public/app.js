@@ -2984,16 +2984,18 @@ async function showLibrary(presetThreadId) {
   state.libraryThread = presetThreadId || state.libraryThread || null;
   state.libraryType = state.libraryType || null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
-  let tags = [], clips = [], essays = [];
+  let tags = [], clips = [], essays = [], crossThread = [];
   try {
-    const [tagData, clipData, essayData] = await Promise.all([
+    const [tagData, clipData, essayData, crossData] = await Promise.all([
       fetch("/api/clips/tags").then((r) => r.json()),
       fetch("/api/clips?withThreads=1&limit=500").then((r) => r.json()),
       fetch("/api/essays").then((r) => r.json()).then((d) => d.essays || []).catch(() => []),
+      fetch("/api/threads/cross").then((r) => r.json()).then((d) => d.clusters || []).catch(() => []),
     ]);
-    tags = tagData.tags || []; clips = clipData.clips || []; essays = essayData || [];
+    tags = tagData.tags || []; clips = clipData.clips || []; essays = essayData || []; crossThread = crossData || [];
   } catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
   state.libraryEssays = essays;
+  state.libraryCrossThread = crossThread;
 
   const threadIds = new Set(clips.map((c) => c.thread?.id).filter(Boolean));
   const statsLine = clips.length
@@ -3170,6 +3172,7 @@ function renderLibraryClusters(clips) {
   // "Uncategorized" always last, whatever its size.
   ordered.sort((a, b) => (a.thread ? 0 : 1) - (b.thread ? 0 : 1));
 
+  const crossThread = state.libraryCrossThread || [];
   el.innerHTML = ordered.map((g, gi) => {
     const t = g.thread;
     const idx = String(gi + 1).padStart(2, "0");
@@ -3177,12 +3180,15 @@ function renderLibraryClusters(clips) {
     const desc = t
       ? `${g.clips.length} clip${g.clips.length === 1 ? "" : "s"} — including "${esc(g.clips[0].title)}"`
       : "Not yet clustered into a thread — needs a tag or more clips nearby in meaning.";
+    const spanning = t ? crossThread.find((cc) => cc.threadIds.includes(t.id)) : null;
+    const others = spanning ? spanning.spans.filter((s) => s.id !== t.id) : null;
     return `<div class="archive-cluster">
       <div class="archive-cluster-head" ${t ? `style="border-left:2px solid ${t.color}"` : ""}>
         <span class="archive-cluster-index">${idx}</span>
         <div>
           <div class="archive-cluster-title" ${t ? `style="color:${t.color}"` : ""}>${title}</div>
           <div class="archive-cluster-desc">${desc}</div>
+          ${others?.length ? `<div class="archive-cluster-spans">Spans: ${others.map((o) => `<span class="tag-chip" style="border-left:2px solid ${o.color}">${esc(o.name)}</span>`).join(" ")}</div>` : ""}
         </div>
         <span class="archive-cluster-count">${g.clips.length}</span>
       </div>
@@ -3731,17 +3737,34 @@ async function showEssaysList() {
   location.hash = "#/essays"; setActiveRail("essays");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading essays…</div>`;
-  let essays = [];
-  try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; }
-  catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  let essays = [], crossThread = [];
+  try {
+    essays = (await fetch("/api/essays").then((r) => r.json())).essays || [];
+    crossThread = (await fetch("/api/threads/cross").then((r) => r.json()).catch(() => ({ clusters: [] }))).clusters || [];
+  } catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  // "Story ideas the archive surfaced" -- a cross-thread cluster with no
+  // essay yet whose own grounding threads already cover that combination.
+  const storyIdeas = crossThread.filter((cc) => !essays.some((e) => cc.threadIds.every((id) => e.threads.includes(id))));
   main.innerHTML = `<section class="pad">
     <div class="row-between">
       <div><h1>Essays</h1><div class="sub">The pieces you're actually directing — each one draws from the whole archive, not one thread.</div></div>
       <button class="btn primary" id="newEssay">${ic("plus")} New essay</button>
     </div>
+    ${storyIdeas.length ? `<div class="story-ideas-section">
+      <div class="tools-h">Story ideas the archive surfaced</div>
+      <div class="story-ideas-row">${storyIdeas.map((cc, i) => `
+        <div class="story-idea-card">
+          <div class="story-idea-spans">${cc.spans.map((s) => `<span class="tag-chip" style="border-left:2px solid ${s.color}">${esc(s.name)}</span>`).join("")}</div>
+          <div class="empty small">${cc.clipCount} clip${cc.clipCount === 1 ? "" : "s"} bridge these threads</div>
+          <button class="btn small ghost story-idea-start" data-i="${i}">Start this essay →</button>
+        </div>`).join("")}</div>
+    </div>` : ""}
     <div id="essaySections"></div>
   </section>`;
   $("#newEssay").onclick = startNewEssay;
+  $$(".story-idea-start").forEach((btn) => {
+    btn.onclick = () => startNewEssay({ presetThreadIds: storyIdeas[+btn.dataset.i].threadIds });
+  });
   const container = $("#essaySections");
   if (!essays.length) {
     container.innerHTML = `<div class="empty-note">No essays yet — describe an idea and the archive gets searched for what already supports it.</div>`;
@@ -3808,9 +3831,9 @@ const ESSAY_ANGLE_CHOICES = ["Psychological / behavioral", "Systems / incentives
 const ESSAY_AUDIENCE_CHOICES = ["General audience", "Fans of the channel", "Skeptics / critics", "Newcomers"];
 const ESSAY_LENGTH_CHOICES = ["Short (3-5 min)", "Standard (8-10 min)", "Long (15+ min)"];
 const ESSAY_TONE_CHOICES = ["Sardonic", "Earnest", "Analytical", "Playful"];
-async function startNewEssay() {
+async function startNewEssay(opts) {
   const existingThreads = await fetchThreads();
-  const wiz = { idea: "", angle: null, audience: null, length: null, tone: null, threadIds: new Set(), custom: [] };
+  const wiz = { idea: "", angle: null, audience: null, length: null, tone: null, threadIds: new Set(opts?.presetThreadIds || []), custom: [] };
   let step = 1;
   while (step > 0 && step <= 3) {
     if (step === 1) step = (await essayWizardIdeaStep(wiz)) ? 2 : 0;

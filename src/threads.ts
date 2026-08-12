@@ -69,6 +69,12 @@ export interface ThreadSummary {
   kind: "person" | "show" | "topic";
   sourceCount: number;
   themeCount: number;
+  /** The tag that most commonly seeded this thread's membership (see
+   *  listThreadsByCluster) -- exposed so a clip carrying a DIFFERENT
+   *  thread's seed tag can be detected as a genuine cross-thread bridge
+   *  (see getCrossThreadClusters). Null only in the rare case a cluster
+   *  formed with no tagged member clips at all. */
+  seedTag: string | null;
 }
 
 export async function ensureThreadSchema(db: D1Database): Promise<void> {
@@ -333,6 +339,7 @@ async function listThreadsByCluster(db: D1Database): Promise<ThreadSummary[]> {
       kind: meta?.kind === "person" || meta?.kind === "show" ? meta.kind : "topic",
       sourceCount: sourceIds.size,
       themeCount: tagCounts.size,
+      seedTag: seedTag || null,
     });
   }
   return threads.sort((a, b) => b.clipCount - a.clipCount);
@@ -380,6 +387,7 @@ async function listThreadsByTag(db: D1Database): Promise<ThreadSummary[]> {
       kind: cached?.kind === "person" || cached?.kind === "show" ? cached.kind : "topic",
       sourceCount: sourceIds.size,
       themeCount: 1, // a tag-mode "thread" IS one tag/theme by definition
+      seedTag: tag,
     });
   }
   return threads.sort((a, b) => b.clipCount - a.clipCount);
@@ -412,6 +420,77 @@ export async function listThreads(env: Env, db: D1Database): Promise<ThreadSumma
   const threads = clustered ? await listThreadsByCluster(db) : await listThreadsByTag(db);
   await fillDescriptions(env, db, threads);
   return threads;
+}
+
+export interface CrossThreadCluster {
+  id: string;
+  name: string;
+  threadIds: string[];
+  spans: { id: string; name: string; color: string }[];
+  clipCount: number;
+}
+
+/** Real cross-thread signal, independent of any essay already grouping
+ *  threads together (an essay-derived signal would be circular for
+ *  surfacing NEW story ideas -- it could only ever "discover" combinations
+ *  that already have an essay). Instead this looks for "bridge" clips: a
+ *  clip whose embedding clusters it into thread A but that also carries a
+ *  tag matching a DIFFERENT thread B's own seed tag -- a real, human-
+ *  applied signal that this one moment touches both topics, not a guess. */
+export async function getCrossThreadClusters(env: Env, db: D1Database): Promise<CrossThreadCluster[]> {
+  const threads = await listThreads(env, db);
+  if (threads.length < 2) return [];
+  const seedTagToThread = new Map<string, ThreadSummary>();
+  for (const t of threads) if (t.seedTag) seedTagToThread.set(t.seedTag, t);
+
+  const { results } = await db
+    .prepare(`SELECT cc.cluster_id as thread_id, ct.clip_id, ct.tag FROM clip_clusters cc JOIN clip_tags ct ON ct.clip_id = cc.clip_id`)
+    .all<{ thread_id: string; clip_id: string; tag: string }>();
+  if (!results?.length) return [];
+
+  const { find, union } = makeUnionFind(threads.map((t) => t.id));
+  const edgeClips = new Map<string, Set<string>>(); // "threadA|threadB" -> clip ids bridging them
+  const byClip = new Map<string, { threadId: string; tags: string[] }>();
+  for (const r of results) {
+    if (!byClip.has(r.clip_id)) byClip.set(r.clip_id, { threadId: r.thread_id, tags: [] });
+    byClip.get(r.clip_id)!.tags.push(r.tag);
+  }
+  for (const [clipId, { threadId, tags }] of byClip) {
+    for (const tag of tags) {
+      const other = seedTagToThread.get(tag);
+      if (!other || other.id === threadId) continue;
+      union(threadId, other.id);
+      const key = [threadId, other.id].sort().join("|");
+      if (!edgeClips.has(key)) edgeClips.set(key, new Set());
+      edgeClips.get(key)!.add(clipId);
+    }
+  }
+
+  const groups = new Map<string, Set<string>>();
+  for (const t of threads) {
+    const root = find(t.id);
+    if (!groups.has(root)) groups.set(root, new Set());
+    groups.get(root)!.add(t.id);
+  }
+  const byId = new Map(threads.map((t) => [t.id, t]));
+  const clusters: CrossThreadCluster[] = [];
+  for (const ids of groups.values()) {
+    if (ids.size < 2) continue;
+    const spans = [...ids].map((id) => byId.get(id)!).filter(Boolean).sort((a, b) => b.clipCount - a.clipCount);
+    const bridgingClips = new Set<string>();
+    for (const key of edgeClips.keys()) {
+      const [a, b] = key.split("|");
+      if (ids.has(a) && ids.has(b)) for (const c of edgeClips.get(key)!) bridgingClips.add(c);
+    }
+    clusters.push({
+      id: spans.map((s) => s.id).sort().join("+"),
+      name: spans.map((s) => s.name).join(" × "),
+      threadIds: spans.map((s) => s.id),
+      spans: spans.map((s) => ({ id: s.id, name: s.name, color: s.color })),
+      clipCount: bridgingClips.size,
+    });
+  }
+  return clusters.sort((a, b) => b.clipCount - a.clipCount);
 }
 
 /** Per-clip thread membership — clusters when Vectorize clustering is live,
