@@ -88,3 +88,13 @@ export async function getDiscoverResult(db: D1Database, id: string): Promise<Dis
   if (!row) return null;
   return { id: row.id, query: row.query, title: row.title, url: row.url, extract: row.extract, source: row.source as "wikipedia", createdAt: row.created_at };
 }
+
+/** The most recently saved Discover result, if any — feeds the Desk's
+ *  "since you were last here" digest. */
+export async function getMostRecentDiscoverResult(db: D1Database): Promise<DiscoverResult | null> {
+  const row = await db.prepare(`SELECT * FROM discover_results ORDER BY created_at DESC LIMIT 1`).first<{
+    id: string; query: string; title: string; url: string; extract: string; source: string; created_at: number;
+  }>();
+  if (!row) return null;
+  return { id: row.id, query: row.query, title: row.title, url: row.url, extract: row.extract, source: row.source as "wikipedia", createdAt: row.created_at };
+}

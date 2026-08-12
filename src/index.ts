@@ -9,7 +9,7 @@ import type { Env } from "./env";
 import { MODELS } from "./models";
 import { narrate } from "./pipeline/compiler";
 import { transcribeUpload, transcribeAudio } from "./transcript/transcribe";
-import type { Word, Timeline, Segment } from "./transcript/edl";
+import type { Word, Timeline, Segment, Short } from "./transcript/edl";
 
 export { RenderContainer } from "./render";
 import {
@@ -21,6 +21,8 @@ import {
   restoreProject,
   permanentlyDeleteProject,
   listPickableVideos,
+  countProcessingSourceVideos,
+  getMostRecentReadySourceVideo,
   getProject,
   addVideo,
   listVideos,
@@ -66,7 +68,7 @@ import {
 } from "./essays";
 import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
 import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
-import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, type DiscoverCandidate } from "./discover";
+import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, getMostRecentDiscoverResult, type DiscoverCandidate } from "./discover";
 import {
   ensureGenerativeSchema,
   createScene,
@@ -1059,6 +1061,83 @@ app.get("/api/trash", async (c) => {
     listTrashedEssays(c.env.DB),
   ]);
   return c.json({ projects, essays });
+});
+
+// ── The Desk — the app's home surface: what changed since last time, and
+// what's blocking each in-production essay. All 4 stats and every digest
+// row are real counts/rows off existing tables — nothing here is sample
+// data. Essay cards (with their own blocker) are computed client-side from
+// GET /api/essays, which showDeskView() also fetches — see
+// computeEssayBlocker() in app.js, shared with the Essays list's own
+// "Next: {blocker}" badge (same logic, one place).
+app.get("/api/desk", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureEssaySchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureThreadSchema(c.env.DB);
+  await ensureDiscoverSchema(c.env.DB);
+
+  const [clips, threads, processingCount, recentVideo, recentDiscover, clippingProject] = await Promise.all([
+    listClips(c.env.DB, { limit: 500 }),
+    listThreads(c.env, c.env.DB),
+    countProcessingSourceVideos(c.env.DB),
+    getMostRecentReadySourceVideo(c.env.DB),
+    getMostRecentDiscoverResult(c.env.DB),
+    getOrCreateClippingProject(c.env.DB),
+  ]);
+  const clippingShorts = (await readJson<Short[]>(c.env.MEDIA, shortsKey(clippingProject.id))) ?? [];
+
+  const digest: { text: string; color: string; go: { type: string; id?: string } }[] = [];
+  if (recentVideo) {
+    digest.push({
+      text: `"${recentVideo.filename}" finished transcribing`,
+      color: "#8fc98f",
+      go: { type: "project", id: recentVideo.project_id },
+    });
+  }
+  if (clips[0]) {
+    digest.push({ text: `"${clips[0].title}" added to the Archive`, color: "#8a7bd4", go: { type: "archive" } });
+  }
+  if (recentDiscover) {
+    digest.push({ text: `Discover found a source: "${recentDiscover.title}"`, color: "#7fb8bd", go: { type: "discover" } });
+  }
+  if (clippingShorts.length) {
+    digest.push({
+      text: `Clipping found ${clippingShorts.length} highlight${clippingShorts.length === 1 ? "" : "s"} in your latest footage`,
+      color: "#8fc98f",
+      go: { type: "clipping" },
+    });
+  }
+
+  const suggestions: { kind: string; color: string; title: string; desc: string; cta: string; go: { type: string; id?: string } }[] = [];
+  const topThread = [...threads].sort((a, b) => b.clipCount - a.clipCount)[0];
+  if (topThread && topThread.clipCount >= 3) {
+    suggestions.push({
+      kind: "Essay idea", color: "#8a7bd4", title: topThread.name,
+      desc: `${topThread.clipCount} clips clustered here so far — enough to carry a full essay.`,
+      cta: "Start this essay →", go: { type: "essays" },
+    });
+  }
+  const topHighlight = [...clippingShorts].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0];
+  if (topHighlight) {
+    suggestions.push({
+      kind: "Top highlight", color: "#8fc98f", title: `"${topHighlight.title}"`,
+      desc: `${topHighlight.score ?? "?"}% score — the strongest unposted short in the Clipping queue.`,
+      cta: "Review in Clipping →", go: { type: "clipping" },
+    });
+  }
+
+  return c.json({
+    date: new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+    stats: {
+      archiveClips: clips.length,
+      sourcesProcessing: processingCount,
+      threadsDetected: threads.length,
+      highlightsToReview: clippingShorts.length,
+    },
+    digest: digest.slice(0, 4),
+    suggestions: suggestions.slice(0, 3),
+  });
 });
 
 // Act-by-act drafting: proposes ONE candidate beat for ONE named act, grounded

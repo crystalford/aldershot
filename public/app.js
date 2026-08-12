@@ -198,6 +198,106 @@ async function newProject() {
   } catch (err) { toast(err.message || "Couldn't create project", { type: "error" }); }
 }
 
+// ── The Desk — the new home surface: what changed since last time, and
+// what's blocking each in-production essay. Stats/digest/suggestions come
+// from GET /api/desk (real counts/rows off existing tables, no sample
+// data); essay cards come from GET /api/essays, same data the Essays list
+// itself uses, scored by the shared computeEssayBlocker().
+function deskGo(target) {
+  if (!target) return;
+  if (target.type === "archive") return showLibrary();
+  if (target.type === "sources") return showProjects();
+  if (target.type === "threads") return showThreadsView();
+  if (target.type === "discover") return showDiscoverView();
+  if (target.type === "clipping") return showClippingView();
+  if (target.type === "essays") return showEssaysList();
+  if (target.type === "project") return openProject(target.id);
+}
+async function showDeskView() {
+  location.hash = "#/desk"; setActiveRail("desk");
+  setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
+  let desk, essays;
+  try {
+    [desk, essays] = await Promise.all([
+      fetch("/api/desk").then((r) => r.json()),
+      fetch("/api/essays").then((r) => r.json()).then((d) => d.essays || []),
+    ]);
+    if (desk.error) throw new Error(desk.error);
+  } catch {
+    main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`;
+    return;
+  }
+  const deskEssays = essays.slice(0, 4).map((e) => ({ e, blocker: computeEssayBlocker(e) }));
+  main.innerHTML = `<section class="pad">
+    <div class="row-between" style="align-items:flex-end;">
+      <div><h1>The Desk</h1><div class="sub">${esc(desk.date)} — what the archive did while you were away, and what's blocking each piece.</div></div>
+      <div class="desk-stats">
+        ${[
+          ["clips in the archive", desk.stats.archiveClips, "archive"],
+          ["sources processing", desk.stats.sourcesProcessing, "sources"],
+          ["threads detected", desk.stats.threadsDetected, "threads"],
+          ["highlights to review", desk.stats.highlightsToReview, "clipping"],
+        ].map(([label, value, go]) => `<div class="desk-stat" data-go="${go}"><div class="desk-stat-value">${value}</div><div class="desk-stat-label">${esc(label)}</div></div>`).join("")}
+      </div>
+    </div>
+
+    <div class="desk-section">
+      <div class="tools-h">Since you were last here</div>
+      ${desk.digest.length
+        ? `<div class="desk-digest">${desk.digest.map((d, i) => `<div class="desk-digest-row" data-i="${i}"><span class="desk-digest-dot" style="background:${d.color}"></span><span>${esc(d.text)}</span></div>`).join("")}</div>`
+        : `<div class="empty-note">Nothing new since last time.</div>`}
+    </div>
+
+    <div class="desk-section">
+      <div class="tools-h">In production</div>
+      ${deskEssays.length
+        ? `<div class="grid" id="deskEssays"></div>`
+        : `<div class="empty-note">No essays in progress yet.</div>`}
+    </div>
+
+    ${desk.suggestions.length ? `<div class="desk-section">
+      <div class="tools-h">Worth your attention</div>
+      <div class="desk-suggestions">
+        ${desk.suggestions.map((s, i) => `<div class="desk-suggestion" style="border-left-color:${s.color}">
+          <div class="pill" style="color:${s.color};background:${s.color}22;">${esc(s.kind)}</div>
+          <div class="desk-suggestion-title">${esc(s.title)}</div>
+          <div class="desk-suggestion-desc">${esc(s.desc)}</div>
+          <button class="btn small ghost" data-i="${i}">${esc(s.cta)}</button>
+        </div>`).join("")}
+      </div>
+    </div>` : ""}
+  </section>`;
+
+  $$(".desk-stat").forEach((el) => { el.onclick = () => deskGo({ type: el.dataset.go }); });
+  $$(".desk-digest-row").forEach((el) => { el.onclick = () => deskGo(desk.digest[+el.dataset.i].go); });
+  $$(".desk-suggestions .btn").forEach((btn) => { btn.onclick = () => deskGo(desk.suggestions[+btn.dataset.i].go); });
+
+  if (deskEssays.length) {
+    const grid = $("#deskEssays");
+    deskEssays.forEach(({ e, blocker }) => {
+      const segTotal = e.beats.length || 1;
+      const segColors = { clip: "#8fc98f", vo: "#e0c46a", research: "#7fb8bd" };
+      const counts = {};
+      e.beats.forEach((b) => { counts[b.kind] = (counts[b.kind] || 0) + 1; });
+      const segs = Object.entries(counts).map(([kind, n]) => `<div style="width:${(n / segTotal) * 100}%;background:${segColors[kind] || "var(--faint)"}"></div>`).join("");
+      const card = document.createElement("div");
+      card.className = "card desk-essay-card";
+      card.innerHTML = `<div class="card-body">
+        <div class="card-title">${esc(e.title)}</div>
+        ${e.beats.length ? `<div class="desk-essay-bar">${segs}</div>` : ""}
+        <div class="row-between" style="margin-top:10px;">
+          <span class="essay-blocker" style="color:${blocker.color}">${esc(blocker.label)}</span>
+          <button class="btn small ghost desk-essay-go">Go →</button>
+        </div>
+      </div>`;
+      card.onclick = () => { location.hash = `#/essays/${e.id}`; };
+      card.querySelector(".desk-essay-go").onclick = (ev) => { ev.stopPropagation(); openEssayAtMode(e.id, blocker.mode); };
+      grid.appendChild(card);
+    });
+  }
+}
+
 // ── Project view ─────────────────────────────────────────────────────
 async function openProject(id) {
   location.hash = `#/p/${id}`; setActiveRail("sources");
@@ -2921,6 +3021,32 @@ const ACT_DEFS = [
 const ACT_LABEL = Object.fromEntries(ACT_DEFS.map((a) => [a.act, a.label]));
 let essayState = null;
 
+// Single source of truth for "what's the one thing blocking this essay" —
+// shared verbatim by the Essays list card and the Desk's "In production"
+// card, same priority order: no script → ungrounded research → unrecorded
+// VO → empty timeline → ready. (Round-3's own priority chain also has a
+// "generate N visuals" tier between VO and timeline — skipped here because
+// this app has no beat kind yet for an AI-generated-visual beat distinct
+// from clip/vo/research; noted as a known gap, not silently dropped.)
+function computeEssayBlocker(e) {
+  const beats = e.beats || [];
+  if (!beats.length) return { label: "Draft the script — act by act", color: "#8a7bd4", mode: "premise" };
+  const ungroundedResearch = beats.filter((b) => b.kind === "research" && !b.discoverResultId).length;
+  if (ungroundedResearch) {
+    return { label: `Ground ${ungroundedResearch} research beat${ungroundedResearch > 1 ? "s" : ""} in a real source`, color: "#7fb8bd", mode: "script" };
+  }
+  const unrecordedVo = beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
+  if (unrecordedVo) {
+    return { label: `Record ${unrecordedVo} voiceover beat${unrecordedVo > 1 ? "s" : ""}`, color: "#e0c46a", mode: "script" };
+  }
+  if (!beats.filter(isRenderable).length) return { label: "Assemble the cut", color: "#f3ede4", mode: "assemble" };
+  return { label: "Ready to review & export", color: "#8fc98f", mode: "export" };
+}
+async function openEssayAtMode(id, mode) {
+  await openEssay(id);
+  setEssayMode(mode);
+}
+
 async function showEssaysList() {
   location.hash = "#/essays"; setActiveRail("essays");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
@@ -2945,12 +3071,14 @@ async function showEssaysList() {
 }
 function essayCardHTML(e) {
   const matched = e.beats.filter((b) => b.kind === "clip").length;
+  const blocker = computeEssayBlocker(e);
   return `<div class="card essay-card" data-id="${e.id}">
     <div class="card-body">
       <div class="card-title">${esc(e.title)}</div>
       <div class="card-sub" style="margin:6px 0 10px;">${esc(e.premise)}</div>
       ${e.threads.length ? `<div class="tag-rail small">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="essay-meta">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
+      <div class="essay-blocker" style="color:${blocker.color}">Next: ${esc(blocker.label)}</div>
       <div class="s-actions">
         <button class="btn small accent essay-open">Open →</button>
         <button class="btn small danger essay-delete">Delete</button>
@@ -2962,6 +3090,7 @@ function wireEssayGrid(essays) {
   $$(".essay-card").forEach((card) => {
     const e = essays.find((x) => x.id === card.dataset.id);
     card.querySelector(".essay-open").onclick = () => { location.hash = `#/essays/${e.id}`; };
+    card.querySelector(".essay-blocker").onclick = () => openEssayAtMode(e.id, computeEssayBlocker(e).mode);
     card.querySelector(".essay-delete").onclick = async () => {
       if (!(await UI.confirm({ title: "Delete this essay?", message: "It moves to Trash, where you can restore it later.", confirmText: "Delete", danger: true }))) return;
       await fetch(`/api/essays/${e.id}`, { method: "DELETE" });
@@ -3724,12 +3853,13 @@ function renderGenerativeRecentInto() {
 // can never drift out of sync with what that button actually does.
 async function buildCommands() {
   const cmds = [
+    { label: "Go to Desk", group: "Navigate", action: showDeskView },
     { label: "Go to Archive", group: "Navigate", action: showLibrary },
     { label: "Go to Sources", group: "Navigate", action: showProjects },
     { label: "New project", group: "Navigate", action: newProject },
   ];
   for (const item of [...RAIL_ITEMS, ...RAIL_BOTTOM]) {
-    if (item.view !== "archive" && item.view !== "sources") {
+    if (item.view !== "desk" && item.view !== "archive" && item.view !== "sources") {
       cmds.push({ label: `Go to ${item.label}`, group: "Navigate", action: () => go(item.view) });
     }
   }
@@ -3776,6 +3906,7 @@ async function openCommandPalette() {
 // keyboard shortcuts anywhere (including the palette) — reachable only by
 // clicking the rail/search icon, per explicit design direction. ──────────
 const RAIL_ITEMS = [
+  { view: "desk", label: "Desk", icon: "desk" },
   { view: "archive", label: "Archive", icon: "archive" },
   { view: "sources", label: "Sources", icon: "upload" },
   { view: "threads", label: "Threads", icon: "threads" },
@@ -4209,8 +4340,8 @@ function go(view) {
 
 // ── boot ─────────────────────────────────────────────────────────────
 buildRail();
-$("#railHome").onclick = showProjects;
-$("#railHome").onkeydown = (e) => { if (e.key === "Enter") showProjects(); };
+$("#railHome").onclick = showDeskView;
+$("#railHome").onkeydown = (e) => { if (e.key === "Enter") showDeskView(); };
 $("#paletteTrigger").onclick = openCommandPalette;
 // Focused mode strips the rail + top bar for a single-purpose page that
 // isn't part of the dashboard shell (Clipping today). Toggled from route()
@@ -4224,10 +4355,11 @@ function setRailHidden(on) {
   $(".shell")?.classList.toggle("rail-hidden", !!on);
 }
 function route() {
-  const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "sources";
+  const view = (location.hash.match(/^#\/(\w+)/) || [])[1] || "desk";
   setFocused(view === "clipping");
   setRailHidden(view === "studio");
   if (view !== "studio") state.studioMode = false;
+  if (view === "desk") return showDeskView();
   if (view === "archive" || view === "library") return showLibrary();
   const p = location.hash.match(/^#\/p\/([\w-]+)/);
   if (p) return openProject(p[1]);

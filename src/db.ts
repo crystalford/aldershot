@@ -273,6 +273,33 @@ export async function listAllReadyVideos(db: D1Database): Promise<Video[]> {
   return results ?? [];
 }
 
+/** How many Source videos are still uploading/transcribing right now —
+ *  feeds the Desk's "sources processing" stat. */
+export async function countProcessingSourceVideos(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM videos v JOIN projects p ON p.id = v.project_id
+       WHERE p.kind = 'source' AND p.deleted_at IS NULL AND v.status IN ('uploading', 'transcribing')`,
+    )
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** The most recently finished Source video — there's no separate
+ *  "completed_at" column, so created_at is the closest honest proxy (this
+ *  app's upload→transcribe pipeline runs promptly, not queued for days).
+ *  Feeds the Desk's "since you were last here" digest. */
+export async function getMostRecentReadySourceVideo(db: D1Database): Promise<(Video & { project_id: string }) | null> {
+  return db
+    .prepare(
+      `SELECT v.id, v.project_id, v.filename, v.r2_key, v.duration, v.status, v.ord, v.created_at
+       FROM videos v JOIN projects p ON p.id = v.project_id
+       WHERE p.kind = 'source' AND p.deleted_at IS NULL AND v.status = 'ready'
+       ORDER BY v.created_at DESC LIMIT 1`,
+    )
+    .first();
+}
+
 export async function getVideo(db: D1Database, id: string): Promise<Video | null> {
   return db
     .prepare(
