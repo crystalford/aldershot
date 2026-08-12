@@ -213,6 +213,7 @@ function deskGo(target) {
   if (target.type === "discover") return showDiscoverView();
   if (target.type === "clipping") return showClippingView();
   if (target.type === "essays") return showEssaysList();
+  if (target.type === "studio") return showStudioView();
   if (target.type === "project") return openProject(target.id);
 }
 async function showDeskView() {
@@ -279,10 +280,9 @@ async function showDeskView() {
     const grid = $("#deskEssays");
     deskEssays.forEach(({ e, blocker }) => {
       const segTotal = e.beats.length || 1;
-      const segColors = { clip: "#8fc98f", vo: "#e0c46a", research: "#7fb8bd" };
       const counts = {};
-      e.beats.forEach((b) => { counts[b.kind] = (counts[b.kind] || 0) + 1; });
-      const segs = Object.entries(counts).map(([kind, n]) => `<div style="width:${(n / segTotal) * 100}%;background:${segColors[kind] || "var(--faint)"}"></div>`).join("");
+      e.beats.forEach((b) => { const st = beatResolutionStatus(b); counts[st] = (counts[st] || 0) + 1; });
+      const segs = Object.entries(counts).map(([st, n]) => `<div style="width:${(n / segTotal) * 100}%;background:${BEAT_STATUS_COLOR[st] || "var(--faint)"}"></div>`).join("");
       const card = document.createElement("div");
       card.className = "card desk-essay-card";
       card.innerHTML = `<div class="card-body">
@@ -3159,6 +3159,17 @@ let essayState = null;
 // "generate N visuals" tier between VO and timeline — skipped here because
 // this app has no beat kind yet for an AI-generated-visual beat distinct
 // from clip/vo/research; noted as a known gap, not silently dropped.)
+// A beat's *resolution* state (matched/needs a source or voiceover), not
+// its kind — a clip beat is always "matched", but a research or vo beat can
+// be resolved or still-blocking. Mirrors the prototype's BEAT_STATUS. Shared
+// by the Desk's per-essay progress bar and the Essays list card.
+const BEAT_STATUS_COLOR = { matched: "#8fc98f", needs_vo: "#e0c46a", search_web: "#7fb8bd", generate: "#b08cd4" };
+function beatResolutionStatus(b) {
+  if (b.kind === "clip") return "matched";
+  if (b.kind === "vo") return b.voVideoId ? "matched" : "needs_vo";
+  if (b.kind === "research") return b.discoverResultId ? "matched" : "search_web";
+  return "matched";
+}
 function computeEssayBlocker(e) {
   const beats = e.beats || [];
   if (!beats.length) return { label: "Draft the script — act by act", color: "#8a7bd4", mode: "premise" };

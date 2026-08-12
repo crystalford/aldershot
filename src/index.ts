@@ -1080,15 +1080,18 @@ app.get("/api/desk", async (c) => {
   await ensureThreadSchema(c.env.DB);
   await ensureDiscoverSchema(c.env.DB);
 
-  const [clips, threads, processingCount, recentVideo, recentDiscover, clippingProject] = await Promise.all([
+  const [clips, threads, processingCount, recentVideo, recentDiscover, clippingProject, studioProject] = await Promise.all([
     listClips(c.env.DB, { limit: 500 }),
     listThreads(c.env, c.env.DB),
     countProcessingSourceVideos(c.env.DB),
     getMostRecentReadySourceVideo(c.env.DB),
     getMostRecentDiscoverResult(c.env.DB),
     getOrCreateClippingProject(c.env.DB),
+    getOrCreateStudioProject(c.env.DB),
   ]);
   const clippingShorts = (await readJson<Short[]>(c.env.MEDIA, shortsKey(clippingProject.id))) ?? [];
+  const studioVideos = await listVideos(c.env.DB, studioProject.id);
+  const studioReady = [...studioVideos].filter((v) => v.status === "ready").sort((a, b) => b.created_at - a.created_at)[0];
 
   const digest: { text: string; color: string; go: { type: string; id?: string } }[] = [];
   if (recentVideo) {
@@ -1127,6 +1130,13 @@ app.get("/api/desk", async (c) => {
       kind: "Top highlight", color: "#8fc98f", title: `"${topHighlight.title}"`,
       desc: `${topHighlight.score ?? "?"}% score — the strongest unposted short in the Clipping queue.`,
       cta: "Review in Clipping →", go: { type: "clipping" },
+    });
+  }
+  if (studioReady) {
+    suggestions.push({
+      kind: "Studio idea", color: "#8a7bd4", title: `"${studioReady.filename}"`,
+      desc: "Raw footage sitting in Studio — one click starts it as an essay.",
+      cta: "Start as essay →", go: { type: "studio" },
     });
   }
 
