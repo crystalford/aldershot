@@ -1030,6 +1030,12 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 }
 .chip-pick:hover { border-color: var(--faint); color: var(--bone); }
 .chip-pick.on { color: var(--accent); border-color: rgba(138, 123, 212, .5); background: var(--accent-soft); }
+.research-preview { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.research-preview-row {
+  display: flex; justify-content: space-between; font-size: 12.5px; padding: 8px 10px;
+  background: var(--bg2); border-radius: 2px; color: var(--dim);
+}
+.essay-stage-section { margin-bottom: 22px; }
 
 @media (max-width: 1080px) {
   .editor { grid-template-columns: 200px 1fr; }

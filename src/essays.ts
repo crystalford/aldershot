@@ -59,6 +59,11 @@ export interface EssayBeat {
 export interface EssayDetail extends Essay {
   threads: string[];
   beats: EssayBeat[];
+  /** Real elapsed seconds across every renderable beat -- clip beats' saved
+   *  segment durations, vo beats' recorded-take video duration -- not a
+   *  guess-per-beat estimate. Beats with nothing to measure yet (an
+   *  unrecorded vo, a research beat) contribute 0. */
+  estDurationSec: number;
 }
 
 const normalizeTag = (t: string) => t.trim().toLowerCase();
@@ -146,7 +151,7 @@ export async function createEssay(
       .bind(essay.id, essay.title, essay.premise, essay.audience, essay.target_length, essay.tone, essay.builder_mode, essay.created_at, essay.updated_at),
     ...threads.map((tag) => db.prepare(`INSERT INTO essay_threads (essay_id, tag) VALUES (?, ?)`).bind(essay.id, tag)),
   ]);
-  return { ...essay, threads, beats: [] };
+  return { ...essay, threads, beats: [], estDurationSec: 0 };
 }
 
 interface EssayRow {
@@ -177,11 +182,33 @@ async function attachThreadsAndBeats(db: D1Database, essays: EssayRow[]): Promis
   for (const r of threadRows ?? []) threadsByEssay.set(r.essay_id, [...(threadsByEssay.get(r.essay_id) ?? []), r.tag]);
   const beatsByEssay = new Map<string, EssayBeat[]>();
   for (const r of beatRows ?? []) beatsByEssay.set(r.essay_id, [...(beatsByEssay.get(r.essay_id) ?? []), toBeat(r)]);
-  return essays.map((e) => ({
-    id: e.id, title: e.title, premise: e.premise, audience: e.audience, target_length: e.target_length,
-    tone: e.tone, builder_mode: e.builder_mode, created_at: e.created_at, updated_at: e.updated_at, deleted_at: e.deleted_at,
-    threads: threadsByEssay.get(e.id) ?? [], beats: beatsByEssay.get(e.id) ?? [],
-  }));
+
+  const clipIds = [...new Set((beatRows ?? []).filter((r) => r.kind === "clip" && r.clip_id).map((r) => r.clip_id as string))];
+  const voVideoIds = [...new Set((beatRows ?? []).filter((r) => r.kind === "vo" && r.vo_video_id).map((r) => r.vo_video_id as string))];
+  const [clipDurRows, voDurRows] = await Promise.all([
+    clipIds.length
+      ? db.prepare(`SELECT clip_id, SUM("end" - "start") as dur FROM clip_segments WHERE clip_id IN (${clipIds.map(() => "?").join(",")}) GROUP BY clip_id`).bind(...clipIds).all<{ clip_id: string; dur: number }>()
+      : Promise.resolve({ results: [] as { clip_id: string; dur: number }[] }),
+    voVideoIds.length
+      ? db.prepare(`SELECT id, duration FROM videos WHERE id IN (${voVideoIds.map(() => "?").join(",")})`).bind(...voVideoIds).all<{ id: string; duration: number | null }>()
+      : Promise.resolve({ results: [] as { id: string; duration: number | null }[] }),
+  ]);
+  const durByClip = new Map((clipDurRows.results ?? []).map((r) => [r.clip_id, r.dur]));
+  const durByVideo = new Map((voDurRows.results ?? []).map((r) => [r.id, r.duration ?? 0]));
+
+  return essays.map((e) => {
+    const beats = beatsByEssay.get(e.id) ?? [];
+    let estDurationSec = 0;
+    for (const b of beats) {
+      if (b.kind === "clip" && b.clipId) estDurationSec += durByClip.get(b.clipId) ?? 0;
+      else if (b.kind === "vo" && b.voVideoId) estDurationSec += durByVideo.get(b.voVideoId) ?? 0;
+    }
+    return {
+      id: e.id, title: e.title, premise: e.premise, audience: e.audience, target_length: e.target_length,
+      tone: e.tone, builder_mode: e.builder_mode, created_at: e.created_at, updated_at: e.updated_at, deleted_at: e.deleted_at,
+      threads: threadsByEssay.get(e.id) ?? [], beats, estDurationSec: Math.round(estDurationSec),
+    };
+  });
 }
 
 export async function listEssays(db: D1Database): Promise<EssayDetail[]> {

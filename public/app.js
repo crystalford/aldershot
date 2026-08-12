@@ -3466,11 +3466,22 @@ function computeEssayBlocker(e) {
   if (!beats.filter(isRenderable).length) return { label: "Assemble the cut", color: "#f3ede4", mode: "assemble" };
   return { label: "Ready to review & export", color: "#8fc98f", mode: "export" };
 }
+// Which of the 3 Essays-list stage groups this essay belongs to, reusing
+// computeEssayBlocker's own priority chain rather than re-deriving it.
+function computeEssayStage(e) {
+  const blocker = computeEssayBlocker(e);
+  if (blocker.mode === "premise") return { key: "drafting", label: "Premise only", color: "var(--faint)" };
+  if (blocker.mode === "export") return { key: "ready", label: "Ready to export", color: "#8fc98f" };
+  const total = e.beats.length || 1;
+  const matched = e.beats.filter((b) => beatResolutionStatus(b) === "matched").length;
+  return { key: "progress", label: `${Math.round((matched / total) * 100)}% resolved`, color: "#e0c46a" };
+}
 async function openEssayAtMode(id, mode) {
   await openEssay(id);
   setEssayMode(mode);
 }
 
+const ESSAY_STAGE_GROUPS = [["ready", "Ready to export"], ["progress", "In progress"], ["drafting", "Drafting"]];
 async function showEssaysList() {
   location.hash = "#/essays"; setActiveRail("essays");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
@@ -3483,25 +3494,40 @@ async function showEssaysList() {
       <div><h1>Essays</h1><div class="sub">The pieces you're actually directing — each one draws from the whole archive, not one thread.</div></div>
       <button class="btn primary" id="newEssay">${ic("plus")} New essay</button>
     </div>
-    <div class="grid" id="essayGrid"></div>
+    <div id="essaySections"></div>
   </section>`;
   $("#newEssay").onclick = startNewEssay;
-  const grid = $("#essayGrid");
+  const container = $("#essaySections");
   if (!essays.length) {
-    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No essays yet — describe an idea and the archive gets searched for what already supports it.</div>`;
+    container.innerHTML = `<div class="empty-note">No essays yet — describe an idea and the archive gets searched for what already supports it.</div>`;
+    return;
   }
-  grid.innerHTML += essays.map(essayCardHTML).join("");
+  const groups = ESSAY_STAGE_GROUPS.map(([key, label]) => ({ label, essays: essays.filter((e) => computeEssayStage(e).key === key) })).filter((g) => g.essays.length);
+  container.innerHTML = groups.map((g) => `
+    <div class="essay-stage-section">
+      <div class="tools-h">${esc(g.label)}</div>
+      <div class="grid">${g.essays.map(essayCardHTML).join("")}</div>
+    </div>`).join("");
   wireEssayGrid(essays);
 }
 function essayCardHTML(e) {
   const matched = e.beats.filter((b) => b.kind === "clip").length;
   const blocker = computeEssayBlocker(e);
-  return `<div class="card essay-card" data-id="${e.id}">
+  const stage = computeEssayStage(e);
+  const segTotal = e.beats.length || 1;
+  const counts = {};
+  e.beats.forEach((b) => { const st = beatResolutionStatus(b); counts[st] = (counts[st] || 0) + 1; });
+  const segs = Object.entries(counts).map(([st, n]) => `<div style="width:${(n / segTotal) * 100}%;background:${BEAT_STATUS_COLOR[st] || "var(--faint)"}"></div>`).join("");
+  return `<div class="card essay-card" data-id="${e.id}" style="cursor:pointer;">
     <div class="card-body">
-      <div class="card-title">${esc(e.title)}</div>
+      <div class="row-between" style="align-items:flex-start;">
+        <div class="card-title">${esc(e.title)}</div>
+        <span class="pill" style="color:${stage.color};background:${stage.color}22;flex:none;">${esc(stage.label)}</span>
+      </div>
       <div class="card-sub" style="margin:6px 0 10px;">${esc(e.premise)}</div>
       ${e.threads.length ? `<div class="tag-rail small">${e.threads.map((t) => `<span class="tag-chip" style="border-left:2px solid ${colorForTag(t)}">${esc(t)}</span>`).join("")}</div>` : ""}
-      <div class="essay-meta">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
+      ${e.beats.length ? `<div class="desk-essay-bar" style="margin:8px 0;">${segs}</div>` : ""}
+      <div class="essay-meta">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips${e.estDurationSec ? ` · est. ${fmt(e.estDurationSec)}` : ""}</div>
       <div class="essay-blocker" style="color:${blocker.color}">Next: ${esc(blocker.label)}</div>
       <div class="s-actions">
         <button class="btn small accent essay-open">Open →</button>
@@ -3513,9 +3539,11 @@ function essayCardHTML(e) {
 function wireEssayGrid(essays) {
   $$(".essay-card").forEach((card) => {
     const e = essays.find((x) => x.id === card.dataset.id);
-    card.querySelector(".essay-open").onclick = () => { location.hash = `#/essays/${e.id}`; };
-    card.querySelector(".essay-blocker").onclick = () => openEssayAtMode(e.id, computeEssayBlocker(e).mode);
-    card.querySelector(".essay-delete").onclick = async () => {
+    card.onclick = () => { location.hash = `#/essays/${e.id}`; };
+    card.querySelector(".essay-open").onclick = (ev) => { ev.stopPropagation(); location.hash = `#/essays/${e.id}`; };
+    card.querySelector(".essay-blocker").onclick = (ev) => { ev.stopPropagation(); openEssayAtMode(e.id, computeEssayBlocker(e).mode); };
+    card.querySelector(".essay-delete").onclick = async (ev) => {
+      ev.stopPropagation();
       if (!(await UI.confirm({ title: "Delete this essay?", message: "It moves to Trash, where you can restore it later.", confirmText: "Delete", danger: true }))) return;
       await fetch(`/api/essays/${e.id}`, { method: "DELETE" });
       toast("Moved to Trash", { type: "success" });
@@ -3524,31 +3552,85 @@ function wireEssayGrid(essays) {
   });
 }
 
+// 3-step wizard (Idea -> Clarify -> Research preview), matching the
+// prototype's structure -- three sequential modals rather than one flat
+// form, so the wizard has real step numbering and a "what's already here"
+// look before creating. Angle prefixes the premise text the way the
+// prototype's does; Audience is kept alongside it (a real column this app
+// already stores/surfaces in Premise mode, not in the prototype's own
+// wizard, but genuinely useful and not worth deleting).
+const ESSAY_ANGLE_CHOICES = ["Psychological / behavioral", "Systems / incentives", "Chronological / timeline"];
+const ESSAY_AUDIENCE_CHOICES = ["General audience", "Fans of the channel", "Skeptics / critics", "Newcomers"];
+const ESSAY_LENGTH_CHOICES = ["Short (3-5 min)", "Standard (8-10 min)", "Long (15+ min)"];
+const ESSAY_TONE_CHOICES = ["Sardonic", "Earnest", "Analytical", "Playful"];
 async function startNewEssay() {
-  const audienceChoices = ["General audience", "Fans of the channel", "Skeptics / critics", "Newcomers"];
-  const lengthChoices = ["Short (3-5 min)", "Standard (8-10 min)", "Long (15+ min)"];
-  const toneChoices = ["Sardonic", "Earnest", "Analytical", "Playful"];
   const existingThreads = await fetchThreads();
-  const pickedThreads = new Set();
-  const picked = { audience: null, length: null, tone: null };
-  const chipsHTML = (list, key) => list.map((c) => `<span class="chip-pick" data-key="${key}" data-val="${esc(c)}">${esc(c)}</span>`).join("");
-  const threadChipsHTML = existingThreads
-    .map((t) => `<span class="chip-pick" data-thread="${esc(t.id)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`)
-    .join("");
+  const wiz = { idea: "", angle: null, audience: null, length: null, tone: null, threadIds: new Set(), custom: [] };
+  let step = 1;
+  while (step > 0 && step <= 3) {
+    if (step === 1) step = (await essayWizardIdeaStep(wiz)) ? 2 : 0;
+    else if (step === 2) step = await essayWizardClarifyStep(wiz, existingThreads);
+    else step = await essayWizardResearchStep(wiz, existingThreads);
+  }
+  if (step !== -1) return; // 0 = cancelled anywhere along the way
+  const angleLabel = wiz.angle ? ESSAY_ANGLE_CHOICES.find((a) => a === wiz.angle) : null;
+  const premise = angleLabel ? `${angleLabel} on: ${wiz.idea}` : wiz.idea;
+  try {
+    const essay = await fetch("/api/essays", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: wiz.idea.length > 60 ? wiz.idea.slice(0, 57) + "…" : wiz.idea,
+        premise, audience: wiz.audience, targetLength: wiz.length, tone: wiz.tone, threads: [...wiz.threadIds, ...wiz.custom],
+      }),
+    }).then((r) => r.json());
+    if (essay.error) throw new Error(essay.error);
+    toast("Essay created", { type: "success" });
+    location.hash = `#/essays/${essay.id}`;
+  } catch (err) { toast(err.message || "Couldn't create essay", { type: "error" }); }
+}
+async function essayWizardIdeaStep(wiz) {
   const result = await UI.modal({
     title: "New essay",
     bodyHTML: `
+      <div class="essay-eyebrow">Step 1 of 3 — Idea</div>
       <label class="modal-label">What's the idea?</label>
-      <textarea class="modal-input" id="__ideaText" rows="3" style="width:100%;resize:vertical;" placeholder="e.g. The psychology of Dark Syde Phil, or how tariffs actually hit consumers…"></textarea>
+      <textarea class="modal-input" id="__ideaText" rows="3" style="width:100%;resize:vertical;" placeholder="e.g. The psychology of Dark Syde Phil, or how tariffs actually hit consumers…">${esc(wiz.idea)}</textarea>
+    `,
+    dismissValue: null,
+    onOpen: (card) => card.querySelector("#__ideaText").focus(),
+    actions: [
+      { label: "Cancel", resolve: null },
+      { label: "Next →", variant: "primary", onClick: (done, card) => {
+        const idea = card.querySelector("#__ideaText").value.trim();
+        if (!idea) { toast("Describe the idea first."); return; }
+        wiz.idea = idea; done(true);
+      } },
+    ],
+  });
+  return !!result;
+}
+async function essayWizardClarifyStep(wiz, existingThreads) {
+  const chipsHTML = (list, key, current) => list.map((c) => `<span class="chip-pick${current === c ? " on" : ""}" data-key="${key}" data-val="${esc(c)}">${esc(c)}</span>`).join("");
+  const threadChipsHTML = existingThreads
+    .map((t) => `<span class="chip-pick${wiz.threadIds.has(t.id) ? " on" : ""}" data-thread="${esc(t.id)}" style="border-left:2px solid ${t.color}">${esc(t.name)}</span>`)
+    .join("");
+  const picked = { angle: wiz.angle, audience: wiz.audience, length: wiz.length, tone: wiz.tone };
+  const pickedThreads = new Set(wiz.threadIds);
+  const result = await UI.modal({
+    title: "New essay",
+    bodyHTML: `
+      <div class="essay-eyebrow">Step 2 of 3 — Clarify</div>
+      <label class="modal-label">Angle</label>
+      <div class="chip-row" id="__angleRow">${chipsHTML(ESSAY_ANGLE_CHOICES, "angle", picked.angle)}</div>
       <label class="modal-label" style="margin-top:14px;">Audience</label>
-      <div class="chip-row" id="__audienceRow">${chipsHTML(audienceChoices, "audience")}</div>
+      <div class="chip-row" id="__audienceRow">${chipsHTML(ESSAY_AUDIENCE_CHOICES, "audience", picked.audience)}</div>
       <label class="modal-label" style="margin-top:14px;">Target length</label>
-      <div class="chip-row" id="__lengthRow">${chipsHTML(lengthChoices, "length")}</div>
+      <div class="chip-row" id="__lengthRow">${chipsHTML(ESSAY_LENGTH_CHOICES, "length", picked.length)}</div>
       <label class="modal-label" style="margin-top:14px;">Tone</label>
-      <div class="chip-row" id="__toneRow">${chipsHTML(toneChoices, "tone")}</div>
+      <div class="chip-row" id="__toneRow">${chipsHTML(ESSAY_TONE_CHOICES, "tone", picked.tone)}</div>
       <label class="modal-label" style="margin-top:14px;">Grounding threads (optional)</label>
       ${existingThreads.length ? `<div class="chip-row" id="__threadsRow">${threadChipsHTML}</div>` : ""}
-      <input class="modal-input" id="__threadsInput" style="margin-top:8px;" placeholder="${existingThreads.length ? "Not listed above? Add one, comma-separated…" : "e.g. gaming rage, parasocial relationships"}" autocomplete="off" />
+      <input class="modal-input" id="__threadsInput" style="margin-top:8px;" placeholder="${existingThreads.length ? "Not listed above? Add one, comma-separated…" : "e.g. gaming rage, parasocial relationships"}" autocomplete="off" value="${esc(wiz.custom.join(", "))}" />
     `,
     dismissValue: null,
     onOpen: (card) => {
@@ -3566,31 +3648,43 @@ async function startNewEssay() {
           chip.classList.toggle("on", pickedThreads.has(tag));
         };
       });
-      card.querySelector("#__ideaText").focus();
     },
     actions: [
-      { label: "Cancel", resolve: null },
-      { label: "Create essay →", variant: "primary", onClick: (done, card) => {
-        const idea = card.querySelector("#__ideaText").value.trim();
-        if (!idea) { toast("Describe the idea first."); return; }
-        const custom = card.querySelector("#__threadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
-        done({ idea, threads: [...pickedThreads, ...custom] });
+      { label: "← Back", onClick: (done) => done("back") },
+      { label: "Next →", variant: "primary", onClick: (done, card) => {
+        wiz.angle = picked.angle; wiz.audience = picked.audience; wiz.length = picked.length; wiz.tone = picked.tone;
+        wiz.threadIds = pickedThreads;
+        wiz.custom = card.querySelector("#__threadsInput").value.split(",").map((s) => s.trim()).filter(Boolean);
+        done("next");
       } },
     ],
   });
-  if (!result) return;
-  try {
-    const essay = await fetch("/api/essays", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: result.idea.length > 60 ? result.idea.slice(0, 57) + "…" : result.idea,
-        premise: result.idea, audience: picked.audience, targetLength: picked.length, tone: picked.tone, threads: result.threads,
-      }),
-    }).then((r) => r.json());
-    if (essay.error) throw new Error(essay.error);
-    toast("Essay created", { type: "success" });
-    location.hash = `#/essays/${essay.id}`;
-  } catch (err) { toast(err.message || "Couldn't create essay", { type: "error" }); }
+  if (result === "back") return 1;
+  if (result === "next") return 3;
+  return 0;
+}
+async function essayWizardResearchStep(wiz, existingThreads) {
+  const pickedIds = new Set([...wiz.threadIds]);
+  const picked = existingThreads.filter((t) => pickedIds.has(t.id));
+  const rows = picked.length
+    ? picked.map((t) => `<div class="research-preview-row"><span style="color:${t.color}">${esc(t.name)}</span><span>${t.clipCount} clip${t.clipCount === 1 ? "" : "s"} · ${t.sourceCount} source${t.sourceCount === 1 ? "" : "s"}</span></div>`).join("")
+    : `<div class="empty small">No grounding threads picked — this essay will draw from the whole archive once you start drafting.</div>`;
+  const result = await UI.modal({
+    title: "New essay",
+    bodyHTML: `
+      <div class="essay-eyebrow">Step 3 of 3 — Research</div>
+      <label class="modal-label">What's already here</label>
+      <div class="research-preview">${rows}</div>
+    `,
+    dismissValue: null,
+    actions: [
+      { label: "← Back", onClick: (done) => done("back") },
+      { label: "Create essay →", variant: "primary", onClick: (done) => done("create") },
+    ],
+  });
+  if (result === "back") return 2;
+  if (result === "create") return -1;
+  return 0;
 }
 
 async function openEssay(id) {
@@ -3653,7 +3747,7 @@ function renderEssayShell() {
     <div class="essay-main">
       <div class="essay-main-head">
         <div class="doc-title" style="margin:0 0 2px;">${esc(e.title)}</div>
-        <div class="empty small">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips</div>
+        <div class="empty small">${e.beats.length} beat${e.beats.length === 1 ? "" : "s"} · ${matched} matched to clips${e.estDurationSec ? ` · est. ${fmt(e.estDurationSec)}` : ""}</div>
         <div class="essay-tabs">${modes.map(([m, l]) => `<div class="essay-tab${essayState.mode === m ? " on" : ""}" data-mode="${m}">${l}</div>`).join("")}</div>
       </div>
       <div class="essay-body" id="essayBody"></div>
