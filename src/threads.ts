@@ -22,6 +22,7 @@
  * user manually create a thread.
  */
 import type { Env } from "./env";
+import { describeThread } from "./pipeline/reason";
 
 const PALETTE = [
   "#8fbf7f", "#d48a7b", "#7ba7d4", "#c9a86a", "#a889c9",
@@ -60,6 +61,14 @@ export interface ThreadSummary {
   /** Clips created per week, oldest (index 0) to most recent (last index). */
   weeklyGrowth: number[];
   sampleQuotes: string[];
+  /** One-sentence description, lazily generated and cached — null until a
+   *  request has successfully computed it (see fillDescriptions below). */
+  synopsis: string | null;
+  /** Coarse grouping bucket for the Threads view, mirroring the prototype's
+   *  People/Shows/Topics sections. Defaults to "topic" until classified. */
+  kind: "person" | "show" | "topic";
+  sourceCount: number;
+  themeCount: number;
 }
 
 export async function ensureThreadSchema(db: D1Database): Promise<void> {
@@ -108,6 +117,15 @@ export async function ensureThreadSchema(db: D1Database): Promise<void> {
        )`,
     ),
   ]);
+  // SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so the idempotent
+  // version checks PRAGMA table_info first — same pattern as every other
+  // lazy-create schema change in this codebase.
+  const cols = await db.prepare(`PRAGMA table_info(thread_clusters)`).all<{ name: string }>();
+  const have = new Set((cols.results ?? []).map((c) => c.name));
+  const alters: D1PreparedStatement[] = [];
+  if (!have.has("synopsis")) alters.push(db.prepare(`ALTER TABLE thread_clusters ADD COLUMN synopsis TEXT`));
+  if (!have.has("kind")) alters.push(db.prepare(`ALTER TABLE thread_clusters ADD COLUMN kind TEXT`));
+  if (alters.length) await db.batch(alters);
 }
 
 async function tagsForClips(db: D1Database, clipIds: string[]): Promise<Map<string, string[]>> {
@@ -120,6 +138,22 @@ async function tagsForClips(db: D1Database, clipIds: string[]): Promise<Map<stri
     .bind(...ids)
     .all<{ clip_id: string; tag: string }>();
   for (const r of results ?? []) map.set(r.clip_id, [...(map.get(r.clip_id) ?? []), r.tag]);
+  return map;
+}
+
+async function videoIdsForClips(db: D1Database, clipIds: string[]): Promise<Map<string, Set<string>>> {
+  const map = new Map<string, Set<string>>();
+  if (!clipIds.length) return map;
+  const ids = [...new Set(clipIds)];
+  const placeholders = ids.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(`SELECT clip_id, video_id FROM clip_segments WHERE clip_id IN (${placeholders})`)
+    .bind(...ids)
+    .all<{ clip_id: string; video_id: string }>();
+  for (const r of results ?? []) {
+    if (!map.has(r.clip_id)) map.set(r.clip_id, new Set());
+    map.get(r.clip_id)!.add(r.video_id);
+  }
   return map;
 }
 
@@ -260,12 +294,15 @@ async function listThreadsByCluster(db: D1Database): Promise<ThreadSummary[]> {
        ORDER BY cc.cluster_id, c.created_at DESC`,
     )
     .all<{ cluster_id: string; clip_id: string; title: string; created_at: number }>();
-  const { results: clusterMeta } = await db.prepare(`SELECT id, display_name FROM thread_clusters`).all<{ id: string; display_name: string | null }>();
-  const displayNames = new Map((clusterMeta ?? []).map((r) => [r.id, r.display_name]));
+  const { results: clusterMeta } = await db
+    .prepare(`SELECT id, display_name, synopsis, kind FROM thread_clusters`)
+    .all<{ id: string; display_name: string | null; synopsis: string | null; kind: string | null }>();
+  const metaById = new Map((clusterMeta ?? []).map((r) => [r.id, r]));
 
   const byCluster = new Map<string, { clip_id: string; title: string; created_at: number }[]>();
   for (const r of memberRows ?? []) byCluster.set(r.cluster_id, [...(byCluster.get(r.cluster_id) ?? []), r]);
-  const tagsByClip = await tagsForClips(db, (memberRows ?? []).map((r) => r.clip_id));
+  const clipIds = (memberRows ?? []).map((r) => r.clip_id);
+  const [tagsByClip, videoIdsByClip] = await Promise.all([tagsForClips(db, clipIds), videoIdsForClips(db, clipIds)]);
 
   const now = Date.now();
   const threads: ThreadSummary[] = [];
@@ -282,13 +319,20 @@ async function listThreadsByCluster(db: D1Database): Promise<ThreadSummary[]> {
     for (const r of rows) for (const t of tagsByClip.get(r.clip_id) ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
     let seedTag = "", seedCount = 0;
     for (const [t, count] of tagCounts) if (count > seedCount) { seedCount = count; seedTag = t; }
+    const sourceIds = new Set<string>();
+    for (const r of rows) for (const v of videoIdsByClip.get(r.clip_id) ?? []) sourceIds.add(v);
+    const meta = metaById.get(clusterId);
     threads.push({
       id: clusterId,
-      name: displayNames.get(clusterId) || (seedTag ? titleCase(seedTag) : titleCase(rows[0].title)),
+      name: meta?.display_name || (seedTag ? titleCase(seedTag) : titleCase(rows[0].title)),
       color: colorForString(clusterId),
       clipCount: rows.length,
       weeklyGrowth,
       sampleQuotes: rows.slice(0, 3).map((r) => r.title),
+      synopsis: meta?.synopsis ?? null,
+      kind: meta?.kind === "person" || meta?.kind === "show" ? meta.kind : "topic",
+      sourceCount: sourceIds.size,
+      themeCount: tagCounts.size,
     });
   }
   return threads.sort((a, b) => b.clipCount - a.clipCount);
@@ -300,16 +344,23 @@ async function listThreadsByCluster(db: D1Database): Promise<ThreadSummary[]> {
 async function listThreadsByTag(db: D1Database): Promise<ThreadSummary[]> {
   const { results } = await db
     .prepare(
-      `SELECT t.tag as tag, c.title as title, c.created_at as created_at
+      `SELECT t.tag as tag, c.id as clip_id, c.title as title, c.created_at as created_at
        FROM clip_tags t JOIN clips c ON c.id = t.clip_id
        ORDER BY t.tag ASC, c.created_at DESC`,
     )
-    .all<{ tag: string; title: string; created_at: number }>();
-  const { results: metaRows } = await db.prepare(`SELECT tag, display_name FROM thread_meta`).all<{ tag: string; display_name: string | null }>();
+    .all<{ tag: string; clip_id: string; title: string; created_at: number }>();
+  const { results: metaRows } = await db
+    .prepare(`SELECT tag, display_name FROM thread_meta`)
+    .all<{ tag: string; display_name: string | null }>();
   const displayNames = new Map((metaRows ?? []).map((r) => [r.tag, r.display_name]));
+  const { results: clusterMeta } = await db
+    .prepare(`SELECT id, synopsis, kind FROM thread_clusters`)
+    .all<{ id: string; synopsis: string | null; kind: string | null }>();
+  const cacheById = new Map((clusterMeta ?? []).map((r) => [r.id, r]));
 
-  const byTag = new Map<string, { title: string; created_at: number }[]>();
-  for (const r of results ?? []) byTag.set(r.tag, [...(byTag.get(r.tag) ?? []), { title: r.title, created_at: r.created_at }]);
+  const byTag = new Map<string, { clip_id: string; title: string; created_at: number }[]>();
+  for (const r of results ?? []) byTag.set(r.tag, [...(byTag.get(r.tag) ?? []), r]);
+  const videoIdsByClip = await videoIdsForClips(db, (results ?? []).map((r) => r.clip_id));
 
   const now = Date.now();
   const threads: ThreadSummary[] = [];
@@ -319,17 +370,48 @@ async function listThreadsByTag(db: D1Database): Promise<ThreadSummary[]> {
       const weeksAgo = Math.floor((now - r.created_at) / WEEK_MS);
       if (weeksAgo >= 0 && weeksAgo < WEEKS) weeklyGrowth[WEEKS - 1 - weeksAgo]++;
     }
+    const sourceIds = new Set<string>();
+    for (const r of rows) for (const v of videoIdsByClip.get(r.clip_id) ?? []) sourceIds.add(v);
+    const cached = cacheById.get(tag);
     threads.push({
       id: tag, name: displayNames.get(tag) || titleCase(tag), color: colorForString(tag),
       clipCount: rows.length, weeklyGrowth, sampleQuotes: rows.slice(0, 3).map((r) => r.title),
+      synopsis: cached?.synopsis ?? null,
+      kind: cached?.kind === "person" || cached?.kind === "show" ? cached.kind : "topic",
+      sourceCount: sourceIds.size,
+      themeCount: 1, // a tag-mode "thread" IS one tag/theme by definition
     });
   }
   return threads.sort((a, b) => b.clipCount - a.clipCount);
 }
 
+/** Lazily classifies + writes a one-sentence synopsis for any thread that
+ *  doesn't have one cached yet, capped per request so a cold Threads view
+ *  with many uncategorized clusters doesn't stack up a long chain of LLM
+ *  calls — the rest fill in on subsequent loads as the cache accumulates. */
+const DESCRIBE_BUDGET_PER_REQUEST = 5;
+async function fillDescriptions(env: Env, db: D1Database, threads: ThreadSummary[]): Promise<void> {
+  const missing = threads.filter((t) => !t.synopsis).slice(0, DESCRIBE_BUDGET_PER_REQUEST);
+  for (const t of missing) {
+    const described = await describeThread(env, t.name, t.sampleQuotes);
+    if (!described) continue;
+    t.synopsis = described.synopsis;
+    t.kind = described.kind;
+    await db
+      .prepare(
+        `INSERT INTO thread_clusters (id, display_name, created_at, synopsis, kind) VALUES (?, NULL, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET synopsis = excluded.synopsis, kind = excluded.kind`,
+      )
+      .bind(t.id, Date.now(), described.synopsis, described.kind)
+      .run();
+  }
+}
+
 export async function listThreads(env: Env, db: D1Database): Promise<ThreadSummary[]> {
   const clustered = await recomputeClusters(env, db);
-  return clustered ? listThreadsByCluster(db) : listThreadsByTag(db);
+  const threads = clustered ? await listThreadsByCluster(db) : await listThreadsByTag(db);
+  await fillDescriptions(env, db, threads);
+  return threads;
 }
 
 /** Per-clip thread membership — clusters when Vectorize clustering is live,

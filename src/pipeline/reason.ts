@@ -327,6 +327,41 @@ export async function composeFromClips(env: Env, clips: ComposableClip[], instru
   return { coldOpen, body };
 }
 
+// ── Thread description — a one-time, cached classification + one-sentence
+// synopsis for a Threads card, derived only from that thread's own sample
+// clip titles (never invents details beyond what the titles suggest). Kind
+// is a coarse bucket for grouping the Threads view, mirroring the
+// prototype's People/Shows/Topics sections — there's no fixed roster here
+// (threads are auto-clustered, not hand-curated), so this is inferred per
+// thread rather than looked up. ─────────────────────────────────────────
+interface ThreadDescribeReply {
+  kind: "person" | "show" | "topic";
+  synopsis: string;
+}
+export interface ThreadDescription {
+  kind: "person" | "show" | "topic";
+  synopsis: string;
+}
+export async function describeThread(env: Env, name: string, sampleTitles: string[]): Promise<ThreadDescription | null> {
+  const system =
+    "You classify a cluster of video-clip titles from one creator's personal archive into a short profile. " +
+    'kind is "person" if the cluster is centered on one recurring individual, "show" if it\'s a recurring ' +
+    'program/series/stream, or "topic" otherwise. synopsis is one plain sentence (under 25 words) describing ' +
+    "what this cluster is about, grounded only in the titles given — don't invent facts not implied by them.";
+  const user =
+    `Cluster name: "${name}"\n` +
+    `Sample clip titles:\n${sampleTitles.map((t) => `- ${t}`).join("\n")}\n\n` +
+    'Return ONLY JSON: {"kind":"person"|"show"|"topic","synopsis":"one sentence"}';
+  try {
+    const reply = await runJson<ThreadDescribeReply>(env, system, user);
+    if (!reply.synopsis?.trim()) return null;
+    const kind = reply.kind === "person" || reply.kind === "show" ? reply.kind : "topic";
+    return { kind, synopsis: reply.synopsis.trim() };
+  } catch {
+    return null;
+  }
+}
+
 // ── "Ask the archive" — a grounded Q&A read over the saved clip library,
 // same discipline as composeFromClips: the model only ever cites a real
 // clip's [id] plus that clip's own title/description as its "quote" (there's

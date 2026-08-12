@@ -3061,6 +3061,7 @@ async function fetchThreads() {
   try { return (await fetch("/api/threads").then((r) => r.json())).threads || []; }
   catch { return []; }
 }
+const THREAD_KIND_GROUPS = [["person", "People"], ["show", "Shows"], ["topic", "Topics"]];
 async function showThreadsView() {
   location.hash = "#/threads"; setActiveRail("threads");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
@@ -3071,14 +3072,19 @@ async function showThreadsView() {
       <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected by theme across the Archive (what a clip's about, not just what it's tagged). Rename or merge, but a new one only appears once clips actually cluster that way.</div>
       <div class="threads-subtitle">Clustered by meaning — what's said plus what's on screen — not by matching tags. Two clips never tagged alike can still join the same thread.</div></div>
     </div>
-    <div class="grid" id="threadGrid"></div>
+    <div id="threadSections"></div>
   </section>`;
-  const grid = $("#threadGrid");
+  const container = $("#threadSections");
   if (!threads.length) {
-    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No threads yet — save a couple of clips to the Archive and related ones will cluster here automatically.</div>`;
+    container.innerHTML = `<div class="empty-note">No threads yet — save a couple of clips to the Archive and related ones will cluster here automatically.</div>`;
     return;
   }
-  grid.innerHTML = threads.map(threadCardHTML).join("");
+  const groups = THREAD_KIND_GROUPS.map(([kind, label]) => ({ label, threads: threads.filter((t) => t.kind === kind) })).filter((g) => g.threads.length);
+  container.innerHTML = groups.map((g) => `
+    <div class="thread-kind-section">
+      <div class="tools-h">${esc(g.label)}</div>
+      <div class="grid">${g.threads.map(threadCardHTML).join("")}</div>
+    </div>`).join("");
   wireThreadGrid(threads);
   threads.forEach((t) => loadNearMissForThread(t));
 }
@@ -3111,16 +3117,31 @@ async function loadNearMissForThread(t) {
     slot.innerHTML = "";
   };
 }
+function threadInitials(name) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+}
 function threadCardHTML(t) {
   const maxWeek = Math.max(1, ...t.weeklyGrowth);
   const bars = t.weeklyGrowth.map((n) => `<div class="growth-bar" style="height:${Math.max(3, (n / maxWeek) * 100)}%;background:${t.color}"></div>`).join("");
-  return `<div class="card thread-card" data-id="${esc(t.id)}" style="border-left:2px solid ${t.color}">
+  const thisWeek = t.weeklyGrowth[t.weeklyGrowth.length - 1] || 0;
+  return `<div class="card thread-card" data-id="${esc(t.id)}" style="border-top:2px solid ${t.color}">
     <div class="card-body">
-      <div class="row-between" style="margin-bottom:0;">
-        <div class="card-title thread-name" title="Click to rename">${esc(t.name)}</div>
+      <div class="row-between" style="margin-bottom:0;align-items:flex-start;">
+        <div style="display:flex;gap:9px;align-items:flex-start;">
+          <span class="thread-avatar" style="background:${t.color}22;color:${t.color}">${esc(threadInitials(t.name))}</span>
+          <div class="card-title thread-name" title="Click to rename">${esc(t.name)}</div>
+        </div>
         <span class="essay-meta">${t.clipCount} clip${t.clipCount === 1 ? "" : "s"}</span>
       </div>
-      <div class="growth-chart">${bars}</div>
+      ${t.synopsis ? `<div class="thread-synopsis">${esc(t.synopsis)}</div>` : ""}
+      <div class="thread-stats">
+        <span>${t.sourceCount} src</span><span>${t.clipCount} clips</span><span>${t.themeCount} theme${t.themeCount === 1 ? "" : "s"}</span>
+      </div>
+      <div class="row-between" style="margin:2px 0 0;">
+        <div class="growth-chart">${bars}</div>
+        ${thisWeek ? `<span class="thread-growth-label" style="color:${t.color}">+${thisWeek} this week</span>` : ""}
+      </div>
       ${t.sampleQuotes.length ? `<div class="thread-quotes">${t.sampleQuotes.map((q) => `<div class="finder-quote">"${esc(q)}"</div>`).join("")}</div>` : ""}
       <div class="s-actions">
         <button class="btn small ghost thread-rename">Rename</button>
