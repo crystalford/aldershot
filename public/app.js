@@ -3006,7 +3006,7 @@ async function showLibrary(presetThreadId) {
   main.innerHTML = `
     <section class="pad">
       <div class="row-between">
-        <div><h1>Archive</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay. ${statsLine ? `<span class="archive-stats">${esc(statsLine)}</span>` : ""}</div></div>
+        <div><h1>The Archive</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay. ${statsLine ? `<span class="archive-stats">${esc(statsLine)}</span>` : ""}</div></div>
         <button class="btn primary" id="discoverBtn">${ic("sparkle")} Find related clips across my archive</button>
       </div>
       <div class="essay-link" id="toThreadsLink">See thread breakdown and growth trends in Threads →</div>
@@ -3619,28 +3619,30 @@ async function runDiscoverSearch(query) {
   let essays = [];
   if (!pending) { try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; } catch { essays = []; } }
 
+  // Horizontal row, not a card grid — matches the prototype's own layout
+  // exactly (thumbnail + colored left border keyed to the matched thread,
+  // info column, action column), rather than the vertical-card grid this
+  // was mistakenly built as earlier.
   const essayOptions = essays.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
-  el.innerHTML = `<div class="discover-grid">${results.map((r, i) => `
-    <div class="card discover-card" data-i="${i}">
-      <div class="discover-thumb">${ic("article")}</div>
-      <div class="card-body">
-        <div class="row-between" style="align-items:flex-start;">
-          <div class="card-title">${esc(r.title)}</div>
+  el.innerHTML = `<div class="discover-rows">${results.map((r, i) => `
+    <div class="discover-row" data-i="${i}" style="border-left-color:${r.threadColor || "transparent"}">
+      <div class="discover-row-thumb">${ic("article")}</div>
+      <div class="discover-row-body">
+        <div class="discover-row-meta">
           ${r.threadName ? `<span class="discover-thread-tag" style="color:${r.threadColor};background:${r.threadColor}22;">${esc(r.threadName)}</span>` : ""}
+          <span class="discover-platform">Wikipedia · <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(hostnameOf(r.url))}</a></span>
         </div>
-        <div class="discover-platform-row">
-          <span class="discover-platform">Wikipedia</span>
-          <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(hostnameOf(r.url))}</a>
-        </div>
-        ${r.why ? `<div class="discover-why">${esc(r.why)}${typeof r.confidence === "number" ? ` <span class="discover-confidence">${r.confidence}% match</span>` : ""}</div>` : ""}
+        <div class="discover-row-title">${esc(r.title)}</div>
+        ${r.why ? `<div class="discover-why">${esc(r.why)}</div>` : ""}
+        ${typeof r.confidence === "number" ? `<div class="discover-confidence">${r.confidence}% match</div>` : ""}
         <div class="discover-extract">${esc(r.extract)}</div>
-        <div class="discover-action" data-i="${i}">
-          ${pending
-            ? `<button class="btn small discover-ground" data-i="${i}">Ground this beat →</button>`
-            : essays.length
-              ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
-              : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
-        </div>
+      </div>
+      <div class="discover-row-action" data-i="${i}">
+        ${pending
+          ? `<button class="btn small discover-ground" data-i="${i}">Ground this beat →</button>`
+          : essays.length
+            ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
+            : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
       </div>
     </div>`).join("")}</div>`;
 
@@ -3666,7 +3668,7 @@ async function runDiscoverSearch(query) {
         if (!res.ok) throw new Error(data.error || res.statusText);
         const essayTitle = essays.find((e) => e.id === essayId)?.title || "essay";
         toast(`Added to "${essayTitle}"`, { type: "success" });
-        const action = el.querySelector(`.discover-action[data-i="${sel.dataset.i}"]`);
+        const action = el.querySelector(`.discover-row-action[data-i="${sel.dataset.i}"]`);
         if (action) action.innerHTML = `<div class="discover-added">Added ✓ — ${esc(essayTitle)}</div>`;
         return;
       } catch (err) {

@@ -266,23 +266,33 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--bone); flex: 1; min-width: 0;
 }
 .discover-search-bar input::placeholder { color: var(--faint); }
-.discover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.discover-card { cursor: default; }
-.discover-thumb {
-  aspect-ratio: 16 / 9; max-height: 100px; background: var(--bg2); display: flex;
-  align-items: center; justify-content: center; color: var(--faint); border-bottom: 1px solid var(--line);
+/* Horizontal rows, not a card grid — matches the prototype exactly: a
+   thumbnail, a colored left border keyed to the matched thread, an info
+   column, and an action column, all in one row per result. */
+.discover-rows { display: flex; flex-direction: column; gap: 12px; }
+.discover-row {
+  display: flex; gap: 16px; align-items: center; background: var(--panel);
+  border: 1px solid var(--line); border-left: 2px solid transparent; border-radius: 3px; padding: 16px 18px;
 }
-.discover-thumb svg { width: 22px; height: 22px; }
-.discover-platform-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.discover-platform { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
-.discover-url { font-family: var(--font-mono); font-size: 11px; color: var(--faint); word-break: break-all; }
+.discover-row-thumb {
+  width: 80px; height: 52px; flex: none; background: var(--bg2); border-radius: 2px;
+  display: flex; align-items: center; justify-content: center; color: var(--faint);
+}
+.discover-row-thumb svg { width: 16px; height: 16px; }
+.discover-row-body { flex: 1; min-width: 0; }
+.discover-row-meta { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.discover-platform { font-size: 10px; color: var(--faint); }
+.discover-url { font-family: var(--font-mono); font-size: 10px; color: var(--faint); word-break: break-all; }
 .discover-url:hover { color: var(--accent); }
-.discover-extract { font-size: 13px; color: var(--dim); line-height: 1.5; margin-bottom: 12px; max-height: 6.5em; overflow: hidden; }
+.discover-row-title { font-size: 13px; color: var(--bone); margin-top: 6px; }
+.discover-extract { font-size: 11px; color: var(--faint); line-height: 1.5; margin-top: 4px; max-height: 3em; overflow: hidden; }
 .discover-thread-tag {
-  flex: none; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+  flex: none; font-size: 10px; padding: 2px 8px; border-radius: 2px; white-space: nowrap;
 }
-.discover-why { font-size: 12px; color: var(--dim); margin-bottom: 8px; }
-.discover-confidence { font: 10.5px var(--font-mono); color: var(--faint); }
+.discover-why { font-size: 11px; color: var(--dim); margin-top: 4px; }
+.discover-confidence { font: 10px var(--font-mono); color: var(--faint); margin-top: 4px; }
+.discover-row-action { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: stretch; width: 190px; }
+.discover-row-action .btn { width: 100%; }
 .discover-added { font-size: 12.5px; color: var(--good); }
 .discover-add { width: 100%; }
 .discover-pending-banner {

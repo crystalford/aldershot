@@ -95,7 +95,8 @@ substitute for the verification itself.
 | 1 | Beat-grounding flow (pending banner, "Ground this beat →") | ✅ | Solid-teal CTA now matches |
 | 2 | Results tagged with matched thread + color | ✅ | `matchDiscoverToThreads()`, one batched call per search |
 | 3 | "Why it matches" + confidence % | ✅ | Same call |
-| 4 | Thumbnail box + "{platform} · {channel}" line | ✅ | `.discover-thumb` (document icon, since results are Wikipedia articles not video) + "Wikipedia · {hostname}" — real platform/source, not a fabricated channel (Wikipedia has no channel concept) |
+| 4 | Thumbnail box + "{platform} · {channel}" line | ✅ | `.discover-row-thumb` (document icon, since results are Wikipedia articles not video) + "Wikipedia · {hostname}" — real platform/source, not a fabricated channel (Wikipedia has no channel concept) |
+| 7 | Row layout (horizontal, colored left border) not a card grid | ✅ | Was built as a vertical `.discover-grid` card grid in an earlier pass without ever rendering the prototype — found by actually rendering it and screenshot-diffing. Now `.discover-rows`/`.discover-row`, matching exactly |
 | 5 | Persistent "Added ✓" state | ✅ | |
 | 6 | Search icon inline + onchange trigger | ✅ | `.discover-search-bar` — icon inside the input pill, no separate button; triggers on change (blur) and Enter |
 
