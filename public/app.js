@@ -23,17 +23,22 @@ const ICON = {
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5 21 8v8l-5-2.5z"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
-  // rail icons
-  archive: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
-  upload: '<path d="M12 16V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
-  threads: '<circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M8.1 7 15.9 11M8.1 17 15.9 13"/>',
-  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 4 5.4 4 8.5s-1.4 5.9-4 8.5c-2.6-2.6-4-5.4-4-8.5s1.4-5.9 4-8.5z"/>',
-  quill: '<path d="M4 20c4-.5 13-2.5 15.5-13.5C13.5 8 9 12 7 17"/><path d="M4 20l2.2-5.4"/>',
-  clapper: '<path d="M3 10 19.5 6l1 4L4 14z"/><rect x="3" y="10" width="18" height="10" rx="1"/><path d="M8 10 6 6M14 10l-2-4"/>',
-  wand: '<path d="M5 19 17 7"/><path d="M17 3v3M20.5 4.5h-3M12 6l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
-  scissors: '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M7.6 7.4 20 20M20 4 12 12M7.6 16.6l2-2"/>',
+  // rail icons — copied literally (viewBox/path/stroke-width) from the
+  // prototype's own inline SVGs per the round-3 handoff's fidelity contract
+  // ("you are not designing, you are transcribing").
+  desk: '<path d="M3 9h18M3 9v10h18V9M3 9l2-4h14l2 4"/><path d="M9 13h6"/>',
+  archive: '<circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><line x1="9" y1="9" x2="10.5" y2="14.5"/><line x1="15" y1="9" x2="13.5" y2="14.5"/>',
+  upload: '<rect x="3" y="4" width="8" height="6" rx="1"/><rect x="13" y="4" width="8" height="6" rx="1"/><rect x="3" y="14" width="8" height="6" rx="1"/><rect x="13" y="14" width="8" height="6" rx="1"/>',
+  threads: '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><path d="M8 7l3 9M16 7l-3 9"/>',
+  globe: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/>',
+  quill: '<rect x="3" y="5" width="7" height="6" rx="1"/><rect x="13" y="5" width="8" height="6" rx="1"/><rect x="3" y="14" width="8" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/>',
+  clapper: '<rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/>',
+  wand: '<path d="M12 3l1.8 5.6L19 10l-5.2 1.4L12 17l-1.8-5.6L5 10l5.2-1.4z"/><circle cx="19" cy="19" r="2"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.5 8l10 8M8.5 16l10-8"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.4M12 18.6V21M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M3 12h2.4M18.6 12H21M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"/>',
-  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/>',
+  bell: '<path d="M6 8a6 6 0 0112 0c0 4 1.5 6 1.5 6H4.5S6 12 6 8z"/><path d="M9.5 18a2.5 2.5 0 005 0"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 114 2.5c-.6.6-1.5 1-1.5 2.2"/><circle cx="12" cy="17" r=".3" fill="currentColor"/>',
   back: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[n]}</svg>`;
@@ -249,8 +254,8 @@ function renderProject() {
           </div>
 
           <div class="toolbar toolbar-edit">
-            <button class="btn small ghost" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button>
-            <button class="btn small ghost" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button>
+            <button class="btn small ghost" id="undoBtn" title="Undo">↶ Undo</button>
+            <button class="btn small ghost" id="redoBtn" title="Redo">↷ Redo</button>
             <button class="btn small ghost" id="removeFillers">Remove fillers</button>
             <button class="btn small ghost" id="trimPauses">Trim long pauses</button>
             <button class="btn small ghost" id="showCuts" title="Show/hide cut words">Show cuts</button>

@@ -114,8 +114,10 @@ current schema blocks re-adding it.)
   enabled at all — those specific features just 501 until Workers Paid +
   Containers are turned on.
 - **Vanilla JS frontend** (`public/app.js`, no framework/build step) —
-  Bricolage Grotesque (headers/titles) + IBM Plex Sans (everything else),
-  self-hosted woff2s in `public/fonts/`.
+  Newsreader italic (headers/titles/editorial voice) + IBM Plex Sans (UI
+  chrome) + IBM Plex Mono (metadata/timestamps), self-hosted woff2s in
+  `public/fonts/`. Violet (`#8a7bd4`) is the one settled accent — no other
+  direction is current.
 
 ### API surface
 
