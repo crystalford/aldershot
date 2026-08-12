@@ -66,7 +66,7 @@ import {
   type BeatAct,
   type BeatKind,
 } from "./essays";
-import { ensureThreadSchema, listThreads, renameThread, mergeThreads } from "./threads";
+import { ensureThreadSchema, listThreads, renameThread, mergeThreads, getNearMissForThread, acceptNearMiss, dismissNearMiss } from "./threads";
 import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
 import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, getMostRecentDiscoverResult, type DiscoverCandidate } from "./discover";
 import {
@@ -1303,6 +1303,27 @@ app.post("/api/threads/:id/merge", async (c) => {
   const { intoId } = await c.req.json<{ intoId?: string }>().catch(() => ({}) as { intoId?: string });
   if (!intoId?.trim()) return c.json({ error: "pick a thread to merge into" }, 400);
   await mergeThreads(c.env.DB, c.req.param("id").trim(), intoId.trim());
+  return c.json({ ok: true });
+});
+
+// Lazy, per-card — called after the main Threads grid renders so a slow
+// Vectorize near-neighbor query never blocks the list itself.
+app.get("/api/threads/:id/near-miss", async (c) => {
+  await ensureClipSchema(c.env.DB);
+  await ensureThreadSchema(c.env.DB);
+  const nearMiss = await getNearMissForThread(c.env, c.env.DB, c.req.param("id").trim());
+  return c.json({ nearMiss });
+});
+
+app.post("/api/threads/:id/near-miss/:clipId/accept", async (c) => {
+  await ensureThreadSchema(c.env.DB);
+  await acceptNearMiss(c.env.DB, c.req.param("id").trim(), c.req.param("clipId").trim());
+  return c.json({ ok: true });
+});
+
+app.post("/api/threads/:id/near-miss/:clipId/dismiss", async (c) => {
+  await ensureThreadSchema(c.env.DB);
+  await dismissNearMiss(c.env.DB, c.req.param("id").trim(), c.req.param("clipId").trim());
   return c.json({ ok: true });
 });
 

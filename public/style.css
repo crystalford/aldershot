@@ -862,6 +862,14 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .growth-chart { display: flex; align-items: flex-end; gap: 3px; height: 32px; margin: 12px 0; }
 .growth-bar { flex: 1; border-radius: 1px; min-height: 3px; opacity: .85; }
 .thread-quotes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.threads-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 8px; }
+.thread-nearmiss-slot:not(:empty) { margin-top: 12px; }
+.thread-nearmiss { background: var(--bg-deep); border: 1px dashed; border-radius: var(--radius); padding: 10px 12px; }
+.thread-nearmiss-label { font-family: var(--font-mono); font-size: 9.5px; margin-bottom: 5px; }
+.thread-nearmiss-quote { font: italic 500 11.5px/1.45 var(--font-display); color: var(--bone); }
+.thread-nearmiss-actions { display: flex; gap: 6px; margin-top: 8px; }
+.thread-nearmiss-actions .btn { flex: 1; text-align: center; justify-content: center; }
+.thread-nearmiss-accepted { font-size: 10.5px; color: var(--good); padding: 6px 0; }
 
 /* ── essays ─────────────────────────────────────────────── */
 .essay-card { padding: 0; }

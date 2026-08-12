@@ -2872,7 +2872,8 @@ async function showThreadsView() {
   const threads = await fetchThreads();
   main.innerHTML = `<section class="pad">
     <div class="row-between">
-      <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected by theme across the Archive (what a clip's about, not just what it's tagged). Rename or merge, but a new one only appears once clips actually cluster that way.</div></div>
+      <div><h1>Threads</h1><div class="sub">Per-thread clip counts, growth, and color — auto-detected by theme across the Archive (what a clip's about, not just what it's tagged). Rename or merge, but a new one only appears once clips actually cluster that way.</div>
+      <div class="threads-subtitle">Clustered by meaning — what's said plus what's on screen — not by matching tags. Two clips never tagged alike can still join the same thread.</div></div>
     </div>
     <div class="grid" id="threadGrid"></div>
   </section>`;
@@ -2883,6 +2884,36 @@ async function showThreadsView() {
   }
   grid.innerHTML = threads.map(threadCardHTML).join("");
   wireThreadGrid(threads);
+  threads.forEach((t) => loadNearMissForThread(t));
+}
+// Fetched lazily per card, after the grid itself renders, so a slow
+// Vectorize near-neighbor lookup never blocks the list — see
+// GET /api/threads/:id/near-miss.
+async function loadNearMissForThread(t) {
+  let nearMiss;
+  try { ({ nearMiss } = await fetch(`/api/threads/${encodeURIComponent(t.id)}/near-miss`).then((r) => r.json())); }
+  catch { return; }
+  if (!nearMiss) return;
+  const slot = document.querySelector(`.thread-card[data-id="${CSS.escape(t.id)}"] .thread-nearmiss-slot`);
+  if (!slot) return;
+  slot.innerHTML = `<div class="thread-nearmiss" style="border-color:${t.color}55">
+    <div class="thread-nearmiss-label" style="color:${t.color}">Suggested addition · ${nearMiss.score}% semantic match</div>
+    <div class="thread-nearmiss-quote">"${esc(nearMiss.quote)}"</div>
+    <div class="thread-nearmiss-actions">
+      <button class="btn small primary thread-nearmiss-add">Add to thread</button>
+      <button class="btn small ghost thread-nearmiss-dismiss">Not related</button>
+    </div>
+  </div>`;
+  slot.querySelector(".thread-nearmiss-add").onclick = async (e) => {
+    e.currentTarget.disabled = true;
+    await fetch(`/api/threads/${encodeURIComponent(t.id)}/near-miss/${encodeURIComponent(nearMiss.clipId)}/accept`, { method: "POST" });
+    slot.innerHTML = `<div class="thread-nearmiss-accepted">✓ Added — the thread's embedding recentres on the next pass.</div>`;
+  };
+  slot.querySelector(".thread-nearmiss-dismiss").onclick = async (e) => {
+    e.currentTarget.disabled = true;
+    await fetch(`/api/threads/${encodeURIComponent(t.id)}/near-miss/${encodeURIComponent(nearMiss.clipId)}/dismiss`, { method: "POST" });
+    slot.innerHTML = "";
+  };
 }
 function threadCardHTML(t) {
   const maxWeek = Math.max(1, ...t.weeklyGrowth);
@@ -2899,6 +2930,7 @@ function threadCardHTML(t) {
         <button class="btn small ghost thread-rename">Rename</button>
         <button class="btn small ghost thread-merge">Merge into…</button>
       </div>
+      <div class="thread-nearmiss-slot"></div>
     </div>
   </div>`;
 }
