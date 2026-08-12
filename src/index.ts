@@ -67,7 +67,7 @@ import {
   type BeatAct,
   type BeatKind,
 } from "./essays";
-import { ensureThreadSchema, listThreads, renameThread, mergeThreads, getNearMissForThread, acceptNearMiss, dismissNearMiss } from "./threads";
+import { ensureThreadSchema, listThreads, renameThread, mergeThreads, getNearMissForThread, acceptNearMiss, dismissNearMiss, clipThreadMap } from "./threads";
 import { embedAndIndexClip, removeClipEmbedding } from "./embeddings";
 import { ensureDiscoverSchema, searchWikipedia, saveDiscoverResult, getMostRecentDiscoverResult, type DiscoverCandidate } from "./discover";
 import {
@@ -89,6 +89,7 @@ import {
   generateBridges,
   suggestReactionClip,
   draftEssayActBeat,
+  askArchive,
   type VideoTranscript,
   type SegmentWithText,
 } from "./pipeline/reason";
@@ -869,12 +870,36 @@ app.post("/api/projects/:id/reaction-clip", async (c) => {
   }
 });
 
+// "Ask the archive" — a grounded Q&A read over the saved clip library, same
+// discipline as Compose: the model only ever cites a real clip's id/title,
+// and returns {answer:null} rather than a summary of nothing when the
+// archive genuinely doesn't support an answer.
+app.post("/api/archive/ask", async (c) => {
+  await ensureSchema(c.env.DB);
+  await ensureClipSchema(c.env.DB);
+  await ensureVisualTagSchema(c.env.DB);
+  const { question } = await c.req.json<{ question?: string }>().catch(() => ({}) as { question?: string });
+  if (!question?.trim()) return c.json({ error: "ask a question first" }, 400);
+  const clips = await listClips(c.env.DB, { limit: 500 });
+  if (!clips.length) return c.json({ result: null });
+  try {
+    const result = await askArchive(
+      c.env,
+      clips.map((cl) => ({ id: cl.id, title: cl.title, description: cl.description, tags: cl.tags, visualSummary: visualSummaryOf(cl) })),
+      question,
+    );
+    return c.json({ result });
+  } catch (err) {
+    return c.json({ error: `ask failed: ${err}` }, 502);
+  }
+});
+
 app.get("/api/clips", async (c) => {
   await ensureSchema(c.env.DB);
   await ensureClipSchema(c.env.DB);
   await ensureVisualTagSchema(c.env.DB); // listClips() joins visual_tags into each segment
   await ensureEssaySchema(c.env.DB);
-  const { tag, projectId, videoId, kind, q, limit, offset } = c.req.query();
+  const { tag, projectId, videoId, kind, q, limit, offset, withThreads } = c.req.query();
   const clips = await listClips(c.env.DB, {
     tag,
     projectId,
@@ -885,7 +910,17 @@ app.get("/api/clips", async (c) => {
     offset: offset ? Number(offset) : undefined,
   });
   const usage = await countClipUsage(c.env.DB, clips.map((cl) => cl.id));
-  return c.json({ clips: clips.map((cl) => ({ ...cl, usedInEssays: usage.get(cl.id) ?? 0 })) });
+  // Thread membership triggers a full Vectorize recompute (see threads.ts) —
+  // opt-in only, so the many other callers of this route (Studio, Generative,
+  // the essay finder rail) don't pay that cost on every keystroke/reload.
+  let threadMap: Map<string, { id: string; name: string; color: string }> | null = null;
+  if (withThreads) {
+    await ensureThreadSchema(c.env.DB);
+    threadMap = await clipThreadMap(c.env, c.env.DB);
+  }
+  return c.json({
+    clips: clips.map((cl) => ({ ...cl, usedInEssays: usage.get(cl.id) ?? 0, thread: threadMap?.get(cl.id) ?? null })),
+  });
 });
 
 app.get("/api/clips/:id", async (c) => {

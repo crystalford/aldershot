@@ -2634,21 +2634,40 @@ async function showLibrary() {
   location.hash = "#/archive"; setActiveRail("archive");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
   stopLibraryPlayback();
+  state.libraryThread = state.libraryThread || null;
+  state.libraryType = state.libraryType || null;
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading library…</div>`;
-  let tags = [], clips = [];
+  let tags = [], clips = [], essays = [];
   try {
-    const [tagData, clipData] = await Promise.all([
+    const [tagData, clipData, essayData] = await Promise.all([
       fetch("/api/clips/tags").then((r) => r.json()),
-      fetch("/api/clips").then((r) => r.json()),
+      fetch("/api/clips?withThreads=1&limit=500").then((r) => r.json()),
+      fetch("/api/essays").then((r) => r.json()).then((d) => d.essays || []).catch(() => []),
     ]);
-    tags = tagData.tags || []; clips = clipData.clips || [];
+    tags = tagData.tags || []; clips = clipData.clips || []; essays = essayData || [];
   } catch { main.innerHTML = `<div class="pad"><p class="empty">Couldn't reach the server.</p></div>`; return; }
+  state.libraryEssays = essays;
+
+  const threadIds = new Set(clips.map((c) => c.thread?.id).filter(Boolean));
+  const statsLine = clips.length
+    ? `${clips.length} clip${clips.length === 1 ? "" : "s"} saved${threadIds.size ? `, clustered into ${threadIds.size} thread${threadIds.size === 1 ? "" : "s"}` : ""} so far.`
+    : "";
 
   main.innerHTML = `
     <section class="pad">
       <div class="row-between">
-        <div><h1>Archive</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay.</div></div>
+        <div><h1>Archive</h1><div class="sub">Every clip you've saved, across every project — the reusable building blocks for a video essay. ${statsLine ? `<span class="archive-stats">${esc(statsLine)}</span>` : ""}</div></div>
         <button class="btn primary" id="discoverBtn">${ic("sparkle")} Find related clips across my archive</button>
+      </div>
+      <div class="essay-link" id="toThreadsLink">See thread breakdown and growth trends in Threads →</div>
+
+      <div class="direct-box-wrap archive-ask-wrap" style="margin-top:14px;">
+        <div class="direct-label">${ic("sparkle")}<span>Ask the archive</span><small>— e.g. "what does Phil say about burnout?"</small></div>
+        <div class="direct-box">
+          <input id="askInput" class="modal-input" placeholder="Ask the archive something…" autocomplete="off" />
+          <button class="btn primary" id="askBtn">Ask</button>
+        </div>
+        <div id="askResult"></div>
       </div>
 
       <div class="direct-box-wrap" style="margin-top:16px;">
@@ -2661,17 +2680,26 @@ async function showLibrary() {
       <div id="composeResult"></div>
 
       <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+      <div class="tag-rail" id="threadFilterRail"></div>
+      <div class="tag-rail" id="typeFilterRail"></div>
       <div class="tag-rail" id="tagRail"></div>
       <input id="librarySearch" class="import-input" placeholder="Search clips by title or description…" style="max-width:340px;margin:14px 0;" autocomplete="off" />
-      <div class="library-grid" id="libraryGrid"></div>
+      <div id="libraryClusters"></div>
       <div id="discoverResults"></div>
     </section>`;
+  $("#toThreadsLink").onclick = () => showThreadsView();
   renderTagRail(tags);
-  renderLibraryGrid(clips);
+  renderThreadFilterRail(clips);
+  renderTypeFilterRail();
+  renderLibraryClusters(clips);
   $("#discoverBtn").onclick = (e) => runDiscover(e.currentTarget);
   $("#composeBtn").onclick = (e) => runCompose(e.currentTarget);
   $("#composeInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); runCompose($("#composeBtn")); }
+  });
+  $("#askBtn").onclick = (e) => runAskArchive(e.currentTarget);
+  $("#askInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); runAskArchive($("#askBtn")); }
   });
   let searchDebounce = null;
   $("#librarySearch").addEventListener("input", () => {
@@ -2680,6 +2708,33 @@ async function showLibrary() {
   });
   const player = $("#libPreviewPlayer");
   player.addEventListener("play", () => { player.style.display = "block"; });
+}
+
+async function runAskArchive(btn) {
+  const input = $("#askInput");
+  const question = input?.value.trim();
+  if (!question) return;
+  const resultEl = $("#askResult");
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = "Asking…";
+  resultEl.innerHTML = "";
+  try {
+    const data = await fetch("/api/archive/ask", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question }),
+    }).then((r) => r.json());
+    if (data.error) throw new Error(data.error);
+    if (!data.result) {
+      resultEl.innerHTML = `<div class="ask-answer empty small">Nothing in the archive answers that yet — try a broader question.</div>`;
+    } else {
+      resultEl.innerHTML = `<div class="ask-answer">
+        <div class="ask-answer-summary">${esc(data.result.summary)}</div>
+        ${data.result.citations.length ? `<div class="ask-answer-cites">${data.result.citations.map((c) => `— "${esc(c.quote)}"`).join("<br>")}</div>` : ""}
+      </div>`;
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<div class="empty small">Couldn't ask the archive: ${esc(err.message || "unknown error")}</div>`;
+  }
+  btn.disabled = false; btn.textContent = orig;
 }
 
 function renderTagRail(tags) {
@@ -2697,32 +2752,123 @@ function renderTagRail(tags) {
   });
 }
 
+// Thread filter chips built from whichever threads actually appear among
+// saved clips (no separate /api/threads round trip needed — the withThreads
+// join on GET /api/clips already resolved each clip's thread).
+function renderThreadFilterRail(clips) {
+  const el = $("#threadFilterRail"); if (!el) return;
+  const byId = new Map();
+  clips.forEach((c) => { if (c.thread && !byId.has(c.thread.id)) byId.set(c.thread.id, { ...c.thread, count: 0 }); if (c.thread) byId.get(c.thread.id).count++; });
+  const threads = [...byId.values()].sort((a, b) => b.count - a.count);
+  if (!threads.length) { el.innerHTML = ""; return; }
+  el.innerHTML = threads.map((t) =>
+    `<span class="tag-chip${state.libraryThread === t.id ? " on" : ""}" data-thread="${esc(t.id)}" style="border-left:2px solid ${t.color}">${esc(t.name)} <span class="tag-count">${t.count}</span></span>`,
+  ).join("");
+  el.querySelectorAll(".tag-chip").forEach((chip) => {
+    chip.onclick = () => {
+      state.libraryThread = state.libraryThread === chip.dataset.thread ? null : chip.dataset.thread;
+      renderThreadFilterRail(clips);
+      reloadLibraryGrid();
+    };
+  });
+}
+// The archive's underlying taxonomy is manual-vs-AI-detected, not the
+// prototype's literal Dialogue/B-roll/Analysis categories (no such field
+// exists on a clip) — filtering by kind is the closest real equivalent.
+function renderTypeFilterRail() {
+  const el = $("#typeFilterRail"); if (!el) return;
+  const types = [{ id: "manual", label: "Manual" }, { id: "ai-detected", label: "AI-detected" }];
+  el.innerHTML = types.map((t) =>
+    `<span class="tag-chip${state.libraryType === t.id ? " on" : ""}" data-type="${t.id}">${t.label}</span>`,
+  ).join("");
+  el.querySelectorAll(".tag-chip").forEach((chip) => {
+    chip.onclick = () => {
+      state.libraryType = state.libraryType === chip.dataset.type ? null : chip.dataset.type;
+      renderTypeFilterRail();
+      reloadLibraryGrid();
+    };
+  });
+}
+
 async function reloadLibraryGrid() {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ withThreads: "1" });
   if (state.libraryTag) params.set("tag", state.libraryTag);
+  if (state.libraryType) params.set("kind", state.libraryType);
   const q = $("#librarySearch")?.value.trim();
   if (q) params.set("q", q);
   let clips = [];
   try { clips = (await fetch(`/api/clips?${params}`).then((r) => r.json())).clips || []; } catch { /* leave grid as-is */ }
-  renderLibraryGrid(clips);
+  renderThreadFilterRail(clips);
+  if (state.libraryThread) clips = clips.filter((c) => c.thread?.id === state.libraryThread);
+  renderLibraryClusters(clips);
 }
 
-function renderLibraryGrid(clips) {
-  const el = $("#libraryGrid"); if (!el) return;
+// Groups clips by thread — the Archive's centerpiece is "browse by what it's
+// about," not a flat tag-filtered list. Clips with no resolved thread yet
+// (nothing embedded/tagged) land in a trailing "Uncategorized" bucket.
+function renderLibraryClusters(clips) {
+  const el = $("#libraryClusters"); if (!el) return;
   if (!clips.length) {
-    el.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No clips saved yet — select text in a project's transcript and choose <b>Save to Archive</b>, save a Suggested Edit, or run Discover above.</div>
+    el.innerHTML = `<div class="empty-note">No clips saved yet — select text in a project's transcript and choose <b>Save to Archive</b>, save a Suggested Edit, or run Discover above.</div>
       ${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}${skeletonCardHTML("clip-card", "clip-body")}`;
     return;
   }
-  el.innerHTML = clips.map((c, i) => clipCard(c, i)).join("");
-  clips.forEach((c, i) => {
-    const card = el.querySelector(`.clip-card[data-i="${i}"]`);
-    card.querySelector(".clip-preview").onclick = () => previewClipSegments(c.segments);
-    card.querySelector(".clip-add-project").onclick = () => addClipToProject(c);
-    card.querySelector(".clip-delete").onclick = () => deleteLibraryClip(c.id);
-    hydrateSegLabels(card, c.segments);
+  const groups = new Map();
+  for (const c of clips) {
+    const key = c.thread?.id || "__uncategorized";
+    if (!groups.has(key)) groups.set(key, { thread: c.thread || null, clips: [] });
+    groups.get(key).clips.push(c);
+  }
+  const ordered = [...groups.values()].sort((a, b) => b.clips.length - a.clips.length);
+  // "Uncategorized" always last, whatever its size.
+  ordered.sort((a, b) => (a.thread ? 0 : 1) - (b.thread ? 0 : 1));
+
+  el.innerHTML = ordered.map((g, gi) => {
+    const t = g.thread;
+    const idx = String(gi + 1).padStart(2, "0");
+    const title = t ? esc(t.name) : "Uncategorized";
+    const desc = t
+      ? `${g.clips.length} clip${g.clips.length === 1 ? "" : "s"} — including "${esc(g.clips[0].title)}"`
+      : "Not yet clustered into a thread — needs a tag or more clips nearby in meaning.";
+    return `<div class="archive-cluster">
+      <div class="archive-cluster-head" ${t ? `style="border-left:2px solid ${t.color}"` : ""}>
+        <span class="archive-cluster-index">${idx}</span>
+        <div>
+          <div class="archive-cluster-title" ${t ? `style="color:${t.color}"` : ""}>${title}</div>
+          <div class="archive-cluster-desc">${desc}</div>
+        </div>
+        <span class="archive-cluster-count">${g.clips.length}</span>
+      </div>
+      <div class="library-grid archive-cluster-grid" id="libCluster${gi}"></div>
+    </div>`;
+  }).join("");
+
+  ordered.forEach((g, gi) => {
+    const gridEl = $(`#libCluster${gi}`);
+    gridEl.innerHTML = g.clips.map((c, i) => clipCard(c, i)).join("");
+    g.clips.forEach((c, i) => {
+      const card = gridEl.querySelector(`.clip-card[data-i="${i}"]`);
+      card.querySelector(".clip-preview").onclick = () => previewClipSegments(c.segments);
+      card.querySelector(".clip-add-project").onclick = () => addClipToProject(c);
+      card.querySelector(".clip-delete").onclick = () => deleteLibraryClip(c.id);
+      const essaySelect = card.querySelector(".clip-add-essay");
+      if (essaySelect) essaySelect.onchange = () => { if (essaySelect.value) addClipToEssayQuick(c, essaySelect.value, essaySelect); };
+      hydrateSegLabels(card, c.segments);
+    });
   });
   Thumb.hydrate(el);
+}
+async function addClipToEssayQuick(clip, essayId, selectEl) {
+  try {
+    const res = await fetch(`/api/essays/${essayId}/beats`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ act: "development", kind: "clip", clipId: clip.id, text: clip.title }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    const essay = (state.libraryEssays || []).find((e) => e.id === essayId);
+    toast(`Added to ${essay?.title || "essay"}`, { type: "success" });
+  } catch (err) { toast(err.message || "Couldn't add to essay", { type: "error" }); }
+  if (selectEl) selectEl.value = "";
 }
 function clipCard(c, i) {
   const segParts = c.segments.map((s, si) => `<span class="sg-seg" data-seg="${si}">${fmt(s.start)}</span>`).join(`<span class="sg-arrow">→</span>`);
@@ -2733,10 +2879,12 @@ function clipCard(c, i) {
   const thumb = first
     ? frameThumbHTML(first.r2Key, first.end - first.start, (first.start + first.end) / 2)
     : frameThumbHTML(null);
+  const essayOptions = (state.libraryEssays || []).map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
   return `<div class="clip-card" data-i="${i}">
     ${thumb}
     <div class="clip-body">
     <div class="sg-top"><span class="sg-type ${c.kind === "ai-detected" ? "theme" : "callback"}">${c.kind === "ai-detected" ? "AI-detected" : "Manual"}</span><span class="sg-title">${esc(c.title)}</span></div>
+    ${c.thread ? `<span class="clip-thread-badge" style="color:${c.thread.color};background:${c.thread.color}22;">${esc(c.thread.name)}</span>` : ""}
     ${c.description ? `<div class="sg-why">${esc(c.description)}</div>` : ""}
     ${visualCaptions.length ? `<div class="sg-visual">${visualCaptions.map((cap) => `👁 ${esc(cap)}`).join(" · ")}</div>` : ""}
     <div class="sg-segs">${segParts}</div>
@@ -2747,6 +2895,7 @@ function clipCard(c, i) {
       <button class="btn small accent clip-add-project">${ic("plus")} Add to project</button>
       <button class="btn small danger clip-delete">Delete</button>
     </div>
+    ${essayOptions ? `<select class="modal-input clip-add-essay" style="margin-top:6px;"><option value="">Add to essay…</option>${essayOptions}</select>` : ""}
     </div>
   </div>`;
 }

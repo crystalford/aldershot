@@ -332,6 +332,34 @@ export async function listThreads(env: Env, db: D1Database): Promise<ThreadSumma
   return clustered ? listThreadsByCluster(db) : listThreadsByTag(db);
 }
 
+/** Per-clip thread membership — clusters when Vectorize clustering is live,
+ *  falling back to each clip's first tag (matching listThreadsByTag's own
+ *  grouping key) otherwise. Used to group the Archive by thread without
+ *  re-deriving membership logic client-side. */
+export async function clipThreadMap(env: Env, db: D1Database): Promise<Map<string, { id: string; name: string; color: string }>> {
+  const threads = await listThreads(env, db);
+  const byId = new Map(threads.map((t) => [t.id, t]));
+  const map = new Map<string, { id: string; name: string; color: string }>();
+
+  const { results: clusterRows } = await db.prepare(`SELECT clip_id, cluster_id FROM clip_clusters`).all<{ clip_id: string; cluster_id: string }>();
+  if (clusterRows?.length) {
+    for (const r of clusterRows) {
+      const t = byId.get(r.cluster_id);
+      if (t) map.set(r.clip_id, { id: t.id, name: t.name, color: t.color });
+    }
+    return map;
+  }
+
+  const { results: tagRows } = await db.prepare(`SELECT clip_id, tag FROM clip_tags ORDER BY clip_id, tag ASC`).all<{ clip_id: string; tag: string }>();
+  const firstTagByClip = new Map<string, string>();
+  for (const r of tagRows ?? []) if (!firstTagByClip.has(r.clip_id)) firstTagByClip.set(r.clip_id, r.tag);
+  for (const [clipId, tag] of firstTagByClip) {
+    const t = byId.get(tag);
+    if (t) map.set(clipId, { id: t.id, name: t.name, color: t.color });
+  }
+  return map;
+}
+
 export interface NearMiss {
   clipId: string;
   quote: string;

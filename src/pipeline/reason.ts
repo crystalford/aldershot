@@ -327,6 +327,43 @@ export async function composeFromClips(env: Env, clips: ComposableClip[], instru
   return { coldOpen, body };
 }
 
+// ── "Ask the archive" — a grounded Q&A read over the saved clip library,
+// same discipline as composeFromClips: the model only ever cites a real
+// clip's [id] plus that clip's own title/description as its "quote" (there's
+// no raw transcript text stored per clip, only title/description/tags), and
+// returns null rather than inventing an answer when nothing supports it. ──
+interface AskReply {
+  answer: string | null;
+  citations?: { id: string }[];
+}
+export interface ArchiveAnswer {
+  summary: string;
+  citations: { clipId: string; quote: string }[];
+}
+export async function askArchive(env: Env, clips: ComposableClip[], question: string): Promise<ArchiveAnswer | null> {
+  const menu = buildClipMenu(clips);
+  const system =
+    "You answer questions about a personal video-clip archive using ONLY the clips given to you — their " +
+    "titles, descriptions, and tags. You never invent a fact, a quote, or a clip that isn't in the menu. " +
+    "If nothing in the archive actually answers the question, say so by returning answer: null — do not " +
+    "guess or pad out a vague answer.";
+  const user =
+    `Question: "${question.trim()}"\n\n` +
+    'Return ONLY JSON: {"answer":"one or two sentence answer grounded in the clips below, or null if nothing supports an answer","citations":[{"id":"clip-uuid"}]}\n\n' +
+    "Clips:\n" +
+    menu;
+
+  const reply = await runJson<AskReply>(env, system, user);
+  const answer = reply.answer?.trim();
+  if (!answer) return null;
+  const byId = new Map(clips.map((c) => [c.id, c]));
+  const citations = (reply.citations ?? [])
+    .map((r) => byId.get(r.id))
+    .filter((c): c is ComposableClip => !!c)
+    .map((c) => ({ clipId: c.id, quote: c.title }));
+  return { summary: answer, citations };
+}
+
 // ── Bridging narration for gaps in an assembled cut ────────────────────
 // The last piece of the "video essay" workflow: given a sequence of clips
 // that already forms a rough cut, find the transitions that need a spoken
