@@ -476,7 +476,7 @@ const ACT_HINTS: Record<string, string> = {
 };
 
 export interface ActDraftCandidate {
-  kind: "clip" | "vo";
+  kind: "clip" | "vo" | "research";
   clipId?: string;
   text: string;
   reason: string;
@@ -503,21 +503,28 @@ export async function draftEssayActBeat(
   const system =
     "You are a sharp documentary editor drafting ONE beat at a time for a video essay, act by act. " +
     "Prefer a real clip from the library when one genuinely fits — cite it by its [id], never invent a " +
-    "clip or timestamp. Only propose a short new narration line (kind \"vo\") when no clip in the library " +
-    "actually serves this act — narration is a draft the user will review and can re-record, so it's fine " +
-    "to write it yourself, but keep it one or two sentences in a natural spoken voice, not a summary.";
+    "clip or timestamp. Propose a short new narration line (kind \"vo\") when no clip in the library " +
+    "actually serves this act, or (kind \"research\") when the beat states a factual claim that needs an " +
+    "outside source to back it up rather than the essay's own footage — narration is a draft the user will " +
+    "review and can re-record, so it's fine to write it yourself, but keep it one or two sentences in a " +
+    "natural spoken voice, not a summary. A research beat is left ungrounded here on purpose — the user " +
+    "grounds it to a real source afterward, never invented.";
   const user =
     `Essay premise: "${premise.trim()}"\n\n` +
     `Draft the next beat for this act: ${hint}\n\n` +
     already +
     (clips.length ? `Clips available:\n${menu}\n\n` : "No clips are saved in the library yet — you'll have to propose narration.\n\n") +
     'Return ONLY JSON: {"kind":"clip","clipId":"clip-uuid","reason":"why this clip fits, one sentence"} ' +
-    'OR {"kind":"vo","text":"the narration line","reason":"why narration instead of a clip, one sentence"}';
+    'OR {"kind":"vo","text":"the narration line","reason":"why narration instead of a clip, one sentence"} ' +
+    'OR {"kind":"research","text":"the claim that needs a source","reason":"why it needs outside grounding, one sentence"}';
 
   const reply = await runJson<ActDraftReply>(env, system, user);
   if (reply.kind === "clip" && reply.clipId) {
     const match = clips.find((c) => c.id === reply.clipId);
     if (match) return { kind: "clip", clipId: match.id, text: match.title, reason: reply.reason?.trim() || "" };
+  }
+  if (reply.kind === "research" && reply.text?.trim()) {
+    return { kind: "research", text: reply.text.trim(), reason: reply.reason?.trim() || "" };
   }
   if (reply.text?.trim()) return { kind: "vo", text: reply.text.trim(), reason: reply.reason?.trim() || "" };
   return null;

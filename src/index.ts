@@ -1183,13 +1183,13 @@ app.post("/api/essays/:id/beats", async (c) => {
     .json<{ act?: string; kind?: string; clipId?: string; text?: string; citations?: string[] }>()
     .catch(() => ({}) as Record<string, never>);
   if (!body.act || !ACTS.includes(body.act as BeatAct)) return c.json({ error: `act must be one of: ${ACTS.join(", ")}` }, 400);
-  const kind: BeatKind = body.kind === "clip" ? "clip" : "vo";
+  const kind: BeatKind = body.kind === "clip" ? "clip" : body.kind === "research" ? "research" : "vo";
   if (kind === "clip") {
     await ensureClipSchema(c.env.DB);
     if (!body.clipId || !(await getClip(c.env.DB, body.clipId))) return c.json({ error: "clip not found" }, 400);
   }
   const text = body.text?.trim() ?? "";
-  if (kind === "vo" && !text) return c.json({ error: "a voiceover beat needs script text" }, 400);
+  if (kind !== "clip" && !text) return c.json({ error: kind === "research" ? "describe what needs a source" : "a voiceover beat needs script text" }, 400);
   const beat = await addBeat(c.env.DB, essayId, { act: body.act as BeatAct, kind, clipId: kind === "clip" ? body.clipId : null, text, citations: body.citations });
   return c.json(beat, 201);
 });
@@ -1206,10 +1206,10 @@ app.put("/api/essays/:id/beats/reorder", async (c) => {
 
 app.put("/api/essays/:id/beats/:beatId", async (c) => {
   await ensureEssaySchema(c.env.DB);
-  const { text, citations, voVideoId } = await c.req
-    .json<{ text?: string; citations?: string[]; voVideoId?: string | null }>()
-    .catch(() => ({}) as { text?: string; citations?: string[]; voVideoId?: string | null });
-  const beat = await updateBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"), { text, citations, voVideoId });
+  const { text, citations, voVideoId, discoverResultId } = await c.req
+    .json<{ text?: string; citations?: string[]; voVideoId?: string | null; discoverResultId?: string | null }>()
+    .catch(() => ({}) as { text?: string; citations?: string[]; voVideoId?: string | null; discoverResultId?: string | null });
+  const beat = await updateBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"), { text, citations, voVideoId, discoverResultId });
   if (!beat) return c.json({ error: "beat not found" }, 404);
   return c.json(beat);
 });
@@ -1218,6 +1218,29 @@ app.delete("/api/essays/:id/beats/:beatId", async (c) => {
   await ensureEssaySchema(c.env.DB);
   await deleteBeat(c.env.DB, c.req.param("id"), c.req.param("beatId"));
   return c.json({ ok: true });
+});
+
+// Grounds an EXISTING research beat to a real Discover result — distinct
+// from /api/discover/add-to-essay, which creates a brand new beat. Same
+// non-invented discipline: the beat's text/citation only ever come from a
+// real result the user picked, never fabricated.
+app.post("/api/essays/:id/beats/:beatId/ground", async (c) => {
+  await ensureDiscoverSchema(c.env.DB);
+  await ensureEssaySchema(c.env.DB);
+  const essayId = c.req.param("id");
+  const beatId = c.req.param("beatId");
+  const body = await c.req
+    .json<{ query?: string; candidate?: DiscoverCandidate }>()
+    .catch(() => ({}) as { query?: string; candidate?: DiscoverCandidate });
+  if (!body.candidate?.title || !body.candidate?.url || !body.candidate?.extract) return c.json({ error: "missing result" }, 400);
+  if (!(await getEssay(c.env.DB, essayId))) return c.json({ error: "essay not found" }, 404);
+
+  const result = await saveDiscoverResult(c.env.DB, body.query?.trim() || body.candidate.title, body.candidate);
+  const beat = await updateBeat(c.env.DB, essayId, beatId, {
+    text: result.title, citations: [result.url], discoverResultId: result.id,
+  });
+  if (!beat) return c.json({ error: "beat not found" }, 404);
+  return c.json({ result, beat });
 });
 
 // ── Discover — external, internet-sourced grounding for an essay's claims

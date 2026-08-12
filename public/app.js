@@ -2936,25 +2936,52 @@ function wireThreadGrid(threads) {
 // beyond the user's own Archive footage. v1 source is Wikipedia's search API
 // (see src/discover.ts) — real, dereferenceable results only, never an
 // invented source. Each result carries an inline "Add to essay" select. ────
+// Set when the user clicks "Find a source in Discover" on an ungrounded
+// research beat — carries Discover to that beat's context (banner, a
+// pre-filled/auto-run query, and swaps every result's action to "Ground
+// this beat →" instead of the generic essay-picker). Cleared on navigating
+// back to the essay or picking a source.
+let discoverPendingResearch = null;
+function findSourceForBeat(beat) {
+  discoverPendingResearch = { essayId: essayState.essay.id, essayTitle: essayState.essay.title, beatId: beat.id, beatText: beat.text };
+  location.hash = "#/discover";
+}
 async function showDiscoverView() {
   location.hash = "#/discover"; setActiveRail("discover");
   setCrumbs([]); setStats(""); $("#headerActions").innerHTML = ""; state.project = null;
+  // Consumed once per visit — a later plain nav-click to Discover (hash
+  // already "#/discover", so no new showDiscoverView() call happens until
+  // the user actually leaves and comes back) shouldn't keep re-showing a
+  // stale beat-grounding banner.
+  const pending = discoverPendingResearch;
+  discoverPendingResearch = null;
   main.innerHTML = `<section class="pad">
     <div><h1>Discover</h1><div class="sub">Search the open web for real sources to ground an essay's claims — every result is a real page, not a guess.</div></div>
     <div class="import" style="max-width:520px;flex-direction:row;gap:8px;margin-top:16px;">
       <input class="import-input" id="discoverQuery" placeholder="e.g. the psychology of parasocial relationships" autocomplete="off" />
       <button class="btn accent" id="discoverGo">${ic("globe")} Search</button>
     </div>
+    ${pending ? `<div class="discover-pending-banner">
+      <div>Grounding a beat in <b>${esc(pending.essayTitle)}</b> — pick the source below that supports: "${esc(pending.beatText)}"</div>
+      <span class="essay-link" id="discoverBackToEssay">← Back to essay</span>
+    </div>` : ""}
     <div id="discoverResults" style="margin-top:20px;"></div>
   </section>`;
   const run = () => runDiscoverSearch($("#discoverQuery").value);
   $("#discoverGo").onclick = run;
   $("#discoverQuery").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-  $("#discoverQuery").focus();
+  if (pending) {
+    $("#discoverQuery").value = pending.beatText;
+    $("#discoverBackToEssay").onclick = () => { discoverPendingResearch = null; openEssayAtMode(pending.essayId, "script"); };
+    run();
+  } else {
+    $("#discoverQuery").focus();
+  }
 }
 async function runDiscoverSearch(query) {
   query = (query || "").trim();
   if (!query) return;
+  const pending = discoverPendingResearch;
   const el = $("#discoverResults");
   el.innerHTML = `<div class="loading"><span class="spinner"></span> Searching…</div>`;
   let results = [];
@@ -2970,7 +2997,7 @@ async function runDiscoverSearch(query) {
   if (!results.length) { el.innerHTML = `<p class="empty">No real sources turned up for that — try rephrasing.</p>`; return; }
 
   let essays = [];
-  try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; } catch { essays = []; }
+  if (!pending) { try { essays = (await fetch("/api/essays").then((r) => r.json())).essays || []; } catch { essays = []; } }
 
   const essayOptions = essays.map((e) => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
   el.innerHTML = `<div class="discover-grid">${results.map((r, i) => `
@@ -2979,11 +3006,20 @@ async function runDiscoverSearch(query) {
         <div class="card-title">${esc(r.title)}</div>
         <a class="discover-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>
         <div class="discover-extract">${esc(r.extract)}</div>
-        ${essays.length
-          ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
-          : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
+        ${pending
+          ? `<button class="btn small accent discover-ground" data-i="${i}">Ground this beat →</button>`
+          : essays.length
+            ? `<select class="modal-input discover-add" data-i="${i}"><option value="">Add to essay…</option>${essayOptions}</select>`
+            : `<div class="reel-hint">Create an essay first to add sources to it.</div>`}
       </div>
     </div>`).join("")}</div>`;
+
+  if (pending) {
+    el.querySelectorAll(".discover-ground").forEach((btn) => {
+      btn.onclick = () => groundBeatWithResult(pending, results[+btn.dataset.i], query, btn);
+    });
+    return;
+  }
 
   el.querySelectorAll(".discover-add").forEach((sel) => {
     sel.onchange = async () => {
@@ -3005,6 +3041,22 @@ async function runDiscoverSearch(query) {
       sel.disabled = false; sel.value = "";
     };
   });
+}
+async function groundBeatWithResult(pending, candidate, query, btn) {
+  btn.disabled = true; btn.textContent = "Grounding…";
+  try {
+    const res = await fetch(`/api/essays/${pending.essayId}/beats/${pending.beatId}/ground`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query, candidate }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast("Beat grounded to source", { type: "success" });
+    discoverPendingResearch = null;
+    await openEssayAtMode(pending.essayId, "script");
+  } catch (err) {
+    toast(err.message || "Couldn't ground that beat", { type: "error" });
+    btn.disabled = false; btn.textContent = "Ground this beat →";
+  }
 }
 
 // ── Essays — the video-essay authoring surface ──────────────────────────
@@ -3298,8 +3350,8 @@ function checkEssayCoherence(e) {
   for (const { act, label } of ACT_DEFS) {
     if (!byAct[act].length) issues.push({ act, kind: "empty", color: "var(--warn)", text: `${label} has no beats yet.` });
   }
-  if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip")) {
-    issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "Turn has no grounding clip for its complication — it's narration only so far." });
+  if (byAct.turn.length && !byAct.turn.some((b) => b.kind === "clip" || (b.kind === "research" && b.discoverResultId))) {
+    issues.push({ act: "turn", kind: "turn-grounding", color: "var(--warn)", text: "Turn has no grounding clip or source for its complication — it's narration only so far." });
   }
   return issues;
 }
@@ -3319,7 +3371,7 @@ function renderPremiseMode(body) {
         ${s.draftLoading
           ? `<div class="empty small">Thinking…</div>`
           : c
-            ? `<span class="pill ${c.kind === "clip" ? "matched" : "vo"}">${c.kind === "clip" ? "Matched clip" : "Needs voiceover"}</span>
+            ? `<span class="pill ${c.kind === "clip" ? "matched" : c.kind === "research" ? "info" : "vo"}">${c.kind === "clip" ? "Matched clip" : c.kind === "research" ? "Needs a source" : "Needs voiceover"}</span>
                <div class="draft-text">${esc(c.text)}</div>
                ${c.reason ? `<div class="empty small" style="margin-top:6px;">${esc(c.reason)}</div>` : ""}
                <div class="s-actions" style="margin-top:12px;">
@@ -3438,15 +3490,19 @@ function renderActSection(a, beats, issues) {
 }
 function renderBeatRow(b) {
   const recorded = b.kind === "vo" && b.voVideoId;
-  const borderColor = b.kind === "clip" ? "var(--good)" : b.kind === "research" ? "var(--info-teal)" : recorded ? "var(--good)" : "var(--warn)";
+  const grounded = b.kind === "research" && b.discoverResultId;
+  const borderColor = b.kind === "clip" ? "var(--good)"
+    : b.kind === "research" ? (grounded ? "var(--good)" : "var(--info-teal)")
+    : recorded ? "var(--good)" : "var(--warn)";
   const pill = b.kind === "clip" ? `<span class="pill matched">Matched</span>`
-    : b.kind === "research" ? `<span class="pill info">Research</span>`
+    : b.kind === "research" ? (grounded ? `<span class="pill matched">Grounded to source</span>` : `<span class="pill info">Search web</span>`)
     : recorded ? `<span class="pill matched">Recorded</span>`
     : `<span class="pill vo">Needs voiceover</span>`;
   const extra = b.kind === "vo"
     ? `<div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-record" data-id="${b.id}">${ic("video")} ${recorded ? "Re-record" : "Record"}</button></div>`
-    : b.kind === "research" && b.citations?.[0]
-      ? `<a class="discover-url" href="${esc(b.citations[0])}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">${esc(b.citations[0])}</a>`
+    : b.kind === "research"
+      ? `${grounded ? `<a class="discover-url" href="${esc(b.citations?.[0] || "")}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">${esc(b.citations?.[0] || "")}</a>` : ""}
+         <div class="s-actions" style="margin-top:8px;"><button class="btn small ghost beat-ground" data-id="${b.id}">${ic("globe")} ${grounded ? "Change source" : "Find a source in Discover"}</button></div>`
       : "";
   return `<div class="beat" data-id="${b.id}" style="border-left-color:${borderColor}">
     <div class="beat-top">
@@ -3466,6 +3522,10 @@ function wireActSections() {
     row.querySelector(".beat-record")?.addEventListener("click", (e) => {
       const beat = essayState.essay.beats.find((b) => b.id === row.dataset.id);
       if (beat) recordAndAttachVoiceover(beat, e.currentTarget);
+    });
+    row.querySelector(".beat-ground")?.addEventListener("click", () => {
+      const beat = essayState.essay.beats.find((b) => b.id === row.dataset.id);
+      if (beat) findSourceForBeat(beat);
     });
   });
 }

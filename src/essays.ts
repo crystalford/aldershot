@@ -273,7 +273,7 @@ export async function updateBeat(
   db: D1Database,
   essayId: string,
   beatId: string,
-  patch: { text?: string; citations?: string[]; voVideoId?: string | null },
+  patch: { text?: string; citations?: string[]; voVideoId?: string | null; discoverResultId?: string | null },
 ): Promise<EssayBeat | null> {
   const existing = await db.prepare(`SELECT id FROM essay_beats WHERE id = ? AND essay_id = ?`).bind(beatId, essayId).first<{ id: string }>();
   if (!existing) return null;
@@ -282,6 +282,7 @@ export async function updateBeat(
   if (patch.text !== undefined) { fields.push("text = ?"); params.push(patch.text); }
   if (patch.citations !== undefined) { fields.push("citations = ?"); params.push(JSON.stringify(patch.citations)); }
   if (patch.voVideoId !== undefined) { fields.push("vo_video_id = ?"); params.push(patch.voVideoId); }
+  if (patch.discoverResultId !== undefined) { fields.push("discover_result_id = ?"); params.push(patch.discoverResultId); }
   if (fields.length) await db.prepare(`UPDATE essay_beats SET ${fields.join(", ")} WHERE id = ?`).bind(...params, beatId).run();
   const row = await db.prepare(`SELECT * FROM essay_beats WHERE id = ?`).bind(beatId).first<BeatRow>();
   return row ? toBeat(row) : null;
