@@ -605,6 +605,7 @@ function renderProject() {
 
         <aside class="tools" id="tools">
           <div class="tools-scroll">
+            ${state.studioMode ? `<div class="essay-link" id="studioBackToGrid" style="margin-bottom:12px;">← My videos</div>` : ""}
             <div class="tools-actions">
               <button class="btn accent" id="playEdit">${ic("play")} Play edit</button>
               <button class="btn ghost" id="stopEdit">${ic("stop")} Stop</button>
@@ -694,6 +695,7 @@ function renderProject() {
   // "Start as essay" is a plain escape hatch, not a Studio-specific flow —
   // reuse the same New Essay wizard the Essays list uses.
   $("#startEssay")?.addEventListener("click", startNewEssay);
+  $("#studioBackToGrid")?.addEventListener("click", renderStudioGrid);
   $("#export").onclick = (e) => exportCut(e.currentTarget);
   $("#save").onclick = (e) => saveEdit(e.currentTarget);
   $("#importBtn").onclick = importFromUrl;
@@ -2462,7 +2464,8 @@ async function findSuggestions(btn) {
 const SUGGEST_TYPE_LABEL = { callback: "Callback", contrast: "Contrast", theme: "Theme" };
 function renderSuggestions() {
   const el = $("#suggest"); if (!el) return;
-  const suggestions = state.suggestions || [];
+  let suggestions = state.suggestions || [];
+  if (state.studioMode && studioGridVideoId) suggestions = suggestions.filter((s) => s.segments?.some((seg) => seg.videoId === studioGridVideoId));
   if (!suggestions.length) { el.innerHTML = ""; return; }
   el.innerHTML = `<div class="suggestions">
     ${state.studioMode ? "" : `<div class="tl-head"><h2>Suggested edits</h2><span class="empty small">${suggestions.length}</span></div>`}
@@ -2541,7 +2544,8 @@ async function findShorts(btn) {
 }
 function renderShorts() {
   const el = $("#shorts"); if (!el) return;
-  const shorts = state.shorts || [];
+  let shorts = state.shorts || [];
+  if (state.studioMode && studioGridVideoId) shorts = shorts.filter((s) => s.videoId === studioGridVideoId);
   if (!shorts.length) { el.innerHTML = ""; return; }
   el.innerHTML = `<div class="shorts">
     ${state.studioMode ? "" : `<div class="tl-head"><h2>Suggested shorts</h2><span class="empty small">${shorts.length}</span></div>`}
@@ -5404,6 +5408,18 @@ async function sendHighlightToArchive(short) {
 // tools-aside markup and disables tab-switching so its three sections
 // (Suggested cuts / Clip candidates / Video ideas) sit side by side. Backed
 // by its own scratch project (kind='studio'), same pattern as Clipping's.
+// "My videos" — the prototype's Studio is two-level: a grid of independent
+// past raw takes, each opening its OWN isolated editor+suggestions, not one
+// flat shared workspace. The real backend still keeps every Studio upload
+// in one scratch project (same singleton-project pattern Clipping/
+// Generative/Voiceover all use) -- rather than a bigger rearchitecture into
+// one-project-per-recording, this reuses that project but scopes the grid
+// and the per-video detail view around individual VIDEOS within it, which
+// gets the same "browse your past takes, open one at a time" experience
+// with real data. null = showing the grid; set = showing that video's
+// detail (reset on every fresh Studio visit so it always opens on the grid,
+// matching the prototype's own entry point).
+let studioGridVideoId = null;
 async function showStudioView() {
   location.hash = "#/studio";
   main.innerHTML = `<div class="loading"><span class="spinner"></span> Loading…</div>`;
@@ -5424,9 +5440,49 @@ async function showStudioView() {
   state.suggestions = data.suggestions;
   state.bridges = null;
   state.studioMode = true;
-  state.selected = state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
+  studioGridVideoId = null;
+  renderStudioGrid();
+}
+function studioIdeaCount(videoId) {
+  const inSuggestions = (state.suggestions || []).filter((s) => s.segments?.some((seg) => seg.videoId === videoId)).length;
+  const inShorts = (state.shorts || []).filter((s) => s.videoId === videoId).length;
+  return inSuggestions + inShorts;
+}
+function renderStudioGrid() {
   setCrumbs([{ label: "Aldershot", go: showProjects }, { label: "Studio" }]);
-  setStats("A lighter editor for one raw take — kept separate from the Archive. Nothing here joins a thread or theme cluster unless you explicitly send it there.");
+  setStats("Your own raw footage — a quick rough-cut editor, separate from the Archive. Nothing here joins a thread or theme cluster unless you explicitly send it there.");
+  main.innerHTML = `<section class="pad">
+    <div class="row-between">
+      <div><h1>Studio</h1><div class="sub">My videos — every raw take you've dropped in here, kept separate until you send something out.</div></div>
+    </div>
+    <div class="grid" id="studioGrid"></div>
+  </section>`;
+  const grid = $("#studioGrid");
+  if (!state.videos.length) {
+    grid.innerHTML = `<div class="empty-note" style="grid-column:1/-1">No takes yet — open one to drop in a video and it transcribes automatically.</div>`;
+  }
+  state.videos.forEach((v) => {
+    const ideas = studioIdeaCount(v.id);
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `${frameThumbHTML(v.r2_key, v.duration)}
+      <div class="card-body">
+        <div class="card-title">${esc(filenameOf(v.filename))}</div>
+        <div class="card-sub">${new Date(v.created_at).toLocaleDateString()} · ${ideas} video idea${ideas === 1 ? "" : "s"} found</div>
+      </div>`;
+    card.onclick = () => openStudioVideo(v.id);
+    grid.appendChild(card);
+  });
+  const add = document.createElement("button");
+  add.className = "card card-new";
+  add.innerHTML = `${ic("plus")} Add a take`;
+  add.onclick = () => openStudioVideo(null);
+  grid.appendChild(add);
+  Thumb.hydrate(grid);
+}
+function openStudioVideo(videoId) {
+  studioGridVideoId = videoId;
+  state.selected = videoId || state.videos.find((v) => v.status === "ready")?.id || state.videos[0]?.id || null;
   renderProject();
 }
 
