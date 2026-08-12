@@ -3727,7 +3727,7 @@ async function loadClipThreadIds() {
   try {
     const clips = (await fetch(`/api/clips?withThreads=1&limit=500`).then((r) => r.json())).clips || [];
     const map = {};
-    for (const c of clips) if (clipIds.includes(c.id) && c.thread) map[c.id] = c.thread.id;
+    for (const c of clips) if (clipIds.includes(c.id) && c.thread) map[c.id] = c.thread;
     essayState.clipThreadIds = map;
   } catch { essayState.clipThreadIds = {}; }
 }
@@ -3960,7 +3960,7 @@ function checkEssayCoherence(e) {
     issues.push({ act: null, kind: "short-draft", color: "var(--warn)", text: `This is a short draft — only ${renderable.length} block${renderable.length === 1 ? "" : "s"} in the assembled cut so far.` });
   }
   const clipThreadIds = essayState?.clipThreadIds || {};
-  const clipBeatThreads = renderable.filter((b) => b.kind === "clip" && clipThreadIds[b.clipId]).map((b) => clipThreadIds[b.clipId]);
+  const clipBeatThreads = renderable.filter((b) => b.kind === "clip" && clipThreadIds[b.clipId]).map((b) => clipThreadIds[b.clipId].id);
   if (clipBeatThreads.length >= 2 && new Set(clipBeatThreads).size === 1) {
     issues.push({ act: null, kind: "single-thread", color: "var(--info-teal)", text: "Every clip in the assembled cut comes from the same thread — consider pulling in another angle." });
   }
@@ -4294,7 +4294,10 @@ function renderAssembleMode(body) {
       <div class="empty small" style="max-width:480px;">Drag ⠿ to reorder — preview and export follow this order.${unrecordedVo ? ` ${unrecordedVo} voiceover beat(s) still need recording — record them in Script first.` : ""}</div>
       <button class="btn ghost small" id="assemblePreview" ${renderable.length ? "" : "disabled"}>${ic("play")} Preview</button>
     </div>
-    <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+    <div class="assemble-preview-wrap" style="position:relative;display:none;" id="assemblePreviewWrap">
+      <video id="libPreviewPlayer" playsinline style="width:100%;max-height:32vh;background:#000;border-radius:9px;margin:14px 0;display:none;"></video>
+      <div class="assemble-overlay" id="assembleOverlay" style="display:none;"></div>
+    </div>
     ${renderable.length ? `<div class="assemble-legend">
       <span><span class="assemble-swatch" style="background:var(--good)"></span>A-roll (matched clips)</span>
       <span><span class="assemble-swatch" style="background:var(--warn)"></span>Voiceover (recorded takes)</span>
@@ -4309,14 +4312,49 @@ function renderAssembleMode(body) {
           </div>`).join("")
         : `<p class="empty small">Add clips from the sidebar, or record a voiceover in Script, first.</p>`}
     </div>
+    <div class="assemble-music-lane">
+      <div class="assemble-music-label">Music</div>
+      <div class="assemble-music-empty">No bed track selected</div>
+      <button class="btn small ghost" disabled>Choose track</button>
+    </div>
   </div>`;
-  $("#libPreviewPlayer").addEventListener("play", function onPlay() { this.style.display = "block"; });
+  $("#libPreviewPlayer").addEventListener("play", function onPlay() { this.style.display = "block"; $("#assemblePreviewWrap").style.display = "block"; });
   $("#assemblePreview")?.addEventListener("click", async () => {
     const segs = await resolveBeatsToSegments(renderable);
     if (!segs.length) { toast("Nothing to preview yet."); return; }
     previewClipSegments(segs);
+    wireAssembleOverlay(renderable);
   });
   wireAssembleDrag(renderable);
+}
+// Shows "Block N · {thread}" + the beat's own text over the preview player
+// while it plays, tracking real elapsed time against each beat's own
+// resolved segment durations (not per-segment player internals, which
+// don't map 1:1 to beats when a beat spans >1 segment).
+async function wireAssembleOverlay(renderable) {
+  const overlay = $("#assembleOverlay"), player = $("#libPreviewPlayer");
+  if (!overlay || !player) return;
+  const perBeatDur = await Promise.all(renderable.map(async (b) => {
+    const segs = await resolveBeatsToSegments([b]);
+    return segs.reduce((s, x) => s + (x.end - x.start), 0);
+  }));
+  const cum = []; let acc = 0;
+  for (const d of perBeatDur) { cum.push(acc); acc += d; }
+  const clipThreadIds = essayState.clipThreadIds || {};
+  const update = () => {
+    const t = player.currentTime;
+    let idx = 0;
+    for (let i = 0; i < cum.length; i++) if (t >= cum[i]) idx = i;
+    const b = renderable[idx];
+    if (!b) return;
+    const thread = b.kind === "clip" ? clipThreadIds[b.clipId] : null;
+    overlay.innerHTML = `<div class="assemble-overlay-badge">Block ${idx + 1}${thread ? ` · ${esc(thread.name)}` : ""}</div><div class="assemble-overlay-quote">${esc(b.text)}</div>`;
+    overlay.style.display = "block";
+  };
+  player.removeEventListener("timeupdate", player._overlayHandler || (() => {}));
+  player._overlayHandler = update;
+  player.addEventListener("timeupdate", update);
+  player.addEventListener("ended", () => { overlay.style.display = "none"; }, { once: true });
 }
 async function resolveBeatsToSegments(beats) {
   const lists = await Promise.all(beats.map(async (b) => {
@@ -4376,8 +4414,8 @@ function renderExportPreflight(e) {
   const ungroundedResearch = e.beats.filter((b) => b.kind === "research" && !b.discoverResultId).length;
   const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
   const lines = [
-    { ok: ungroundedResearch === 0, label: ungroundedResearch === 0 ? "Research beats grounded" : `${ungroundedResearch} research beat${ungroundedResearch > 1 ? "s" : ""} still need${ungroundedResearch === 1 ? "s" : ""} a source` },
-    { ok: unrecordedVo === 0, label: unrecordedVo === 0 ? "Voiceover recorded for every narration beat" : `${unrecordedVo} voiceover beat${unrecordedVo > 1 ? "s" : ""} still need${unrecordedVo === 1 ? "s" : ""} recording` },
+    { ok: ungroundedResearch === 0, label: ungroundedResearch === 0 ? "Every research beat grounded in a real source" : `${ungroundedResearch} research beat${ungroundedResearch > 1 ? "s" : ""} not grounded in a real source yet` },
+    { ok: unrecordedVo === 0, label: unrecordedVo === 0 ? "Voiceover recorded for every narration beat" : `${unrecordedVo} narration beat${unrecordedVo > 1 ? "s" : ""} still need${unrecordedVo === 1 ? "s" : ""} voiceover` },
   ];
   return `<div class="export-preflight">
     <div class="export-preflight-h">Preflight — advisory, never a gate</div>
@@ -4392,9 +4430,35 @@ function renderExportMode(body) {
   const e = essayState.essay;
   const renderable = e.beats.filter(isRenderable);
   const unrecordedVo = e.beats.filter((b) => b.kind === "vo" && !b.voVideoId).length;
+  const citedSources = [...new Set(e.beats.filter((b) => b.kind === "research" && b.discoverResultId).flatMap((b) => b.citations || []))];
+  const KIND_CHAPTER_COLOR = { clip: "var(--good)", vo: "var(--warn)" };
+  const total = renderable.length || 1;
   body.innerHTML = `<div class="pad" style="max-width:640px;">
     <div class="empty small">${renderable.length} beat(s) assembled${unrecordedVo ? ` · ${unrecordedVo} voiceover beat(s) still need recording` : ""}.</div>
+
+    ${renderable.length ? `<div class="export-preview-box">${ic("film")}</div>
+    <div class="export-chapter-bar">${renderable.map((b) => `<div style="width:${(1 / total) * 100}%;background:${KIND_CHAPTER_COLOR[b.kind] || "var(--faint)"}" title="${esc(b.text)}"></div>`).join("")}</div>` : ""}
+
+    <div class="export-field">
+      <label class="modal-label">Title</label>
+      <input class="modal-input" id="exportTitle" value="${esc(e.title)}" autocomplete="off" />
+    </div>
+    <div class="export-field">
+      <label class="modal-label">Description</label>
+      <textarea class="modal-input" id="exportDesc" rows="5" style="width:100%;resize:vertical;font-family:var(--font-mono);font-size:12px;">${esc(`${e.premise}${citedSources.length ? `\n\nSources:\n${citedSources.join("\n")}` : ""}`)}</textarea>
+    </div>
+
+    <div class="export-toggles">
+      <div class="export-toggle"><span class="export-toggle-swatch" style="background:var(--good)"></span>Captions<input type="checkbox" checked disabled /></div>
+      <div class="export-toggle"><span class="export-toggle-swatch" style="background:var(--info-teal)"></span>Lower-thirds<input type="checkbox" disabled /></div>
+      <div class="export-toggle"><span class="export-toggle-swatch" style="background:var(--accent)"></span>Title card<input type="checkbox" checked disabled /></div>
+    </div>
+
     ${renderExportPreflight(e)}
+    ${citedSources.length ? `<div class="export-sources-cited">
+      <div class="export-attribution-h">Sources cited</div>
+      ${citedSources.map((c) => `<div class="export-attribution-line">— ${esc(c)}</div>`).join("")}
+    </div>` : ""}
     <div class="s-actions" style="margin-top:14px;">
       <button class="btn primary" id="renderExport" ${renderable.length ? "" : "disabled"}>${ic("download")} Render 1080p MP4</button>
       <button class="btn ghost" id="exportScript">Export script (.txt)</button>

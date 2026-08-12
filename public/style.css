@@ -685,6 +685,15 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .assemble-legend { display: flex; gap: 18px; margin-top: 12px; font-size: 11px; color: var(--faint); }
 .assemble-legend span { display: flex; align-items: center; gap: 6px; }
 .assemble-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.assemble-overlay { position: absolute; left: 14px; bottom: 26px; right: 14px; pointer-events: none; }
+.assemble-overlay-badge { display: inline-block; font: 10.5px var(--font-mono); color: #fff; background: rgba(0,0,0,.6); padding: 3px 9px; border-radius: 10px; }
+.assemble-overlay-quote { font: italic 400 14px/1.4 var(--font-serif); color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.8); margin-top: 6px; max-width: 80%; }
+.assemble-music-lane {
+  margin-top: 18px; padding: 12px 14px; border: 1px dashed var(--line2); border-radius: 2px;
+  display: flex; align-items: center; gap: 12px;
+}
+.assemble-music-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); flex: none; }
+.assemble-music-empty { font-size: 12px; color: var(--faint); flex: 1; }
 .export-preflight { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; background: var(--panel); }
 .export-preflight-h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
 .export-preflight-line { font-size: 12.5px; padding: 3px 0; }
@@ -694,6 +703,17 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .export-attribution-h { font-size: 11px; color: var(--dim); margin-bottom: 6px; }
 .export-attribution-line { font-size: 11.5px; color: var(--faint); line-height: 1.6; }
 .export-attribution-line a { color: var(--accent); word-break: break-all; }
+.export-preview-box {
+  aspect-ratio: 16/9; background: var(--bg2); border: 1px solid var(--line2); border-radius: var(--radius-media);
+  display: grid; place-items: center; color: var(--faintest); margin: 14px 0 6px;
+}
+.export-preview-box svg { width: 36px; height: 36px; }
+.export-chapter-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-bottom: 18px; gap: 1px; }
+.export-field { margin: 14px 0; }
+.export-toggles { display: flex; gap: 20px; margin: 14px 0 18px; }
+.export-toggle { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+.export-toggle-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.export-sources-cited { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .tl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .tl-hint { color: var(--faint); font-size: 11.5px; margin: 0 0 10px; }
 .tl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin: 12px 0 5px; }
