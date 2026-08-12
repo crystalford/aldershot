@@ -897,6 +897,8 @@ video#sel-player { width: 100%; max-height: min(26vh, 280px); background: #000; 
 .modal-head { padding: 18px 20px 0; font-size: 16px; font-weight: 650; }
 .modal-body { padding: 14px 20px 4px; }
 .modal-text { color: var(--dim); font-size: 14px; margin: 0; }
+.help-body { font-size: 14px; line-height: 1.6; color: var(--dim); }
+.help-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.5; color: var(--dim); }
 .modal-label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 7px; }
 .modal-input { width: 100%; background: var(--bg2); border: 1px solid var(--line2); color: var(--bone); border-radius: 2px; padding: 10px 12px; font: inherit; font-size: 14px; }
 .modal-input:focus { outline: none; border-color: var(--accent); }

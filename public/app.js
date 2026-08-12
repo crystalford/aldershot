@@ -5391,6 +5391,64 @@ $("#railHome").onkeydown = (e) => { if (e.key === "Enter") showDeskView(); };
 $("#paletteTrigger").onclick = openCommandPalette;
 $("#railNotif").innerHTML = ic("bell");
 $("#railNotif").onclick = toggleNotifPanel;
+$("#railHelp").innerHTML = ic("help");
+$("#railHelp").onclick = openHelpModal;
+
+// ── Help + first-run onboarding — reachable only by clicking the rail's
+// help icon (never auto-opens), same as the prototype's own scope.
+async function openHelpModal() {
+  const replay = await UI.modal({
+    title: "How Aldershot works",
+    bodyHTML: `<div class="help-body">Aldershot turns raw footage into finished video essays. Upload a video in
+      Sources and it's transcribed automatically; save the moments worth keeping to the Archive, where they
+      cluster into Threads by what they're actually about. An Essay draws from the whole Archive — not just one
+      video — drafted act by act, grounded in real clips and real sources, never invented ones.</div>`,
+    dismissValue: false,
+    actions: [
+      { label: "Close", resolve: false },
+      { label: "Replay welcome tour", variant: "primary", resolve: true },
+    ],
+  });
+  if (replay) openOnboardingTour();
+}
+const ONBOARDING_IDEAS = [
+  "Nothing is ever invented — every clip, quote, and source Aldershot shows you is real and traceable back to where it came from.",
+  "Threads cluster themselves by meaning, not by tags you have to maintain — save clips, and related ones find each other.",
+  "An essay is directed act by act, not generated in one shot — you react to one suggestion at a time.",
+  "Nothing leaves a scratch space (Studio, Clipping, Generative) and joins the wider Archive unless you explicitly send it there.",
+];
+async function openOnboardingTour() {
+  let step = 1;
+  while (step > 0 && step <= 3) {
+    if (step === 1) {
+      const r = await UI.modal({
+        title: "Welcome to Aldershot",
+        bodyHTML: `<div class="help-body">A tool for turning raw footage into video essays — grounded in what's real, never invented.</div>`,
+        dismissValue: false,
+        actions: [{ label: "Skip", resolve: false }, { label: "Next →", variant: "primary", resolve: true }],
+      });
+      step = r ? 2 : 0;
+    } else if (step === 2) {
+      const r = await UI.modal({
+        title: "Four ideas to know",
+        bodyHTML: `<ul class="help-list">${ONBOARDING_IDEAS.map((idea) => `<li>${esc(idea)}</li>`).join("")}</ul>`,
+        dismissValue: 0,
+        actions: [{ label: "← Back", onClick: (done) => done(1) }, { label: "Next →", variant: "primary", onClick: (done) => done(3) }],
+      });
+      step = r || 0;
+    } else {
+      const r = await UI.modal({
+        title: "Start by feeding it something",
+        bodyHTML: `<div class="help-body">Paste a video URL or drop a file into Sources — everything else follows from there.</div>`,
+        dismissValue: false,
+        actions: [{ label: "← Back", onClick: (done) => done(false) }, { label: "Go to Sources", variant: "primary", resolve: true }],
+      });
+      if (r === false) { step = 2; continue; }
+      if (r) showProjects();
+      step = 0;
+    }
+  }
+}
 
 // Reuses the Desk's own "since you were last here" digest (GET /api/desk)
 // as the notification feed — same real events, same deep links, just
