@@ -61,6 +61,8 @@ check "$SRC/generative.ts" "shotTypeDuration" "Generative per-shot duration (src
 check "$APP_JS" "genResolutionRow" "Generative Resolution setting"
 check "$APP_JS" "reel-mark-score" "Clipping score badge"
 check "$APP_JS" "Sent to Archive" "Clipping past-tense Send-to-Archive label"
+check "$APP_JS" "clipRenderShortGrid" "Clipping persistent card grid"
+check "$APP_JS" "short-card-format" "Clipping format badge"
 
 # Settings / Help / Trash / Palette
 check "$APP_JS" "showSettingsView" "Settings real tabs"

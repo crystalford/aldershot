@@ -5189,6 +5189,7 @@ function renderClippingView() {
         <div class="reel-info" id="clipReelInfo"></div>
         <div class="reel-strip" id="clipReelStrip"></div>
       </div>
+      <div class="short-grid" id="clipShortGrid"></div>
     </div>
   </div>`;
   $("#clipBack").onclick = showProjects;
@@ -5344,11 +5345,14 @@ async function clipFindShorts() {
 // transcribing, playable and scrubbable — proof you're looking at real
 // content, not a status row. Once shorts exist, they're marks you step
 // through one at a time (each one loads + plays its own moment directly in
-// the same big player), never a grid of cards you scan and hover-preview.
+// the same big player) for scrubbing, AND a scannable card grid below it
+// for browsing the whole batch and acting on one without loading it into
+// the reel first — the reel is for looking closely, the grid is for triage.
 function clipRenderShorts() {
   const reel = $("#clipReel"); if (!reel) return;
   const shorts = state.shorts || [];
   const ready = state.videos.filter((v) => v.status === "ready" && v.r2_key);
+  clipRenderShortGrid();
   if (!shorts.length && !ready.length) { reel.hidden = true; return; }
   reel.hidden = false;
   const info = $("#clipReelInfo"), strip = $("#clipReelStrip");
@@ -5414,6 +5418,52 @@ async function clipLoadReelVideo(v, short) {
     const stop = () => { if (p.currentTime >= short.end) { p.pause(); p.removeEventListener("timeupdate", stop); } };
     p.addEventListener("timeupdate", stop);
   }
+}
+// The card grid — every found short at once, for scanning and acting on
+// directly. "9:16" is the format badge's only value because produceShort()
+// always renders a vertical reframe (see render.js); it's a real, fixed
+// fact about the export, not an invented per-short choice.
+function clipRenderShortGrid() {
+  const grid = $("#clipShortGrid"); if (!grid) return;
+  const shorts = state.shorts || [];
+  if (!shorts.length) { grid.innerHTML = ""; return; }
+  grid.innerHTML = shorts.map((s, i) => {
+    const v = state.videos.find((x) => x.id === s.videoId);
+    const thumbUrl = v && v.r2_key ? mediaUrl(v.r2_key) : "";
+    const score = typeof s.score === "number" ? s.score : null;
+    const tier = score == null ? "" : score >= 80 ? "hot" : score >= 55 ? "warm" : "cool";
+    return `<div class="short-card${i === clipActiveShortIndex ? " on" : ""}" data-i="${i}">
+      <div class="short-card-frame">
+        ${thumbUrl ? `<img data-thumb-src="${esc(thumbUrl)}" data-thumb-t="${Math.max(0.1, s.start).toFixed(1)}" alt="" />` : ""}
+        ${score != null ? `<span class="short-score ${tier}">${score}% score</span>` : ""}
+        <span class="short-card-format">9:16</span>
+        <span class="short-card-dur">${fmt(s.end - s.start)}</span>
+      </div>
+      <div class="short-card-body">
+        <div class="short-card-title">${esc(s.title)}</div>
+        <div class="short-card-meta">${v ? esc(filenameOf(v.filename)) : ""} · ${s.sentToArchive ? "Sent to Archive ✓" : "Not sent yet"}</div>
+        <div class="short-card-actions">
+          <button class="btn small accent short-card-produce" data-i="${i}">${ic("download")} Produce</button>
+          <button class="btn small ghost short-card-send" data-i="${i}">${s.sentToArchive ? "Sent ✓" : "Send to Archive"}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  grid.querySelectorAll(".short-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".short-card-actions")) return;
+      clipActiveShortIndex = +card.dataset.i;
+      clipRenderShorts();
+      $("#clipReel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+  grid.querySelectorAll(".short-card-produce").forEach((btn) => {
+    btn.onclick = (e) => { e.stopPropagation(); produceShort(shorts[+btn.dataset.i], btn); };
+  });
+  grid.querySelectorAll(".short-card-send").forEach((btn) => {
+    btn.onclick = (e) => { e.stopPropagation(); sendHighlightToArchive(shorts[+btn.dataset.i]); };
+  });
+  Thumb.hydrate(grid);
 }
 // Clipping is "built for reposting, not for the Archive" — a found
 // highlight only becomes a real, reusable Archive clip if you explicitly

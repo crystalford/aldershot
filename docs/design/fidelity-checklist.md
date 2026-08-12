@@ -147,8 +147,8 @@ Legend: ✅ matches · ⚠️ deliberate divergence (reasoned) · ❌ not built
 | 2 | Source-video credit line | ✅ | |
 | 3 | "Sent to Archive ✓" label | ✅ | |
 | 4 | Duration badge m:ss | ✅ | |
-| 5 | Persistent card grid (not one-at-a-time reel) | ❌ | Being added — task in flight |
-| 6 | Format badge / format choice | ❌ | Being added — task in flight |
+| 5 | Persistent card grid (not one-at-a-time reel) | ✅ | `clipRenderShortGrid()` — grid sits below the reel rather than replacing it; the reel's scrub/step interaction is real, added value the prototype doesn't have |
+| 6 | Format badge / format choice | ✅ | Always "9:16" — real and fixed, since `produceShort()` always renders a vertical reframe; no per-short format choice exists to display honestly beyond that |
 
 ## Settings / Trash / Help / Command palette
 
