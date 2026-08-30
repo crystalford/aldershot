@@ -114,3 +114,13 @@ test("an empty edit produces an empty plan rather than a broken render", () => {
   assert.equal(buildSrt(edl), "");
   assert.deepEqual(buildRenderPlan(edl, "mp4_1080", "16:9").cuts, []);
 });
+
+test("overlap is judged against the SMALLER range", async () => {
+  const { overlapFraction } = await import("../src/projects.ts");
+  // A short clip fully inside a longer one is a duplicate — that is the case
+  // that matters when a second pass re-finds the same moment with slightly
+  // different boundaries.
+  assert.equal(overlapFraction({ start_ms: 0, end_ms: 10000 }, { start_ms: 2000, end_ms: 4000 }), 1);
+  assert.equal(overlapFraction({ start_ms: 0, end_ms: 1000 }, { start_ms: 5000, end_ms: 6000 }), 0);
+  assert.ok(overlapFraction({ start_ms: 0, end_ms: 10000 }, { start_ms: 9000, end_ms: 19000 }) < 0.2);
+});

@@ -145,8 +145,20 @@ export async function saveClips(
   clips: ScoredClip[],
 ): Promise<Clip[]> {
   if (!clips.length) return [];
+
+  // Don't re-save a moment we already have.
+  //
+  // Running a second pass over the same source finds much of the same
+  // material, and appending blindly fills the library with near-identical
+  // duplicates — which is what happened during testing. Overlap is judged by
+  // range rather than by text, because the model rarely returns byte-identical
+  // boundaries twice.
+  const existing = await listClipsForSource(db, opts.source_id, opts.user_id);
+  const fresh = clips.filter((c) => !existing.some((e) => overlapFraction(c, e) > 0.8));
+  if (!fresh.length) return [];
+
   const now = Date.now();
-  const rows: Clip[] = clips.map((c) => ({
+  const rows: Clip[] = fresh.map((c) => ({
     id: ulid(),
     user_id: opts.user_id,
     source_id: opts.source_id,
@@ -180,6 +192,21 @@ export async function saveClips(
     ),
   );
   return rows;
+}
+
+/**
+ * How much two ranges cover the same footage, 0-1, relative to the smaller of
+ * the two. Using the smaller means a short clip fully inside a longer one
+ * counts as a duplicate, which is the case that matters.
+ */
+export function overlapFraction(
+  a: { start_ms: number; end_ms: number },
+  b: { start_ms: number; end_ms: number },
+): number {
+  const overlap = Math.min(a.end_ms, b.end_ms) - Math.max(a.start_ms, b.start_ms);
+  if (overlap <= 0) return 0;
+  const smaller = Math.min(a.end_ms - a.start_ms, b.end_ms - b.start_ms);
+  return smaller > 0 ? overlap / smaller : 0;
 }
 
 export async function listClipsForSource(db: D1Database, sourceId: string, userId: string): Promise<Clip[]> {

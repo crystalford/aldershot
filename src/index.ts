@@ -16,7 +16,8 @@ import { ensureV2Schema } from "./schema.ts";
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
-import { renderFootage, type FootTab } from "./ui/pages/footage.ts";
+import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
+import { listMoments, listThreads, searchExact, searchMeaning } from "./library.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects.ts";
@@ -121,10 +122,43 @@ app.get("/projects", async (c) => {
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env.DB);
-  const q = c.req.query("tab");
-  const tab: FootTab = q === "threads" ? "threads" : q === "sources" ? "sources" : "moments";
+  const t = c.req.query("tab");
+  const tab: FootTab = t === "threads" ? "threads" : t === "sources" ? "sources" : "moments";
+  const mode: SearchMode = c.req.query("mode") === "exact" ? "exact" : "meaning";
+  const query = (c.req.query("q") || "").trim();
+
   const sources = tab === "sources" ? await listSources(c.env.DB, user.id) : [];
-  return c.html(surface("archive", "Footage", "Footage — Aldershot", renderFootage(tab, sources)));
+  const threads = tab === "threads" ? await listThreads(c.env.DB, user.id) : [];
+
+  let moments: Awaited<ReturnType<typeof listMoments>> = [];
+  let meaningUnavailable = false;
+
+  if (tab === "moments") {
+    if (!query) {
+      moments = await listMoments(c.env.DB, user.id);
+    } else if (mode === "meaning") {
+      const byMeaning = await searchMeaning(c.env, user.id, query);
+      if (byMeaning === null) {
+        // The index isn't there. Fall back to exact and SAY so — returning
+        // nothing would read as "your library has nothing like that".
+        meaningUnavailable = true;
+        moments = await searchExact(c.env.DB, user.id, query);
+      } else {
+        moments = byMeaning;
+      }
+    } else {
+      moments = await searchExact(c.env.DB, user.id, query);
+    }
+  }
+
+  return c.html(
+    surface(
+      "archive",
+      "Footage",
+      "Footage — Aldershot",
+      renderFootageFull({ tab, sources, moments, threads, mode, q: query, meaningUnavailable }),
+    ),
+  );
 });
 
 /** One source, read. Phase 1's claim made visible. */
