@@ -282,6 +282,99 @@ function readDuration(file) {
   });
 }
 
+/* ── The editor: keep and drop ─────────────────────────────────────────
+   Every change goes through doUndoable, so ⌘Z reverts it and the toast's
+   Undo does exactly the same thing — one path, not two that drift apart. */
+document.querySelectorAll(".keep-toggle").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const id = btn.getAttribute("data-clip");
+    const wasKept = btn.getAttribute("data-kept") === "1";
+    const next = !wasKept;
+
+    const apply = () => setKept(id, next);
+    const revert = () => setKept(id, wasKept);
+
+    window.doUndoable(next ? "Kept" : "Dropped", apply, revert);
+  });
+});
+
+function setKept(clipId, kept) {
+  const row = document.querySelector('[data-clip="' + clipId + '"][data-kept]');
+  const btn = document.querySelector('.keep-toggle[data-clip="' + clipId + '"]');
+  if (row) {
+    row.setAttribute("data-kept", kept ? "1" : "0");
+    row.style.opacity = kept ? "" : ".55";
+    const quote = row.querySelector("div > div");
+    if (quote) {
+      quote.style.textDecoration = kept ? "" : "line-through";
+      quote.style.textDecorationColor = kept ? "" : "rgba(236,236,241,0.35)";
+    }
+  }
+  if (btn) {
+    btn.setAttribute("data-kept", kept ? "1" : "0");
+    const pill = btn.querySelector("span");
+    if (pill) {
+      pill.textContent = kept ? "Keeping" : "Add back";
+      pill.style.background = kept ? "rgba(94,201,143,0.14)" : "#232329";
+      pill.style.color = kept ? "#5EC98F" : "rgba(236,236,241,0.7)";
+      pill.style.fontWeight = kept ? "600" : "500";
+    }
+  }
+  /* Autosave: every edit writes immediately. There is no Save button in this
+     design and adding one would be wrong (10-ROUTES-AND-KEYS.md §Autosave). */
+  fetch("/api/clips/" + clipId + "/keep", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kept }),
+  }).catch(() => toast("That didn't save — check your connection"));
+}
+
+/* An extra pass against what it already found. */
+const passForm = document.querySelector(".pass-form");
+if (passForm) {
+  passForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = passForm.querySelector('input[name="instruction"]');
+    const button = passForm.querySelector('button[type="submit"]');
+    const instruction = input.value.trim();
+    if (!instruction) return;
+
+    button.disabled = true;
+    button.textContent = "Running…";
+    try {
+      const res = await fetch("/api/projects/" + passForm.getAttribute("data-project") + "/passes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "That pass didn't run");
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Run it";
+      toast(err.message);
+    }
+  });
+}
+
+/* Waiting on a scoring pass. */
+const scoring = document.querySelector("#scoring");
+if (scoring) {
+  const projectId = scoring.getAttribute("data-project");
+  const tick = async () => {
+    try {
+      const { jobs } = await (await fetch("/api/jobs")).json();
+      const job = jobs.find((j) => j.ref_id === projectId);
+      if (!job) { location.reload(); return; }
+      const label = scoring.querySelector("span:last-child");
+      if (label && job.stage_label) label.textContent = job.stage_label;
+      setTimeout(tick, 2000);
+    } catch { setTimeout(tick, 5000); }
+  };
+  setTimeout(tick, 1500);
+}
+
 /* ── Watching a source being read ──────────────────────────────────────
    Polls the job rather than guessing, and reloads once the transcript is
    actually there. Nothing here animates on a timer. */

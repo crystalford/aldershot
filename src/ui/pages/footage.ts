@@ -80,8 +80,8 @@ function sourceRow(s: SourceRow): string {
         : ""
     }</div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-      <div style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${esc(meta)}</div>
+      <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${esc(meta)}</div>
     </div>
     ${stateChip(s.transcript_state)}
   </a>`;

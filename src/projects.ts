@@ -125,10 +125,16 @@ export async function listProjects(db: D1Database, userId: string): Promise<Proj
 }
 
 /**
- * Saves scored clips. Every clip carries the frame that proves it is real —
- * the design allows no thumbnail that is not an actual frame — and starts
- * `kept = 0` so the user decides what survives. Nothing is kept on their
- * behalf.
+ * Saves scored clips.
+ *
+ * They start KEPT. The prototype's own rule is `cutOn[i] !== false` — a block
+ * is in the cut unless the user has said otherwise. That is the whole claim:
+ * the pass produces a watchable cut and the user adjusts it. Starting
+ * everything dropped would mean clicking every block in an hour of footage
+ * before seeing anything, which is the opposite of the product.
+ *
+ * Every clip also carries the frame that proves it is real — the design allows
+ * no thumbnail that is not an actual frame.
  */
 export async function saveClips(
   db: D1Database,
@@ -151,7 +157,7 @@ export async function saveClips(
     // a clip points at the source's own poster. A real frame of the real
     // video — just not yet the frame at this exact moment.
     frame_r2_key: opts.posterKey ?? "",
-    kept: 0,
+    kept: 1,
     origin: opts.origin,
     used_count: 0,
     created_at: now,

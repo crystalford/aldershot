@@ -18,6 +18,8 @@ import { renderHome } from "./ui/pages/home";
 import { emptyState, pageHeading } from "./ui/pages/empty";
 import { renderFootage, type FootTab } from "./ui/pages/footage";
 import { renderSource } from "./ui/pages/source";
+import { renderEditor, type Stage } from "./ui/pages/editor";
+import { getProject, listClipsForSource, listProjects, setKept } from "./projects";
 import { CLIENT_JS } from "./ui/client";
 import { currentUser } from "./user";
 import { createSource, getSegments, getSource, listSources } from "./sources";
@@ -195,6 +197,83 @@ app.get("/clipping", async (c) => {
       "nav",
     ),
   );
+});
+
+/* ── The editor ────────────────────────────────────────────────────────
+ * One surface, four stages, real URLs per 10-ROUTES-AND-KEYS.md.
+ */
+const STAGE_FOR_PATH: Record<string, Stage> = {
+  pick: "cut",
+  build: "essay",
+  script: "transcript",
+  shorts: "shorts",
+};
+
+app.get("/p/:id/:stagePath", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const stage = STAGE_FOR_PATH[c.req.param("stagePath")];
+  if (!stage) return c.notFound();
+
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.notFound();
+
+  const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
+  const clips = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
+  const jobs = await activeJobs(c.env.DB, user.id);
+  const job = jobs.find((j) => j.ref_id === project.id) ?? null;
+
+  // The nav keeps Editor lit on the shorts stage — that context is why the
+  // editor feels like one place (10-ROUTES-AND-KEYS.md).
+  return c.html(
+    page(
+      { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Cutting room", shortsCtx: "editor" },
+      renderEditor({
+        projectId: project.id,
+        title: project.title,
+        brief: project.brief,
+        sourceTitle: source?.title ?? "",
+        sourceFilename: source?.filename ?? null,
+        hasSource: Boolean(source),
+        stage,
+        clips,
+        job,
+      }),
+    ),
+  );
+});
+
+/** Keep or drop a block. Undoable — nothing here hard-deletes. */
+app.post("/api/clips/:id/keep", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const b = await body<{ kept: boolean }>(c);
+  await setKept(c.env.DB, c.req.param("id"), user.id, Boolean(b.kept));
+  return c.json({ ok: true });
+});
+
+/** An extra instruction against what the pass already found. */
+app.post("/api/projects/:id/passes", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ instruction: string }>(c);
+  const instruction = (b.instruction || "").trim();
+  if (!instruction) return c.json({ error: "say what you want" }, 400);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
+  c.executionCtx.waitUntil(
+    runScore(c.env, {
+      userId: user.id,
+      sourceId: project.source_id,
+      projectId: project.id,
+      brief: instruction,
+      jobId: job.id,
+    }),
+  );
+  return c.json({ jobId: job.id });
 });
 
 /**
@@ -418,6 +497,12 @@ app.post("/api/begin", async (c) => {
 });
 
 /** The UI polls this for honest staged progress. */
+app.get("/api/projects", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  return c.json({ projects: await listProjects(c.env.DB, user.id) });
+});
+
 app.get("/api/jobs", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env.DB);

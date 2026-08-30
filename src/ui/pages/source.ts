@@ -35,7 +35,7 @@ function line(s: SegmentRow): string {
   return `<div class="seg" data-idx="${s.idx}" data-start="${s.start_ms}" data-end="${s.end_ms}" data-words="${esc(s.words ?? "[]")}" style="display:flex;gap:14px;align-items:baseline;padding:7px 0">
     <span style="flex:none;width:52px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.3);font-variant-numeric:tabular-nums">${hms(s.start_ms / 1000)}</span>
     ${s.speaker ? `<span style="flex:none;font-size:${SIZE.meta};color:${ACCENT.cyan}">${esc(s.speaker)}</span>` : ""}
-    <span style="flex:1;font-size:${SIZE.body};line-height:1.7;color:rgba(236,236,241,0.85)">${esc(s.text)}</span>
+    <span data-content style="flex:1;font-size:${SIZE.body};line-height:1.7;color:rgba(236,236,241,0.85)">${esc(s.text)}</span>
   </div>`;
 }
 
@@ -66,8 +66,8 @@ export function renderSource(d: SourceViewData): string {
     .join(" · ");
 
   const head = `<a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:${C.ink45}">← Footage</a>
-  <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em;line-height:1.2;margin-top:14px">${esc(s.title)}</div>
-  <div style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}">${esc(meta || s.filename || "")}</div>`;
+  <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em;line-height:1.2;margin-top:14px" data-content>${esc(s.title)}</div>
+  <div style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}" data-content>${esc(meta || s.filename || "")}</div>`;
 
   // Still reading: name the stage. No percentage during transcription — it is
   // a single atomic call, and a bar moving on a timer would be a lie.

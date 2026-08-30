@@ -117,7 +117,7 @@ const UI_FILES = walk(path.join(ROOT, 'src/ui'));
  */
 async function checkStrings() {
   const BASE = process.env.BASE || 'http://localhost:8787';
-  const ROUTES = ['/', '/projects', '/footage', '/clipping', '/editor', '/settings'];
+  const ROUTES = ['/', '/projects', '/footage', '/footage?tab=sources', '/clipping', '/editor', '/settings'];
 
   let up = false;
   try {
@@ -135,14 +135,48 @@ async function checkStrings() {
   const suspect = [];
   const seen = new Set();
 
-  for (const route of ROUTES) {
+  /*
+   * The editor and a read source only exist once there is data, so their
+   * routes are discovered rather than hardcoded. Leaving them out would put a
+   * blind spot over the surfaces with the most copy on them.
+   */
+  const routes = [...ROUTES];
+  try {
+    const { sources } = await (await fetch(BASE + '/api/sources')).json();
+    if (sources?.[0]) routes.push('/sources/' + sources[0].id);
+  } catch {}
+  try {
+    const { projects } = await (await fetch(BASE + '/api/projects')).json();
+    if (projects?.[0]) {
+      for (const stage of ['pick', 'build', 'script', 'shorts']) {
+        routes.push('/p/' + projects[0].id + '/' + stage);
+      }
+    }
+  } catch {}
+
+  for (const route of routes) {
     const html = await (await fetch(BASE + route)).text();
     const body = html
       .replace(/<script[\s\S]*?<\/script>/g, ' ')
       .replace(/<style[\s\S]*?<\/style>/g, ' ')
       .replace(/<title>[\s\S]*?<\/title>/g, ' ');
-    for (const m of body.matchAll(/>([^<>]+)</g)) {
-      const text = normalise(m[1]);
+    /*
+     * Only UI COPY is checked. Text the user's own footage produced — a
+     * transcript line, a filename, a duration, or a reason the model wrote —
+     * cannot be in the prototype and must not be flagged.
+     *
+     * The render marks those with data-content. Marking is required rather
+     * than inferred, so the failure mode is safe: forget to mark a piece of
+     * chrome and it still gets checked, which is the direction that catches
+     * paraphrases.
+     */
+    // The terminating `<` is a LOOKAHEAD, not consumed. Matching it directly
+    // eats the next element's opening bracket, so the scan silently sees only
+    // every other element — which is how "Ask for another pass" slipped past a
+    // check that reported all-clear.
+    for (const m of body.matchAll(/<([a-z]+)([^>]*)>([^<>]+)(?=<)/g)) {
+      if (/\bdata-content\b/.test(m[2])) continue;
+      const text = normalise(m[3]);
       if (text.length < 8) continue;
       if (!/[a-z]{3}/.test(text)) continue;
       if (seen.has(text)) continue;
@@ -204,7 +238,7 @@ async function checkStrings() {
   if (suspect.length) {
     fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.join('\n'));
   } else {
-    pass('strings', `${seen.size} rendered strings across ${ROUTES.length} surfaces, all verbatim from the prototype`);
+    pass('strings', `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype`);
   }
 }
 
