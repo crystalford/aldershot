@@ -72,5 +72,24 @@
   //   { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
   // ]
 
+  // Job pipeline (04-API-AND-JOBS.md). Long work — reading a source, scoring,
+  // rendering — is dispatched as a message rather than run inside the
+  // request's waitUntil, which is bounded by the request's own lifetime and
+  // cannot carry a six-hour transcribe.
+  //
+  // Commented out until the queue exists, for the same reason as Vectorize
+  // below: a declared-but-missing binding fails the deploy. src/queue.ts
+  // already falls back to waitUntil when env.JOBS is undefined, so the product
+  // works either way and turning this on is a config change, not a code one.
+  // One-time setup, in order:
+  //   1. npx wrangler queues create aldershot-jobs
+  //   2. THEN uncomment both blocks below and deploy.
+  // "queues": {
+  //   "producers": [{ "binding": "JOBS", "queue": "aldershot-jobs" }],
+  //   "consumers": [
+  //     { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 5 }
+  //   ]
+  // },
+
   // Later phases: Cron Triggers (Radar), AI Gateway.
 }

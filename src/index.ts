@@ -49,6 +49,7 @@ import { createRender, edlForProject, listRenders, runRender, type Aspect, type 
 import { CLIENT_JS } from "./ui/client.ts";
 import { currentUser, userForEmail } from "./user.ts";
 import { PLANS } from "./plans.ts";
+import { consume, dispatch } from "./queue.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
@@ -445,9 +446,9 @@ app.post("/api/sources/:id/retry", async (c) => {
   if (!src) return c.json({ error: "not found" }, 404);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
-  c.executionCtx.waitUntil(
-    readSource(c.env, src, { plan: user.plan, jobId: job.id }).then(() => undefined),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "transcribe", jobId: job.id, userId: user.id, sourceId: src.id, plan: user.plan,
+  });
   return c.redirect(`/sources/${src.id}`, 303);
 });
 
@@ -507,16 +508,15 @@ app.post("/api/shorts", async (c) => {
   const length = (CLIP_LENGTHS.find((l) => l.name === b.length || l.id === b.length)?.id ?? "30-60") as ClipLength;
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "shorts", ref_id: src.id });
-  c.executionCtx.waitUntil(
-    runShorts(c.env, {
-      userId: user.id,
-      sourceId: src.id,
-      jobId: job.id,
-      length,
-      count: Number(b.count) || 8,
-      query: b.query,
-    }),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "shorts",
+    jobId: job.id,
+    userId: user.id,
+    sourceId: src.id,
+    length,
+    count: Number(b.count) || 8,
+    query: b.query,
+  });
   return c.json({ jobId: job.id });
 });
 
@@ -744,9 +744,9 @@ app.post("/api/renders", async (c) => {
   });
   const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: project.id });
 
-  c.executionCtx.waitUntil(
-    runRender(c.env, { userId: user.id, projectId: project.id, renderId: render.id, jobId: job.id }),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "render", jobId: job.id, userId: user.id, projectId: project.id, renderId: render.id,
+  });
   return c.json({ render, jobId: job.id });
 });
 
@@ -840,56 +840,9 @@ app.post("/api/projects/:id/reactions", async (c) => {
   if (!about) return c.json({ error: "say what you're reacting to" }, 400);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        await startJob(c.env.DB, job.id, "placing the reactions");
-        const segments = await getSegments(c.env.DB, project.source_id!);
-        const result = await placeReactions(c.env, segments, about);
-
-        const src = await getSource(c.env.DB, project.source_id!, user.id);
-        const clipBeats = result.beats.filter((x) => x.kind === "clip");
-        const saved = await saveClips(
-          c.env.DB,
-          { user_id: user.id, source_id: project.source_id!, origin: "editor", posterKey: src?.poster_r2_key ?? null },
-          clipBeats.map((x) => ({
-            start_ms: x.start_ms!, end_ms: x.end_ms!, quote: x.quote ?? "",
-            why: x.why ?? "", score: 0, heat: 0,
-          })),
-        );
-
-        // Interleave: each clip, then the line drafted to say after it.
-        const existing = await listClipsForSource(c.env.DB, project.source_id!, user.id);
-        const beats: Parameters<typeof putBeats>[2] = [];
-        let n = 0;
-        for (const rb of result.beats) {
-          if (rb.kind === "clip") {
-            const match =
-              saved.find((cl) => cl.start_ms === rb.start_ms) ??
-              existing.find((cl) => cl.start_ms === rb.start_ms);
-            beats.push({
-              kind: "clip", act: null, clip_id: match?.id ?? null, text: rb.quote ?? null,
-              struck: null, dur_ms: (rb.end_ms ?? 0) - (rb.start_ms ?? 0), media_r2_key: null, recorded_at: null,
-            });
-            n++;
-          } else {
-            beats.push({
-              kind: "react", act: null, clip_id: null, text: rb.say ?? null,
-              struck: null, dur_ms: null, media_r2_key: null, recorded_at: null,
-            });
-          }
-        }
-        await putBeats(c.env.DB, project.id, beats);
-        await meter(c.env.DB, {
-          user_id: user.id, job_id: job.id, job_type: "pass",
-          tokens_in: result.tokensIn, tokens_out: result.tokensOut,
-        });
-        await finishJob(c.env.DB, job.id);
-      } catch (err) {
-        await failJob(c.env.DB, job.id, `Couldn't place the reactions: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    })(),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "reactions", jobId: job.id, userId: user.id, projectId: project.id, about,
+  });
   return c.json({ jobId: job.id });
 });
 
@@ -911,68 +864,9 @@ app.post("/api/projects/:id/outline", async (c) => {
   if (!topic) return c.json({ error: "what is the essay about?" }, 400);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        await startJob(c.env.DB, job.id, "drafting the acts");
-        const moments = await listMoments(c.env.DB, user.id, 120);
-        if (!moments.length) {
-          return void (await failJob(c.env.DB, job.id, "Nothing kept yet — an essay is built from clips you've saved."));
-        }
-
-        const outline = await draftOutline(
-          c.env,
-          topic,
-          moments.map((m) => ({ id: m.id, quote: m.quote, source_title: m.source_title })),
-        );
-
-        /*
-         * A clip beat's length is the clip's length — it is known here and
-         * must be written, because Build's timecodes, its runtime label and
-         * the width of every segment in the preview scrubber all read from
-         * dur_ms. Left null, the whole surface renders "0:00" and the scrubber
-         * shows equal-width blocks that mean nothing.
-         */
-        const byId = new Map(moments.map((m) => [m.id, m]));
-        await putBeats(
-          c.env.DB,
-          project.id,
-          outline.beats.map((be: EssayBeat) => {
-            const clip = be.clip_id ? byId.get(be.clip_id) : undefined;
-            return {
-              kind: be.kind, act: be.act, clip_id: be.clip_id ?? null, text: be.text,
-              struck: null,
-              dur_ms: clip ? clip.end_ms - clip.start_ms : null,
-              media_r2_key: null, recorded_at: null,
-            };
-          }),
-        );
-        await c.env.DB.prepare(`UPDATE v2_projects SET has_acts=1, updated_at=? WHERE id=?`)
-          .bind(Date.now(), project.id).run();
-
-        // The pass log says honestly how much of the argument is actually
-        // backed — including the beats the model wanted to cite and could not.
-        const backed = outline.beats.filter((be) => be.kind === "clip").length;
-        await c.env.DB
-          .prepare(`INSERT INTO passes (id,project_id,source_id,n,instruction,result,model,tokens_in,tokens_out,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)`)
-          .bind(
-            ulid(), project.id, null, 1, topic,
-            `${outline.beats.length} beats — ${backed} backed by a clip` +
-              (outline.rejected ? `, ${outline.rejected} needing footage it doesn't have` : ""),
-            outline.model, outline.tokensIn, outline.tokensOut, Date.now(),
-          ).run();
-
-        await meter(c.env.DB, {
-          user_id: user.id, job_id: job.id, job_type: "pass",
-          tokens_in: outline.tokensIn, tokens_out: outline.tokensOut,
-        });
-        await finishJob(c.env.DB, job.id);
-      } catch (err) {
-        await failJob(c.env.DB, job.id, `Couldn't draft the acts: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    })(),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "outline", jobId: job.id, userId: user.id, projectId: project.id, topic,
+  });
   return c.json({ jobId: job.id });
 });
 
@@ -1034,15 +928,14 @@ app.post("/api/projects/:id/passes", async (c) => {
   if (!instruction) return c.json({ error: "say what you want" }, 400);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  c.executionCtx.waitUntil(
-    runScore(c.env, {
-      userId: user.id,
-      sourceId: project.source_id,
-      projectId: project.id,
-      brief: instruction,
-      jobId: job.id,
-    }),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "score",
+    jobId: job.id,
+    userId: user.id,
+    sourceId: project.source_id,
+    projectId: project.id,
+    brief: instruction,
+  });
   return c.json({ jobId: job.id });
 });
 
@@ -1203,7 +1096,7 @@ app.post("/api/sources", async (c) => {
     knownDurationS: durationHeader || undefined,
     jobId: job.id,
   };
-  c.executionCtx.waitUntil(readSource(c.env, src, opts).then(() => undefined));
+  await dispatch(c.env, c.executionCtx, { type: "transcribe", sourceId: src.id, userId: user.id, ...opts });
 
   return c.json({ source: src, jobId: job.id });
 });
@@ -1270,14 +1163,15 @@ app.post("/api/uploads/:sourceId/complete", async (c) => {
   }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
-  c.executionCtx.waitUntil(
-    readSource(c.env, src, {
-      plan: user.plan,
-      diarize: body.diarize,
-      knownDurationS: body.durationS,
-      jobId: job.id,
-    }).then(() => undefined),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "transcribe",
+    jobId: job.id,
+    userId: user.id,
+    sourceId: src.id,
+    plan: user.plan,
+    diarize: body.diarize,
+    knownDurationS: body.durationS,
+  });
   return c.json({ source: src, jobId: job.id });
 });
 
@@ -1333,16 +1227,15 @@ app.post("/api/begin", async (c) => {
     upgrade: b.upgrade,
   });
 
-  c.executionCtx.waitUntil(
-    runScore(c.env, {
-      userId: user.id,
-      sourceId: src.id,
-      projectId: result.projectId,
-      brief: b.brief || "",
-      jobId: result.jobId,
-      upgrade: b.upgrade,
-    }),
-  );
+  await dispatch(c.env, c.executionCtx, {
+    type: "score",
+    jobId: result.jobId,
+    userId: user.id,
+    sourceId: src.id,
+    projectId: result.projectId,
+    brief: b.brief || "",
+    upgrade: b.upgrade,
+  });
   return c.json(result);
 });
 
@@ -1376,4 +1269,15 @@ app.get("/api/usage/month", async (c) => {
 
 
 
-export default app;
+/*
+ * `fetch` plus `queue`, rather than exporting the Hono app directly.
+ *
+ * The consumer has to sit beside fetch on the same default export for
+ * Cloudflare to route messages to it. Until the queue is provisioned nothing
+ * ever calls it — dispatch() falls back to waitUntil — but it ships now so
+ * that provisioning the queue is a config change and not a code change.
+ */
+export default {
+  fetch: app.fetch,
+  queue: consume,
+};
