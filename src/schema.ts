@@ -146,6 +146,17 @@ const STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS trash_by_user ON trash(user_id, deleted_at)`,
 ];
 
+/**
+ * Columns added after the fact. SQLite has no `ADD COLUMN IF NOT EXISTS`, so
+ * each one checks PRAGMA table_info first — the same pattern the rest of this
+ * project uses for lazy migrations.
+ */
+const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
+  // Script mode's transcript cuts, as JSON ranges. On the project because
+  // Script edits the whole source transcript, not one block.
+  { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },
+];
+
 let ensured = false;
 
 /**
@@ -156,5 +167,13 @@ let ensured = false;
 export async function ensureV2Schema(db: D1Database): Promise<void> {
   if (ensured) return;
   await db.batch(STATEMENTS.map((s) => db.prepare(s)));
+
+  for (const { table, column, ddl } of ADDED_COLUMNS) {
+    const { results } = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+    if (!(results ?? []).some((c) => c.name === column)) {
+      await db.prepare(ddl).run();
+    }
+  }
+
   ensured = true;
 }

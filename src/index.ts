@@ -18,8 +18,10 @@ import { renderHome } from "./ui/pages/home";
 import { emptyState, pageHeading } from "./ui/pages/empty";
 import { renderFootage, type FootTab } from "./ui/pages/footage";
 import { renderSource } from "./ui/pages/source";
-import { renderEditor, type Stage } from "./ui/pages/editor";
-import { getProject, listClipsForSource, listProjects, setKept } from "./projects";
+import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor";
+import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects";
+import { renderScript } from "./ui/pages/script";
+import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts";
 import { CLIENT_JS } from "./ui/client";
 import { currentUser } from "./user";
 import { createSource, getSegments, getSource, listSources } from "./sources";
@@ -223,6 +225,42 @@ app.get("/p/:id/:stagePath", async (c) => {
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = jobs.find((j) => j.ref_id === project.id) ?? null;
 
+  // Script edits the source transcript directly, so it needs the segments
+  // rather than the scored clips.
+  if (stage === "transcript" && source) {
+    const segments = await getSegments(c.env.DB, source.id);
+    const cuts = parseCuts(project.cuts);
+    return c.html(
+      page(
+        { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Transcript editor", shortsCtx: "editor" },
+        editorHeader({
+          projectId: project.id,
+          title: project.title,
+          brief: project.brief,
+          sourceTitle: source.title,
+          sourceFilename: source.filename,
+          hasSource: true,
+          stage,
+          clips,
+          job,
+        }) +
+          renderScript({
+            projectId: project.id,
+            segments,
+            cuts,
+            // Precedence matters here: `a ?? b ?? 0 / 1000` divides only the
+            // zero, so the fallback silently read milliseconds as seconds and
+            // a 70-second transcript displayed as 19 hours.
+            originalS: source.duration_s ?? (segments.at(-1)?.end_ms ?? 0) / 1000,
+            afterS: runtimeAfterCuts(segments, cuts),
+            fillersRemoved: fillerCuts(segments).every((f) =>
+              cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0]),
+            ) && fillerCuts(segments).length > 0,
+          }),
+      ),
+    );
+  }
+
   // The nav keeps Editor lit on the shorts stage — that context is why the
   // editor feels like one place (10-ROUTES-AND-KEYS.md).
   return c.html(
@@ -241,6 +279,34 @@ app.get("/p/:id/:stagePath", async (c) => {
       }),
     ),
   );
+});
+
+/**
+ * A transcript cut. Autosaved on every gesture — there is no Save button in
+ * this design and adding one would be wrong (10-ROUTES-AND-KEYS.md §Autosave).
+ */
+app.post("/api/projects/:id/cuts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ seg: number; word: number | null; kind: "word" | "segment" | "fillers" }>(c);
+  const segments = await getSegments(c.env.DB, project.source_id);
+  let cuts = parseCuts(project.cuts);
+
+  if (b.kind === "fillers") {
+    cuts = addCuts(cuts, fillerCuts(segments));
+  } else if (b.kind === "segment" && typeof b.seg === "number") {
+    cuts = toggleSegment(cuts, b.seg);
+  } else if (b.kind === "word" && typeof b.seg === "number" && typeof b.word === "number") {
+    cuts = toggleWord(cuts, b.seg, b.word);
+  } else {
+    return c.json({ error: "bad cut" }, 400);
+  }
+
+  await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
+  return c.json({ cuts, afterS: runtimeAfterCuts(segments, cuts) });
 });
 
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */

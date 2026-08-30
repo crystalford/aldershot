@@ -152,3 +152,8 @@ CREATE TABLE IF NOT EXISTS trash (        -- the deleted pile in Settings
   label TEXT NOT NULL, payload TEXT NOT NULL, deleted_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS trash_by_user ON trash(user_id, deleted_at);
+
+-- Script mode's transcript cuts, as JSON ranges. Added after the initial
+-- schema; mirrored by ADDED_COLUMNS in src/schema.ts, which checks
+-- PRAGMA table_info first since SQLite has no ADD COLUMN IF NOT EXISTS.
+ALTER TABLE v2_projects ADD COLUMN cuts TEXT;

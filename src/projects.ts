@@ -29,6 +29,8 @@ export interface Project {
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
+  /** Script mode's transcript cuts, as JSON. See src/cuts.ts. */
+  cuts: string | null;
 }
 
 export interface Beat {
@@ -95,6 +97,7 @@ export async function createProject(
     created_at: now,
     updated_at: now,
     deleted_at: null,
+    cuts: null,
   };
   await db
     .prepare(
@@ -217,6 +220,14 @@ export async function putBeats(db: D1Database, projectId: string, beats: Omit<Be
     ),
   );
   await db.prepare(`UPDATE v2_projects SET updated_at=? WHERE id=?`).bind(Date.now(), projectId).run();
+}
+
+/** Saves Script mode's cuts. Autosaved on every edit — there is no Save button. */
+export async function saveCuts(db: D1Database, projectId: string, userId: string, cutsJson: string): Promise<void> {
+  await db
+    .prepare(`UPDATE v2_projects SET cuts=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(cutsJson, Date.now(), projectId, userId)
+    .run();
 }
 
 export async function getBeats(db: D1Database, projectId: string): Promise<Beat[]> {

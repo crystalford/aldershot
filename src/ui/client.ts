@@ -375,6 +375,98 @@ if (scoring) {
   setTimeout(tick, 1500);
 }
 
+/* ── Script mode: striking words ───────────────────────────────────────
+   Clicking a word strikes that word; clicking the timecode strikes the line.
+   Both route through doUndoable like every other edit, so ⌘Z reverts them.
+
+   The struck state is applied optimistically and reconciled against the
+   server's answer — the server owns the cut list, and letting the client
+   compute it independently is how the two drift and the wrong video gets cut. */
+const script = $("#script");
+if (script) {
+  const projectId = script.getAttribute("data-project");
+
+  async function sendCut(payload) {
+    const res = await fetch("/api/projects/" + projectId + "/cuts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("That didn't save");
+    return res.json();
+  }
+
+  /* Re-paints from the server's cut list, which is the only authority. */
+  function paint(cuts) {
+    const cutLine = new Set();
+    const cutWord = new Set();
+    for (const c of cuts) {
+      if (c.words === null) cutLine.add(c.seg);
+      else for (let i = c.words[0]; i <= c.words[1]; i++) cutWord.add(c.seg + ":" + i);
+    }
+    script.querySelectorAll(".seg-row").forEach((row) => {
+      const seg = Number(row.getAttribute("data-seg"));
+      row.style.background = cutLine.has(seg) ? "transparent" : "#17171B";
+    });
+    script.querySelectorAll(".w").forEach((el) => {
+      const seg = Number(el.getAttribute("data-seg"));
+      const w = Number(el.getAttribute("data-word"));
+      const struck = cutLine.has(seg) || cutWord.has(seg + ":" + w);
+      el.style.textDecoration = struck ? "line-through" : "";
+      el.style.color = struck ? "rgba(236,236,241,0.3)" : "";
+    });
+  }
+
+  function runtimeLabel(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+      : m + ":" + String(sec).padStart(2, "0");
+  }
+
+  async function applyCut(payload, label) {
+    try {
+      const { cuts, afterS } = await sendCut(payload);
+      paint(cuts);
+      /* The "After your cuts" figure, refreshed from the server's own
+         calculation rather than recomputed here — the render uses the
+         server's ranges, so the number the user reads must come from the
+         same place. */
+      const stat = script.parentElement.querySelector("[data-after]");
+      if (stat) stat.textContent = runtimeLabel(afterS);
+    } catch (err) {
+      toast(err.message || "That didn't save");
+    }
+  }
+
+  script.addEventListener("click", (e) => {
+    const word = e.target.closest(".w");
+    const segBtn = e.target.closest(".seg-cut");
+
+    if (word) {
+      const payload = { kind: "word", seg: Number(word.getAttribute("data-seg")), word: Number(word.getAttribute("data-word")) };
+      const struck = word.style.textDecoration === "line-through";
+      window.doUndoable(struck ? "Put back" : "Cut", () => applyCut(payload), () => applyCut(payload));
+      return;
+    }
+    if (segBtn) {
+      const payload = { kind: "segment", seg: Number(segBtn.getAttribute("data-seg")), word: null };
+      window.doUndoable("Line cut", () => applyCut(payload), () => applyCut(payload));
+    }
+  });
+
+  document.querySelectorAll(".cleanup").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      await applyCut({ kind: "fillers", seg: 0, word: null });
+      btn.textContent = "Fillers removed ✓";
+      btn.style.background = "transparent";
+      btn.style.color = "#5EC98F";
+    });
+  });
+}
+
 /* ── Watching a source being read ──────────────────────────────────────
    Polls the job rather than guessing, and reloads once the transcript is
    actually there. Nothing here animates on a timer. */

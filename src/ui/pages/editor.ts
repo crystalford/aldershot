@@ -73,7 +73,13 @@ const STAGE_PILL: Record<Stage, string> = {
   shorts: "SHORTS FROM THIS",
 };
 
-function header(d: EditorData): string {
+/**
+ * The header every stage shares: back link, stage pill, tab bar, title and
+ * runtime. Exported so each stage renders the same one rather than a
+ * near-copy — the tab bar drifting between stages is exactly how an editor
+ * stops feeling like one place.
+ */
+export function editorHeader(d: EditorData): string {
   const kept = d.clips.filter((c) => c.kept).length;
   const runtimeMs = d.clips.filter((c) => c.kept).reduce((n, c) => n + (c.end_ms - c.start_ms), 0);
 
@@ -166,7 +172,7 @@ function askAnotherPass(d: EditorData): string {
 }
 
 export function renderEditor(d: EditorData): string {
-  const head = header(d);
+  const head = editorHeader(d);
 
   // Still scoring: name the stage, no fake percentage.
   if (d.job && (d.job.state === "queued" || d.job.state === "running") && !d.clips.length) {
