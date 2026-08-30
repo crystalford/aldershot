@@ -26,6 +26,15 @@ import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
 import { renderProjects } from "./ui/pages/projects.ts";
+import { renderSettings } from "./ui/pages/settings.ts";
+import { ACCENT } from "./ui/tokens.ts";
+
+/* Named here so the cost panel's categories read as colour decisions. */
+const ACCENT_CYAN = ACCENT.cyan;
+const ACCENT_GOLD = ACCENT.gold;
+const ACCENT_GREEN = ACCENT.green;
+const ACCENT_VIOLET = ACCENT.violet;
+const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
@@ -906,15 +915,88 @@ app.get("/editor", async (c) => {
 
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const pro = user.plan !== "free";
+
+  const now = new Date();
+  const since = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const roll = await monthUsage(c.env.DB, user.id, since);
+
+  /*
+   * Processing minutes are the source minutes actually metered this month, and
+   * storage is what R2 is actually holding. Both come from usage_events rather
+   * than a counter kept alongside, so the meters cannot drift from the bill.
+   */
+  const stored = await c.env.DB
+    .prepare(`SELECT SUM(bytes_stored) AS b FROM usage_events WHERE user_id=? AND created_at>=?`)
+    .bind(user.id, since)
+    .first<{ b: number | null }>();
+
+  const meters = [
+    {
+      label: "Processing minutes",
+      used: Math.round(roll.source_minutes),
+      cap: pro ? 1200 : 300,
+      unit: "",
+      color: ACCENT_CYAN,
+      note: "Spent reading footage, rendering cuts, and burning captions. Resets on the 1st.",
+    },
+    {
+      label: "Storage",
+      used: Math.round(((stored?.b ?? 0) / 1e9) * 10) / 10,
+      cap: 100,
+      unit: "GB",
+      color: ACCENT_GREEN,
+      note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
+    },
+  ];
+
+  /*
+   * The cost panel is owner-only and reads the same rollup the API does. A job
+   * type with no events this month is simply absent — showing it at $0.00
+   * would imply we ran it and it was free.
+   */
+  let cost = null;
+  if (user.is_owner) {
+    const LABEL: Record<string, [string, string, string]> = {
+      transcribe: ["Transcribe + align", ACCENT_CYAN, "Whisper on a container, per source minute"],
+      pass: ["Reading it for meaning", ACCENT_GOLD, "one pass per video plus your extra passes"],
+      score: ["Reading it for meaning", ACCENT_GOLD, "one pass per video plus your extra passes"],
+      render: ["Rendering", ACCENT_GREEN, "vCPU-seconds on Containers"],
+      shorts: ["Rendering", ACCENT_GREEN, "vCPU-seconds on Containers"],
+      storage: ["Storage", ACCENT_VIOLET, "originals kept, never auto-deleted. Grows every month."],
+      delivery: ["Delivery", ACCENT_RED, "Stream minutes watched, mostly your own previews"],
+    };
+
+    // Several job types roll into one line — render and shorts are both
+    // "Rendering" as far as spend is concerned.
+    const merged = new Map<string, { label: string; amount: number; color: string; note: string }>();
+    for (const l of roll.lines) {
+      const [label, color, note] = LABEL[l.job_type] ?? [l.job_type, ACCENT_CYAN, ""];
+      const at = merged.get(label);
+      if (at) at.amount += l.cost;
+      else merged.set(label, { label, amount: l.cost, color, note });
+    }
+
+    const finished = await c.env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM renders WHERE user_id=? AND state='ready' AND created_at>=?`)
+      .bind(user.id, since)
+      .first<{ n: number }>();
+
+    cost = {
+      lines: [...merged.values()].sort((a, b) => b.amount - a.amount),
+      total: roll.total,
+      finished: finished?.n ?? 0,
+      dayOfMonth: now.getUTCDate(),
+    };
+  }
+
   return c.html(
     surface(
       "settings",
       "Settings",
       "Settings — Aldershot",
-      pageHeading(
-        "Settings",
-        "Defaults, storage, and the deleted pile. Nothing here changes work you've already made.",
-      ),
+      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost }),
     ),
   );
 });
