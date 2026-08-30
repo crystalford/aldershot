@@ -127,16 +127,43 @@ function render(plan, res) {
     try {
       for (const [i, cut] of cuts.entries()) {
         const out = `${dir}/part-${String(i).padStart(4, "0")}.mp4`;
-        await runFfmpeg([
-          "-hide_banner", "-loglevel", "error",
-          // -ss before -i seeks fast, and works over http by range request —
-          // which is what makes cutting from a multi-GB remote source viable.
-          "-ss", String(cut.start_s), "-to", String(cut.end_s), "-i", cut.url,
-          "-vf", `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`,
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-          "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
-          "-avoid_negative_ts", "make_zero", "-y", out,
-        ]);
+        const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+
+        if (cut.voiceUrl) {
+          // The user talking over the clip. Their voice is the point, so the
+          // clip's own audio ducks under it rather than competing — sidechain
+          // compression, keyed off the voice, which is how this is done for
+          // real rather than just lowering a fader.
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error",
+            "-ss", String(cut.start_s), "-to", String(cut.end_s), "-i", cut.url,
+            "-i", cut.voiceUrl,
+            "-filter_complex",
+            "[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[base];" +
+              "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
+              // threshold/ratio chosen so speech pulls the bed well down but
+              // does not gate it out entirely — the clip should still be
+              // audible underneath, just clearly behind.
+              "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];" +
+              "[ducked][voice]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
+            "-map", "0:v", "-map", "[a]",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-avoid_negative_ts", "make_zero", "-y", out,
+          ]);
+        } else {
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error",
+            // -ss before -i seeks fast, and works over http by range request —
+            // which is what makes cutting from a multi-GB remote source viable.
+            "-ss", String(cut.start_s), "-to", String(cut.end_s), "-i", cut.url,
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-avoid_negative_ts", "make_zero", "-y", out,
+          ]);
+        }
         parts.push(out);
       }
 

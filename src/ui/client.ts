@@ -467,6 +467,98 @@ if (script) {
   });
 }
 
+/* ── Build: beats, seams, recording ────────────────────────────────────
+   The seam is how anything gets inserted mid-piece; recording happens in the
+   browser and only reaches the server once the user has a take they want. */
+const build = $("#build");
+if (build) {
+  const projectId = build.getAttribute("data-project");
+
+  build.addEventListener("click", async (e) => {
+    const seamBtn = e.target.closest(".seam");
+    const moveBtn = e.target.closest(".move-beat");
+    const recBtn = e.target.closest(".record");
+
+    if (seamBtn) {
+      /* A seam inserts a beat that needs the user's voice — the common case.
+         The block appears immediately with Record on it. */
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/beats", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ at: Number(seamBtn.getAttribute("data-at")), kind: "vo" }),
+        });
+        if (!res.ok) throw new Error("Couldn't add that");
+        location.reload();
+      } catch (err) { toast(err.message); }
+      return;
+    }
+
+    if (moveBtn) {
+      try {
+        const res = await fetch(
+          "/api/projects/" + projectId + "/beats/" + moveBtn.getAttribute("data-beat") + "/move",
+          { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ dir: Number(moveBtn.getAttribute("data-dir")) }) },
+        );
+        if (!res.ok) throw new Error("Couldn't move that");
+        location.reload();
+      } catch (err) { toast(err.message); }
+      return;
+    }
+
+    if (recBtn) record(recBtn);
+  });
+}
+
+/* In-browser recording for a vo or react beat.
+   Recording never touches the server until the user stops — a take they
+   abandon should cost nothing and leave nothing behind. */
+async function record(button) {
+  if (button.dataset.recording === "1") return;
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    toast("Couldn't reach your microphone");
+    return;
+  }
+
+  const beatId = button.getAttribute("data-beat");
+  const chunks = [];
+  const started = Date.now();
+  const recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+
+  const original = button.textContent;
+  button.dataset.recording = "1";
+  button.textContent = "Stop & keep";
+
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    button.dataset.recording = "0";
+    button.textContent = "Saving…";
+    try {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      const res = await fetch("/api/beats/" + beatId + "/record", {
+        method: "POST",
+        headers: { "content-type": "audio/webm", "x-duration-ms": String(Date.now() - started) },
+        body: blob,
+      });
+      if (!res.ok) throw new Error("That take didn't save");
+      location.reload();
+    } catch (err) {
+      button.textContent = original;
+      toast(err.message);
+    }
+  };
+
+  recorder.start();
+  const stop = () => { if (recorder.state !== "inactive") recorder.stop(); };
+  button.addEventListener("click", stop, { once: true });
+}
+
 /* ── Clipping ──────────────────────────────────────────────────────────
    Two ways to find a moment: a scored batch, or a search for one it missed.
    Both start a job the page then follows. */

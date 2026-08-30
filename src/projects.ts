@@ -231,7 +231,11 @@ export async function setKept(db: D1Database, clipId: string, userId: string, ke
  * sends the whole list, so a dropped request cannot leave a half-reordered
  * edit behind.
  */
-export async function putBeats(db: D1Database, projectId: string, beats: Omit<Beat, "id" | "project_id">[]): Promise<void> {
+export async function putBeats(
+  db: D1Database,
+  projectId: string,
+  beats: Array<Partial<Pick<Beat, "id">> & Omit<Beat, "id" | "project_id" | "idx">>,
+): Promise<void> {
   await db.prepare(`DELETE FROM beats WHERE project_id=?`).bind(projectId).run();
   if (!beats.length) return;
   const stmt = db.prepare(
@@ -241,7 +245,10 @@ export async function putBeats(db: D1Database, projectId: string, beats: Omit<Be
   await db.batch(
     beats.map((b, i) =>
       stmt.bind(
-        ulid(), projectId, i, b.kind, b.act ?? null, b.clip_id ?? null, b.text ?? null,
+        // Keep the id when the caller has one. Reordering must not mint new
+        // ids: a recorded take is attached to a beat BY id, so re-keying on
+        // every move would orphan the audio the user just recorded.
+        b.id || ulid(), projectId, i, b.kind, b.act ?? null, b.clip_id ?? null, b.text ?? null,
         b.struck ?? null, b.dur_ms ?? null, b.media_r2_key ?? null, b.recorded_at ?? null,
       ),
     ),
@@ -254,6 +261,58 @@ export async function saveCuts(db: D1Database, projectId: string, userId: string
   await db
     .prepare(`UPDATE v2_projects SET cuts=?, updated_at=? WHERE id=? AND user_id=?`)
     .bind(cutsJson, Date.now(), projectId, userId)
+    .run();
+}
+
+/** Inserts one beat at a position, pushing everything after it along. */
+export async function insertBeat(
+  db: D1Database,
+  projectId: string,
+  atIdx: number,
+  beat: { kind: BeatKind; text?: string | null; clip_id?: string | null; dur_ms?: number | null },
+): Promise<Beat[]> {
+  const beats = await getBeats(db, projectId);
+  const next = [...beats];
+  next.splice(Math.max(0, Math.min(atIdx, next.length)), 0, {
+    id: "",
+    project_id: projectId,
+    idx: 0,
+    kind: beat.kind,
+    act: null,
+    clip_id: beat.clip_id ?? null,
+    text: beat.text ?? null,
+    struck: null,
+    dur_ms: beat.dur_ms ?? null,
+    media_r2_key: null,
+    recorded_at: null,
+  });
+  await putBeats(db, projectId, next);
+  return getBeats(db, projectId);
+}
+
+/** Moves a beat one place. Returns the new order. */
+export async function moveBeat(db: D1Database, projectId: string, beatId: string, dir: -1 | 1): Promise<Beat[]> {
+  const beats = await getBeats(db, projectId);
+  const from = beats.findIndex((b) => b.id === beatId);
+  const to = from + dir;
+  if (from < 0 || to < 0 || to >= beats.length) return beats;
+  const next = [...beats];
+  [next[from], next[to]] = [next[to], next[from]];
+  await putBeats(db, projectId, next);
+  return getBeats(db, projectId);
+}
+
+export async function deleteBeat(db: D1Database, projectId: string, beatId: string): Promise<Beat[]> {
+  const beats = await getBeats(db, projectId);
+  await putBeats(db, projectId, beats.filter((b) => b.id !== beatId));
+  return getBeats(db, projectId);
+}
+
+/** Attaches a recorded take to a beat. */
+export async function setBeatMedia(db: D1Database, beatId: string, key: string, durMs: number): Promise<void> {
+  await db
+    .prepare(`UPDATE beats SET media_r2_key=?, recorded_at=?, dur_ms=COALESCE(?, dur_ms) WHERE id=?`)
+    .bind(key, Date.now(), durMs || null, beatId)
     .run();
 }
 

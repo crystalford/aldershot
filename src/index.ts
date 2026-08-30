@@ -20,9 +20,12 @@ import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/foo
 import { listMoments, listThreads, searchExact, searchMeaning } from "./library.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
-import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects.ts";
+import { getProject, listClipsForSource, listProjects, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
+import { renderBuild } from "./ui/pages/build.ts";
+import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
+import { placeReactions } from "./reactions.ts";
 import { runShorts } from "./shorts-job.ts";
 import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
@@ -32,8 +35,8 @@ import { currentUser } from "./user.ts";
 import { createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, getJobs } from "./jobs.ts";
-import { monthUsage } from "./usage.ts";
+import { activeJobs, createJob, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
+import { meter, monthUsage } from "./usage.ts";
 import { begin, runScore } from "./begin.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
@@ -313,6 +316,34 @@ app.get("/p/:id/:stagePath", async (c) => {
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = jobs.find((j) => j.ref_id === project.id) ?? null;
 
+  if (stage === "essay") {
+    const beats = await getBeats(c.env.DB, project.id);
+    const byClip = new Map(clips.map((cl) => [cl.id, cl]));
+    return c.html(
+      page(
+        { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Essay", shortsCtx: "editor" },
+        editorHeader({
+          projectId: project.id, title: project.title, brief: project.brief,
+          sourceTitle: source?.title ?? "", sourceFilename: source?.filename ?? null,
+          hasSource: Boolean(source), stage, clips, job,
+        }) +
+          renderBuild({
+            projectId: project.id,
+            runtimeS: beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0) / 1000,
+            beats: beats.map((b) => {
+              const clip = b.clip_id ? byClip.get(b.clip_id) : undefined;
+              return {
+                id: b.id, idx: b.idx, kind: b.kind as never, text: b.text,
+                dur_ms: b.dur_ms, media_r2_key: b.media_r2_key,
+                start_ms: clip?.start_ms ?? null,
+                frame_r2_key: clip?.frame_r2_key ?? null,
+              };
+            }),
+          }),
+      ),
+    );
+  }
+
   // Script edits the source transcript directly, so it needs the segments
   // rather than the scored clips.
   if (stage === "transcript" && source) {
@@ -445,6 +476,126 @@ app.get("/api/projects/:id/edl", async (c) => {
   const built = await edlForProject(c.env, project, user.id);
   if (!built) return c.json({ error: "no source" }, 400);
   return c.json({ cuts: built.edl.cuts, durationMs: built.edl.durationMs });
+});
+
+/* ── Beats ─────────────────────────────────────────────────────────────
+ * The edit IS the beats table, so these are the edit operations.
+ */
+app.post("/api/projects/:id/beats", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ at: number; kind: string; text: string; clipId: string }>(c);
+  const kind = (["clip", "vo", "react", "generated", "stock"] as const).find((k) => k === b.kind) ?? "vo";
+  const beats = await insertBeat(c.env.DB, project.id, Number(b.at ?? 0), {
+    kind,
+    text: b.text ?? null,
+    clip_id: b.clipId ?? null,
+  });
+  return c.json({ beats });
+});
+
+app.post("/api/projects/:id/beats/:beatId/move", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  const b = await body<{ dir: number }>(c);
+  const beats = await moveBeat(c.env.DB, project.id, c.req.param("beatId"), b.dir === 1 ? 1 : -1);
+  return c.json({ beats });
+});
+
+app.delete("/api/projects/:id/beats/:beatId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  return c.json({ beats: await deleteBeat(c.env.DB, project.id, c.req.param("beatId")) });
+});
+
+/**
+ * A recorded take. The browser records it, so this only has to store it and
+ * attach it to the beat — the recording itself never touches the server until
+ * the user has one they are happy with.
+ */
+app.post("/api/beats/:beatId/record", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const audio = await c.req.arrayBuffer();
+  if (!audio.byteLength) return c.json({ error: "empty recording" }, 400);
+
+  const beatId = c.req.param("beatId");
+  const key = `u/${user.id}/beats/${beatId}.webm`;
+  await c.env.MEDIA.put(key, audio, { httpMetadata: { contentType: "audio/webm" } });
+  await setBeatMedia(c.env.DB, beatId, key, Number(c.req.header("x-duration-ms") || 0));
+  return c.json({ ok: true, key });
+});
+
+/** Lay out a reaction: clips interleaved with lines drafted to say after them. */
+app.post("/api/projects/:id/reactions", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ about: string }>(c);
+  const about = (b.about || project.brief || "").trim();
+  if (!about) return c.json({ error: "say what you're reacting to" }, 400);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        await startJob(c.env.DB, job.id, "placing the reactions");
+        const segments = await getSegments(c.env.DB, project.source_id!);
+        const result = await placeReactions(c.env, segments, about);
+
+        const src = await getSource(c.env.DB, project.source_id!, user.id);
+        const clipBeats = result.beats.filter((x) => x.kind === "clip");
+        const saved = await saveClips(
+          c.env.DB,
+          { user_id: user.id, source_id: project.source_id!, origin: "editor", posterKey: src?.poster_r2_key ?? null },
+          clipBeats.map((x) => ({
+            start_ms: x.start_ms!, end_ms: x.end_ms!, quote: x.quote ?? "",
+            why: x.why ?? "", score: 0, heat: 0,
+          })),
+        );
+
+        // Interleave: each clip, then the line drafted to say after it.
+        const existing = await listClipsForSource(c.env.DB, project.source_id!, user.id);
+        const beats: Parameters<typeof putBeats>[2] = [];
+        let n = 0;
+        for (const rb of result.beats) {
+          if (rb.kind === "clip") {
+            const match =
+              saved.find((cl) => cl.start_ms === rb.start_ms) ??
+              existing.find((cl) => cl.start_ms === rb.start_ms);
+            beats.push({
+              kind: "clip", act: null, clip_id: match?.id ?? null, text: rb.quote ?? null,
+              struck: null, dur_ms: (rb.end_ms ?? 0) - (rb.start_ms ?? 0), media_r2_key: null, recorded_at: null,
+            });
+            n++;
+          } else {
+            beats.push({
+              kind: "react", act: null, clip_id: null, text: rb.say ?? null,
+              struck: null, dur_ms: null, media_r2_key: null, recorded_at: null,
+            });
+          }
+        }
+        await putBeats(c.env.DB, project.id, beats);
+        await meter(c.env.DB, {
+          user_id: user.id, job_id: job.id, job_type: "pass",
+          tokens_in: result.tokensIn, tokens_out: result.tokensOut,
+        });
+        await finishJob(c.env.DB, job.id);
+      } catch (err) {
+        await failJob(c.env.DB, job.id, `Couldn't place the reactions: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })(),
+  );
+  return c.json({ jobId: job.id });
 });
 
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */
