@@ -25,6 +25,7 @@ import { getProject, listClipsForSource, listProjects, putBeats, saveClips, save
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
+import { renderProjects } from "./ui/pages/projects.ts";
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
@@ -159,13 +160,52 @@ app.get("/", async (c) => {
 
 app.get("/projects", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const projects = (await listProjects(c.env.DB, user.id)).filter((p) => !p.archived_at);
+
+  /*
+   * A project's state pill is derived from its beats, not stored: "needs you"
+   * means a voice or reaction beat has no recording yet. Stored, it would go
+   * stale the moment a beat was recorded from any other surface.
+   */
+  const rows = await Promise.all(
+    projects.map(async (p) => {
+      const beats = await getBeats(c.env.DB, p.id);
+
+      /*
+       * A project has no poster of its own until it is rendered, so it borrows
+       * the frame of its first clip — a real frame from the footage, which is
+       * what the design requires. Left empty, every card on this surface was a
+       * black rectangle and the page stopped reading as a video tool.
+       */
+      let posterKey = p.poster_r2_key;
+      if (!posterKey) {
+        const firstClipId = beats.find((b) => b.clip_id)?.clip_id;
+        if (firstClipId) {
+          const clip = await c.env.DB
+            .prepare(`SELECT frame_r2_key FROM v2_clips WHERE id=?`)
+            .bind(firstClipId)
+            .first<{ frame_r2_key: string }>();
+          posterKey = clip?.frame_r2_key ?? null;
+        }
+      }
+
+      /* Runtime is the sum of the beats, for the same reason. */
+      const runtime = beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0);
+
+      return {
+        id: p.id, title: p.title, kind: p.kind, pct: p.pct,
+        runtime_s: p.runtime_s ?? (runtime ? Math.round(runtime / 1000) : null),
+        next_action: p.next_action,
+        poster_r2_key: posterKey, updated_at: p.updated_at,
+        beats: beats.length,
+        needs: beats.filter((b) => (b.kind === "vo" || b.kind === "react") && !b.media_r2_key).length,
+      };
+    }),
+  );
+
   return c.html(
-    surface(
-      "projects",
-      "Projects",
-      "Projects — Aldershot",
-      pageHeading("Projects") + emptyState("Nothing in Projects yet — start something above."),
-    ),
+    surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows)),
   );
 });
 
