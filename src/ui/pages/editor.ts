@@ -139,10 +139,27 @@ export function editorHeader(d: EditorData): string {
     ? `${hms(d.beatRuntimeMs != null ? d.beatRuntimeMs / 1000 : 0)} · ${beatCount} beat${beatCount === 1 ? "" : "s"}`
     : "";
 
-  return `<div style="display:flex;align-items:center;gap:10px">
+  const backAndPill = `<div style="display:flex;align-items:center;gap:10px">
     <a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← Footage</a>
     ${pill ? `<span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(pill.accent)};color:${pill.accent};white-space:nowrap">${pill.text}</span>` : ""}
-  </div>
+  </div>`;
+
+  /*
+   * Shorts is its own surface reached as a stage, so it leads with its own
+   * heading rather than the project's title — "Shorts from this footage", the
+   * same 24px heading Clipping uses standalone. Showing the project title here
+   * made it look like a fourth view of the cut instead of a different job.
+   */
+  if (d.stage === "shorts") {
+    return `${backAndPill}
+    ${stageTabs(d)}
+    <div style="margin-top:16px">
+      <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.02em">Shorts from this footage</div>
+      <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px">The clips you kept, cut vertical with captions. Keep the ones that land.</div>
+    </div>`;
+  }
+
+  return `${backAndPill}
   ${stageTabs(d)}
   <div style="margin-top:16px;display:flex;align-items:${isBuild ? "center" : "baseline"};gap:10px;flex-wrap:wrap">
     <div data-content style="font-size:${titleIsHeading ? SIZE.pageTitle : SIZE.body};font-weight:600;letter-spacing:${titleIsHeading ? "-0.022em" : "0"}">${esc(d.title)}</div>
