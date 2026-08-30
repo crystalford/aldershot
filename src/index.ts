@@ -10,9 +10,12 @@
  * biggest limitation, called out in that doc.
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { Env } from "./env.ts";
 import { ensureV2Schema } from "./schema.ts";
+import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
+import { renderLanding } from "./ui/pages/landing.ts";
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
@@ -44,7 +47,7 @@ import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseC
 import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
-import { currentUser } from "./user.ts";
+import { currentUser, userForEmail } from "./user.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
@@ -56,6 +59,9 @@ import { intentLabel, readIntent } from "./intent.ts";
 export { RenderContainer } from "./render.ts";
 
 const app = new Hono<{ Bindings: Env }>();
+
+/** The request context, as every route in this file sees it. */
+type Ctx = Context<{ Bindings: Env }>;
 
 /**
  * Reads a JSON body, treating a malformed one as an empty object.
@@ -89,9 +95,73 @@ function surface(view: View, screenLabel: string, title: string, body: string, s
   return page({ title, view, screenLabel, shortsCtx }, body);
 }
 
+/* ── Auth ──────────────────────────────────────────────────────────────
+   Email link only. See src/auth.ts for why there are no passwords. */
+
+/** Asks for a link. Never reveals whether the address has an account. */
+app.post("/auth/start", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const form = await c.req.parseBody();
+  const email = String(form.email ?? "").trim();
+
+  // Enough of a check to catch a typo, not a regex pretending to validate
+  // email — the link either arrives or it does not, which is the real test.
+  if (!email.includes("@") || email.length < 5) {
+    return c.redirect("/?error=email", 302);
+  }
+
+  const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
+  const { url, sent } = await startLogin(c.env, email, origin);
+
+  /*
+   * With no mail provider configured the link is only logged, so saying
+   * "check your email" would be a lie. In that case the link is handed
+   * straight back instead — which is also what makes local development work
+   * without a Resend key.
+   */
+  if (!sent) return c.redirect(`/?link=${encodeURIComponent(url)}`, 302);
+  return c.redirect(`/?sent=${encodeURIComponent(email)}`, 302);
+});
+
+/** Follows a link: proves the address, mints the session, lands on Home. */
+app.get("/auth/callback", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const token = c.req.query("token");
+  if (!token) return c.redirect("/?error=link", 302);
+
+  const email = await consumeToken(c.env, token);
+  if (!email) return c.redirect("/?error=link", 302);
+
+  const user = await userForEmail(c.env.DB, email);
+  const secure = new URL(c.req.url).protocol === "https:";
+  c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
+  return c.redirect("/", 302);
+});
+
+app.post("/auth/signout", async (c) => {
+  c.header("set-cookie", clearCookie(new URL(c.req.url).protocol === "https:"));
+  return c.redirect("/", 302);
+});
+
 app.get("/", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+
+  /*
+   * `/` is the landing site when signed out and Home when signed in
+   * (10-ROUTES-AND-KEYS.md). Same URL, so a shared link works for both.
+   */
+  const visitor = await currentUser(c.env, c.req.header("cookie"));
+  if (!visitor) {
+    return c.html(
+      renderLanding({
+        sentTo: c.req.query("sent") ?? null,
+        devLink: c.req.query("link") ?? null,
+        error: c.req.query("error") ?? null,
+      }),
+    );
+  }
+
+  const user = visitor;
   const [sources, jobs, finished, projects] = await Promise.all([
     listSources(c.env.DB, user.id),
     activeJobs(c.env.DB, user.id),
@@ -169,7 +239,7 @@ app.get("/", async (c) => {
 
 app.get("/projects", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const projects = (await listProjects(c.env.DB, user.id)).filter((p) => !p.archived_at);
 
   /*
@@ -220,7 +290,7 @@ app.get("/projects", async (c) => {
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const t = c.req.query("tab");
   const tab: FootTab =
     t === "threads" ? "threads" : t === "sources" ? "sources" : t === "find" ? "find" : "moments";
@@ -273,6 +343,26 @@ app.get("/footage", async (c) => {
 });
 
 /**
+ * The acting user, or a redirect out.
+ *
+ * A page sends a signed-out visitor to the landing site at `/`; an API call
+ * gets a 401 it can act on rather than a login page it cannot parse. Throwing
+ * rather than returning null keeps every route one line, which is what stopped
+ * the null check being forgotten somewhere.
+ */
+async function requireUser(c: Ctx) {
+  const user = await currentUser(c.env, c.req.header("cookie"));
+  if (user) return user;
+
+  if (new URL(c.req.url).pathname.startsWith("/api/")) {
+    throw new HTTPException(401, { message: "sign in" });
+  }
+  throw new HTTPException(302, {
+    res: new Response(null, { status: 302, headers: { location: "/" } }),
+  });
+}
+
+/**
  * Where the user came in from, as [label, href].
  *
  * The prototype keeps this as `cameFrom` state and renders "← " + its label,
@@ -298,7 +388,7 @@ function cameFrom(referer: string | undefined): [string, string] {
 /** One source, read. Phase 1's claim made visible. */
 app.get("/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.notFound();
 
@@ -319,7 +409,7 @@ app.get("/sources/:id", async (c) => {
  */
 app.post("/api/sources/:id/poster", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
 
@@ -349,7 +439,7 @@ app.get("/media/*", async (c) => {
 /** Re-read a source that failed, keeping everything the user already gave us. */
 app.post("/api/sources/:id/retry", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
 
@@ -362,7 +452,7 @@ app.post("/api/sources/:id/retry", async (c) => {
 
 app.get("/clipping", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const sources = await listSources(c.env.DB, user.id);
   const sourceId = c.req.query("source");
   const source = sourceId ? (sources.find((s) => s.id === sourceId) ?? null) : null;
@@ -405,7 +495,7 @@ app.get("/clipping", async (c) => {
 /** Start a Clipping batch, or search for one it missed. */
 app.post("/api/shorts", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const b = await body<{ sourceId: string; length: string; count: number; query: string }>(c);
   if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
 
@@ -441,7 +531,7 @@ const STAGE_FOR_PATH: Record<string, Stage> = {
 
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const stage = STAGE_FOR_PATH[c.req.param("stagePath")];
   if (!stage) return c.notFound();
 
@@ -608,7 +698,7 @@ app.get("/p/:id/:stagePath", async (c) => {
  */
 app.post("/api/projects/:id/cuts", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
 
@@ -638,7 +728,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
  */
 app.post("/api/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const b = await body<{ projectId: string; format: Format; aspect: Aspect }>(c);
   if (!b.projectId) return c.json({ error: "which project?" }, 400);
 
@@ -661,7 +751,7 @@ app.post("/api/renders", async (c) => {
 
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
   return c.json({ renders: await listRenders(c.env.DB, project.id) });
@@ -674,7 +764,7 @@ app.get("/api/projects/:id/renders", async (c) => {
  */
 app.get("/api/projects/:id/edl", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
   const built = await edlForProject(c.env, project, user.id);
@@ -687,7 +777,7 @@ app.get("/api/projects/:id/edl", async (c) => {
  */
 app.post("/api/projects/:id/beats", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
@@ -703,7 +793,7 @@ app.post("/api/projects/:id/beats", async (c) => {
 
 app.post("/api/projects/:id/beats/:beatId/move", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
   const b = await body<{ dir: number }>(c);
@@ -713,7 +803,7 @@ app.post("/api/projects/:id/beats/:beatId/move", async (c) => {
 
 app.delete("/api/projects/:id/beats/:beatId", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
   return c.json({ beats: await deleteBeat(c.env.DB, project.id, c.req.param("beatId")) });
@@ -726,7 +816,7 @@ app.delete("/api/projects/:id/beats/:beatId", async (c) => {
  */
 app.post("/api/beats/:beatId/record", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const audio = await c.req.arrayBuffer();
   if (!audio.byteLength) return c.json({ error: "empty recording" }, 400);
 
@@ -740,7 +830,7 @@ app.post("/api/beats/:beatId/record", async (c) => {
 /** Lay out a reaction: clips interleaved with lines drafted to say after them. */
 app.post("/api/projects/:id/reactions", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project?.source_id) return c.json({ error: "not found" }, 404);
 
@@ -811,7 +901,7 @@ app.post("/api/projects/:id/reactions", async (c) => {
  */
 app.post("/api/projects/:id/outline", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
@@ -888,7 +978,7 @@ app.post("/api/projects/:id/outline", async (c) => {
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */
 app.post("/api/clips/:id/keep", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const b = await body<{ kept: boolean }>(c);
   await setKept(c.env.DB, c.req.param("id"), user.id, Boolean(b.kept));
   return c.json({ ok: true });
@@ -905,7 +995,7 @@ app.post("/api/clips/:id/keep", async (c) => {
  */
 app.post("/api/projects/:id/shorts-from-line", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
 
@@ -934,7 +1024,7 @@ app.post("/api/projects/:id/shorts-from-line", async (c) => {
 /** An extra instruction against what the pass already found. */
 app.post("/api/projects/:id/passes", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
 
@@ -978,7 +1068,7 @@ app.get("/editor", async (c) => {
 
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const pro = user.plan !== "free";
 
   const now = new Date();
@@ -1080,7 +1170,7 @@ app.get("/settings", async (c) => {
  */
 app.post("/api/sources", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
 
   const filename = c.req.header("x-filename") || "upload.mp4";
   const body = await c.req.arrayBuffer();
@@ -1119,7 +1209,7 @@ app.post("/api/sources", async (c) => {
 /** Reserves the source row and opens the multipart upload. */
 app.post("/api/uploads", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const b = await body<{ filename: string; contentType: string }>(c);
   const filename = b.filename || "upload.mp4";
 
@@ -1131,7 +1221,7 @@ app.post("/api/uploads", async (c) => {
 /** One part. Part numbers are 1-indexed; order does not matter. */
 app.put("/api/uploads/:sourceId/parts/:n", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
 
@@ -1154,7 +1244,7 @@ app.put("/api/uploads/:sourceId/parts/:n", async (c) => {
  */
 app.post("/api/uploads/:sourceId/complete", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
 
@@ -1186,7 +1276,7 @@ app.post("/api/uploads/:sourceId/complete", async (c) => {
 /** Abandon an upload, releasing the parts R2 is still billing for. */
 app.post("/api/uploads/:sourceId/abort", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
   const uploadId = c.req.header("x-upload-id");
@@ -1197,13 +1287,13 @@ app.post("/api/uploads/:sourceId/abort", async (c) => {
 
 app.get("/api/sources", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   return c.json({ sources: await listSources(c.env.DB, user.id) });
 });
 
 app.get("/api/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
   return c.json({ source: src, segments: await getSegments(c.env.DB, src.id) });
@@ -1221,7 +1311,7 @@ app.post("/api/intent", async (c) => {
 /** Begin — one sentence becomes the right kind of work. */
 app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const b = await body<{ sourceId: string; brief: string; upgrade: boolean }>(c);
   if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
 
@@ -1251,13 +1341,13 @@ app.post("/api/begin", async (c) => {
 /** The UI polls this for honest staged progress. */
 app.get("/api/projects", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   return c.json({ projects: await listProjects(c.env.DB, user.id) });
 });
 
 app.get("/api/jobs", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   const ids = (c.req.query("ids") || "").split(",").filter(Boolean);
   return c.json({ jobs: ids.length ? await getJobs(c.env.DB, ids) : await activeJobs(c.env.DB, user.id) });
 });
@@ -1265,7 +1355,7 @@ app.get("/api/jobs", async (c) => {
 /** Owner-only real spend (05-INFRA-AND-COSTS.md; the panel itself is Phase 8). */
 app.get("/api/usage/month", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const user = await currentUser(c.env.DB);
+  const user = await requireUser(c);
   if (!user.is_owner) return c.json({ error: "not found" }, 404);
   const d = new Date();
   const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);

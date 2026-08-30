@@ -40,7 +40,22 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
-  ]
+  ],
+
+  // DEVELOPMENT ONLY. Treats an unauthenticated request as this account, so
+  // `wrangler dev` and the fidelity harness work without an inbox.
+  //
+  // It is a var rather than a code branch because there is no "am I in
+  // production" guess to get wrong — and because its presence is greppable in
+  // whatever config actually shipped. `wrangler deploy` uploads what is in
+  // this file, so this MUST be removed (or overridden per-environment) before
+  // the site is public. Real deploys set SESSION_SECRET and RESEND_API_KEY as
+  // secrets instead:
+  //   npx wrangler secret put SESSION_SECRET
+  //   npx wrangler secret put RESEND_API_KEY
+  "vars": {
+    "DEV_LOGIN_EMAIL": "chrisrobtelford@gmail.com"
+  }
 
   // Clip embeddings — powers Threads' semantic clustering (src/embeddings.ts,
   // src/threads.ts) instead of exact-tag-string matching. Unlike Containers/

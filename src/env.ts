@@ -27,6 +27,31 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
 
   /**
+   * Signs session cookies (src/auth.ts). Required in production — there is no
+   * fallback constant on purpose, because a shared default would make session
+   * forgery trivial for anyone who can read this repository.
+   *
+   *   npx wrangler secret put SESSION_SECRET
+   */
+  SESSION_SECRET?: string;
+
+  /** Sends the one-time login links. Without it, links are logged, not sent. */
+  RESEND_API_KEY?: string;
+
+  /**
+   * Public origin, e.g. https://aldershot.io. Login links are built from it so
+   * they point at the real site rather than whatever host served the request —
+   * which matters behind a proxy, and on preview deployments.
+   */
+  APP_ORIGIN?: string;
+
+  /**
+   * DEVELOPMENT ONLY. Treats every unauthenticated request as this email.
+   * Never set this in production — it disables authentication entirely.
+   */
+  DEV_LOGIN_EMAIL?: string;
+
+  /**
    * Optional higher-reasoning provider. Workers AI is the default for every
    * role (see src/models.ts); when this key is present the roles marked
    * `preferAnthropic` route to Claude instead. Absent = everything stays on

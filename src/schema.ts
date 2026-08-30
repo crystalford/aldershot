@@ -144,6 +144,19 @@ const STATEMENTS: string[] = [
      label TEXT NOT NULL, payload TEXT NOT NULL, deleted_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS trash_by_user ON trash(user_id, deleted_at)`,
+
+  /*
+   * One-time login links. Only the SHA-256 of the token is stored — the token
+   * itself exists solely in the email — so a dump of this table cannot be
+   * replayed into anyone's account.
+   */
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+     token_hash TEXT PRIMARY KEY,
+     email TEXT NOT NULL,
+     expires_at INTEGER NOT NULL,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS auth_tokens_expiry ON auth_tokens(expires_at)`,
 ];
 
 /**

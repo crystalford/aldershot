@@ -19,7 +19,15 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const PROTO = fs.readFileSync(path.join(ROOT, 'design/Aldershot.dc.html'), 'utf8');
+/*
+ * Both prototypes. The app is Aldershot.dc.html; the signed-out marketing site
+ * is Landing.dc.html, and it has its own palette (#0C0C0F section grounds) and
+ * its own width (1080px, not the app's 960). Checking src/ui/pages/landing.ts
+ * against the app prototype alone reported both of those as inventions.
+ */
+const APP_PROTO = fs.readFileSync(path.join(ROOT, 'design/Aldershot.dc.html'), 'utf8');
+const LANDING_PROTO = fs.readFileSync(path.join(ROOT, 'design/Landing.dc.html'), 'utf8');
+const PROTO = APP_PROTO + '\n' + LANDING_PROTO;
 const TOKENS = fs.readFileSync(path.join(ROOT, 'src/ui/tokens.ts'), 'utf8');
 
 let findings = 0;
@@ -307,7 +315,10 @@ async function checkStrings() {
     // No page module may set its own PAGE width. `min-width:min(200px,100%)`
     // on a flex child is fine and appears throughout the prototype — what is
     // banned is a surface declaring its own column or a wide max-width.
-    const rogue = UI_FILES.filter((f) => !f.endsWith('shell.ts') && !f.endsWith('tokens.ts'))
+    // landing.ts is the signed-out marketing site, not an app surface. It is a
+    // full standalone document with its own 1080px column, straight out of
+    // Landing.dc.html — the 960 law governs the app shell.
+    const rogue = UI_FILES.filter((f) => !f.endsWith('shell.ts') && !f.endsWith('tokens.ts') && !f.endsWith('landing.ts'))
       .filter((f) => {
         const src = fs.readFileSync(f, 'utf8');
         if (/(?<!min-)width:\s*min\(9\d\dpx/.test(src)) return true;

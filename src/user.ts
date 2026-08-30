@@ -1,18 +1,20 @@
 /**
  * The current user.
  *
- * Real auth is Phase 9 (email link, per 06-BUILD-PLAN.md). Until then this is
- * a single-account product — 05-INFRA-AND-COSTS.md says as much: "single-user
- * first, so keep it simple".
+ * Every row in this product is scoped by user_id and always has been, so
+ * Phase 9 was a change to how the id is resolved rather than a retrofit across
+ * the codebase — which is exactly what cost this project time once already.
  *
- * It is deliberately a real row in a real table rather than a hardcoded
- * constant, so that every query is already scoped by user_id and Phase 9 is a
- * change to how the id is resolved, not a retrofit across the codebase. That
- * retrofit is exactly what cost this project time once already.
+ * Resolution order:
+ *   1. A valid signed session cookie.
+ *   2. DEV_LOGIN_EMAIL, when set. Development only, and it must never be set
+ *      in production — see src/auth.ts.
+ *   3. Nobody. The caller sends them to the landing page.
  */
 
 import { ulid } from "./id.ts";
 import type { Plan } from "./plans.ts";
+import { type AuthEnv, cookieFrom, readSession } from "./auth.ts";
 
 export interface User {
   id: string;
@@ -23,21 +25,46 @@ export interface User {
   created_at: number;
 }
 
-const OWNER_EMAIL = "owner@aldershot.io";
+/**
+ * The one account that sees the cost panel.
+ *
+ * Matched on the address rather than a flag passed in at signup, so the first
+ * person to type it is the owner and nobody else can claim it by registering
+ * a lookalike.
+ */
+const OWNER_EMAIL = "chrisrobtelford@gmail.com";
 
-/** Resolves the acting user, creating the owner row on first run. */
-export async function currentUser(db: D1Database): Promise<User> {
-  const existing = await db.prepare(`SELECT * FROM v2_users WHERE email=?`).bind(OWNER_EMAIL).first<User>();
+/** A display name from an address, used until the user sets one. */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const first = local.split(/[._-]+/)[0] ?? local;
+  return first ? first.charAt(0).toUpperCase() + first.slice(1) : "You";
+}
+
+export async function getUserById(db: D1Database, id: string): Promise<User | null> {
+  return await db.prepare(`SELECT * FROM v2_users WHERE id=?`).bind(id).first<User>();
+}
+
+/**
+ * Finds or creates the account for an email address.
+ *
+ * Called on a proven login, so creating on first sight IS the signup — there
+ * is no separate register step in an email-link product.
+ */
+export async function userForEmail(db: D1Database, emailRaw: string): Promise<User> {
+  const email = emailRaw.trim().toLowerCase();
+  const existing = await db.prepare(`SELECT * FROM v2_users WHERE email=?`).bind(email).first<User>();
   if (existing) return existing;
 
+  const isOwner = email === OWNER_EMAIL;
   const user: User = {
     id: ulid(),
-    email: OWNER_EMAIL,
-    name: "Chris",
+    email,
+    name: nameFromEmail(email),
     // The owner is on Studio so caps never block their own testing, and
     // is_owner gates the cost panel (03-DATA-MODEL.md).
-    plan: "studio",
-    is_owner: 1,
+    plan: isOwner ? "studio" : "free",
+    is_owner: isOwner ? 1 : 0,
     created_at: Date.now(),
   };
   await db
@@ -45,4 +72,24 @@ export async function currentUser(db: D1Database): Promise<User> {
     .bind(user.id, user.email, user.name, user.plan, user.is_owner, user.created_at)
     .run();
   return user;
+}
+
+/**
+ * The acting user, or null when nobody is signed in.
+ *
+ * Returning null rather than throwing keeps the decision with the route: a
+ * page redirects to the landing site, an API returns 401.
+ */
+export async function currentUser(env: AuthEnv, cookieHeader?: string): Promise<User | null> {
+  const userId = await readSession(env, cookieFrom(cookieHeader));
+  if (userId) {
+    const user = await getUserById(env.DB, userId);
+    if (user) return user;
+    // A cookie whose user no longer exists is not an error — it is a stale
+    // cookie, and the caller should treat it as signed out.
+    return null;
+  }
+
+  if (env.DEV_LOGIN_EMAIL) return await userForEmail(env.DB, env.DEV_LOGIN_EMAIL);
+  return null;
 }
