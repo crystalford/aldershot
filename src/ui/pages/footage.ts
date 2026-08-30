@@ -24,7 +24,22 @@ export interface SourceRow {
   created_at: number;
 }
 
-/** m:ss, or h:mm:ss past an hour. Mono, like every other number in the design. */
+/**
+ * A POSITION in the source: zero-padded, "03:38" / "1:02:47".
+ *
+ * Distinct from hms() on purpose. The prototype pads positions but not
+ * durations — "03:42 in the original" against "0:42" for how long a clip
+ * runs — and mixing them makes columns of timecodes fail to line up.
+ */
+export function tc(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${String(m).padStart(2, "0")}:${sec}`;
+}
+
+/** A DURATION: m:ss, or h:mm:ss past an hour. Unpadded. */
 export function hms(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);

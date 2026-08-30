@@ -132,6 +132,40 @@ async function checkStrings() {
   const normalise = (s) => s.replace(/\s+/g, ' ').replace(/[\u2019']/g, "'").trim();
   const proto = normalise(PROTO.replace(/<[^>]+>/g, ' '));
   const protoRaw = normalise(PROTO);
+
+  /*
+   * Exact text nodes from the prototype, so a SHORT string has to match a
+   * whole label rather than merely appear somewhere.
+   *
+   * This exists because "THE WORDS" passed while the prototype says "EDITING
+   * THE WORDS" — a substring match, and a real defect that shipped. Long prose
+   * still matches by substring, since it is often assembled from fragments,
+   * but a short label now has to be a label that exists.
+   */
+  /*
+   * A SHORT string has to sit on a real boundary in the prototype — wrapped in
+   * quotes, or alone between two tags. Merely appearing somewhere is not
+   * enough: "THE WORDS" passed that way while the prototype says "EDITING THE
+   * WORDS", and the wrong pill shipped.
+   *
+   * Boundary matching rather than parsing, because scanning 4,000 lines for
+   * quote PAIRS misaligns after any odd quote and silently loses real strings —
+   * it dropped every stage-tab label when tried.
+   */
+  const SHORT = 24;
+  const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const onBoundary = (t) => {
+    const re = new RegExp(`(?:"|'|>)\\s*${escapeRe(t)}\\s*(?:"|'|<)`);
+    return re.test(PROTO);
+  };
+
+  /* The arrow is a glyph; the prototype assembles these as "← " + surface name. */
+  const strip = (t) => t.replace(/^[\u2190]\s*/, "");
+  const known = (t) => {
+    const v = strip(t);
+    return v.length <= SHORT ? onBoundary(v) : proto.includes(v) || protoRaw.includes(v);
+  };
+
   const suspect = [];
   const seen = new Set();
 
@@ -181,14 +215,31 @@ async function checkStrings() {
       if (!/[a-z]{3}/.test(text)) continue;
       if (seen.has(text)) continue;
       seen.add(text);
-      if (proto.includes(text) || protoRaw.includes(text)) continue;
+      if (known(text)) continue;
       // Strings that interpolate a value ("Welcome, Chris. …") can never match
       // whole, because the prototype holds them as templates. Fall back to
       // sentence fragments: every fragment long enough to carry real wording
       // must still be found verbatim. Short fragments (a name, a count, a
       // greeting stub) are allowed through — they are the interpolated part.
       const fragments = text.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+      /*
+       * Fragments of an interpolated string are deliberately partial, so they
+       * match by substring. The fallback below is gated so this looseness
+       * cannot also excuse a short wrong label.
+       */
       const has = (fr) => proto.includes(fr) || protoRaw.includes(fr);
+
+      /*
+       * Only strings that plausibly interpolate get the fallback: more than
+       * one sentence, or a digit somewhere. Without this gate, a single short
+       * label like "THE WORDS" slips through by being under the fragment
+       * length threshold — which is exactly how it shipped once already.
+       */
+      const looksInterpolated = /\d/.test(text) || text.split(/(?<=[.!?])\s+/).filter(Boolean).length > 1;
+      if (!looksInterpolated) {
+        suspect.push(`${route}  "${text}"`);
+        continue;
+      }
 
       /*
        * Two acceptable reasons a fragment won't match whole, both distinct

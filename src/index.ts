@@ -423,9 +423,13 @@ app.get("/p/:id/:stagePath", async (c) => {
             // a 70-second transcript displayed as 19 hours.
             originalS: source.duration_s ?? (segments.at(-1)?.end_ms ?? 0) / 1000,
             afterS: runtimeAfterCuts(segments, cuts),
-            fillersRemoved: fillerCuts(segments).every((f) =>
-              cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0]),
-            ) && fillerCuts(segments).length > 0,
+            posterKey: source.poster_r2_key,
+            fillersRemoved:
+              fillerCuts(segments).length > 0 &&
+              fillerCuts(segments).every((f) => cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0])),
+            pausesTightened:
+              pauseCuts(segments).length > 0 &&
+              pauseCuts(segments).every((f) => cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0])),
           }),
       ),
     );

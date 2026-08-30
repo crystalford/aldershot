@@ -13,7 +13,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
 import { esc } from "../shell.ts";
-import { hms } from "./footage.ts";
+import { hms, tc } from "./footage.ts";
 
 export type Stage = "cut" | "essay" | "transcript" | "shorts";
 
@@ -70,7 +70,7 @@ function stageTabs(d: EditorData): string {
 const STAGE_PILL: Record<Stage, string> = {
   cut: "PICKING WHAT STAYS",
   essay: "BUILDING IT UP",
-  transcript: "THE WORDS",
+  transcript: "EDITING THE WORDS",
   shorts: "SHORTS FROM THIS",
 };
 
@@ -84,16 +84,24 @@ export function editorHeader(d: EditorData): string {
   const kept = d.clips.filter((c) => c.kept).length;
   const runtimeMs = d.clips.filter((c) => c.kept).reduce((n, c) => n + (c.end_ms - c.start_ms), 0);
 
+  /*
+   * Script demotes the project title to 13.5px, because "Trim it by text" is
+   * that page's heading. Pick keeps it at 24px, where it IS the heading.
+   * Same header component, different emphasis — matching the prototype rather
+   * than rendering one size everywhere.
+   */
+  const titleIsHeading = d.stage !== "transcript";
+
   return `<div style="display:flex;align-items:center;gap:10px">
     <a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← Footage</a>
     <span style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.cyan)};color:${ACCENT.cyan};white-space:nowrap">${STAGE_PILL[d.stage]}</span>
   </div>
   ${stageTabs(d)}
   <div style="margin-top:16px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-    <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.title)}</div>
+    <div data-content style="font-size:${titleIsHeading ? SIZE.pageTitle : SIZE.body};font-weight:600;letter-spacing:${titleIsHeading ? "-0.022em" : "0"}">${esc(d.title)}</div>
     <span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono}">${esc(d.sourceFilename ?? d.sourceTitle)}</span>
-    <span style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
-    <span style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>
+    ${titleIsHeading ? `<span style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
+    <span style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>` : ""}
   </div>`;
 }
 
@@ -142,7 +150,7 @@ function skippedStretch(fromMs: number, toMs: number): string {
   const secs = Math.round((toMs - fromMs) / 1000);
   if (secs < 1) return "";
   return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:${RADIUS.button};background:repeating-linear-gradient(-45deg,#101014 0 7px,#131317 7px 14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-    <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.3)">${hms(fromMs / 1000)} – ${hms(toMs / 1000)}</span>
+    <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.3)">${tc(fromMs / 1000)} – ${tc(toMs / 1000)}</span>
     <span style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3)">skipped</span>
   </div>`;
 }
@@ -174,7 +182,7 @@ function block(c: EditorClip, i: number, total: number): string {
   return `<div data-clip="${esc(c.id)}" data-kept="${kept ? 1 : 0}" style="display:flex;gap:14px;padding:16px;border-radius:${RADIUS.card};background:${C.surface};${kept ? "" : "opacity:.55;"}">
     <div style="flex:none;width:92px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
       ${frame}
-      <span style="position:absolute;left:4px;bottom:3px;font-size:9.5px;font-family:${FONT.mono};background:rgba(0,0,0,.6);border-radius:2px;padding:1px 4px">${hms(c.start_ms / 1000)}</span>
+      <span style="position:absolute;left:4px;bottom:3px;font-size:9.5px;font-family:${FONT.mono};background:rgba(0,0,0,.6);border-radius:2px;padding:1px 4px">${tc(c.start_ms / 1000)}</span>
     </div>
     <div style="flex:1;min-width:0">
       <div data-content style="font-size:${SIZE.body};line-height:1.5;color:${C.ink};${kept ? "" : "text-decoration:line-through;text-decoration-color:rgba(236,236,241,0.35);"}">${esc(c.quote)}</div>
@@ -206,7 +214,7 @@ function preview(d: EditorData): string {
     ${frame}
     <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,0) 35%,rgba(0,0,0,.65) 100%)"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:${SIZE.meta};font-weight:600;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:4px">Preview the cut</div>
-    <div data-content style="position:absolute;top:10px;right:12px;font-size:${SIZE.meta};font-family:${FONT.mono};background:rgba(0,0,0,.45);padding:3px 8px;border-radius:4px">${hms(first.start_ms / 1000)} in the original</div>
+    <div data-content style="position:absolute;top:10px;right:12px;font-size:${SIZE.meta};font-family:${FONT.mono};background:rgba(0,0,0,.45);padding:3px 8px;border-radius:4px">${tc(first.start_ms / 1000)} in the original</div>
     <div data-content style="position:absolute;left:14px;right:14px;bottom:14px;font-size:${SIZE.body};line-height:1.45">${esc(first.quote.slice(0, 140))}</div>
     <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(10,10,11,.55);display:grid;place-items:center">${iconPlay(15)}</span>
   </div>`;
