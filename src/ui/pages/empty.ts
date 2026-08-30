@@ -7,8 +7,8 @@
  * has to look finished (01-PRODUCT.md "States that must exist in the build").
  */
 
-import { C, RADIUS, SIZE } from "../tokens";
-import { esc } from "../shell";
+import { C, RADIUS, SIZE } from "../tokens.ts";
+import { esc } from "../shell.ts";
 
 /**
  * The standard empty block: one plain-spoken line saying what will fill it.

@@ -13,7 +13,7 @@
  * transcript, which nobody notices until an export is wrong.
  */
 
-import type { WhisperSegment, WhisperWord } from "./transcribe";
+import type { WhisperSegment, WhisperWord } from "./transcribe.ts";
 
 /**
  * Two hours. The measured ceiling for a single call is around four

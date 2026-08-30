@@ -11,28 +11,28 @@
  */
 
 import { Hono } from "hono";
-import type { Env } from "./env";
-import { ensureV2Schema } from "./schema";
-import { page, type ShortsCtx, type View } from "./ui/shell";
-import { renderHome } from "./ui/pages/home";
-import { emptyState, pageHeading } from "./ui/pages/empty";
-import { renderFootage, type FootTab } from "./ui/pages/footage";
-import { renderSource } from "./ui/pages/source";
-import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor";
-import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects";
-import { renderScript } from "./ui/pages/script";
-import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts";
-import { CLIENT_JS } from "./ui/client";
-import { currentUser } from "./user";
-import { createSource, getSegments, getSource, listSources } from "./sources";
-import { readSource } from "./ingest";
-import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload";
-import { activeJobs, createJob, getJobs } from "./jobs";
-import { monthUsage } from "./usage";
-import { begin, runScore } from "./begin";
-import { intentLabel, readIntent } from "./intent";
+import type { Env } from "./env.ts";
+import { ensureV2Schema } from "./schema.ts";
+import { page, type ShortsCtx, type View } from "./ui/shell.ts";
+import { renderHome } from "./ui/pages/home.ts";
+import { emptyState, pageHeading } from "./ui/pages/empty.ts";
+import { renderFootage, type FootTab } from "./ui/pages/footage.ts";
+import { renderSource } from "./ui/pages/source.ts";
+import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
+import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects.ts";
+import { renderScript } from "./ui/pages/script.ts";
+import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
+import { CLIENT_JS } from "./ui/client.ts";
+import { currentUser } from "./user.ts";
+import { createSource, getSegments, getSource, listSources } from "./sources.ts";
+import { readSource } from "./ingest.ts";
+import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
+import { activeJobs, createJob, getJobs } from "./jobs.ts";
+import { monthUsage } from "./usage.ts";
+import { begin, runScore } from "./begin.ts";
+import { intentLabel, readIntent } from "./intent.ts";
 
-export { RenderContainer } from "./render";
+export { RenderContainer } from "./render.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 

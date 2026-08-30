@@ -10,7 +10,7 @@
  * Cost is then a query, never a running total anyone has to maintain.
  */
 
-import { ulid } from "./id";
+import { ulid } from "./id.ts";
 
 /**
  * Unit prices, 2026-08. Everything is priced per source minute where possible,

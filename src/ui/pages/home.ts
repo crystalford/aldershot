@@ -17,9 +17,9 @@
  * to show.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens";
-import { iconPlus } from "../icons";
-import { esc } from "../shell";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
+import { iconPlus } from "../icons.ts";
+import { esc } from "../shell.ts";
 
 /** The three example sentences shown in a fresh account. Copied verbatim. */
 const TRY_CHIPS = [

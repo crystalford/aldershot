@@ -7,8 +7,8 @@
  * block and its children). Every value is copied, not chosen.
  */
 
-import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, SIZE } from "./tokens";
-import { iconBell, iconSearch } from "./icons";
+import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, SIZE } from "./tokens.ts";
+import { iconBell, iconSearch } from "./icons.ts";
 
 /** The prototype's `view` strings. Routing maps URLs onto these (10-ROUTES-AND-KEYS.md). */
 export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";

@@ -1,4 +1,4 @@
-import type { RenderContainer } from "./render";
+import type { RenderContainer } from "./render.ts";
 
 /** Shared Cloudflare bindings for the Aldershot Worker. */
 export interface Env {

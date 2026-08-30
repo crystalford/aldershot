@@ -11,7 +11,7 @@
  * from our own segments, so a line the model invented can never reach the UI.
  */
 
-import type { Segment } from "./sources";
+import type { Segment } from "./sources.ts";
 
 export interface ScoredClip {
   start_ms: number;

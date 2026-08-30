@@ -7,9 +7,9 @@
  * (05-INFRA-AND-COSTS.md §Permanence). `deleted_at` only.
  */
 
-import { ulid } from "./id";
-import type { WhisperSegment } from "./transcribe";
-import { reconcile } from "./transcribe";
+import { ulid } from "./id.ts";
+import type { WhisperSegment } from "./transcribe.ts";
+import { reconcile } from "./transcribe.ts";
 
 export type TranscriptState = "pending" | "running" | "ready" | "failed";
 

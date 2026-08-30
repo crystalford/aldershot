@@ -7,14 +7,14 @@
  * transcript using the sentence as the brief.
  */
 
-import type { Env } from "./env";
-import { INTENT_KIND, readIntent, type Intent } from "./intent";
-import { advance, createJob, failJob, finishJob, startJob } from "./jobs";
-import { createProject, putBeats, saveClips, titleFromBrief } from "./projects";
-import { scorePass } from "./score";
-import { getSegments, getSource } from "./sources";
-import { meter } from "./usage";
-import { ulid } from "./id";
+import type { Env } from "./env.ts";
+import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
+import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
+import { createProject, putBeats, saveClips, titleFromBrief } from "./projects.ts";
+import { scorePass } from "./score.ts";
+import { getSegments, getSource } from "./sources.ts";
+import { meter } from "./usage.ts";
+import { ulid } from "./id.ts";
 
 export interface BeginResult {
   intent: Intent;

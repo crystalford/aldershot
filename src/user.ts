@@ -11,8 +11,8 @@
  * retrofit is exactly what cost this project time once already.
  */
 
-import { ulid } from "./id";
-import type { Plan } from "./plans";
+import { ulid } from "./id.ts";
+import type { Plan } from "./plans.ts";
 
 export interface User {
   id: string;

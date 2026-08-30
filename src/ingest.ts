@@ -8,12 +8,12 @@
  * is worse than not having a cap.
  */
 
-import type { Env } from "./env";
-import { advance, createJob, failJob, finishJob, startJob } from "./jobs";
-import { meter } from "./usage";
-import { checkCap, type Plan } from "./plans";
-import { transcribeObject } from "./transcribe";
-import { saveSegments, setTranscriptState, type Source } from "./sources";
+import type { Env } from "./env.ts";
+import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
+import { meter } from "./usage.ts";
+import { checkCap, type Plan } from "./plans.ts";
+import { transcribeObject } from "./transcribe.ts";
+import { saveSegments, setTranscriptState, type Source } from "./sources.ts";
 
 export interface IngestOpts {
   plan: Plan;

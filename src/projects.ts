@@ -7,8 +7,8 @@
  * "no timeline" is true in the database as well as in the UI.
  */
 
-import { ulid } from "./id";
-import type { ScoredClip } from "./grounding";
+import { ulid } from "./id.ts";
+import type { ScoredClip } from "./grounding.ts";
 
 export type ProjectKind = "cut" | "reaction" | "essay" | "idea";
 export type BeatKind = "clip" | "vo" | "react" | "generated" | "stock";

@@ -9,10 +9,10 @@
  * /p/:id/*. This view is the reading surface underneath them.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens";
-import { esc } from "../shell";
-import { hms, type SourceRow } from "./footage";
-import { emptyState } from "./empty";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
+import { esc } from "../shell.ts";
+import { hms, type SourceRow } from "./footage.ts";
+import { emptyState } from "./empty.ts";
 
 export interface SegmentRow {
   idx: number;

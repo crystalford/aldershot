@@ -11,12 +11,12 @@
  * than taken from the model's output.
  */
 
-import type { Env } from "./env";
-import { resolveModel } from "./models";
-import type { Segment } from "./sources";
-import { groundClips, parseClips, usageTokens, type ScoredClip } from "./grounding";
+import type { Env } from "./env.ts";
+import { resolveModel } from "./models.ts";
+import type { Segment } from "./sources.ts";
+import { groundClips, parseClips, usageTokens, type ScoredClip } from "./grounding.ts";
 
-export { groundClips, parseClips, type ScoredClip } from "./grounding";
+export { groundClips, parseClips, type ScoredClip } from "./grounding.ts";
 
 /** What the model is asked to return. Kept strict and small. */
 const SCHEMA = {

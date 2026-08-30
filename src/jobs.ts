@@ -8,8 +8,8 @@
  * Every `advance()` here is called from the code that actually did the work.
  */
 
-import { ulid } from "./id";
-import type { JobType } from "./usage";
+import { ulid } from "./id.ts";
+import type { JobType } from "./usage.ts";
 
 export type JobState = "queued" | "running" | "ready" | "failed";
 

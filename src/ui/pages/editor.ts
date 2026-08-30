@@ -10,10 +10,10 @@
  * phrased by me.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens";
-import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons";
-import { esc } from "../shell";
-import { hms } from "./footage";
+import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
+import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
+import { esc } from "../shell.ts";
+import { hms } from "./footage.ts";
 
 export type Stage = "cut" | "essay" | "transcript" | "shorts";
 

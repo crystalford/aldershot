@@ -10,10 +10,10 @@
  * line. Both go through the same undo-wrapped handler as everything else.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens";
-import { esc } from "../shell";
-import { hms } from "./footage";
-import { isSegmentCut, isWordCut, parseWords, type Cut } from "../../cuts";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
+import { esc } from "../shell.ts";
+import { hms } from "./footage.ts";
+import { isSegmentCut, isWordCut, parseWords, type Cut } from "../../cuts.ts";
 
 export interface ScriptSegment {
   idx: number;

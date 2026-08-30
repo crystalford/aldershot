@@ -14,10 +14,10 @@
  *    actually billed rather than an estimate.
  */
 
-import type { Env } from "./env";
-import { TRANSCRIBE, TRANSCRIBE_DIARIZED } from "./models";
-import { CHUNK_MS, OVERLAP_MS, joinText, stitch, type ChunkTranscript } from "./longaudio";
-import { indexMp3Chunks } from "./mp3";
+import type { Env } from "./env.ts";
+import { TRANSCRIBE, TRANSCRIBE_DIARIZED } from "./models.ts";
+import { CHUNK_MS, OVERLAP_MS, joinText, stitch, type ChunkTranscript } from "./longaudio.ts";
+import { indexMp3Chunks } from "./mp3.ts";
 
 /** A word and its timing, as Whisper returns it. */
 export interface WhisperWord {

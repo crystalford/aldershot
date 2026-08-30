@@ -7,9 +7,9 @@
  * they show their real empty states rather than a fabricated preview.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens";
-import { esc } from "../shell";
-import { emptyState, pageHeading } from "./empty";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
+import { esc } from "../shell.ts";
+import { emptyState, pageHeading } from "./empty.ts";
 
 export type FootTab = "moments" | "threads" | "sources";
 

@@ -4,7 +4,7 @@
  * read a file directly. Needs the R2 API token secrets; returns null if absent.
  */
 import { AwsClient } from "aws4fetch";
-import type { Env } from "./env";
+import type { Env } from "./env.ts";
 
 const BUCKET = "aldershot-media";
 
