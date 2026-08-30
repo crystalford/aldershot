@@ -21,6 +21,9 @@ import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects.ts";
 import { renderScript } from "./ui/pages/script.ts";
+import { renderClipping } from "./ui/pages/clipping.ts";
+import { runShorts } from "./shorts-job.ts";
+import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
@@ -191,15 +194,65 @@ app.post("/api/sources/:id/retry", async (c) => {
 
 app.get("/clipping", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const sources = await listSources(c.env.DB, user.id);
+  const sourceId = c.req.query("source");
+  const source = sourceId ? (sources.find((s) => s.id === sourceId) ?? null) : null;
+
+  // Only what Clipping produced — the editor's kept clips are a different
+  // thing and belong in Footage, not mixed in here.
+  const shorts = source
+    ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
+    : [];
+  const jobs = await activeJobs(c.env.DB, user.id);
+  const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
+
   return c.html(
     surface(
       "shorts",
       "Clipping",
       "Clipping — Aldershot",
-      pageHeading("Clipping") + emptyState("Drop a video, or clip one you already have"),
+      renderClipping({
+        source: source
+          ? { id: source.id, title: source.title, duration_s: source.duration_s, transcript_state: source.transcript_state }
+          : null,
+        available: sources.map((s) => ({
+          id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
+        })),
+        shorts,
+        job,
+        fromEditor: false,
+      }),
       "nav",
     ),
   );
+});
+
+/** Start a Clipping batch, or search for one it missed. */
+app.post("/api/shorts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const b = await body<{ sourceId: string; length: string; count: number; query: string }>(c);
+  if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
+
+  const src = await getSource(c.env.DB, b.sourceId, user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  // The UI sends the label ("30–60s"); map it back to the id it stands for.
+  const length = (CLIP_LENGTHS.find((l) => l.name === b.length || l.id === b.length)?.id ?? "30-60") as ClipLength;
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "shorts", ref_id: src.id });
+  c.executionCtx.waitUntil(
+    runShorts(c.env, {
+      userId: user.id,
+      sourceId: src.id,
+      jobId: job.id,
+      length,
+      count: Number(b.count) || 8,
+      query: b.query,
+    }),
+  );
+  return c.json({ jobId: job.id });
 });
 
 /* ── The editor ────────────────────────────────────────────────────────

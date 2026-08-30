@@ -467,6 +467,93 @@ if (script) {
   });
 }
 
+/* ── Clipping ──────────────────────────────────────────────────────────
+   Two ways to find a moment: a scored batch, or a search for one it missed.
+   Both start a job the page then follows. */
+const clipForm = document.querySelector(".clip-form");
+if (clipForm) {
+  /* The chips are radios, so keyboard and form semantics come for free; the
+     visual state has to follow the checked one. */
+  clipForm.addEventListener("change", () => {
+    clipForm.querySelectorAll("input[type=radio]").forEach((input) => {
+      const chip = input.nextElementSibling;
+      if (!chip) return;
+      chip.style.background = input.checked ? "#2E2E36" : "#17171B";
+      chip.style.color = input.checked ? "#ECECF1" : "rgba(236,236,241,0.55)";
+    });
+  });
+
+  clipForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = clipForm.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = "Finding clips…";
+    const data = new FormData(clipForm);
+    try {
+      const res = await fetch("/api/shorts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceId: clipForm.getAttribute("data-source"),
+          length: data.get("length"),
+          count: Number(data.get("count")),
+        }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || "That didn't run");
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Find clips";
+      toast(err.message);
+    }
+  });
+}
+
+const askForm = document.querySelector(".clip-ask");
+if (askForm) {
+  askForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = askForm.querySelector('input[name="q"]');
+    const button = askForm.querySelector('button[type="submit"]');
+    const q = input.value.trim();
+    if (!q) return;
+    button.disabled = true;
+    button.textContent = "Looking…";
+    try {
+      const res = await fetch("/api/shorts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: askForm.getAttribute("data-source"), query: q }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || "That didn't run");
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Find it";
+      toast(err.message);
+    }
+  });
+}
+
+/* Following a Clipping run. */
+const clipJob = $("#clipping-job");
+if (clipJob) {
+  const sourceId = clipJob.getAttribute("data-source");
+  const tick = async () => {
+    try {
+      const { jobs } = await (await fetch("/api/jobs")).json();
+      const job = jobs.find((j) => j.ref_id === sourceId);
+      if (!job) { location.reload(); return; }
+      const label = clipJob.querySelector("span:last-child");
+      if (label && job.stage_label) label.textContent = job.stage_label;
+      setTimeout(tick, 2000);
+    } catch { setTimeout(tick, 5000); }
+  };
+  setTimeout(tick, 1500);
+}
+
 /* ── Watching a source being read ──────────────────────────────────────
    Polls the job rather than guessing, and reloads once the transcript is
    actually there. Nothing here animates on a timer. */
