@@ -17,9 +17,17 @@ const VB = 'viewBox="0 0 24 24"';
 /**
  * Stroke width does NOT scale proportionally: thinner renderings get a heavier
  * stroke so optical weight stays constant (09-ICONS.md "Rules").
+ *
+ * These are the prototype's measured values, not a curve fitted to them. An
+ * earlier version returned a single 2.3 for everything at or below 11px, which
+ * is inside the doc's stated 2.2-2.4 band and still wrong in both directions:
+ * every 10px icon rendered too light and every 11px icon too heavy. The
+ * geometry check never caught it because it only compares path data.
  */
 function strokeWidthFor(px: number): string {
-  return px <= 11 ? "2.3" : "2";
+  if (px <= 10) return "2.4";
+  if (px === 11) return "2.2";
+  return "2";
 }
 
 interface StrokeOpts {

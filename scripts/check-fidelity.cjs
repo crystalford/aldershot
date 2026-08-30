@@ -212,7 +212,12 @@ async function checkStrings() {
       if (/\bdata-content\b/.test(m[2])) continue;
       const text = normalise(m[3]);
       if (text.length < 8) continue;
-      if (!/[a-z]{3}/.test(text)) continue;
+      // Three LETTERS, either case. This was /[a-z]{3}/, which skipped every
+      // all-caps label in the product — so the stage pills were never checked
+      // and an invented "SHORTS FROM THIS" pill shipped on a surface where the
+      // prototype has no pill at all. Timecodes and counts are still skipped,
+      // which is all the filter was ever for.
+      if (!/[A-Za-z]{3}/.test(text)) continue;
       if (seen.has(text)) continue;
       seen.add(text);
       if (known(text)) continue;

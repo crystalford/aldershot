@@ -41,6 +41,13 @@ export interface EditorData {
   clips: EditorClip[];
   /** Live scoring job, when the pass is still running. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
+  /** cut | reaction | essay | idea. Drives Build's kind chip and lede. */
+  kind: string;
+  /** Build only: what the runtime label and lede report. */
+  beatCount?: number;
+  beatRuntimeMs?: number;
+  /** The tail of Build's lede — "3 voiceovers to go." or "every beat is filled." */
+  summary?: string;
 }
 
 /**
@@ -67,12 +74,40 @@ function stageTabs(d: EditorData): string {
     .join("")}</div>`;
 }
 
-const STAGE_PILL: Record<Stage, string> = {
-  cut: "PICKING WHAT STAYS",
-  essay: "BUILDING IT UP",
-  transcript: "EDITING THE WORDS",
-  shorts: "SHORTS FROM THIS",
+/*
+ * The stage pill, and its colour. Shorts has NO pill in the prototype — it
+ * leads with a 24px heading instead — so it is absent here rather than given
+ * an invented one. The colour is per-stage and was hardcoded cyan until this
+ * was checked against the prototype: only "PICKING WHAT STAYS" is cyan.
+ */
+const STAGE_PILL: Record<Stage, { text: string; accent: string } | null> = {
+  cut: { text: "PICKING WHAT STAYS", accent: ACCENT.cyan },
+  essay: { text: "BUILDING IT UP", accent: ACCENT.gold },
+  transcript: { text: "EDITING THE WORDS", accent: ACCENT.gold },
+  shorts: null,
 };
+
+/**
+ * The kind chip beside the title on Build. Green for a cut, red for a
+ * reaction, gold for an essay — the same three the prototype uses.
+ */
+const KIND_ACCENT: Record<string, string> = {
+  cut: ACCENT.green,
+  reaction: ACCENT.red,
+  essay: ACCENT.gold,
+  idea: ACCENT.gold,
+};
+
+/** The line under Build's title, which varies by what is being made. */
+function ledeFor(kind: string): string {
+  if (kind === "reaction") {
+    return "Laid out from your brief — the clips it flagged, with your reaction slots placed between them.";
+  }
+  if (kind === "cut") {
+    return "Block by block — clips from your footage, your voice bridging between them —";
+  }
+  return "Built act by act. Every beat is a clip from your footage, your own voice, or a visual it makes —";
+}
 
 /**
  * The header every stage shares: back link, stage pill, tab bar, title and
@@ -91,18 +126,36 @@ export function editorHeader(d: EditorData): string {
    * than rendering one size everywhere.
    */
   const titleIsHeading = d.stage !== "transcript";
+  const pill = STAGE_PILL[d.stage];
+
+  /*
+   * Build carries its own meta: a kind chip beside the title, "1:47 · 5 beats"
+   * on the right, and a lede underneath. Pick shows the source filename and a
+   * kept count instead. Same header, different right-hand side.
+   */
+  const isBuild = d.stage === "essay";
+  const beatCount = d.beatCount ?? 0;
+  const runtimeLabel = isBuild
+    ? `${hms(d.beatRuntimeMs != null ? d.beatRuntimeMs / 1000 : 0)} · ${beatCount} beat${beatCount === 1 ? "" : "s"}`
+    : "";
 
   return `<div style="display:flex;align-items:center;gap:10px">
     <a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← Footage</a>
-    <span style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.cyan)};color:${ACCENT.cyan};white-space:nowrap">${STAGE_PILL[d.stage]}</span>
+    ${pill ? `<span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(pill.accent)};color:${pill.accent};white-space:nowrap">${pill.text}</span>` : ""}
   </div>
   ${stageTabs(d)}
-  <div style="margin-top:16px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+  <div style="margin-top:16px;display:flex;align-items:${isBuild ? "center" : "baseline"};gap:10px;flex-wrap:wrap">
     <div data-content style="font-size:${titleIsHeading ? SIZE.pageTitle : SIZE.body};font-weight:600;letter-spacing:${titleIsHeading ? "-0.022em" : "0"}">${esc(d.title)}</div>
-    <span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono}">${esc(d.sourceFilename ?? d.sourceTitle)}</span>
-    ${titleIsHeading ? `<span style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
-    <span style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>` : ""}
-  </div>`;
+    ${
+      isBuild
+        ? `<span data-content style="font-size:${SIZE.meta};padding:2px 7px;border-radius:4px;background:${accentBg(KIND_ACCENT[d.kind] ?? ACCENT.gold)};color:${KIND_ACCENT[d.kind] ?? ACCENT.gold}">${esc(d.kind.charAt(0).toUpperCase() + d.kind.slice(1))}</span>
+           <span data-content style="margin-left:auto;font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono};white-space:nowrap;flex:none">${runtimeLabel}</span>`
+        : `<span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono}">${esc(d.sourceFilename ?? d.sourceTitle)}</span>
+           ${titleIsHeading ? `<span style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
+           <span style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>` : ""}`
+    }
+  </div>
+  ${isBuild ? `<div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px">${ledeFor(d.kind)} ${esc(d.summary ?? "every beat is filled.")}</div>` : ""}`;
 }
 
 /**

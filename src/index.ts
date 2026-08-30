@@ -24,7 +24,7 @@ import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
-import { renderBuild } from "./ui/pages/build.ts";
+import { renderBuild, buildSummary } from "./ui/pages/build.ts";
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
@@ -376,16 +376,23 @@ app.get("/p/:id/:stagePath", async (c) => {
         editorHeader({
           projectId: project.id, title: project.title, brief: project.brief,
           sourceTitle: source?.title ?? "", sourceFilename: source?.filename ?? null,
-          hasSource: Boolean(source), stage, clips, job,
+          hasSource: Boolean(source), stage, clips, job, kind: project.kind,
+          beatCount: beats.length,
+          beatRuntimeMs: beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0),
+          summary: buildSummary(beats, project.kind),
         }) +
           renderBuild({
             projectId: project.id,
-            runtimeS: beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0) / 1000,
+            hasActs: Boolean(project.has_acts),
+            playIdx: 0,
             beats: beats.map((b) => {
               const clip = b.clip_id ? byClip.get(b.clip_id) : undefined;
               return {
-                id: b.id, idx: b.idx, kind: b.kind as never, text: b.text,
+                id: b.id, idx: b.idx, kind: b.kind as never, act: b.act, text: b.text,
                 dur_ms: b.dur_ms, media_r2_key: b.media_r2_key,
+                clip_id: b.clip_id,
+                quote: clip?.quote ?? null,
+                sourceFilename: source?.filename ?? null,
                 start_ms: clip?.start_ms ?? null,
                 frame_r2_key: clip?.frame_r2_key ?? null,
               };
@@ -405,6 +412,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Transcript editor", shortsCtx: "editor" },
         editorHeader({
           projectId: project.id,
+          kind: project.kind,
           title: project.title,
           brief: project.brief,
           sourceTitle: source.title,
@@ -442,6 +450,7 @@ app.get("/p/:id/:stagePath", async (c) => {
       { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Cutting room", shortsCtx: "editor" },
       renderEditor({
         cleanUps,
+        kind: project.kind,
         projectId: project.id,
         title: project.title,
         brief: project.brief,
@@ -689,13 +698,26 @@ app.post("/api/projects/:id/outline", async (c) => {
           moments.map((m) => ({ id: m.id, quote: m.quote, source_title: m.source_title })),
         );
 
+        /*
+         * A clip beat's length is the clip's length — it is known here and
+         * must be written, because Build's timecodes, its runtime label and
+         * the width of every segment in the preview scrubber all read from
+         * dur_ms. Left null, the whole surface renders "0:00" and the scrubber
+         * shows equal-width blocks that mean nothing.
+         */
+        const byId = new Map(moments.map((m) => [m.id, m]));
         await putBeats(
           c.env.DB,
           project.id,
-          outline.beats.map((be: EssayBeat) => ({
-            kind: be.kind, act: be.act, clip_id: be.clip_id ?? null, text: be.text,
-            struck: null, dur_ms: null, media_r2_key: null, recorded_at: null,
-          })),
+          outline.beats.map((be: EssayBeat) => {
+            const clip = be.clip_id ? byId.get(be.clip_id) : undefined;
+            return {
+              kind: be.kind, act: be.act, clip_id: be.clip_id ?? null, text: be.text,
+              struck: null,
+              dur_ms: clip ? clip.end_ms - clip.start_ms : null,
+              media_r2_key: null, recorded_at: null,
+            };
+          }),
         );
         await c.env.DB.prepare(`UPDATE v2_projects SET has_acts=1, updated_at=? WHERE id=?`)
           .bind(Date.now(), project.id).run();
