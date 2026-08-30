@@ -48,6 +48,13 @@ export interface EditorData {
   beatRuntimeMs?: number;
   /** The tail of Build's lede — "3 voiceovers to go." or "every beat is filled." */
   summary?: string;
+  /*
+   * Where the user came in from, as [label, href]. The prototype builds this
+   * back link as "← " + originOf(), so it says Footage when you arrived from
+   * Footage and Clipping when you arrived from Clipping. Hardcoding Footage
+   * sent people somewhere they had never been.
+   */
+  cameFrom?: [string, string];
 }
 
 /**
@@ -139,8 +146,10 @@ export function editorHeader(d: EditorData): string {
     ? `${hms(d.beatRuntimeMs != null ? d.beatRuntimeMs / 1000 : 0)} · ${beatCount} beat${beatCount === 1 ? "" : "s"}`
     : "";
 
+  const [backLabel, backHref] = d.cameFrom ?? ["Home", "/"];
+
   const backAndPill = `<div style="display:flex;align-items:center;gap:10px">
-    <a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← Footage</a>
+    <a href="${backHref}" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← ${backLabel}</a>
     ${pill ? `<span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(pill.accent)};color:${pill.accent};white-space:nowrap">${pill.text}</span>` : ""}
   </div>`;
 

@@ -50,3 +50,22 @@ test("the three kinds are reported in the prototype's order", () => {
   const beats = [beat({ kind: "generated" }), beat(), beat({ kind: "vo" })];
   assert.equal(buildSummary(beats), "1 voiceover, 1 clip, 1 visual to go.");
 });
+
+/*
+ * A hand-picked clip has no score, no heat and no reason — a person chose it,
+ * a model did not. The type allowed none of those to be null until Script grew
+ * a "Make a short" action, which is the first thing in the product that
+ * creates a clip without a pass behind it.
+ */
+test("a hand-picked clip is allowed to have no score", () => {
+  const clip: import("../src/grounding.ts").ScoredClip = {
+    start_ms: 0,
+    end_ms: 1000,
+    quote: "a line someone chose",
+    why: null,
+    score: null,
+    heat: null,
+  };
+  assert.equal(clip.score, null);
+  assert.equal(clip.quote, "a line someone chose");
+});

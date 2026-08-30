@@ -440,9 +440,32 @@ if (script) {
     }
   }
 
-  script.addEventListener("click", (e) => {
+  script.addEventListener("click", async (e) => {
     const word = e.target.closest(".w");
     const segBtn = e.target.closest(".seg-cut");
+    const shortBtn = e.target.closest(".make-short");
+
+    /* Make a short out of the line you are reading, without leaving Script.
+       The clip goes to Footage like any other, so the button confirms in
+       place and links there rather than navigating away mid-edit. */
+    if (shortBtn) {
+      shortBtn.disabled = true;
+      try {
+        const res = await fetch("/api/projects/" + script.getAttribute("data-project") + "/shorts-from-line", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ segIdx: Number(shortBtn.getAttribute("data-seg")) }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Couldn't make that");
+        shortBtn.textContent = data.made ? "Short made ✓" : "Already saved ✓";
+        shortBtn.style.color = "#5EC98F";
+      } catch (err) {
+        shortBtn.disabled = false;
+        toast(err.message || "Couldn't make that");
+      }
+      return;
+    }
 
     if (word) {
       const payload = { kind: "word", seg: Number(word.getAttribute("data-seg")), word: Number(word.getAttribute("data-word")) };

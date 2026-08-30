@@ -17,9 +17,16 @@ export interface ScoredClip {
   start_ms: number;
   end_ms: number;
   quote: string;
-  why: string;
-  score: number;
-  heat: number;
+  /*
+   * Null when the clip was hand-picked. 03-DATA-MODEL.md says so of `score`
+   * ("null when hand-picked"), and the same is true of the other three: a
+   * model supplies a reason and a score, a person does not. Requiring them
+   * would force a made-up score onto a clip a human chose, which is exactly
+   * the kind of invented number the cost panel and the feed avoid elsewhere.
+   */
+  why: string | null;
+  score: number | null;
+  heat: number | null;
 }
 
 /**

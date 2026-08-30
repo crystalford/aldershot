@@ -272,6 +272,29 @@ app.get("/footage", async (c) => {
   );
 });
 
+/**
+ * Where the user came in from, as [label, href].
+ *
+ * The prototype keeps this as `cameFrom` state and renders "← " + its label,
+ * so the editor sends you back where you actually were. Server-rendered there
+ * is no such state, so the Referer carries it — and when it is absent or
+ * off-site the answer is Home, which is the prototype's own default.
+ */
+function cameFrom(referer: string | undefined): [string, string] {
+  const path = (() => {
+    try {
+      return new URL(referer ?? "").pathname;
+    } catch {
+      return "";
+    }
+  })();
+
+  if (path.startsWith("/footage") || path.startsWith("/sources/")) return ["Footage", "/footage?tab=sources"];
+  if (path.startsWith("/clipping")) return ["Clipping", "/clipping"];
+  if (path.startsWith("/projects")) return ["Projects", "/projects"];
+  return ["Home", "/"];
+}
+
 /** One source, read. Phase 1's claim made visible. */
 app.get("/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -488,6 +511,7 @@ app.get("/p/:id/:stagePath", async (c) => {
           projectId: project.id, title: project.title, brief: project.brief,
           sourceTitle: source?.title ?? "", sourceFilename: source?.filename ?? null,
           hasSource: Boolean(source), stage, clips, job, kind: project.kind,
+          cameFrom: cameFrom(c.req.header("referer")),
           beatCount: beats.length,
           beatRuntimeMs: beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0),
           summary: buildSummary(beats, project.kind),
@@ -524,6 +548,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         editorHeader({
           projectId: project.id,
           kind: project.kind,
+          cameFrom: cameFrom(c.req.header("referer")),
           title: project.title,
           brief: project.brief,
           sourceTitle: source.title,
@@ -562,6 +587,7 @@ app.get("/p/:id/:stagePath", async (c) => {
       renderEditor({
         cleanUps,
         kind: project.kind,
+        cameFrom: cameFrom(c.req.header("referer")),
         projectId: project.id,
         title: project.title,
         brief: project.brief,
@@ -866,6 +892,43 @@ app.post("/api/clips/:id/keep", async (c) => {
   const b = await body<{ kept: boolean }>(c);
   await setKept(c.env.DB, c.req.param("id"), user.id, Boolean(b.kept));
   return c.json({ ok: true });
+});
+
+/**
+ * Make a short out of one transcript line.
+ *
+ * Script is where you are already reading the words, so turning a line you
+ * just read into a clip should not mean going somewhere else and finding it
+ * again. The clip is `origin: "manual"` — it was chosen by hand, so it has no
+ * score, and the library shows it beside the scored ones without pretending a
+ * model picked it.
+ */
+app.post("/api/projects/:id/shorts-from-line", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ segIdx: number }>(c);
+  const segments = await getSegments(c.env.DB, project.source_id);
+  const seg = segments.find((x) => x.idx === b.segIdx);
+  if (!seg) return c.json({ error: "no such line" }, 404);
+
+  const source = await getSource(c.env.DB, project.source_id, user.id);
+  const saved = await saveClips(
+    c.env.DB,
+    {
+      user_id: user.id,
+      source_id: project.source_id,
+      origin: "manual",
+      posterKey: source?.poster_r2_key ?? null,
+    },
+    [{ start_ms: seg.start_ms, end_ms: seg.end_ms, quote: seg.text, why: null, score: null, heat: null }],
+  );
+
+  // saveClips drops anything that overlaps a clip we already hold, so an empty
+  // result means the moment is already in the library — not a failure.
+  return c.json({ ok: true, made: saved.length > 0, clip: saved[0] ?? null });
 });
 
 /** An extra instruction against what the pass already found. */

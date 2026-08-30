@@ -108,7 +108,7 @@ export async function findShorts(
   return {
     // Highest-scoring first: Clipping is a triage surface, so the best should
     // be the first thing watched.
-    clips: enforceLength(grounded, len.min, len.max).sort((a, b) => b.score - a.score).slice(0, count),
+    clips: enforceLength(grounded, len.min, len.max).sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).slice(0, count),
     tokensIn,
     tokensOut,
     model: model.id,
@@ -161,5 +161,5 @@ export function searchTranscript(segments: Segment[], query: string, padMs = 200
       heat: 0,
     });
   }
-  return hits.sort((a, b) => b.score - a.score);
+  return hits.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
 }

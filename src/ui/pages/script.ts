@@ -59,13 +59,22 @@ function line(s: ScriptSegment, cuts: Cut[]): string {
         .join(" ")
     : `<span style="${lineCut ? "color:rgba(236,236,241,0.3);text-decoration:line-through;" : ""}">${esc(s.text)}</span>`;
 
+  /*
+   * A cut line dims to #141417 rather than going transparent. Transparent let
+   * the page background through, so a cut line lost its card entirely and the
+   * column stopped reading as a list of takes.
+   */
   return `<div class="seg-row" data-seg="${s.idx}" style="display:flex;gap:14px;padding:11px 14px;border-radius:8px;background:${
-    lineCut ? "transparent" : C.surface
+    lineCut ? "#141417" : C.surface
   };margin-bottom:3px">
     <button class="seg-cut" data-seg="${s.idx}" title="Cut this line" style="flex:none;width:44px;padding-top:3px;background:none;border:none;text-align:left;cursor:pointer;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.3)">${tc(s.start_ms / 1000)}</button>
     <div style="flex:1;min-width:0">
-      ${s.speaker ? `<div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-bottom:3px">${esc(s.speaker)}</div>` : ""}
-      <div data-content style="line-height:1.6;font-size:${SIZE.body};color:${C.ink}">${body}</div>
+      ${s.speaker ? `<div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-bottom:3px">${esc(s.speaker)}</div>` : ""}
+      <div data-content style="line-height:1.6;font-size:15.5px;color:${C.ink}">${body}</div>
+    </div>
+    <div style="flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:16px">
+      <button class="seg-cut" data-seg="${s.idx}" style="font-size:${SIZE.secondary};color:${lineCut ? "rgba(236,236,241,0.4)" : ACCENT.gold};font-weight:500;background:none;border:none;cursor:pointer;padding:0;font-family:${FONT.ui}">${lineCut ? "Restore" : "Cut"}</button>
+      <button class="make-short" data-seg="${s.idx}" style="font-size:11.5px;color:rgba(236,236,241,0.4);cursor:pointer;white-space:nowrap;background:none;border:none;padding:0;font-family:${FONT.ui}">Make a short</button>
     </div>
   </div>`;
 }

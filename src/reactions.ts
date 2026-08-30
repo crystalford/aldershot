@@ -116,7 +116,7 @@ export async function placeReactions(
       start_ms: clip.start_ms,
       end_ms: clip.end_ms,
       quote: clip.quote,
-      why: clip.why,
+      why: clip.why ?? undefined,
     });
     // Nearest drafted line for this range — the grounded start may have been
     // clamped to the transcript's own bounds.
