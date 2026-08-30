@@ -8,7 +8,7 @@ name: Deploy to Cloudflare
 
 on:
   push:
-    branches: [claude/aldershot-project-status-32ntv2]
+    branches: [claude/aldershot-v2-rebuild]
   workflow_dispatch: {}
 
 jobs:
@@ -27,6 +27,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          APP_ORIGIN: ${{ secrets.APP_ORIGIN }}
         run: |
           set -euo pipefail
 
@@ -58,6 +61,26 @@ jobs:
           echo "==> Storage CORS (first, so it lands regardless of the deploy step)"
           node scripts/set-cors.mjs || true
 
+          echo "==> Refusing to ship the auth bypass"
+          # DEV_LOGIN_EMAIL treats every unauthenticated visitor as the owner.
+          # It belongs in .dev.vars, which is never uploaded. If it has crept
+          # back into the deployed config, stop here — shipping it would leave
+          # the live site with no authentication at all.
+          # Comments are stripped first: this file EXPLAINS why the var must not
+          # be here, and a plain grep matched that explanation and failed every
+          # deploy. Check what wrangler actually parses, not the prose.
+          if node -e '
+            const fs=require("fs");
+            const src=fs.readFileSync("wrangler.jsonc","utf8").replace(/^\s*\/\/.*$/gm,"");
+            const vars=(JSON.parse(src).vars)||{};
+            if ("DEV_LOGIN_EMAIL" in vars) process.exit(1);
+          '; then
+            echo "  (no auth bypass in the deployed config)"
+          else
+            echo "DEV_LOGIN_EMAIL is a real var in wrangler.jsonc. It disables auth. Move it to .dev.vars."
+            exit 1
+          fi
+
           echo "==> Deploying"
           npx wrangler deploy
 
@@ -66,3 +89,19 @@ jobs:
           put_secret R2_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
           put_secret R2_ACCESS_KEY_ID "${R2_ACCESS_KEY_ID:-}"
           put_secret R2_SECRET_ACCESS_KEY "${R2_SECRET_ACCESS_KEY:-}"
+          put_secret RESEND_API_KEY "${RESEND_API_KEY:-}"
+          put_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
+          put_secret APP_ORIGIN "${APP_ORIGIN:-}"
+
+          # Sessions are signed with this. src/auth.ts refuses to sign without
+          # it rather than falling back to a constant, so a deploy that skipped
+          # it would serve a site nobody could sign in to.
+          #
+          # Generated once and then left alone: rotating it invalidates every
+          # session, so it is only written when absent.
+          echo "==> Session secret"
+          if npx wrangler secret list 2>/dev/null | grep -q SESSION_SECRET; then
+            echo "  (already set — leaving it alone, rotating would sign everyone out)"
+          else
+            head -c 32 /dev/urandom | base64 | tr -d '\n' | npx wrangler secret put SESSION_SECRET
+          fi
