@@ -17,6 +17,11 @@ import { page, type ShortsCtx, type View } from "./ui/shell";
 import { renderHome } from "./ui/pages/home";
 import { emptyState, pageHeading } from "./ui/pages/empty";
 import { CLIENT_JS } from "./ui/client";
+import { currentUser } from "./user";
+import { createSource, getSegments, getSource, listSources } from "./sources";
+import { readSource } from "./ingest";
+import { activeJobs, createJob, getJobs } from "./jobs";
+import { monthUsage } from "./usage";
 
 export { RenderContainer } from "./render";
 
@@ -125,5 +130,84 @@ app.get("/settings", async (c) => {
     ),
   );
 });
+
+
+/* ── Ingest (Phase 1) ───────────────────────────────────────────────────
+ * Upload → read. The transcript is what makes a source usable, so it is the
+ * only thing on this path; probe and frames are sequenced separately so a
+ * source becomes readable without waiting on thumbnails.
+ */
+
+/**
+ * Creates the source row and streams the upload into R2 in one request.
+ *
+ * Multipart/resumable upload is still to come (06-BUILD-PLAN Phase 1 calls for
+ * it) and matters for the 45–180 minute files this is really for; a single PUT
+ * is enough to exercise the whole read path end to end today.
+ */
+app.post("/api/sources", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+
+  const filename = c.req.header("x-filename") || "upload.mp4";
+  const body = await c.req.arrayBuffer();
+  if (!body.byteLength) return c.json({ error: "empty upload" }, 400);
+
+  const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
+  await c.env.MEDIA.put(src.r2_key, body);
+
+  // Reading happens AFTER the response so the user sees staged progress
+  // instead of a hung request — an hour of footage takes minutes, and the
+  // design is explicit that every long operation shows its stage.
+  //
+  // waitUntil is the right shape but the wrong lifetime: it is still bounded
+  // by the request's limits. Queues (04-API-AND-JOBS.md §Job pipeline) are the
+  // real home for this, and the client contract does not change when it moves
+  // there — it already polls /api/jobs for the id it gets back here.
+  const durationHeader = Number(c.req.header("x-duration-s") || 0);
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
+  const opts = {
+    plan: user.plan,
+    diarize: c.req.header("x-diarize") === "1",
+    knownDurationS: durationHeader || undefined,
+    jobId: job.id,
+  };
+  c.executionCtx.waitUntil(readSource(c.env, src, opts).then(() => undefined));
+
+  return c.json({ source: src, jobId: job.id });
+});
+
+app.get("/api/sources", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  return c.json({ sources: await listSources(c.env.DB, user.id) });
+});
+
+app.get("/api/sources/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+  return c.json({ source: src, segments: await getSegments(c.env.DB, src.id) });
+});
+
+/** The UI polls this for honest staged progress. */
+app.get("/api/jobs", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const ids = (c.req.query("ids") || "").split(",").filter(Boolean);
+  return c.json({ jobs: ids.length ? await getJobs(c.env.DB, ids) : await activeJobs(c.env.DB, user.id) });
+});
+
+/** Owner-only real spend (05-INFRA-AND-COSTS.md; the panel itself is Phase 8). */
+app.get("/api/usage/month", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  if (!user.is_owner) return c.json({ error: "not found" }, 404);
+  const d = new Date();
+  const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  return c.json(await monthUsage(c.env.DB, user.id, since));
+});
+
 
 export default app;
