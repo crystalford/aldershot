@@ -311,7 +311,14 @@ async function checkStrings() {
       .filter((f) => {
         const src = fs.readFileSync(f, 'utf8');
         if (/(?<!min-)width:\s*min\(9\d\dpx/.test(src)) return true;
-        const wide = [...src.matchAll(/max-width:\s*(\d+)px/g)].some((m) => Number(m[1]) >= 600);
+        // A wide max-width is a page column UNLESS the prototype uses that
+        // exact measure itself — it sets prose measures (max-width:640px on a
+        // paragraph, 600px on the empty-state card) that are not columns. Same
+        // rule the hex check uses: the prototype is the authority, not a
+        // number chosen here.
+        const wide = [...src.matchAll(/max-width:\s*(\d+)px/g)].some(
+          (m) => Number(m[1]) >= 600 && !PROTO.includes(`max-width:${m[1]}px`),
+        );
         return wide;
       });
     if (rogue.length) fail('layout', 'A page sets its own width. Every surface uses the shell column.', rogue.map((f) => path.relative(ROOT, f)).join('\n'));

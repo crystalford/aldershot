@@ -44,6 +44,30 @@ export async function listMoments(db: D1Database, userId: string, limit = 60): P
 }
 
 /**
+ * Which clips are in which thread. Footage's thread chips filter the grid, and
+ * a clip can sit in more than one thread, so this is a set per clip rather
+ * than a column on the clip.
+ */
+export async function threadIdsByClip(db: D1Database, userId: string): Promise<Map<string, string[]>> {
+  const { results } = await db
+    .prepare(
+      `SELECT ct.clip_id, ct.thread_id FROM v2_clip_threads ct
+        JOIN v2_clips c ON c.id = ct.clip_id
+       WHERE c.user_id = ? AND c.deleted_at IS NULL`,
+    )
+    .bind(userId)
+    .all<{ clip_id: string; thread_id: string }>();
+
+  const out = new Map<string, string[]>();
+  for (const r of results ?? []) {
+    const list = out.get(r.clip_id);
+    if (list) list.push(r.thread_id);
+    else out.set(r.clip_id, [r.thread_id]);
+  }
+  return out;
+}
+
+/**
  * Exact search — the words that were said.
  *
  * Matches the clip's quote and the source's title. Terms are AND-ed, so adding

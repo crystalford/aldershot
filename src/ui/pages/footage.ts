@@ -12,7 +12,7 @@ import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
 import { iconSearch } from "../icons.ts";
 
-export type FootTab = "moments" | "threads" | "sources";
+export type FootTab = "moments" | "threads" | "sources" | "find";
 
 export interface SourceRow {
   id: string;
@@ -65,20 +65,52 @@ function stateChip(state: SourceRow["transcript_state"]): string {
   return `<span style="flex:none;font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${color}">${esc(label)}</span>`;
 }
 
-function tabs(active: FootTab): string {
+/*
+ * The tabs are named for what is behind them, and carry their counts:
+ * "Clips · 23". They were "Moments / Threads / Sources", which is the
+ * vocabulary of the data model rather than the product's — and the Find tab
+ * was missing altogether. A count of null renders bare, which is why Find has
+ * no number.
+ */
+function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string {
   const items: Array<[FootTab, string]> = [
-    ["moments", "Moments"],
+    ["moments", "Clips"],
     ["threads", "Threads"],
-    ["sources", "Sources"],
+    ["sources", "Videos"],
+    ["find", "Find"],
   ];
-  return `<div style="display:flex;gap:20px;margin-top:22px;border-bottom:1px solid ${C.hairline}">${items
-    .map(
-      ([id, label]) =>
-        `<a href="/footage?tab=${id}" style="padding-bottom:10px;font-size:${SIZE.body};font-weight:500;color:${
-          id === active ? C.ink : C.ink45
-        };border-bottom:2px solid ${id === active ? C.ink : "transparent"};margin-bottom:-1px">${label}</a>`,
-    )
+  return `<div style="margin-top:18px;display:flex;gap:4px;border-bottom:1px solid ${C.hairline}">${items
+    .map(([id, label]) => {
+      const n = counts[id];
+      return `<a href="/footage?tab=${id}" style="font-size:${SIZE.body};font-weight:500;padding:9px 14px;color:${
+        id === active ? C.ink : C.ink45
+      };border-bottom:2px solid ${id === active ? C.ink : "transparent"};margin-bottom:-1px;white-space:nowrap">${label}${n == null ? "" : ` · ${n}`}</a>`;
+    })
     .join("")}</div>`;
+}
+
+/**
+ * The thread filter chips above the clip grid — a coloured dot, the thread's
+ * name, and its count in mono. "Everything" leads and is selected by default.
+ * The dot colour comes from the thread's position, so a thread keeps the same
+ * colour everywhere it appears.
+ */
+const THREAD_DOTS = [ACCENT.gold, ACCENT.violet, ACCENT.green, ACCENT.cyan, ACCENT.red];
+
+function threadChips(threads: ThreadRow[], total: number, active: string | null): string {
+  const chip = (name: string, count: number, dot: string, href: string, on: boolean) =>
+    `<a href="${href}" style="display:flex;align-items:center;gap:7px;font-size:${SIZE.secondary};padding:7px 13px;border-radius:${RADIUS.button};background:${on ? C.active : C.pill};color:${on ? C.ink : C.ink70};font-weight:500;white-space:nowrap">
+      <span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span>${esc(name)} <span data-content style="color:${C.ink32};font-family:${FONT.mono};font-size:${SIZE.meta}">${count}</span>
+    </a>`;
+
+  return `<div style="margin-top:24px;display:flex;gap:6px;flex-wrap:wrap">
+    ${chip("Everything", total, C.ink45, "/footage?tab=moments", !active)}
+    ${threads
+      .map((t, i) =>
+        chip(t.name, t.clip_count, THREAD_DOTS[i % THREAD_DOTS.length], `/footage?tab=moments&thread=${encodeURIComponent(t.id)}`, active === t.id),
+      )
+      .join("")}
+  </div>`;
 }
 
 function sourceRow(s: SourceRow): string {
@@ -132,24 +164,32 @@ export type SearchMode = "meaning" | "exact";
  * kind of clip, exact searches the words that were said.
  */
 function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
-  const placeholder =
-    mode === "meaning"
-      ? "Describe the kind of clip — “when he admits something he shouldn't”"
-      : "Search the words that were said…";
+  /*
+   * One placeholder, not two. The prototype asks the same question either way
+   * — the mode chips below say how it will be answered — and swapping the
+   * prompt on mode change made the field feel like two different controls.
+   */
+  const placeholder = "Search clips or ask — “every contradiction” · “studio visuals”";
 
-  const toggle = (m: SearchMode, label: string) =>
-    `<a href="/footage?tab=${tab}&mode=${m}${q ? `&q=${encodeURIComponent(q)}` : ""}" style="font-size:${SIZE.meta};padding:4px 9px;border-radius:${RADIUS.button};background:${
-      m === mode ? C.active : "transparent"
-    };color:${m === mode ? C.ink : C.ink45};white-space:nowrap">${label}</a>`;
+  /* Chips, below the field: "By meaning" / "Exact words". */
+  const chip = (m: SearchMode, label: string) =>
+    `<a href="/footage?tab=${tab}&mode=${m}${q ? `&q=${encodeURIComponent(q)}` : ""}" style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${
+      m === mode ? C.active : C.pill
+    };color:${m === mode ? C.ink : "rgba(236,236,241,0.5)"};white-space:nowrap">${label}</a>`;
 
-  return `<form method="GET" action="/footage" style="margin-top:18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  return `<form method="GET" action="/footage">
     <input type="hidden" name="tab" value="${tab}"/>
     <input type="hidden" name="mode" value="${mode}"/>
-    <div style="flex:1 1 320px;min-width:min(280px,100%);display:flex;align-items:center;gap:9px;background:${C.surface};border-radius:${RADIUS.input};padding:8px 12px">
-      ${iconSearch({ size: 14, stroke: "rgba(236,236,241,0.4)" })}
-      <input name="q" value="${esc(q)}" placeholder="${esc(placeholder)}" style="flex:1;background:transparent;border:none;outline:none;color:${C.ink};font-size:13px;font-family:${FONT.ui}"/>
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1 1 280px;min-width:min(260px,100%)">
+        <div style="display:flex;align-items:center;gap:8px;background:${C.raised};border-radius:${RADIUS.card};padding:9px 13px;box-shadow:0 0 0 1px ${C.hairline}">
+          ${iconSearch({ size: 14, stroke: "rgba(236,236,241,0.4)" })}
+          <input name="q" value="${esc(q)}" placeholder="${esc(placeholder)}" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};font-family:${FONT.ui}"/>
+        </div>
+      </div>
+      <label style="flex:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap">Upload<input type="file" accept="video/*" id="footageUpload" style="display:none"/></label>
     </div>
-    <div style="display:flex;gap:4px;flex:none">${toggle("meaning", "meaning")}${toggle("exact", "exact")}</div>
+    <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${chip("meaning", "By meaning")}${chip("exact", "Exact words")}</div>
   </form>`;
 }
 
@@ -192,12 +232,15 @@ export interface FootageData {
   q: string;
   /** True when meaning search is asked for but the index is not available. */
   meaningUnavailable: boolean;
+  /** The thread being filtered to, or null for "Everything". */
+  thread: string | null;
 }
 
 export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
-    tabs(tab);
+    searchBox(tab, "meaning", "") +
+    tabs(tab, { sources: sources.length });
 
   if (tab === "sources") {
     if (!sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
@@ -213,10 +256,39 @@ export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
 }
 
 /** The full surface, with Moments and Threads filled from the library. */
+/**
+ * Find — a moment in a video you don't have yet. Reads a URL's public
+ * captions, text only, and hands back timestamps you can grab yourself.
+ *
+ * The panel is built to the design; the caption reader behind it is not wired
+ * up yet, so the button says so rather than failing silently. Same honesty as
+ * the meaning-search notice.
+ */
+function findPanel(): string {
+  return `<div style="margin-top:24px;padding:20px;border-radius:11px;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,184,201,0.18)">
+    <div data-content style="font-size:${SIZE.body};font-weight:600">Find a moment in a video you don't have yet</div>
+    <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">Paste a link and we read its public captions — text only, nothing downloaded. Search it in plain language and you get exact timestamps back. Grab those segments yourself, drop them in Footage, and they behave like everything else here.</div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <input placeholder="https://www.youtube.com/watch?v=…" disabled style="flex:1 1 260px;min-width:min(240px,100%);background:#101014;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};font-family:${FONT.mono};padding:10px 12px;border-radius:6px"/>
+      <button type="button" disabled style="font-size:${SIZE.secondary};font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink45};flex:none;white-space:nowrap;border:none;font-family:${FONT.ui}">Read the captions</button>
+    </div>
+    <div style="margin-top:12px;font-size:${SIZE.secondary};color:${C.ink45}">Reading captions from a link isn't switched on yet.</div>
+  </div>`;
+}
+
 export function renderFootageFull(d: FootageData): string {
+  /*
+   * Order matters and was wrong: the search field and Upload sit directly
+   * under the subtitle, ABOVE the tabs, because they act on the whole library
+   * rather than on the tab you happen to be looking at. Built below the tabs,
+   * search read as a filter for one list.
+   */
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
-    tabs(d.tab);
+    searchBox(d.tab, d.mode, d.q) +
+    tabs(d.tab, { moments: d.moments.length, threads: d.threads.length, sources: d.sources.length });
+
+  if (d.tab === "find") return head + findPanel();
 
   if (d.tab === "sources") {
     if (!d.sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
@@ -232,9 +304,6 @@ export function renderFootageFull(d: FootageData): string {
     );
   }
 
-  // Moments.
-  const search = searchBox(d.tab, d.mode, d.q);
-
   // Meaning search needs the embeddings index. When it is unavailable, say so
   // and fall back to exact rather than silently returning worse results and
   // letting the user think the library is empty.
@@ -242,14 +311,20 @@ export function renderFootageFull(d: FootageData): string {
     ? `<div style="margin-top:12px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
     : "";
 
+  const chips = d.threads.length ? threadChips(d.threads, d.moments.length, d.thread) : "";
+
   if (!d.moments.length) {
-    return head + search + notice + emptyState(d.q ? "No footage yet" : "Nothing kept yet — add a clip back.");
+    return head + chips + notice + emptyState(d.q ? "No footage yet" : "Nothing kept yet — add a clip back.");
   }
+
+  /* The grid's heading names the filter: the thread's name, or "All clips". */
+  const heading = d.thread ? (d.threads.find((t) => t.id === d.thread)?.name ?? "All clips") : "All clips";
 
   return (
     head +
-    search +
+    chips +
     notice +
-    `<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
+    `<div data-content style="margin-top:26px;font-size:${SIZE.body};font-weight:600;color:${C.ink45}">${esc(heading)}</div>
+     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
   );
 }

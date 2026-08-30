@@ -17,7 +17,7 @@ import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
-import { listMoments, listThreads, searchExact, searchMeaning } from "./library.ts";
+import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
@@ -129,12 +129,20 @@ app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env.DB);
   const t = c.req.query("tab");
-  const tab: FootTab = t === "threads" ? "threads" : t === "sources" ? "sources" : "moments";
+  const tab: FootTab =
+    t === "threads" ? "threads" : t === "sources" ? "sources" : t === "find" ? "find" : "moments";
   const mode: SearchMode = c.req.query("mode") === "exact" ? "exact" : "meaning";
   const query = (c.req.query("q") || "").trim();
+  const thread = c.req.query("thread") || null;
 
-  const sources = tab === "sources" ? await listSources(c.env.DB, user.id) : [];
-  const threads = tab === "threads" ? await listThreads(c.env.DB, user.id) : [];
+  /*
+   * Every tab carries its count, so all three lists are needed on every tab,
+   * not just the one being shown. They are small — threads and sources are
+   * tens of rows — and loading only the active tab left the other two reading
+   * "Threads" with no number, which looks like zero.
+   */
+  const sources = await listSources(c.env.DB, user.id);
+  const threads = await listThreads(c.env.DB, user.id);
 
   let moments: Awaited<ReturnType<typeof listMoments>> = [];
   let meaningUnavailable = false;
@@ -142,6 +150,10 @@ app.get("/footage", async (c) => {
   if (tab === "moments") {
     if (!query) {
       moments = await listMoments(c.env.DB, user.id);
+      if (thread) {
+        const inThread = await threadIdsByClip(c.env.DB, user.id);
+        moments = moments.filter((m) => (inThread.get(m.id) ?? []).includes(thread));
+      }
     } else if (mode === "meaning") {
       const byMeaning = await searchMeaning(c.env, user.id, query);
       if (byMeaning === null) {
@@ -162,7 +174,7 @@ app.get("/footage", async (c) => {
       "archive",
       "Footage",
       "Footage — Aldershot",
-      renderFootageFull({ tab, sources, moments, threads, mode, q: query, meaningUnavailable }),
+      renderFootageFull({ tab, sources, moments, threads, mode, q: query, meaningUnavailable, thread }),
     ),
   );
 });
