@@ -105,6 +105,26 @@ export async function listSources(db: D1Database, userId: string): Promise<Sourc
   return results ?? [];
 }
 
+/**
+ * How many clips each source has yielded, keyed by source id.
+ *
+ * Clipping's rows read "1:22:04 · 6 clips found", so the count has to come
+ * back with the list. One grouped query rather than one per row.
+ */
+export async function clipCountsBySource(
+  db: D1Database,
+  userId: string,
+): Promise<Map<string, number>> {
+  const { results } = await db
+    .prepare(
+      `SELECT source_id, COUNT(*) AS n FROM v2_clips
+        WHERE user_id=? AND deleted_at IS NULL GROUP BY source_id`,
+    )
+    .bind(userId)
+    .all<{ source_id: string; n: number }>();
+  return new Map((results ?? []).map((r) => [r.source_id, r.n]));
+}
+
 export async function setTranscriptState(db: D1Database, id: string, state: TranscriptState): Promise<void> {
   await db.prepare(`UPDATE sources SET transcript_state=? WHERE id=?`).bind(state, id).run();
 }

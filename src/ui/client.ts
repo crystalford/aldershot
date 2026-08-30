@@ -610,6 +610,62 @@ async function record(button) {
   button.addEventListener("click", stop, { once: true });
 }
 
+/* Clipping's drop zone. The video lands in Footage like any other source —
+   the surface says so — and then this page reopens on it, so the drop and the
+   clip run are one gesture rather than two. Reuses the same resumable upload
+   and real-frame poster grab as the Home composer; a video dropped here must
+   not arrive with a worse record of itself than one dropped there. */
+const clipDrop = document.querySelector("#clipDrop");
+if (clipDrop) {
+  const pick = clipDrop.querySelector("#clipFilePick");
+  const label = clipDrop.querySelector("span");
+  const original = label ? label.innerHTML : "";
+
+  const send = async (file) => {
+    if (!file) return;
+    if (label) label.textContent = "Uploading…";
+    try {
+      const durationS = await readDuration(file).catch(() => 0);
+      const data = await uploadResumable(file, durationS, (pct) => {
+        if (label) label.textContent = "Uploading " + pct + "%";
+      });
+      if (label) label.textContent = "Reading…";
+      await Promise.race([
+        grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
+          .then((blob) =>
+            blob &&
+            fetch("/api/sources/" + data.source.id + "/poster", {
+              method: "POST",
+              headers: { "content-type": "image/jpeg" },
+              body: blob,
+            }),
+          )
+          .catch(() => {}),
+        new Promise((r) => setTimeout(r, 4000)),
+      ]);
+      location.href = "/clipping?source=" + data.source.id;
+    } catch (err) {
+      if (label) label.innerHTML = original;
+      toast(err.message || "Couldn't add that video");
+    }
+  };
+
+  pick?.addEventListener("change", (e) => send(e.target.files?.[0]));
+  ["dragenter", "dragover"].forEach((ev) =>
+    clipDrop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      clipDrop.style.boxShadow = "inset 0 0 0 1px rgba(217,179,106,0.45)";
+    }),
+  );
+  ["dragleave", "drop"].forEach((ev) =>
+    clipDrop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      clipDrop.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,0.05)";
+    }),
+  );
+  clipDrop.addEventListener("drop", (e) => send(e.dataTransfer?.files?.[0]));
+}
+
 /* ── Clipping ──────────────────────────────────────────────────────────
    Two ways to find a moment: a scored batch, or a search for one it missed.
    Both start a job the page then follows. */

@@ -35,7 +35,7 @@ import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { currentUser } from "./user.ts";
-import { createSource, getSegments, getSource, listSources } from "./sources.ts";
+import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
@@ -246,6 +246,7 @@ app.get("/clipping", async (c) => {
     : [];
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
+  const clipCounts = await clipCountsBySource(c.env.DB, user.id);
 
   return c.html(
     surface(
@@ -254,10 +255,15 @@ app.get("/clipping", async (c) => {
       "Clipping — Aldershot",
       renderClipping({
         source: source
-          ? { id: source.id, title: source.title, duration_s: source.duration_s, transcript_state: source.transcript_state }
+          ? {
+              id: source.id, title: source.title, duration_s: source.duration_s,
+              transcript_state: source.transcript_state, poster_r2_key: source.poster_r2_key,
+              clip_count: clipCounts.get(source.id) ?? 0,
+            }
           : null,
         available: sources.map((s) => ({
           id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
+          poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
         })),
         shorts,
         job,

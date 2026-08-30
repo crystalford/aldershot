@@ -10,7 +10,7 @@
  */
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
-import { iconPlay, iconSearch } from "../icons.ts";
+import { iconPlay, iconPlus, iconSearch } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
 import { pageHeading } from "./empty.ts";
@@ -32,6 +32,10 @@ export interface ClippingSource {
   title: string;
   duration_s: number | null;
   transcript_state: string;
+  /** The real first frame. A row without one shows an empty well, never a fake. */
+  poster_r2_key: string | null;
+  /** How many clips this source has already yielded, for the meta line. */
+  clip_count: number;
 }
 
 export interface ClippingData {
@@ -64,20 +68,51 @@ function chipRow(name: string, label: string, options: readonly string[], select
 /** Choosing what to clip, when nothing is chosen yet. */
 function picker(d: ClippingData): string {
   const ready = d.available.filter((s) => s.transcript_state === "ready");
+  /*
+   * "1:22:04 · 6 clips found" — the runtime and what the source has already
+   * given you, in the UI face. Not mono: the prototype reserves the mono face
+   * for timecodes you read against the footage, and this is a sentence.
+   */
+  const meta = (s: ClippingSource) => {
+    const parts: string[] = [];
+    if (s.duration_s) parts.push(hms(s.duration_s));
+    if (s.clip_count) parts.push(`${s.clip_count} clip${s.clip_count === 1 ? "" : "s"} found`);
+    return parts.join(" · ");
+  };
+
   const rows = ready
     .map(
-      (s) => `<div style="display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+      (s) => `<a href="/clipping?source=${esc(s.id)}" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};cursor:pointer">
+      <div style="flex:none;width:64px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E">${
+        s.poster_r2_key
+          ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+          : ""
+      }</div>
       <div style="flex:1;min-width:0">
         <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-        <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${s.duration_s ? hms(s.duration_s) : ""}</div>
+        <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">${meta(s)}</div>
       </div>
-      <a href="/clipping?source=${esc(s.id)}" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;white-space:nowrap">Clip it</a>
-    </div>`,
+      <span style="font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none">Clip it</span>
+    </a>`,
     )
     .join("");
 
-  return `<div style="margin-top:22px;font-size:${SIZE.body};color:${C.ink45}">Drop a video, or clip one you already have</div>
-    ${ready.length ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>` : ""}`;
+  /*
+   * The drop zone was missing entirely. It matters more than it looks: it is
+   * the only place on this surface that says where a dropped video goes, and
+   * without it Clipping reads as though it can only work on what is already
+   * there.
+   */
+  const drop = `<label id="clipDrop" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:22px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);font-size:13px;color:rgba(236,236,241,0.55);cursor:pointer">
+    ${iconPlus({ size: 15 })}
+    <span>Drop a new video here or <span style="color:${C.ink};text-decoration:underline;text-decoration-color:rgba(236,236,241,0.25)">browse</span> — it lands in Footage, then gets clipped</span>
+    <input type="file" accept="video/*" id="clipFilePick" style="display:none"/>
+  </label>`;
+
+  return `<div style="margin-top:24px">
+    <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45}">Drop a video, or clip one you already have</div>
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${rows}${drop}</div>
+  </div>`;
 }
 
 /** The batch controls, then the button that starts the run. */
