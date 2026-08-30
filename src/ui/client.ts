@@ -147,17 +147,9 @@ if (composer) {
          BEFORE any money is spent reading it. */
       const durationS = await readDuration(picked).catch(() => 0);
 
-      const res = await fetch("/api/sources", {
-        method: "POST",
-        headers: {
-          "content-type": "application/octet-stream",
-          "x-filename": encodeURIComponent(picked.name).replace(/%20/g, " "),
-          "x-duration-s": String(Math.round(durationS)),
-        },
-        body: picked,
+      const data = await uploadResumable(picked, durationS, (pct) => {
+        button.textContent = "Uploading " + pct + "%";
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
 
       /* A quarter of the way in, past titles and black frames.
          Awaited, not fired-and-forgotten: navigating away cancels an in-flight
@@ -186,6 +178,66 @@ if (composer) {
       toast(err.message || "Couldn't add that video");
     }
   });
+}
+
+/* Sends the file to R2 in 8MB parts.
+   A 45-180 minute source is gigabytes, so this is not an optimisation: a
+   single PUT cannot carry it, and without parts one blip means starting the
+   whole upload again. Each part retries on its own, and progress is the
+   fraction of bytes actually accepted — never a timer. */
+async function uploadResumable(file, durationS, onProgress) {
+  const start = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+  }).then((r) => r.json());
+
+  const { source, uploadId, partSize } = start;
+  const total = Math.ceil(file.size / partSize);
+  const parts = [];
+
+  try {
+    for (let n = 1; n <= total; n++) {
+      const chunk = file.slice((n - 1) * partSize, n * partSize);
+      let lastErr;
+      /* Three attempts per part with a widening gap. A part is small enough
+         that retrying it is cheap, which is the entire point of parts. */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch("/api/uploads/" + source.id + "/parts/" + n, {
+            method: "PUT",
+            headers: { "x-upload-id": uploadId, "content-type": "application/octet-stream" },
+            body: chunk,
+          });
+          if (!res.ok) throw new Error("part " + n + " failed");
+          parts.push(await res.json());
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+      if (lastErr) throw lastErr;
+      onProgress(Math.round((n / total) * 100));
+    }
+
+    const done = await fetch("/api/uploads/" + source.id + "/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ uploadId, parts, durationS: Math.round(durationS) }),
+    });
+    const result = await done.json();
+    if (!done.ok) throw new Error(result.error || "Upload failed");
+    return result;
+  } catch (err) {
+    /* Release the parts R2 is holding rather than leaving them to bill. */
+    fetch("/api/uploads/" + source.id + "/abort", {
+      method: "POST",
+      headers: { "x-upload-id": uploadId },
+    }).catch(() => {});
+    throw err;
+  }
 }
 
 /* Grabs a real frame from the video, client-side.

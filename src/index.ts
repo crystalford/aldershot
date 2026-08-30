@@ -22,6 +22,7 @@ import { CLIENT_JS } from "./ui/client";
 import { currentUser } from "./user";
 import { createSource, getSegments, getSource, listSources } from "./sources";
 import { readSource } from "./ingest";
+import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload";
 import { activeJobs, createJob, getJobs } from "./jobs";
 import { monthUsage } from "./usage";
 
@@ -263,6 +264,92 @@ app.post("/api/sources", async (c) => {
   c.executionCtx.waitUntil(readSource(c.env, src, opts).then(() => undefined));
 
   return c.json({ source: src, jobId: job.id });
+});
+
+/* ── Resumable upload ──────────────────────────────────────────────────
+ * A 45–180 minute source is gigabytes. These three routes let the client send
+ * it in 8MB parts, retry a single failed part instead of the whole file, and
+ * resume after an interruption.
+ */
+
+/** Reserves the source row and opens the multipart upload. */
+app.post("/api/uploads", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  type StartBody = { filename?: string; contentType?: string };
+  const body: StartBody = await c.req.json<StartBody>().catch(() => ({}) as StartBody);
+  const filename = body.filename || "upload.mp4";
+
+  const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
+  const started = await startUpload(c.env.MEDIA, src.r2_key, body.contentType);
+  return c.json({ source: src, ...started });
+});
+
+/** One part. Part numbers are 1-indexed; order does not matter. */
+app.put("/api/uploads/:sourceId/parts/:n", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const uploadId = c.req.header("x-upload-id");
+  if (!uploadId) return c.json({ error: "missing upload id" }, 400);
+
+  const part = await uploadPart(
+    c.env.MEDIA,
+    src.r2_key,
+    uploadId,
+    Number(c.req.param("n")),
+    await c.req.arrayBuffer(),
+  );
+  return c.json(part);
+});
+
+/**
+ * Assembles the object and starts reading it. This is where a source stops
+ * being an upload and becomes something the product can work with.
+ */
+app.post("/api/uploads/:sourceId/complete", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    uploadId: string;
+    parts: { partNumber: number; etag: string }[];
+    durationS?: number;
+    diarize?: boolean;
+  }>();
+
+  try {
+    await completeUpload(c.env.MEDIA, src.r2_key, body.uploadId, body.parts);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "couldn't finish the upload" }, 400);
+  }
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
+  c.executionCtx.waitUntil(
+    readSource(c.env, src, {
+      plan: user.plan,
+      diarize: body.diarize,
+      knownDurationS: body.durationS,
+      jobId: job.id,
+    }).then(() => undefined),
+  );
+  return c.json({ source: src, jobId: job.id });
+});
+
+/** Abandon an upload, releasing the parts R2 is still billing for. */
+app.post("/api/uploads/:sourceId/abort", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+  const uploadId = c.req.header("x-upload-id");
+  if (uploadId) await abortUpload(c.env.MEDIA, src.r2_key, uploadId).catch(() => {});
+  await c.env.DB.prepare(`UPDATE sources SET deleted_at=? WHERE id=?`).bind(Date.now(), src.id).run();
+  return c.json({ ok: true });
 });
 
 app.get("/api/sources", async (c) => {
