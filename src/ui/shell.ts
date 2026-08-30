@@ -108,6 +108,7 @@ p,div{text-wrap:pretty}
 [hidden]{display:none!important}
 [data-screen-label]{animation:viewIn .26s cubic-bezier(.2,.7,.3,1) both}
 @media (max-width: 720px){ [data-screen-label]{padding-left:16px!important;padding-right:16px!important} }
+@keyframes blip{0%,100%{opacity:.35}50%{opacity:1}}
 @keyframes viewIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @keyframes popIn{from{opacity:0;transform:translateX(-50%) scale(.98)}to{opacity:1;transform:translateX(-50%) scale(1)}}
 @keyframes panelIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}

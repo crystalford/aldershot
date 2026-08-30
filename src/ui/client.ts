@@ -124,8 +124,133 @@ if (composer) {
       : Math.round(file.size / 1e6) + " MB";
     attached.hidden = false;
   }
-  composer.addEventListener("drop", (e) => attach(e.dataTransfer?.files?.[0]));
-  $("#filePick")?.addEventListener("change", (e) => attach(e.target.files?.[0]));
-  $("#clearFile")?.addEventListener("click", () => { attached.hidden = true; });
+  let picked = null;
+  composer.addEventListener("drop", (e) => { picked = e.dataTransfer?.files?.[0] || picked; attach(picked); });
+  $("#filePick")?.addEventListener("change", (e) => { picked = e.target.files?.[0] || null; attach(picked); });
+  $("#clearFile")?.addEventListener("click", () => { picked = null; attached.hidden = true; });
+
+  /* Begin: upload the video, then follow it to where it is being read.
+     The brief is carried along and stays with the source, so a failed read
+     offers a retry that does not make the user retype it. */
+  composer.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!picked) { brief.focus(); return; }
+
+    const button = composer.querySelector('button[type="submit"]');
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Uploading…";
+
+    try {
+      /* The duration is measured here rather than server-side: the browser
+         already has the file, and the cap has to be checked in source minutes
+         BEFORE any money is spent reading it. */
+      const durationS = await readDuration(picked).catch(() => 0);
+
+      const res = await fetch("/api/sources", {
+        method: "POST",
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-filename": encodeURIComponent(picked.name).replace(/%20/g, " "),
+          "x-duration-s": String(Math.round(durationS)),
+        },
+        body: picked,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      /* A quarter of the way in, past titles and black frames.
+         Awaited, not fired-and-forgotten: navigating away cancels an in-flight
+         request, which silently loses every poster. Bounded so a slow decode
+         never holds the user on this page — a missing poster is a blank
+         thumbnail, which is honest; a fake one is not. */
+      button.textContent = "Reading…";
+      await Promise.race([
+        grabPoster(picked, Math.max(1, (durationS || 8) * 0.25))
+          .then((blob) =>
+            blob &&
+            fetch("/api/sources/" + data.source.id + "/poster", {
+              method: "POST",
+              headers: { "content-type": "image/jpeg" },
+              body: blob,
+            }),
+          )
+          .catch(() => {}),
+        new Promise((r) => setTimeout(r, 4000)),
+      ]);
+
+      location.href = "/sources/" + data.source.id;
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = original;
+      toast(err.message || "Couldn't add that video");
+    }
+  });
+}
+
+/* Grabs a real frame from the video, client-side.
+   "Real frames only — no gradients, no coloured blocks, no generated art
+   placeholders." Extracting frames server-side needs ffmpeg in a container;
+   the browser already has the file in hand, so the poster costs nothing and is
+   a genuine frame of the actual video. Server-side frame extraction (one every
+   5s, for clip thumbnails) still belongs in the container. */
+function grabPoster(file, atSeconds) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.muted = true;
+    el.playsInline = true;
+    const done = (v) => { URL.revokeObjectURL(el.src); resolve(v); };
+    el.onloadedmetadata = () => {
+      el.currentTime = Math.min(atSeconds, Math.max(0, (el.duration || 1) - 0.1));
+    };
+    el.onseeked = () => {
+      try {
+        const c = document.createElement("canvas");
+        const w = 640;
+        c.width = w;
+        c.height = Math.round((el.videoHeight / el.videoWidth) * w) || 360;
+        c.getContext("2d").drawImage(el, 0, 0, c.width, c.height);
+        c.toBlob((b) => done(b), "image/jpeg", 0.82);
+      } catch { done(null); }
+    };
+    el.onerror = () => { URL.revokeObjectURL(el.src); reject(new Error("unreadable")); };
+    el.src = URL.createObjectURL(file);
+  });
+}
+
+/* Reads a video's real duration without uploading it first. */
+function readDuration(file) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.onloadedmetadata = () => { URL.revokeObjectURL(el.src); resolve(el.duration || 0); };
+    el.onerror = () => { URL.revokeObjectURL(el.src); reject(new Error("unreadable")); };
+    el.src = URL.createObjectURL(file);
+  });
+}
+
+/* ── Watching a source being read ──────────────────────────────────────
+   Polls the job rather than guessing, and reloads once the transcript is
+   actually there. Nothing here animates on a timer. */
+const reading = $("#reading");
+if (reading) {
+  const sourceId = reading.getAttribute("data-source");
+  const tick = async () => {
+    try {
+      const res = await fetch("/api/jobs");
+      const { jobs } = await res.json();
+      const job = jobs.find((j) => j.ref_id === sourceId);
+      if (!job) { location.reload(); return; }
+      const label = reading.querySelector("span:last-child");
+      if (label && job.stage_label) {
+        label.textContent = job.pct > 0 ? job.stage_label + " — " + job.pct + "%" : job.stage_label;
+      }
+      setTimeout(tick, 2000);
+    } catch {
+      setTimeout(tick, 5000);
+    }
+  };
+  setTimeout(tick, 1500);
 }
 `;

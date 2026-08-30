@@ -16,6 +16,8 @@ import { ensureV2Schema } from "./schema";
 import { page, type ShortsCtx, type View } from "./ui/shell";
 import { renderHome } from "./ui/pages/home";
 import { emptyState, pageHeading } from "./ui/pages/empty";
+import { renderFootage, type FootTab } from "./ui/pages/footage";
+import { renderSource } from "./ui/pages/source";
 import { CLIENT_JS } from "./ui/client";
 import { currentUser } from "./user";
 import { createSource, getSegments, getSource, listSources } from "./sources";
@@ -50,8 +52,35 @@ function surface(view: View, screenLabel: string, title: string, body: string, s
 
 app.get("/", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const [sources, jobs] = await Promise.all([
+    listSources(c.env.DB, user.id),
+    activeJobs(c.env.DB, user.id),
+  ]);
+
+  // "Fresh" means the account genuinely has nothing — that is what earns the
+  // demo card and the "How this goes" walkthrough. One upload and they go.
+  const isFresh = sources.length === 0;
+  const byId = new Map(sources.map((s) => [s.id, s]));
+
   return c.html(
-    surface("home", "Home", "Aldershot", renderHome({ name: null, isFresh: true })),
+    surface(
+      "home",
+      "Home",
+      "Aldershot",
+      renderHome({
+        name: user.name,
+        isFresh,
+        // "Overnight" is the last 12 hours — real arrivals only, never a
+        // number invented to make the greeting feel alive.
+        landedOvernight: sources.filter((s) => Date.now() - s.created_at < 12 * 3600 * 1000).length,
+        working: jobs.map((j) => ({
+          label: byId.get(j.ref_id ?? "")?.title ?? "a video",
+          stage: j.stage_label ?? "working on",
+          pct: j.pct,
+        })),
+      }),
+    ),
   );
 });
 
@@ -69,17 +98,76 @@ app.get("/projects", async (c) => {
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const q = c.req.query("tab");
+  const tab: FootTab = q === "threads" ? "threads" : q === "sources" ? "sources" : "moments";
+  const sources = tab === "sources" ? await listSources(c.env.DB, user.id) : [];
+  return c.html(surface("archive", "Footage", "Footage — Aldershot", renderFootage(tab, sources)));
+});
+
+/** One source, read. Phase 1's claim made visible. */
+app.get("/sources/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (!src) return c.notFound();
+
+  const [segments, jobs] = await Promise.all([
+    getSegments(c.env.DB, src.id),
+    getJobs(c.env.DB, []).then(() => activeJobs(c.env.DB, user.id)),
+  ]);
+  const job = jobs.find((j) => j.ref_id === src.id) ?? null;
+
   return c.html(
-    surface(
-      "archive",
-      "Footage",
-      "Footage — Aldershot",
-      pageHeading(
-        "Footage",
-        "Every video you've added. Search by topic, upload new ones, or ask what's in there.",
-      ) + emptyState("Nothing kept yet — add a clip back."),
-    ),
+    surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job })),
   );
+});
+
+/**
+ * The poster frame, extracted in the browser from the file the user just
+ * picked. A real frame of the real video — the design allows nothing else.
+ */
+app.post("/api/sources/:id/poster", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.arrayBuffer();
+  if (!body.byteLength) return c.json({ error: "empty" }, 400);
+
+  const key = `u/${user.id}/sources/${src.id}/poster.jpg`;
+  await c.env.MEDIA.put(key, body, { httpMetadata: { contentType: "image/jpeg" } });
+  await c.env.DB.prepare(`UPDATE sources SET poster_r2_key=? WHERE id=?`).bind(key, src.id).run();
+  return c.json({ ok: true });
+});
+
+/** Media out of R2. Posters and, later, frames and renders. */
+app.get("/media/*", async (c) => {
+  const key = c.req.path.replace(/^\/media\//, "");
+  const object = await c.env.MEDIA.get(key);
+  if (!object) return c.notFound();
+  return new Response(object.body, {
+    headers: {
+      "content-type": object.httpMetadata?.contentType || "application/octet-stream",
+      // Immutable: a poster for a given source never changes.
+      "cache-control": "public, max-age=31536000, immutable",
+    },
+  });
+});
+
+/** Re-read a source that failed, keeping everything the user already gave us. */
+app.post("/api/sources/:id/retry", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
+  c.executionCtx.waitUntil(
+    readSource(c.env, src, { plan: user.plan, jobId: job.id }).then(() => undefined),
+  );
+  return c.redirect(`/sources/${src.id}`, 303);
 });
 
 app.get("/clipping", async (c) => {

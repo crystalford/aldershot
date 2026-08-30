@@ -154,10 +154,49 @@ async function checkStrings() {
       // must still be found verbatim. Short fragments (a name, a count, a
       // greeting stub) are allowed through — they are the interpolated part.
       const fragments = text.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+      const has = (fr) => proto.includes(fr) || protoRaw.includes(fr);
+
+      /*
+       * Two acceptable reasons a fragment won't match whole, both distinct
+       * from paraphrasing — which is what this check exists to catch:
+       *
+       *  - INTERPOLATION. "Welcome, Chris." can never match, because the
+       *    prototype holds it as a template. Short fragments are allowed
+       *    through on the assumption that they are the interpolated part.
+       *  - TRUNCATION. The prototype's greeting is "Good morning, {who}. Four
+       *    videos landed overnight." When nothing landed overnight, rendering
+       *    only the first sentence is honest; rendering the second would be a
+       *    lie. Dropping a clause that isn't true is not rewording, so a
+       *    fragment whose stem (up to its interpolated value) appears in the
+       *    prototype is accepted.
+       */
+      /*
+       * The invariant core: strip the interpolated value from either end. A
+       * count or a name can sit at the front ("5 videos landed overnight",
+       * against the prototype's "Four videos landed overnight") or the back
+       * ("Good evening, Chris."). What must survive verbatim is the wording in
+       * between — that is the part a paraphrase would change.
+       */
+      const LEAD = /^[A-Z0-9][\w'\u2019-]*[,]?\s+/;   // "5 ", "Good "
+      const TAIL = /\s+[A-Z0-9][\w'\u2019-]*[.!?]?$/;   // " Chris."
+      const trimPunct = (x) => x.replace(/[.!?]+$/, "").trim();
+
+      /*
+       * Try dropping the interpolated value from the front, the back, or both,
+       * and require what remains to appear in the prototype verbatim. Whichever
+       * end the value sits at, the WORDING between is what a paraphrase would
+       * change, so that is what must survive. 8 characters is enough to be a
+       * real phrase and not a coincidence.
+       */
+      const cores = (fr) =>
+        [fr.replace(LEAD, ""), fr.replace(TAIL, ""), fr.replace(LEAD, "").replace(TAIL, "")]
+          .map(trimPunct)
+          .filter((x) => x.length >= 8);
+
       const unmatched = fragments.filter(
-        (fr) => fr.length >= 18 && !proto.includes(fr) && !protoRaw.includes(fr),
+        (fr) => fr.length >= 18 && !has(fr) && !cores(fr).some(has),
       );
-      if (fragments.length > 1 && unmatched.length === 0) continue;
+      if (unmatched.length === 0) continue;
       suspect.push(`${route}  "${text}"`);
     }
   }

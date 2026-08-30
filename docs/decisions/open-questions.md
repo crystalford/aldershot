@@ -61,7 +61,51 @@ than inventing speakers.
 
 No decision needed now — recording it so the risk is visible.
 
-## 5. Domain
+## 5. The greeting says "Good morning" at every hour
+
+**Status:** rendered exactly as designed.
+
+The prototype's populated greeting is `Good morning, ${who}. Four videos landed
+overnight.` — "morning", regardless of the time.
+
+Varying it ("Good afternoon", "Good evening") is an obvious small improvement
+and is exactly the kind of well-meant substitution that produced a different
+product last time, so it is not done. The count IS real: the second sentence
+only appears when videos actually landed in the last 12 hours.
+
+Options: (a) leave it, (b) add designed afternoon/evening variants, (c) drop
+the time of day entirely.
+
+## 6. Client-side poster frames depend on browser codec support
+
+**Status:** working; a fallback is needed before launch.
+
+Poster frames are extracted in the browser from the file the user picked —
+a real frame of the real video, with no ffmpeg container involved. Verified
+working end to end.
+
+The catch: it needs the browser to be able to decode the format. Real Chrome,
+Safari and Firefox handle H.264, so normal uploads are fine. But an unusual
+codec, or a browser without it, yields no poster — and the row then shows a
+blank thumbnail rather than a wrong one, which is the correct failure but not
+the designed one.
+
+The server-side frame pass (one JPEG every 5s, needed for clip thumbnails
+anyway) is the natural fallback and is already planned for the container. No
+decision needed now.
+
+## 7. Transcription costs about 16x less than the cost model assumes
+
+**Status:** measured; affects pricing, not the build.
+
+05-INFRA-AND-COSTS.md budgets $0.50 to transcribe 60 minutes. Measured against
+the live endpoint it is **$0.031** — see `docs/decisions/transcription.md`.
+
+Transcription was the second-largest line in the per-video cost model, so the
+"≈$2.40 per finished video" figure that the pricing shape was derived from is
+probably too high. Worth re-running the model before prices are set.
+
+## 8. Domain
 
 `aldershot.io`, being registered. Needed for Phase 9 (auth, the signed-out
 landing site, and the `/r/:token` review links, which the prototype renders as

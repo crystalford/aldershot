@@ -49,12 +49,26 @@ const HOW_THIS_GOES: Array<[string, string]> = [
  * and so cannot be rendered until Phase 1 has jobs to count — until then only
  * the fresh half is ever true.
  */
-function greeting(name: string | null, isFresh: boolean): string {
+function greeting(name: string | null, isFresh: boolean, landedOvernight: number): string {
   const who = name || "Chris";
   if (isFresh) return `Welcome, ${who}. Nothing here yet — that's the right amount to start with.`;
-  // TODO(phase-1): `Good morning, ${who}. Four videos landed overnight.` —
-  // the count is real data, so this branch waits for real jobs.
-  return `Welcome, ${who}.`;
+
+  // The prototype's line is "Good morning, {who}. Four videos landed
+  // overnight." — and "morning" is what it says, at every hour.
+  //
+  // Varying it by time of day was tempting and is exactly the kind of
+  // well-meant substitution PROMPTING-NOTES.md warns about, so it is NOT done
+  // here; the question is logged in docs/decisions/open-questions.md for the
+  // owner to rule on rather than decided alone.
+  //
+  // The count IS real, so the second sentence only appears when something
+  // actually landed. Saying it when nothing did would be a small lie of
+  // exactly the kind this product exists to avoid.
+  if (landedOvernight > 0) {
+    const n = landedOvernight === 1 ? "One video" : `${landedOvernight} videos`;
+    return `Good morning, ${who}. ${n} landed overnight.`;
+  }
+  return `Good morning, ${who}.`;
 }
 
 function composer(): string {
@@ -110,15 +124,64 @@ function howThisGoes(): string {
   <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
 }
 
+/**
+ * The working row — what is processing right now, with real percentages.
+ *
+ * The sentence is assembled from live job rows, in the prototype's own shape:
+ * "Working on 3 things — reading jones_quartering_full (62%) and moose_ep121
+ * (24%), burning captions on 3 shorts (81%)."
+ *
+ * Percentages come from measured work. During transcription — a single atomic
+ * call — there is no sub-progress to report, so the stage is named WITHOUT a
+ * percentage rather than showing a number that isn't moving. A bar animating
+ * on a timer would be worse than none: it teaches the user the bar is fiction.
+ */
+export interface WorkingJob {
+  label: string;
+  stage: string;
+  pct: number;
+}
+
+function workingLine(jobs: WorkingJob[]): string {
+  const things = jobs.length === 1 ? "1 thing" : `${jobs.length} things`;
+  const byStage = new Map<string, WorkingJob[]>();
+  for (const j of jobs) {
+    if (!byStage.has(j.stage)) byStage.set(j.stage, []);
+    byStage.get(j.stage)!.push(j);
+  }
+  const clauses = [...byStage.entries()].map(([stage, group]) => {
+    const named = group.map((j) => (j.pct > 0 ? `${j.label} (${j.pct}%)` : j.label));
+    const joined =
+      named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
+    return `${stage} ${joined}`;
+  });
+  return `Working on ${things} — ${clauses.join(", ")}.`;
+}
+
+function workingRow(jobs: WorkingJob[]): string {
+  return `<div style="margin-top:48px;display:flex;align-items:baseline;justify-content:space-between;padding-left:4px">
+    <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap;flex:none">Since you were away</div>
+  </div>
+  <div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+    <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
+    <span id="workingLine" style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(workingLine(jobs))}</span>
+    <a href="/footage?tab=sources" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer">Watch</a>
+  </div>`;
+}
+
 export interface HomeData {
   name: string | null;
   isFresh: boolean;
+  working: WorkingJob[];
+  /** Sources that arrived since the user was last here. Real count, or zero. */
+  landedOvernight: number;
 }
 
 export function renderHome(d: HomeData): string {
   return `<div style="font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-0.025em;line-height:1.2">What are we making today?</div>
-<div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh))}</div>
+<div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
 ${composer()}
 <div style="margin-top:16px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);padding-left:4px">A full cut, a few shorts, a cleanup — it works out the job and checks with you first.</div>
+${d.working.length ? workingRow(d.working) : ""}
 ${d.isFresh ? demoCard() + howThisGoes() : ""}`;
 }
