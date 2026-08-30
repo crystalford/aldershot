@@ -7,10 +7,13 @@
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Console UI (project console) served as static assets.
+  // Surfaces are server-rendered from src/ui/; this directory holds only the
+  // genuinely static brand/demo assets (the design's real frames). Thumbnails
+  // for the user's OWN footage always come from R2, never from here.
   "assets": { "directory": "./public", "binding": "ASSETS" },
 
-  // Workers AI — Whisper transcribe + Llama arrange/shorts (and later FLUX/Wan/Aura).
+  // Workers AI — Whisper transcribe + long-context reasoning. Model choices
+  // and their context-window constraints live in src/models.ts.
   "ai": { "binding": "AI" },
 
   // R2 — uploads, transcripts, timelines, shorts, rendered cuts.

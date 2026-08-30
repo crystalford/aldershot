@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0C0C0F;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#D9B36A}a:hover{color:#ECECF1}
+</style>
+</helmet>
+<div style="padding:40px clamp(24px,5vw,64px) 96px">
+  <div style="font-size:18px;font-weight:600;letter-spacing:-0.02em">Print sheet — capture source</div>
+  <div style="font-size:13px;color:rgba(236,236,241,0.42);margin-top:5px;max-width:520px;line-height:1.6">Each swatch below is captured at high resolution with a transparent background. Checkerboard is for viewing only — it is not in the export.</div>
+  <div style="margin-top:28px;display:flex;flex-direction:column;gap:22px">
+    <sc-for list="{{ sheets }}" as="sh" hint-placeholder-count="8">
+      <div>
+        <div style="font-size:12px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">{{ sh.file }}</div>
+        <div style="margin-top:8px;display:inline-block;background-image:linear-gradient(45deg,#2a2a30 25%,transparent 25%),linear-gradient(-45deg,#2a2a30 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#2a2a30 75%),linear-gradient(-45deg,transparent 75%,#2a2a30 75%);background-size:24px 24px;background-position:0 0,0 12px,12px -12px,-12px 0;background-color:#1b1b20;border-radius:10px;padding:0">
+          <div id="{{ sh.id }}" style="display:inline-flex;align-items:baseline;gap:{{ sh.gap }}px;padding:{{ sh.pad }}px">
+            <sc-if value="{{ sh.hasWord }}" hint-placeholder-val="{{ true }}"><span style="font-size:{{ sh.fs }}px;font-weight:600;letter-spacing:-0.01em;color:{{ sh.text }};line-height:1">aldershot</span></sc-if>
+            <span style="display:inline-flex;align-items:flex-end;gap:{{ sh.bgap }}px;transform:translateY(-{{ sh.lift }}px)">
+              <span style="width:{{ sh.bw }}px;height:{{ sh.bh }}px;background:{{ sh.c1 }};border-radius:{{ sh.br }}px"></span>
+              <span style="width:{{ sh.bw }}px;height:{{ sh.bh }}px;background:{{ sh.c2 }};border-radius:{{ sh.br }}px"></span>
+              <span style="width:{{ sh.bw }}px;height:{{ sh.bh }}px;background:{{ sh.c3 }};border-radius:{{ sh.br }}px"></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const FS = 220; // lockup font size -> ~1500px wide, x2 capture ≈ 3000px
+    const r = (v) => Math.round(v * FS / 15.5 * 10) / 10;
+    const geo = { fs: FS, gap: r(4), bgap: r(2.5), bw: r(5.5), bh: r(11), br: r(2), lift: r(1), pad: 40 };
+    const mk = { fs: 0, gap: 0, bgap: 36, bw: 80, bh: 500, br: 29, lift: 0, pad: 40, hasWord: false };
+    const L = "#ECECF1", D = "#131316";
+    const HUES = [["gold", "#D9B36A"], ["green", "#5EC98F"], ["cyan", "#5EB8C9"], ["red", "#E06A6A"], ["mono-light", L], ["mono-dark", D]];
+    const fade = (hex, o) => { const n = parseInt(hex.slice(1), 16); return "rgba(" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(",") + "," + o + ")"; };
+    const sheets = [];
+    HUES.forEach(([name, hex]) => {
+      const onDark = name !== "mono-dark";
+      sheets.push({ id: "lockup-" + name, file: "lockup-" + name + ".png — wordmark + mark, for " + (onDark ? "dark" : "light") + " garments",
+        text: onDark ? L : D, c1: hex, c2: fade(hex, 0.5), c3: fade(hex, 0.22), hasWord: true, ...geo });
+      sheets.push({ id: "mark-" + name, file: "mark-" + name + ".png — mark only", ...mk, c1: hex, c2: fade(hex, 0.5), c3: fade(hex, 0.22) });
+    });
+    return { sheets };
+  }
+}
+</script>
+</body>
+</html>

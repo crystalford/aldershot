@@ -1,7 +1,15 @@
 import type { Env } from "../env";
-import type { Word } from "./edl";
+/**
+ * A word with its timing. Phase 1 will persist these into `segments.words`
+ * (see 03-DATA-MODEL.md); this shape is what Whisper gives us.
+ * TODO(phase-1): rewrite this module against the v2 `sources`/`segments`
+ * tables. Kept now for `reconcileWords`, which is hard-won: Whisper's word
+ * tokens lose punctuation and casing, and zipping them back against the
+ * aggregate text is not obvious.
+ */
+export interface Word { text: string; start: number; end: number; deleted: boolean }
 import { durationFromWavSize } from "../wav";
-import { MODELS } from "../models";
+import { TRANSCRIBE } from "../models";
 
 export interface TranscriptResult {
   mediaKey: string;
@@ -23,7 +31,7 @@ function toBase64(buf: ArrayBuffer): string {
 
 async function runWhisper(env: Env, audio: unknown): Promise<WhisperResult> {
   const run = env.AI.run.bind(env.AI) as (model: string, inputs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  return (await run(MODELS.transcribe, { audio })) as WhisperResult;
+  return (await run(TRANSCRIBE.id, { audio })) as WhisperResult;
 }
 
 // Whisper's word-level timestamps (`res.words[].word`) commonly come back as
