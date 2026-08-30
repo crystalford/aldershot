@@ -29,6 +29,7 @@ export interface EditorClip {
 }
 
 export interface EditorData {
+  cleanUps?: CleanUp[];
   projectId: string;
   title: string;
   brief: string | null;
@@ -96,6 +97,56 @@ export function editorHeader(d: EditorData): string {
   </div>`;
 }
 
+/**
+ * The Clean up row — one tap each, applied to the whole cut.
+ *
+ * Names AND sublabels are the prototype's own, and the sublabels carry live
+ * numbers: "47 found · −0:04", not "several". That is a stated rule
+ * (02-DESIGN-SYSTEM.md §Copy voice) and it is why the counts here are computed
+ * from the real transcript rather than written into the label.
+ *
+ * A chip whose number cannot be computed honestly yet shows its descriptive
+ * text and is disabled, rather than displaying a plausible fabricated count.
+ */
+export interface CleanUp {
+  id: string;
+  name: string;
+  sub: string;
+  ready: boolean;
+  done: boolean;
+}
+
+function cleanUpRow(projectId: string, chips: CleanUp[]): string {
+  const html = chips.map(
+    (a) => `<button class="cleanup" data-kind="${esc(a.id)}" data-project="${esc(projectId)}" ${a.ready && !a.done ? "" : "disabled"}
+      style="text-align:left;padding:8px 12px;border-radius:${RADIUS.button};background:${C.pill};border:none;cursor:${a.ready ? "pointer" : "default"};font-family:${FONT.ui};${a.ready ? "" : "opacity:.4;"}">
+      <span style="display:block;font-size:${SIZE.secondary};font-weight:500;color:${a.done ? ACCENT.green : C.ink};white-space:nowrap">${esc(a.name)}</span>
+      <span data-content style="display:block;font-size:${SIZE.meta};color:${C.ink45};white-space:nowrap">${esc(a.sub)}</span>
+    </button>`,
+  ).join("");
+
+  return `<div style="margin-top:16px">
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-bottom:8px">Clean up</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${html}</div>
+  </div>`;
+}
+
+/**
+ * A skipped stretch: the footage between two kept blocks.
+ *
+ * Striped rather than hidden, because the hour is still there — the user can
+ * see how much was passed over and open it to pull something back. Hiding it
+ * would make the cut look like the whole video.
+ */
+function skippedStretch(fromMs: number, toMs: number): string {
+  const secs = Math.round((toMs - fromMs) / 1000);
+  if (secs < 1) return "";
+  return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:${RADIUS.button};background:repeating-linear-gradient(-45deg,#101014 0 7px,#131317 7px 14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+    <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.3)">${hms(fromMs / 1000)} – ${hms(toMs / 1000)}</span>
+    <span style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3)">skipped</span>
+  </div>`;
+}
+
 /** The seam between blocks — how anything gets inserted mid-piece. */
 function seam(): string {
   return `<div style="display:flex;justify-content:center;padding:2px 0">
@@ -151,7 +202,7 @@ function preview(d: EditorData): string {
   const frame = first.frame_r2_key
     ? `<img src="/media/${esc(first.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
     : "";
-  return `<div style="margin-top:18px;border-radius:${RADIUS.card};overflow:hidden;background:#0B0B0E;position:relative;aspect-ratio:16/9;max-height:320px">
+  return `<div style="border-radius:${RADIUS.card};overflow:hidden;background:#0B0B0E;position:relative;aspect-ratio:16/9">
     ${frame}
     <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,0) 35%,rgba(0,0,0,.65) 100%)"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:${SIZE.meta};font-weight:600;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:4px">Preview the cut</div>
@@ -162,7 +213,7 @@ function preview(d: EditorData): string {
 }
 
 function askAnotherPass(d: EditorData): string {
-  return `<form class="pass-form" data-project="${esc(d.projectId)}" style="margin-top:18px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+  return `<form class="pass-form" data-project="${esc(d.projectId)}" style="margin-top:14px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
     <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-bottom:8px">Ask for another pass</div>
     <div style="display:flex;gap:8px;align-items:center;background:#131316;border-radius:${RADIUS.input};padding:4px 4px 4px 12px;flex-wrap:wrap">
       <input name="instruction" placeholder="“also cut the sponsor read”" style="flex:1 1 200px;min-width:min(180px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:13px;padding:7px 0;font-family:${FONT.ui}"/>
@@ -199,11 +250,38 @@ export function renderEditor(d: EditorData): string {
     ${askAnotherPass(d)}`;
   }
 
-  const blocks = d.clips.map((c, i) => block(c, i, d.clips.length)).join(seam());
+  // Blocks, with the footage that was passed over shown striped between them.
+  const parts: string[] = [seam()];
+  d.clips.forEach((c, i) => {
+    const prev = d.clips[i - 1];
+    if (prev && c.start_ms > prev.end_ms) parts.push(skippedStretch(prev.end_ms, c.start_ms));
+    parts.push(block(c, i, d.clips.length));
+    parts.push(seam());
+  });
 
+  const kept = d.clips.filter((c) => c.kept);
+  const runtimeMs = kept.reduce((n, c) => n + (c.end_ms - c.start_ms), 0);
+
+  /*
+   * Two columns, not a stacked page: the block list on the left and the player
+   * STICKY beside it, so it stays with whatever block is being read. Built as
+   * a full-width banner first, which is the layout the owner had already
+   * rejected — the giveaway was the empty right-hand third of the screen.
+   */
   return `${head}
-  ${preview(d)}
-  <div style="margin-top:18px;display:flex;flex-direction:column;gap:2px">${seam()}${blocks}${seam()}</div>
-  <div style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:10px;padding-left:4px">the words — strike a sentence to cut just that</div>
-  ${askAnotherPass(d)}`;
+  ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
+  <div style="margin-top:24px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px">
+      ${preview(d)}
+      ${askAnotherPass(d)}
+    </div>
+    <div style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:2px">
+      ${parts.join("")}
+      <div style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:6px;padding-left:4px">the words — strike a sentence to cut just that</div>
+    </div>
+  </div>
+  <div style="position:sticky;bottom:0;margin-top:20px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
+    <span data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${kept.length} kept · ${hms(runtimeMs / 1000)}</span>
+    <button class="render-cut" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
+  </div>`;
 }

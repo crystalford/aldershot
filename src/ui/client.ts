@@ -456,7 +456,7 @@ if (script) {
     }
   });
 
-  document.querySelectorAll(".cleanup").forEach((btn) => {
+  document.querySelectorAll("#script ~ * .cleanup, .cleanup[data-kind='fillers-script']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       await applyCut({ kind: "fillers", seg: 0, word: null });
@@ -466,6 +466,57 @@ if (script) {
     });
   });
 }
+
+/* Clean up, from the Pick surface. Same server-side cut model as Script — the
+   two surfaces are different views of one edit, not two edits. */
+document.querySelectorAll(".cleanup[data-project]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const kind = btn.getAttribute("data-kind");
+    if (kind !== "fillers" && kind !== "pauses") { toast("Not wired up yet"); return; }
+    btn.disabled = true;
+    const label = btn.querySelector("span");
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/cuts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind, seg: 0, word: null }),
+      });
+      if (!res.ok) throw new Error("That didn't apply");
+      /* Reload so every number on the page — the chip sublabels, the kept
+         count, the runtime — comes back from the server together. Patching
+         them individually is how they drift apart. */
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message);
+    }
+  });
+});
+
+/* Export. Every render is a new version — the old one is never replaced. */
+document.querySelectorAll(".render-cut").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Putting it together…";
+    try {
+      const res = await fetch("/api/renders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId: btn.getAttribute("data-project"), format: "mp4_1080", aspect: "16:9" }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || "That didn't render");
+      toast("Rendering — it'll appear in Exports when it's done");
+      btn.textContent = original;
+      btn.disabled = false;
+    } catch (err) {
+      btn.textContent = original;
+      btn.disabled = false;
+      toast(err.message);
+    }
+  });
+});
 
 /* ── Build: beats, seams, recording ────────────────────────────────────
    The seam is how anything gets inserted mid-piece; recording happens in the

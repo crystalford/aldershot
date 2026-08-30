@@ -30,7 +30,8 @@ import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
-import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
+import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord } from "./cuts.ts";
+import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { currentUser } from "./user.ts";
@@ -315,6 +316,54 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
   const clips = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
+
+  /*
+   * The Clean up chips' sublabels carry live numbers, so they are computed
+   * from the real transcript. A chip whose number cannot be computed honestly
+   * shows its descriptive text and stays disabled rather than displaying a
+   * fabricated count.
+   */
+  let cleanUps: CleanUp[] = [];
+  if (source && stage === "cut") {
+    const segs = await getSegments(c.env.DB, source.id);
+    const cuts = parseCuts(project.cuts);
+    const minus = (ms: number) => `−${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
+
+    const fillers = fillerCuts(segs);
+    const fillersLeft = fillers.filter((f) => !cuts.some((x) => x.seg === f.seg && x.words?.[0] === f.words?.[0]));
+    const pauses = pauseCuts(segs);
+    const pausesLeft = pauses.filter((p2) => !cuts.some((x) => x.seg === p2.seg && x.words?.[0] === p2.words?.[0]));
+
+    cleanUps = [
+      { id: "sound", name: "Studio sound", sub: "noise, echo, levels — regenerated", ready: false, done: false },
+      {
+        id: "fillers",
+        name: "Remove the ums and uhs",
+        sub: fillersLeft.length
+          ? `${fillersLeft.length} found · ${minus(timeSaved(segs, cuts, fillersLeft))}`
+          : fillers.length
+            ? `${fillers.length} gone`
+            : "none found",
+        ready: fillersLeft.length > 0,
+        done: fillers.length > 0 && fillersLeft.length === 0,
+      },
+      {
+        id: "pauses",
+        name: "Tighten long pauses",
+        sub: pausesLeft.length
+          ? `anything over 2s · ${minus(timeSaved(segs, cuts, pausesLeft))}`
+          : pauses.length
+            ? "tightened"
+            : "none over 2s",
+        ready: pausesLeft.length > 0,
+        done: pauses.length > 0 && pausesLeft.length === 0,
+      },
+      // "Flagged" needs the model to mark weak stretches, which no pass does
+      // yet. Shown with its real description and disabled, rather than with an
+      // invented count.
+      { id: "flagged", name: "Cut everything it flagged", sub: "dead air, false starts", ready: false, done: false },
+    ];
+  }
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = jobs.find((j) => j.ref_id === project.id) ?? null;
 
@@ -388,6 +437,7 @@ app.get("/p/:id/:stagePath", async (c) => {
     page(
       { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Cutting room", shortsCtx: "editor" },
       renderEditor({
+        cleanUps,
         projectId: project.id,
         title: project.title,
         brief: project.brief,
@@ -412,12 +462,14 @@ app.post("/api/projects/:id/cuts", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ seg: number; word: number | null; kind: "word" | "segment" | "fillers" }>(c);
+  const b = await body<{ seg: number; word: number | null; kind: "word" | "segment" | "fillers" | "pauses" }>(c);
   const segments = await getSegments(c.env.DB, project.source_id);
   let cuts = parseCuts(project.cuts);
 
   if (b.kind === "fillers") {
     cuts = addCuts(cuts, fillerCuts(segments));
+  } else if (b.kind === "pauses") {
+    cuts = addCuts(cuts, pauseCuts(segments));
   } else if (b.kind === "segment" && typeof b.seg === "number") {
     cuts = toggleSegment(cuts, b.seg);
   } else if (b.kind === "word" && typeof b.seg === "number" && typeof b.word === "number") {

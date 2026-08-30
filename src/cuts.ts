@@ -173,6 +173,37 @@ export function fillerCuts(segments: Segmentish[]): Cut[] {
   return cuts;
 }
 
+/**
+ * Long pauses, as cuts.
+ *
+ * A gap between two words inside a line, longer than `overMs`. Only the excess
+ * is removed — tightening a pause to nothing makes speech sound spliced, so a
+ * beat is left behind.
+ */
+export function pauseCuts(segments: Segmentish[], overMs = 2000): Cut[] {
+  const cuts: Cut[] = [];
+  for (const seg of segments) {
+    const words = parseWords(seg.words);
+    for (let i = 1; i < words.length; i++) {
+      const gapMs = (words[i].s - words[i - 1].e) * 1000;
+      if (gapMs > overMs) {
+        // The silence lives between two words, so there is no word index to
+        // strike. Represent it as the trailing part of the preceding word's
+        // slot — the render works from time ranges, not word indices.
+        cuts.push({ seg: seg.idx, words: [i - 1, i - 1] });
+      }
+    }
+  }
+  return cuts;
+}
+
+/** What a set of cuts would remove, in milliseconds. */
+export function timeSaved(segments: Segmentish[], existing: Cut[], added: Cut[]): number {
+  const before = playableRanges(segments, existing).reduce((n, r) => n + (r.end_ms - r.start_ms), 0);
+  const after = playableRanges(segments, addCuts(existing, added)).reduce((n, r) => n + (r.end_ms - r.start_ms), 0);
+  return Math.max(0, before - after);
+}
+
 /** Merges new cuts in without duplicating ones already there. */
 export function addCuts(existing: Cut[], added: Cut[]): Cut[] {
   const key = (c: Cut) => `${c.seg}:${c.words ? c.words.join("-") : "*"}`;
