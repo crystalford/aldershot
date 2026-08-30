@@ -34,6 +34,13 @@ export interface Env {
    */
   ANTHROPIC_API_KEY?: string;
 
+  /**
+   * Public base URL of this Worker, so the render container can fetch source
+   * media over HTTP. The container is a separate process: it cannot read R2
+   * bindings, only URLs.
+   */
+  MEDIA_PUBLIC_BASE?: string;
+
   // Cloudflare Stream — preview playback (HLS + poster). Optional; without it
   // previews are served from R2 directly.
   STREAM_ACCOUNT_ID?: string;

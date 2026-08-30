@@ -22,6 +22,7 @@ import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, saveCuts, setKept } from "./projects.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
+import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { currentUser } from "./user.ts";
 import { createSource, getSegments, getSource, listSources } from "./sources.ts";
@@ -307,6 +308,56 @@ app.post("/api/projects/:id/cuts", async (c) => {
 
   await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
   return c.json({ cuts, afterS: runtimeAfterCuts(segments, cuts) });
+});
+
+/**
+ * Render the cut. Every render is a NEW row — re-rendering after an edit never
+ * loses the previous version (06-BUILD-PLAN.md §Phase 3).
+ */
+app.post("/api/renders", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const b = await body<{ projectId: string; format: Format; aspect: Aspect }>(c);
+  if (!b.projectId) return c.json({ error: "which project?" }, 400);
+
+  const project = await getProject(c.env.DB, b.projectId, user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const render = await createRender(c.env.DB, {
+    user_id: user.id,
+    project_id: project.id,
+    format: b.format || "mp4_1080",
+    aspect: b.aspect || "16:9",
+  });
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: project.id });
+
+  c.executionCtx.waitUntil(
+    runRender(c.env, { userId: user.id, projectId: project.id, renderId: render.id, jobId: job.id }),
+  );
+  return c.json({ render, jobId: job.id });
+});
+
+app.get("/api/projects/:id/renders", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  return c.json({ renders: await listRenders(c.env.DB, project.id) });
+});
+
+/**
+ * What the cut currently is, as ranges. The preview and the runtime figures
+ * read from here so the number a user sees and the video they get come from
+ * the same place.
+ */
+app.get("/api/projects/:id/edl", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  const built = await edlForProject(c.env, project, user.id);
+  if (!built) return c.json({ error: "no source" }, 400);
+  return c.json({ cuts: built.edl.cuts, durationMs: built.edl.durationMs });
 });
 
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */
