@@ -36,6 +36,67 @@ import { rm, stat, unlink } from "node:fs/promises";
  * keyframes, which would shift every cut point by up to several seconds — the
  * user struck a word, so the cut has to land on that word.
  */
+
+/**
+ * Captions, burned in.
+ *
+ * A short is watched on mute, so captions are not a nicety — they are the
+ * whole reason it lands. They are burned into the pixels rather than shipped
+ * as a track because no social platform reads a sidecar file.
+ *
+ * The cues arrive already in OUTPUT time (see buildSrt in src/edl.ts), so this
+ * only has to draw them. Two styles, per the design: Bold and Clean.
+ */
+function writeAssFile(dir, cues, style, w, h) {
+  const assTime = (ms) => {
+    const t = Math.max(0, Math.round(ms));
+    const h2 = Math.floor(t / 3600000);
+    const m = Math.floor((t % 3600000) / 60000);
+    const sec = Math.floor((t % 60000) / 1000);
+    const cs = Math.floor((t % 1000) / 10);
+    const p = (n, w2 = 2) => String(n).padStart(w2, "0");
+    return `${h2}:${p(m)}:${p(sec)}.${p(cs)}`;
+  };
+
+  // Sized against the video height so captions look the same at 720 and 4K.
+  const fontSize = Math.round(h * (style === "Bold" ? 0.055 : 0.042));
+  const marginV = Math.round(h * 0.12);
+  // Side margins scale with WIDTH, not height. A fixed 60px is fine at 1080
+  // wide and far too tight once the font scales up — the first render
+  // overflowed both edges of a 9:16 short.
+  const marginH = Math.round(w * 0.08);
+  const styleLine =
+    style === "Bold"
+      ? `Style: Cap,Instrument Sans,${fontSize},&H00FFFFFF,&H00FFFFFF,&H00101013,&H96000000,-1,0,0,0,100,100,0,0,3,${Math.round(fontSize * 0.14)},0,2,${marginH},${marginH},${marginV},1`
+      : `Style: Cap,Instrument Sans,${fontSize},&H00FFFFFF,&H00FFFFFF,&H00101013,&H64000000,0,0,0,0,100,100,0,0,1,${Math.round(fontSize * 0.08)},0,2,${marginH},${marginH},${marginV},1`;
+
+  const header = [
+    "[Script Info]", "ScriptType: v4.00+", `PlayResX: ${w}`, `PlayResY: ${h}`,
+    // 0 is smart wrapping. 2 means "never wrap, only break on \\N", which is
+    // what made the first captioned render run straight off both edges.
+    "WrapStyle: 0", "",
+    "[V4+ Styles]",
+    "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+    styleLine, "",
+    "[Events]",
+    "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+  ].join("\n");
+
+  const events = cues
+    .filter((c) => c.text && c.text.trim())
+    .map((c) => {
+      // Commas and newlines are field separators in ASS, so they are escaped
+      // rather than left to corrupt the line.
+      const text = String(c.text).replace(/\r?\n/g, " ").replace(/,/g, "\\,").trim();
+      return `Dialogue: 0,${assTime(c.start_ms)},${assTime(c.end_ms)},Cap,,0,0,0,,${text}`;
+    })
+    .join("\n");
+
+  const path = `${dir}/captions.ass`;
+  writeFileSync(path, `${header}\n${events}\n`);
+  return path;
+}
+
 function render(plan, res) {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dir = `/tmp/render-${id}`;
@@ -85,13 +146,29 @@ function render(plan, res) {
       writeFileSync(listPath, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
 
       const outPath = `${dir}/out.mp4`;
-      await runFfmpeg([
-        "-hide_banner", "-loglevel", "error",
-        "-f", "concat", "-safe", "0", "-i", listPath,
-        // Every part was encoded identically above, so a stream copy here is
-        // exact and costs nothing.
-        "-c", "copy", "-movflags", "+faststart", "-y", outPath,
-      ]);
+      const cues = Array.isArray(plan.captions) ? plan.captions : [];
+      const wantCaptions = cues.length > 0 && plan.captionStyle && plan.captionStyle !== "None";
+
+      if (wantCaptions) {
+        // Burning captions means re-encoding video, so the copy shortcut is
+        // not available here — the pixels themselves change.
+        const assPath = writeAssFile(dir, cues, plan.captionStyle, Number(w), Number(h));
+        await runFfmpeg([
+          "-hide_banner", "-loglevel", "error",
+          "-f", "concat", "-safe", "0", "-i", listPath,
+          "-vf", `subtitles=${assPath.replace(/'/g, "")}`,
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+          "-c:a", "copy", "-movflags", "+faststart", "-y", outPath,
+        ]);
+      } else {
+        await runFfmpeg([
+          "-hide_banner", "-loglevel", "error",
+          "-f", "concat", "-safe", "0", "-i", listPath,
+          // Every part was encoded identically above, so a stream copy here is
+          // exact and costs nothing.
+          "-c", "copy", "-movflags", "+faststart", "-y", outPath,
+        ]);
+      }
 
       const st = await stat(outPath);
       console.log(`render: ${cuts.length} cuts, ${st.size} bytes, ${Date.now() - t0}ms`);
