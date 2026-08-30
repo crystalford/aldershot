@@ -16,6 +16,8 @@
 
 import type { Env } from "./env";
 import { TRANSCRIBE, TRANSCRIBE_DIARIZED } from "./models";
+import { CHUNK_MS, OVERLAP_MS, joinText, stitch, type ChunkTranscript } from "./longaudio";
+import { indexMp3Chunks } from "./mp3";
 
 /** A word and its timing, as Whisper returns it. */
 export interface WhisperWord {
@@ -57,8 +59,8 @@ interface WhisperResponse {
  * works in testing on small files and fails on exactly the long videos this
  * product is for.
  */
-export function toBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
+export function toBase64(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   const CHUNK = 0x8000;
   let binary = "";
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -86,31 +88,121 @@ export function reconcile(segment: WhisperSegment): WhisperWord[] {
 export interface TranscribeOpts {
   /** Opt-in diarization upgrade (~10x cost). See docs/decisions/models.md. */
   diarize?: boolean;
+  /**
+   * Called after each chunk of a long source, so the job can report real
+   * progress instead of sitting at one stage for half an hour.
+   */
+  onProgress?: (fraction: number, done: number, total: number) => void;
 }
 
-export async function transcribe(env: Env, media: ArrayBuffer, opts: TranscribeOpts = {}): Promise<TranscriptResult> {
+/** One call. Used directly for short audio, and per-chunk for long audio. */
+async function transcribeOnce(
+  env: Env,
+  media: Uint8Array | ArrayBuffer,
+  opts: TranscribeOpts,
+): Promise<{ segments: WhisperSegment[]; text: string; duration: number; neurons: number }> {
   const model = opts.diarize ? TRANSCRIBE_DIARIZED : TRANSCRIBE;
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<WhisperResponse>;
 
-  const input: Record<string, unknown> = { audio: toBase64(media) };
+  const buf = media instanceof Uint8Array ? media : new Uint8Array(media);
+  const input: Record<string, unknown> = { audio: toBase64(buf) };
   if (opts.diarize) input.diarize = true;
 
   const res = await run(model.id, input);
-
   const segments = (res.segments ?? []).map((s) => ({ ...s, words: reconcile(s) }));
   return {
-    text: res.text ?? "",
     segments,
+    text: res.text ?? "",
     duration: res.transcription_info?.duration ?? (segments.at(-1)?.end ?? 0),
     neurons: res.usage?.neurons ?? 0,
+  };
+}
+
+/**
+ * Transcribes a source that lives in R2, chunking only when it has to.
+ *
+ * Takes a bucket and key rather than bytes on purpose. Ten hours of audio is
+ * 137 MB, and base64 adds a third on top — enough to exhaust a Worker before a
+ * single call is made. Measured: loading the whole file and chunking in memory
+ * fails outright, while the same audio chunked from range reads succeeds.
+ *
+ * So the object is streamed once to index its frames, then each chunk is
+ * fetched by byte range only when it is about to be sent. Peak memory is one
+ * chunk, not the whole file.
+ *
+ * Chunks run SEQUENTIALLY. Whisper is rate-limited per account, and five slow
+ * calls that all succeed beat five fast ones where the fourth is throttled and
+ * the whole transcript has to be redone.
+ */
+export async function transcribeObject(
+  env: Env,
+  bucket: R2Bucket,
+  key: string,
+  opts: TranscribeOpts = {},
+): Promise<TranscriptResult> {
+  const head = await bucket.head(key);
+  if (!head) throw new Error("That upload isn't there any more.");
+
+  // Small enough for one call — the overwhelmingly common case.
+  if (head.size <= SINGLE_CALL_MAX_BYTES) {
+    const object = await bucket.get(key);
+    if (!object) throw new Error("That upload isn't there any more.");
+    const one = await transcribeOnce(env, await object.arrayBuffer(), opts);
+    return { ...one, diarized: Boolean(opts.diarize) };
+  }
+
+  const indexSource = await bucket.get(key);
+  if (!indexSource?.body) throw new Error("That upload isn't there any more.");
+
+  let ranges;
+  try {
+    ranges = await indexMp3Chunks(indexSource.body, { chunkMs: CHUNK_MS, overlapMs: OVERLAP_MS });
+  } catch {
+    // Not MP3, so it cannot be cut safely. Say so plainly rather than sending a
+    // too-large request that fails only after burning several minutes.
+    throw new Error("That audio is too long to read in one go, and isn't in a format this can split yet.");
+  }
+
+  const done: ChunkTranscript[] = [];
+  let neurons = 0;
+  let totalMs = 0;
+
+  for (const range of ranges) {
+    const part = await bucket.get(key, {
+      range: { offset: range.startByte, length: range.endByte - range.startByte },
+    });
+    if (!part) throw new Error("That upload isn't there any more.");
+
+    const result = await transcribeOnce(env, await part.arrayBuffer(), opts);
+    neurons += result.neurons;
+    done.push({ startMs: range.startMs, segments: result.segments });
+    totalMs = Math.max(totalMs, range.startMs + range.durationMs);
+    opts.onProgress?.(done.length / ranges.length, done.length, ranges.length);
+  }
+
+  const segments = stitch(done);
+  return {
+    segments,
+    text: joinText(segments),
+    duration: totalMs / 1000,
+    neurons,
     diarized: Boolean(opts.diarize),
   };
 }
 
 /**
- * Rough guide to whether a file can go straight to Whisper without extracting
- * audio first. Base64 inflates by 4/3, and 43 MB of audio (180 min at 32 kbps
- * mono) has been verified to work — so the ceiling is generous, but a raw
- * video is far larger than its audio and should still be extracted.
+ * The largest audio that goes to Whisper in a single call.
+ *
+ * Measured: 55 MB (4 hours) succeeds; 69 MB fails after four minutes; 82 MB is
+ * rejected outright. 50 MB keeps a real margin below the point where failures
+ * start costing time as well as money.
  */
-export const DIRECT_TRANSCRIBE_MAX_BYTES = 45 * 1024 * 1024;
+export const SINGLE_CALL_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * The largest file accepted without extracting its audio first.
+ *
+ * A raw video is far larger than its audio, so anything above this is really a
+ * video and needs the audio pulled out before it can be read at all.
+ */
+export const DIRECT_TRANSCRIBE_MAX_BYTES = SINGLE_CALL_MAX_BYTES;

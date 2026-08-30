@@ -12,7 +12,7 @@ import type { Env } from "./env";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs";
 import { meter } from "./usage";
 import { checkCap, type Plan } from "./plans";
-import { DIRECT_TRANSCRIBE_MAX_BYTES, transcribe } from "./transcribe";
+import { transcribeObject } from "./transcribe";
 import { saveSegments, setTranscriptState, type Source } from "./sources";
 
 export interface IngestOpts {
@@ -41,21 +41,21 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
     ? { id: opts.jobId }
     : await createJob(env.DB, { user_id: src.user_id, type: "transcribe", ref_id: src.id });
 
-  const object = await env.MEDIA.get(src.r2_key);
-  if (!object) {
+  // Only the HEAD — a ten-hour source is far too large to pull into the Worker,
+  // and the transcriber reads it from R2 in ranges instead.
+  const head = await env.MEDIA.head(src.r2_key);
+  if (!head) {
     await failJob(env.DB, job.id, "The upload didn't finish. Try adding the video again.");
     await setTranscriptState(env.DB, src.id, "failed");
     return { jobId: job.id };
   }
 
-  const bytes = await object.arrayBuffer();
-
   // The cap is in source minutes, so we need a duration before spending. If
-  // the client measured one, trust it; otherwise estimate from bitrate, and
+  // the client measured one, trust it; otherwise estimate from size, and
   // reconcile against the real duration the transcript reports afterwards.
   const estimatedMinutes = opts.knownDurationS
     ? opts.knownDurationS / 60
-    : estimateMinutesFromBytes(bytes.byteLength);
+    : estimateMinutesFromBytes(head.size);
 
   const cap = await checkCap(env.DB, src.user_id, opts.plan, estimatedMinutes);
   if (!cap.ok) {
@@ -64,25 +64,20 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
     return { jobId: job.id };
   }
 
-  if (bytes.byteLength > DIRECT_TRANSCRIBE_MAX_BYTES) {
-    // Audio extraction lives in the ffmpeg container. Until that path is
-    // wired (it cannot be exercised without a container runtime), say so
-    // plainly rather than failing with something cryptic.
-    await failJob(
-      env.DB,
-      job.id,
-      "That file is too large to read yet — audio extraction isn't wired up. Try a shorter video for now.",
-    );
-    await setTranscriptState(env.DB, src.id, "failed");
-    return { jobId: job.id };
-  }
-
   await startJob(env.DB, job.id, "reading it");
   await setTranscriptState(env.DB, src.id, "running");
 
   try {
-    // One call, no chunking — see docs/decisions/transcription.md.
-    const result = await transcribe(env, bytes, { diarize: opts.diarize });
+    // One call under ~4 hours; chunked from R2 above that. See
+    // docs/decisions/transcription.md for where the ceiling actually is.
+    const result = await transcribeObject(env, env.MEDIA, src.r2_key, {
+      diarize: opts.diarize,
+      // Long sources report real progress per chunk rather than sitting on one
+      // stage for half an hour.
+      onProgress: (fraction, done, total) => {
+        void advance(env.DB, job.id, Math.round(fraction * 75), `reading it — part ${done} of ${total}`);
+      },
+    });
 
     await advance(env.DB, job.id, 80, "writing down what it heard");
     const count = await saveSegments(env.DB, src.id, result.segments);
@@ -99,7 +94,7 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
       job_id: job.id,
       job_type: "transcribe",
       source_minutes: result.duration / 60,
-      bytes_stored: bytes.byteLength,
+      bytes_stored: head.size,
       diarized: result.diarized,
     });
 

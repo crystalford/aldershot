@@ -105,7 +105,25 @@ Transcription was the second-largest line in the per-video cost model, so the
 "≈$2.40 per finished video" figure that the pricing shape was derived from is
 probably too high. Worth re-running the model before prices are set.
 
-## 8. Domain
+## 8. Long sources need audio extraction, which needs the container
+
+**Status:** the transcription side is solved; the extraction side is not.
+
+Chunked transcription now handles ten-hour sources (see
+`docs/decisions/transcription.md`). But that path reads **audio** from R2, and
+what the user uploads is **video**: ten hours at 1080p is 20–40 GB, whose audio
+track is 144 MB.
+
+So a long source still needs its audio pulled out before it can be read, and
+that is ffmpeg in a container — which cannot be exercised in this environment
+(no container runtime). Uploads whose audio is already small enough work today;
+long video uploads will need the container path verified on a real deploy.
+
+Client-side extraction was considered and rejected: `MediaRecorder` runs in
+real time, so a ten-hour file would take ten hours, and `WebCodecs` is not
+portable enough to depend on for the primary path.
+
+## 9. Domain
 
 `aldershot.io`, being registered. Needed for Phase 9 (auth, the signed-out
 landing site, and the `/r/:token` review links, which the prototype renders as

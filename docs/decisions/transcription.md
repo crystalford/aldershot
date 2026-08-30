@@ -112,3 +112,83 @@ teaches the user the bar is fiction.
 So: during transcription the UI shows the stage and no percentage. If real
 sub-progress is ever wanted, chunking would buy it back — but at the cost of
 the timestamp correctness this decision was made to protect. Not worth it.
+
+## The real ceiling: about four hours per call
+
+180 minutes was the top of the product's *stated* range, but streams run 6–10
+hours, so the actual limit matters. Measured against the live endpoint:
+
+| Source | Audio | Base64 | Result | Time |
+|---|---|---|---|---|
+| 180 min | 43 MB | 58 MB | ✅ 392 segments, complete | — |
+| **240 min** | **55 MB** | **77 MB** | ✅ **521 segments, complete (14,400 s)** | **235 s** |
+| 300 min | 69 MB | 96 MB | ❌ `4001: could not forward request to Workers AI` | failed at 255 s |
+| 360 min | 82 MB | 115 MB | ❌ `Network connection lost` | rejected at 7 s |
+
+Two distinct failures, and the difference is informative. At 115 MB the request
+is rejected outright in seconds — a hard size limit. At 96 MB it is accepted,
+runs for four minutes, and *then* fails, which is the worse case: it burns the
+time and the money before giving up. Both were reproduced, so neither is a
+flake.
+
+**Working ceiling: ~4 hours / ~80 MB of base64.** Anything longer must be
+chunked.
+
+## Chunking, now that we know the real chunk size
+
+Cloudflare's ~1 MB advice would mean 600 calls for a 10-hour stream. The
+measured ceiling means **2-hour chunks with comfortable margin — five calls for
+a 10-hour source**, each about two minutes.
+
+That changes chunking from a liability into a detail, but only if the split is
+done properly:
+
+- **Split on frame boundaries at known times, never on byte counts.** Cutting a
+  compressed stream at an arbitrary byte lands mid-frame and produces garbage
+  at the seam. `src/mp3.ts` parses MP3 frame headers so every cut is exact and
+  the start time of each chunk is known to the millisecond.
+- **Offset every timestamp by the chunk's real start.** Each chunk's words come
+  back starting at zero.
+- **Overlap the chunks and dedupe the seam.** A word straddling a cut would
+  otherwise be lost or duplicated.
+
+`src/longaudio.ts` does the stitching and is covered by tests, because a seam
+bug shows up as a subtly wrong timestamp hours into a transcript — the kind of
+thing nobody notices until an export is wrong.
+
+## Long sources: measured working, up to ten hours
+
+Streams run 6–10 hours, well past the ~4-hour single-call ceiling, so chunking
+is not optional. Measured end to end on a real 10-hour file:
+
+| | |
+|---|---|
+| Source | 144 MB, 10 hours |
+| Chunks | 6 (two hours each, 45s overlap) |
+| Wall clock | **573 s — about 9½ minutes** |
+| Reported duration | 36,000.1 s — exactly ten hours |
+| Segments | 1,281, first at 0 s, last ending at 35,984 s |
+| Cost | 28,153 neurons ≈ **$0.31** |
+
+Nothing was lost at either end, and the seams stitched cleanly.
+
+### Why it reads from R2 instead of taking bytes
+
+The first attempt loaded the file and chunked it in memory. It failed — a
+Worker cannot hold 144 MB of audio and build base64 on top of it. The fix is
+not a bigger buffer but never having one: the object is streamed once to index
+its frames (`indexMp3Chunks`), then each chunk is fetched by byte range only
+when it is about to be sent. Peak memory is one chunk rather than the whole
+file, which is why this works at ten hours and would work at twenty.
+
+### Known limit: this wants to be a queue
+
+The ten-hour run took 9½ minutes inside a single request. That fits, but not
+comfortably — it is one slow chunk away from a platform timeout, and a failure
+at chunk five currently throws away the four that succeeded.
+
+Each chunk should be its own queue message, with its segments written as they
+land. Then a retry costs one chunk instead of the whole transcript, and there
+is no long-running request at all. The stitching already tolerates chunks
+arriving in any order, so nothing about that design has to change — it is
+wiring, not rework.
