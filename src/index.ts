@@ -25,10 +25,23 @@ import { readSource } from "./ingest";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload";
 import { activeJobs, createJob, getJobs } from "./jobs";
 import { monthUsage } from "./usage";
+import { begin, runScore } from "./begin";
+import { intentLabel, readIntent } from "./intent";
 
 export { RenderContainer } from "./render";
 
 const app = new Hono<{ Bindings: Env }>();
+
+/**
+ * Reads a JSON body, treating a malformed one as an empty object.
+ *
+ * `c.req.json<T>().catch(() => ({}))` widens the result to `T | {}`, which
+ * then rejects every property access — this keeps the declared shape and
+ * makes every field optional at the call site, where it belongs.
+ */
+async function body<T extends object>(c: { req: { json<U>(): Promise<U> } }): Promise<Partial<T>> {
+  return await c.req.json<Partial<T>>().catch(() => ({}) as Partial<T>);
+}
 
 /** Health check — no auth, no schema work, so it stays honest when D1 is down. */
 app.get("/api/health", (c) => c.json({ ok: true }));
@@ -276,12 +289,11 @@ app.post("/api/sources", async (c) => {
 app.post("/api/uploads", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env.DB);
-  type StartBody = { filename?: string; contentType?: string };
-  const body: StartBody = await c.req.json<StartBody>().catch(() => ({}) as StartBody);
-  const filename = body.filename || "upload.mp4";
+  const b = await body<{ filename: string; contentType: string }>(c);
+  const filename = b.filename || "upload.mp4";
 
   const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
-  const started = await startUpload(c.env.MEDIA, src.r2_key, body.contentType);
+  const started = await startUpload(c.env.MEDIA, src.r2_key, b.contentType);
   return c.json({ source: src, ...started });
 });
 
@@ -366,6 +378,45 @@ app.get("/api/sources/:id", async (c) => {
   return c.json({ source: src, segments: await getSegments(c.env.DB, src.id) });
 });
 
+/**
+ * What the app understood from a sentence, before committing to it. The regex
+ * fast path is enough to answer this without an LLM call.
+ */
+app.post("/api/intent", async (c) => {
+  const { text } = await body<{ text: string }>(c);
+  return c.json({ kind: readIntent(text || ""), explain: intentLabel(text || "") });
+});
+
+/** Begin — one sentence becomes the right kind of work. */
+app.post("/api/begin", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const b = await body<{ sourceId: string; brief: string; upgrade: boolean }>(c);
+  if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
+
+  const src = await getSource(c.env.DB, b.sourceId, user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const result = await begin(c.env, {
+    userId: user.id,
+    sourceId: src.id,
+    brief: b.brief || "",
+    upgrade: b.upgrade,
+  });
+
+  c.executionCtx.waitUntil(
+    runScore(c.env, {
+      userId: user.id,
+      sourceId: src.id,
+      projectId: result.projectId,
+      brief: b.brief || "",
+      jobId: result.jobId,
+      upgrade: b.upgrade,
+    }),
+  );
+  return c.json(result);
+});
+
 /** The UI polls this for honest staged progress. */
 app.get("/api/jobs", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -383,6 +434,7 @@ app.get("/api/usage/month", async (c) => {
   const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   return c.json(await monthUsage(c.env.DB, user.id, since));
 });
+
 
 
 export default app;
