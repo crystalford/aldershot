@@ -18,6 +18,7 @@ import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning } from "./library.ts";
+import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
@@ -26,6 +27,7 @@ import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild } from "./ui/pages/build.ts";
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
+import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, runtimeAfterCuts, serialiseCuts, toggleSegment, toggleWord } from "./cuts.ts";
@@ -598,6 +600,76 @@ app.post("/api/projects/:id/reactions", async (c) => {
   return c.json({ jobId: job.id });
 });
 
+/**
+ * Outline an essay from the library.
+ *
+ * Unlike every other pass, this one has no source video — it builds from what
+ * the user has already kept. A beat the model could not back with a real clip
+ * comes back marked as a gap rather than dropped or faked.
+ */
+app.post("/api/projects/:id/outline", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await currentUser(c.env.DB);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ topic: string }>(c);
+  const topic = (b.topic || project.brief || project.title || "").trim();
+  if (!topic) return c.json({ error: "what is the essay about?" }, 400);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        await startJob(c.env.DB, job.id, "drafting the acts");
+        const moments = await listMoments(c.env.DB, user.id, 120);
+        if (!moments.length) {
+          return void (await failJob(c.env.DB, job.id, "Nothing kept yet — an essay is built from clips you've saved."));
+        }
+
+        const outline = await draftOutline(
+          c.env,
+          topic,
+          moments.map((m) => ({ id: m.id, quote: m.quote, source_title: m.source_title })),
+        );
+
+        await putBeats(
+          c.env.DB,
+          project.id,
+          outline.beats.map((be: EssayBeat) => ({
+            kind: be.kind, act: be.act, clip_id: be.clip_id ?? null, text: be.text,
+            struck: null, dur_ms: null, media_r2_key: null, recorded_at: null,
+          })),
+        );
+        await c.env.DB.prepare(`UPDATE v2_projects SET has_acts=1, updated_at=? WHERE id=?`)
+          .bind(Date.now(), project.id).run();
+
+        // The pass log says honestly how much of the argument is actually
+        // backed — including the beats the model wanted to cite and could not.
+        const backed = outline.beats.filter((be) => be.kind === "clip").length;
+        await c.env.DB
+          .prepare(`INSERT INTO passes (id,project_id,source_id,n,instruction,result,model,tokens_in,tokens_out,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+          .bind(
+            ulid(), project.id, null, 1, topic,
+            `${outline.beats.length} beats — ${backed} backed by a clip` +
+              (outline.rejected ? `, ${outline.rejected} needing footage it doesn't have` : ""),
+            outline.model, outline.tokensIn, outline.tokensOut, Date.now(),
+          ).run();
+
+        await meter(c.env.DB, {
+          user_id: user.id, job_id: job.id, job_type: "pass",
+          tokens_in: outline.tokensIn, tokens_out: outline.tokensOut,
+        });
+        await finishJob(c.env.DB, job.id);
+      } catch (err) {
+        await failJob(c.env.DB, job.id, `Couldn't draft the acts: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    })(),
+  );
+  return c.json({ jobId: job.id });
+});
+
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */
 app.post("/api/clips/:id/keep", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -874,6 +946,8 @@ app.get("/api/usage/month", async (c) => {
   const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
   return c.json(await monthUsage(c.env.DB, user.id, since));
 });
+
+
 
 
 
