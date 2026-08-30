@@ -127,3 +127,28 @@ export async function activeJobs(db: D1Database, userId: string): Promise<Job[]>
     .all<Job>();
   return results ?? [];
 }
+
+/**
+ * What finished while the user was away, newest first.
+ *
+ * Home's feed is built from these rather than from a separate events table:
+ * every unit of work already writes a job row, so the feed cannot drift out of
+ * step with what actually happened. Failures are included — a job that died
+ * overnight is exactly the kind of thing the user came back to find out about.
+ */
+export async function recentlyFinished(
+  db: D1Database,
+  userId: string,
+  sinceMs = 24 * 3600 * 1000,
+  limit = 6,
+): Promise<Job[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM jobs
+        WHERE user_id=? AND state IN ('ready','failed') AND finished_at IS NOT NULL AND finished_at > ?
+        ORDER BY finished_at DESC LIMIT ?`,
+    )
+    .bind(userId, Date.now() - sinceMs, limit)
+    .all<Job>();
+  return results ?? [];
+}

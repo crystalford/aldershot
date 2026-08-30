@@ -158,15 +158,78 @@ function workingLine(jobs: WorkingJob[]): string {
   return `Working on ${things} — ${clauses.join(", ")}.`;
 }
 
-function workingRow(jobs: WorkingJob[]): string {
+/** The section heading, with its count sitting right. */
+function sectionHead(title: string, count: string): string {
   return `<div style="margin-top:48px;display:flex;align-items:baseline;justify-content:space-between;padding-left:4px">
-    <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap;flex:none">Since you were away</div>
-  </div>
-  <div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+    <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap;flex:none">${title}</div>
+    <span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);white-space:nowrap;flex:none">${esc(count)}</span>
+  </div>`;
+}
+
+function workingRow(jobs: WorkingJob[]): string {
+  return `<div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
     <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
     <span id="workingLine" style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(workingLine(jobs))}</span>
     <a href="/footage?tab=sources" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer">Watch</a>
   </div>`;
+}
+
+/** Relative time, the way the feed's right-hand column reads it. */
+function ago(ms: number): string {
+  const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  return hrs < 24 ? `${hrs}h` : `${Math.round(hrs / 24)}d`;
+}
+
+/**
+ * The feed: what finished while you were away.
+ *
+ * Built from job rows, so it can only report work that actually ran. A failed
+ * job is red and says what went wrong, because coming back to a silent gap is
+ * worse than coming back to bad news.
+ */
+function feedRow(f: FeedItem): string {
+  const failed = f.state === "failed";
+  return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
+    <span style="width:6px;height:6px;border-radius:50%;background:${failed ? ACCENT.red : ACCENT.green};flex:none"></span>
+    <span data-content style="flex:1;font-size:${SIZE.body};color:rgba(236,236,241,0.85);min-width:0">${esc(f.text)}</span>
+    <span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.28);font-family:${FONT.mono};flex:none">${ago(f.at)}</span>
+    ${f.href ? `<a href="${esc(f.href)}" style="font-size:${SIZE.secondary};font-weight:500;padding:6px 14px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none;white-space:nowrap">${esc(f.link ?? "Open")}</a>` : ""}
+  </div>`;
+}
+
+/** In motion — what is part-made, with how far along it is. */
+function motionRow(p: MotionItem): string {
+  return `<a href="/p/${esc(p.id)}/build" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div style="flex:none;width:64px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E">${
+      p.poster_r2_key
+        ? `<img loading="lazy" src="/media/${esc(p.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+        : ""
+    }</div>
+    <div style="flex:1;min-width:0">
+      <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.title)}</div>
+      <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">${esc(p.next_action ?? "")}</div>
+    </div>
+    <span data-content style="flex:none;font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono}">${p.pct}%</span>
+  </a>`;
+}
+
+export interface FeedItem {
+  text: string;
+  at: number;
+  state: string;
+  href?: string;
+  link?: string;
+}
+
+export interface MotionItem {
+  id: string;
+  title: string;
+  pct: number;
+  next_action: string | null;
+  poster_r2_key: string | null;
 }
 
 export interface HomeData {
@@ -175,6 +238,10 @@ export interface HomeData {
   working: WorkingJob[];
   /** Sources that arrived since the user was last here. Real count, or zero. */
   landedOvernight: number;
+  /** What finished while they were away. */
+  feed: FeedItem[];
+  /** What is part-made. */
+  motion: MotionItem[];
 }
 
 export function renderHome(d: HomeData): string {
@@ -182,6 +249,22 @@ export function renderHome(d: HomeData): string {
 <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
 ${composer()}
 <div style="margin-top:16px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);padding-left:4px">A full cut, a few shorts, a cleanup — it works out the job and checks with you first.</div>
-${d.working.length ? workingRow(d.working) : ""}
+${
+  d.isFresh
+    ? ""
+    : sectionHead("Since you were away", d.feed.length ? `${d.feed.length} finished` : "") +
+      (d.working.length ? workingRow(d.working) : "") +
+      `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
+        d.feed.length
+          ? d.feed.map(feedRow).join("")
+          : `<div data-content style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
+      }</div>`
+}
+${
+  d.motion.length
+    ? sectionHead("In motion", `${d.motion.length}`) +
+      `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${d.motion.map(motionRow).join("")}</div>`
+    : ""
+}
 ${d.isFresh ? demoCard() + howThisGoes() : ""}`;
 }

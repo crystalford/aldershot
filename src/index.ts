@@ -38,7 +38,7 @@ import { currentUser } from "./user.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
+import { activeJobs, createJob, failJob, finishJob, getJobs, recentlyFinished, startJob } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { begin, runScore } from "./begin.ts";
 import { intentLabel, readIntent } from "./intent.ts";
@@ -82,9 +82,11 @@ function surface(view: View, screenLabel: string, title: string, body: string, s
 app.get("/", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env.DB);
-  const [sources, jobs] = await Promise.all([
+  const [sources, jobs, finished, projects] = await Promise.all([
     listSources(c.env.DB, user.id),
     activeJobs(c.env.DB, user.id),
+    recentlyFinished(c.env.DB, user.id),
+    listProjects(c.env.DB, user.id),
   ]);
 
   // "Fresh" means the account genuinely has nothing — that is what earns the
@@ -108,6 +110,48 @@ app.get("/", async (c) => {
           stage: j.stage_label ?? "working on",
           pct: j.pct,
         })),
+        /*
+         * The feed reports finished JOBS, so it can only ever say what really
+         * ran. A failure is included and named — coming back to a silent gap
+         * where a render should be is worse than coming back to bad news.
+         */
+        feed: finished.map((j) => {
+          /*
+           * A job's ref_id points at a source for reading and scoring, but at
+           * a PROJECT for passes and renders. Looking only at sources made
+           * every pass read "Ran a pass on a video", which tells the user
+           * nothing about which of their things moved.
+           */
+          const what =
+            byId.get(j.ref_id ?? "")?.title ??
+            projects.find((p) => p.id === j.ref_id)?.title ??
+            "a video";
+          const done: Record<string, string> = {
+            transcribe: `Finished reading ${what}`,
+            score: `Found the moments in ${what}`,
+            shorts: `Cut shorts from ${what}`,
+            render: `Rendered ${what}`,
+            pass: `Ran a pass on ${what}`,
+          };
+          return {
+            text: j.state === "failed" ? (j.error ?? `Couldn't finish ${what}`) : (done[j.type] ?? `Finished ${what}`),
+            at: j.finished_at ?? j.created_at,
+            state: j.state,
+            href: j.ref_id
+              ? projects.some((p) => p.id === j.ref_id)
+                ? `/p/${j.ref_id}/build`
+                : `/sources/${j.ref_id}`
+              : undefined,
+            link: "Open",
+          };
+        }),
+        motion: projects
+          .filter((p) => !p.archived_at && p.pct > 0 && p.pct < 100)
+          .slice(0, 6)
+          .map((p) => ({
+            id: p.id, title: p.title, pct: p.pct,
+            next_action: p.next_action, poster_r2_key: p.poster_r2_key,
+          })),
       }),
     ),
   );
