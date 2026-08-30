@@ -48,6 +48,7 @@ import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { currentUser, userForEmail } from "./user.ts";
+import { PLANS } from "./plans.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
@@ -1085,11 +1086,18 @@ app.get("/settings", async (c) => {
     .bind(user.id, since)
     .first<{ b: number | null }>();
 
+  /*
+   * The caps come from PLANS, which is also what checkCap refuses on. They
+   * were hardcoded here, and they disagreed with it — Settings told a free
+   * account it had 300 minutes while ingest cut it off at 60. A number shown
+   * to the user and the number enforced against them have to be one number.
+   */
+  const limits = PLANS[user.plan] ?? PLANS.free;
   const meters = [
     {
       label: "Processing minutes",
       used: Math.round(roll.source_minutes),
-      cap: pro ? 1200 : 300,
+      cap: limits.sourceMinutes,
       unit: "",
       color: ACCENT_CYAN,
       note: "Spent reading footage, rendering cuts, and burning captions. Resets on the 1st.",
@@ -1097,7 +1105,7 @@ app.get("/settings", async (c) => {
     {
       label: "Storage",
       used: Math.round(((stored?.b ?? 0) / 1e9) * 10) / 10,
-      cap: 100,
+      cap: limits.storageGb,
       unit: "GB",
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",

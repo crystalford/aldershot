@@ -10,13 +10,30 @@
  * §Failure rules).
  */
 
+/*
+ * THE HANDOFF CONTRADICTS ITSELF HERE, so this is written down rather than
+ * quietly picked.
+ *
+ *   05-INFRA-AND-COSTS.md §Pricing shape:  Free 60 source minutes,
+ *                                          Pro $39 (15h), Studio $119 (50h)
+ *   Landing.dc.html and the Settings panel in Aldershot.dc.html:
+ *                                          Free $0 / 300 minutes / 25 GB,
+ *                                          Studio $29 / 1,200 minutes / 100 GB
+ *
+ * Two tiers or three, different prices, different caps. The prototype wins —
+ * that is the standing rule when prose and prototype disagree, and it is also
+ * the number a customer would have read on the pricing page before paying.
+ *
+ * `pro` is kept as an alias of studio rather than deleted: the column is a
+ * free-text TEXT and any row already carrying "pro" must keep working.
+ */
 export type Plan = "free" | "pro" | "studio";
 
-export const PLANS: Record<Plan, { label: string; sourceMinutes: number; price: number }> = {
+export const PLANS: Record<Plan, { label: string; sourceMinutes: number; storageGb: number; price: number }> = {
   // Enough to feel the claim, not enough to abuse.
-  free: { label: "Free", sourceMinutes: 60, price: 0 },
-  pro: { label: "Pro", sourceMinutes: 15 * 60, price: 39 },
-  studio: { label: "Studio", sourceMinutes: 50 * 60, price: 119 },
+  free: { label: "Free", sourceMinutes: 300, storageGb: 25, price: 0 },
+  pro: { label: "Studio", sourceMinutes: 1200, storageGb: 100, price: 29 },
+  studio: { label: "Studio", sourceMinutes: 1200, storageGb: 100, price: 29 },
 };
 
 export interface CapCheck {
