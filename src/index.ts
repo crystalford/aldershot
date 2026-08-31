@@ -1411,11 +1411,22 @@ app.post("/api/sources", async (c) => {
 app.post("/api/uploads", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ filename: string; contentType: string }>(c);
+  const b = await body<{ filename: string; contentType: string; bytes: number }>(c);
   const filename = b.filename || "upload.mp4";
 
   const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
-  const started = await startUpload(c.env.MEDIA, src.r2_key, b.contentType);
+  const started = await startUpload(c.env.MEDIA, src.r2_key, b.contentType, b.bytes);
+
+  // Remembered server-side so a browser that reloads, crashes, or comes back
+  // tomorrow can ask what is already stored instead of starting over.
+  await c.env.DB
+    .prepare(
+      `INSERT OR REPLACE INTO uploads (source_id,user_id,upload_id,part_size,total_bytes,filename,created_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    )
+    .bind(src.id, user.id, started.uploadId, started.partSize, b.bytes ?? null, filename, Date.now())
+    .run();
+
   return c.json({ source: src, ...started });
 });
 
@@ -1429,13 +1440,20 @@ app.put("/api/uploads/:sourceId/parts/:n", async (c) => {
   const uploadId = c.req.header("x-upload-id");
   if (!uploadId) return c.json({ error: "missing upload id" }, 400);
 
-  const part = await uploadPart(
-    c.env.MEDIA,
-    src.r2_key,
-    uploadId,
-    Number(c.req.param("n")),
-    await c.req.arrayBuffer(),
-  );
+  const bytes = await c.req.arrayBuffer();
+  const n = Number(c.req.param("n"));
+  const part = await uploadPart(c.env.MEDIA, src.r2_key, uploadId, n, bytes);
+
+  /* Recorded as it lands. This is what any later session reads to work out
+     what is left, and what `complete` trusts instead of the client's memory. */
+  await c.env.DB
+    .prepare(
+      `INSERT OR REPLACE INTO upload_parts (source_id,part_number,etag,bytes,created_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .bind(src.id, n, part.etag, bytes.byteLength, Date.now())
+    .run();
+
   return c.json(part);
 });
 
@@ -1443,6 +1461,57 @@ app.put("/api/uploads/:sourceId/parts/:n", async (c) => {
  * Assembles the object and starts reading it. This is where a source stops
  * being an upload and becomes something the product can work with.
  */
+/**
+ * What has already landed for an in-flight upload.
+ *
+ * The resume query. A client that has lost its own record — a reload, a crash,
+ * a new tab, a different day — asks this and sends only the parts that are
+ * missing. Without it, "resumable" only ever meant "within this page's
+ * lifetime", which is not what the word promises to someone whose 2GB upload
+ * stopped at 60%.
+ */
+app.get("/api/uploads/:sourceId/state", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const up = await c.env.DB
+    .prepare(`SELECT * FROM uploads WHERE source_id=? AND user_id=?`)
+    .bind(c.req.param("sourceId"), user.id)
+    .first<{ upload_id: string; part_size: number; total_bytes: number | null; filename: string | null }>();
+  if (!up) return c.json({ error: "not found" }, 404);
+
+  const { results } = await c.env.DB
+    .prepare(`SELECT part_number, etag FROM upload_parts WHERE source_id=? ORDER BY part_number`)
+    .bind(c.req.param("sourceId"))
+    .all<{ part_number: number; etag: string }>();
+
+  return c.json({
+    uploadId: up.upload_id,
+    partSize: up.part_size,
+    totalBytes: up.total_bytes,
+    filename: up.filename,
+    parts: (results ?? []).map((r) => ({ partNumber: r.part_number, etag: r.etag })),
+  });
+});
+
+/** Uploads this account has started and not finished. */
+app.get("/api/uploads/pending", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT u.source_id, u.filename, u.total_bytes, u.part_size,
+              (SELECT COUNT(*) FROM upload_parts p WHERE p.source_id = u.source_id) AS parts_done
+         FROM uploads u
+         JOIN sources s ON s.id = u.source_id
+        WHERE u.user_id = ? AND s.deleted_at IS NULL
+        ORDER BY u.created_at DESC LIMIT 5`,
+    )
+    .bind(user.id)
+    .all();
+  return c.json({ pending: results ?? [] });
+});
+
 app.post("/api/uploads/:sourceId/complete", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1456,11 +1525,38 @@ app.post("/api/uploads/:sourceId/complete", async (c) => {
     diarize?: boolean;
   }>();
 
+  /*
+   * The part list comes from what the server actually stored, not from what
+   * the client believes it sent. A resumed upload may have been carried by two
+   * different sessions — or two different devices — and neither would hold the
+   * whole list. Completing with a partial list produces a truncated file that
+   * looks successful, which is the worst possible failure here.
+   */
+  const { results } = await c.env.DB
+    .prepare(`SELECT part_number, etag FROM upload_parts WHERE source_id=? ORDER BY part_number`)
+    .bind(src.id)
+    .all<{ part_number: number; etag: string }>();
+  const stored = (results ?? []).map((r) => ({ partNumber: r.part_number, etag: r.etag }));
+  const parts = stored.length ? stored : body.parts;
+
+  /* Part numbers must be a complete run from 1. A gap means a part is missing
+     and the assembled file would be silently short. */
+  const missing = parts.map((p, i) => (p.partNumber === i + 1 ? null : i + 1)).filter(Boolean);
+  if (missing.length) {
+    return c.json({ error: `That upload is missing part ${missing[0]} — it needs to finish sending.` }, 409);
+  }
+
   try {
-    await completeUpload(c.env.MEDIA, src.r2_key, body.uploadId, body.parts);
+    await completeUpload(c.env.MEDIA, src.r2_key, body.uploadId, parts);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "couldn't finish the upload" }, 400);
   }
+
+  // The upload is done; its bookkeeping is no longer resumable state.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM upload_parts WHERE source_id=?`).bind(src.id),
+    c.env.DB.prepare(`DELETE FROM uploads WHERE source_id=?`).bind(src.id),
+  ]);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
   await dispatch(c.env, c.executionCtx, {
@@ -1485,6 +1581,10 @@ app.post("/api/uploads/:sourceId/abort", async (c) => {
   if (uploadId) await abortUpload(c.env.MEDIA, src.r2_key, uploadId).catch(() => {});
   await c.env.DB.prepare(`UPDATE sources SET deleted_at=? WHERE id=?`).bind(Date.now(), src.id).run();
   return c.json({ ok: true });
+  await c.env.DB.batch([
+    c.env.DB.prepare(`DELETE FROM upload_parts WHERE source_id=?`).bind(c.req.param("sourceId")),
+    c.env.DB.prepare(`DELETE FROM uploads WHERE source_id=?`).bind(c.req.param("sourceId")),
+  ]);
 });
 
 app.get("/api/sources", async (c) => {

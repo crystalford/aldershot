@@ -112,7 +112,7 @@ async function uploadWorker() {
 /* A single persistent chip, bottom-left, present on every page while an
    upload is in flight. It is deliberately not a toast: a toast implies
    something that has happened, and this is something still happening. */
-function showUpload({ sourceId, name, pct, state, href, error }) {
+function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes, bps, etaS }) {
   let el = document.querySelector("#uploadChip");
   if (!el) {
     el = document.createElement("div");
@@ -128,24 +128,72 @@ function showUpload({ sourceId, name, pct, state, href, error }) {
 
   const dot =
     state === "failed" ? "#E06A6A" : state === "done" ? "#5EC98F" : "#5EB8C9";
+
+  /* A long upload needs to answer "how long is this going to take?", not just
+     "is it moving?". Size, rate and time left are all measured from bytes the
+     server has accepted — never a timer. */
+  const size = (n) =>
+    n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(n / 1e6)) + " MB";
+  const eta = (s) => {
+    if (s == null || !isFinite(s) || s <= 0) return "";
+    if (s < 60) return "about " + Math.max(5, Math.round(s / 5) * 5) + "s left";
+    const m = Math.round(s / 60);
+    return m < 60 ? "about " + m + " min left" : "about " + Math.round(m / 60) + "h left";
+  };
+
   const line =
     state === "failed"
       ? error || "The upload stopped"
       : state === "done"
         ? "Reading " + name
-        : "Uploading " + name + " — " + pct + "%";
+        : "Uploading " + name;
+
+  const detail =
+    state || !totalBytes
+      ? ""
+      : [
+          pct + "%",
+          size(sent || 0) + " of " + size(totalBytes),
+          bps > 0 ? size(bps) + "/s" : "",
+          eta(etaS),
+        ]
+          .filter(Boolean)
+          .join("  ·  ");
 
   el.innerHTML =
-    '<span style="width:6px;height:6px;border-radius:50%;background:' + dot + ';flex:none"></span>' +
-    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + line + "</span>" +
+    '<span style="width:6px;height:6px;border-radius:50%;background:' + dot + ';flex:none;margin-top:3px"></span>' +
+    '<span style="flex:1;min-width:0">' +
+    '<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + line + "</span>" +
+    (detail
+      ? '<span style="display:block;margin-top:3px;font-size:11px;color:rgba(236,236,241,0.45);font-family:\'IBM Plex Mono\',monospace">' + detail + "</span>"
+      : "") +
+    "</span>" +
     (state === "done" && href
       ? '<a href="' + href + '" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1">Open</a>'
       : "") +
+    (state === "failed"
+      ? '<button id="uploadRetry" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1;border:none;cursor:pointer;font-family:inherit">Retry</button>'
+      : "") +
     (!state
       ? '<div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#232329;border-radius:0 0 9px 9px;overflow:hidden">' +
-        '<div style="height:100%;width:' + pct + '%;background:#5EB8C9"></div></div>'
+        '<div style="height:100%;width:' + pct + '%;background:#5EB8C9;transition:width .25s ease"></div></div>'
       : "");
-  el.style.position = "fixed";
+  el.style.alignItems = "flex-start";
+
+  /* Retry picks up from what the server already holds, so it is a resume and
+     not a restart. */
+  const retry = el.querySelector("#uploadRetry");
+  if (retry) {
+    retry.addEventListener("click", async () => {
+      const job = inFlight.get(sourceId);
+      const sw = await uploadWorker();
+      if (!job || !sw) { toast("Choose the file again to carry on"); return; }
+      retry.disabled = true;
+      sw.postMessage({ ...job.msg, doneParts: job.doneParts, resume: true });
+      watchUpload(sourceId);
+      showUpload({ sourceId, name, pct: 0 });
+    });
+  }
 }
 
 /* What the page remembers about an upload it started, so it can hand the work
@@ -192,9 +240,10 @@ if ("serviceWorker" in navigator) {
          chip stays as the way back in rather than yanking the user off
          whatever they were looking at. */
     } else if (m.type === "upload-failed") {
+      /* The job is KEPT, not deleted: Retry needs the File, and the server
+         still holds every part that landed, so retrying resumes. */
       const job = inFlight.get(m.sourceId);
       if (job) clearTimeout(job.timer);
-      inFlight.delete(m.sourceId);
       showUpload({ ...m, state: "failed" });
     } else if (m.type === "upload-cancelled") {
       const job = inFlight.get(m.sourceId);
@@ -205,6 +254,82 @@ if ("serviceWorker" in navigator) {
   });
   /* Register early so the worker is live before the first upload, not after. */
   uploadWorker();
+
+  /*
+   * Offer to finish anything left hanging.
+   *
+   * The server keeps every part that landed, so an upload interrupted by a
+   * crash, a closed tab, or a flat battery is genuinely resumable — but only
+   * the browser can supply the file again, since a page cannot hold onto one
+   * across sessions. So we ask, name the file, and say how far it got.
+   *
+   * The file is checked by name AND size before continuing: resuming with a
+   * different file would splice two videos together into something that looks
+   * fine until you play it.
+   */
+  (async () => {
+    let pending = [];
+    try {
+      const res = await fetch("/api/uploads/pending");
+      if (!res.ok) return;
+      pending = (await res.json()).pending || [];
+    } catch { return; }
+    if (!pending.length || document.querySelector("#uploadChip")) return;
+
+    const p = pending[0];
+    if (!p.total_bytes || !p.parts_done) return;
+
+    const el = document.createElement("div");
+    el.id = "uploadChip";
+    el.style.cssText =
+      "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:12px;" +
+      "padding:12px 16px;border-radius:9px;background:#141418;color:#ECECF1;" +
+      "box-shadow:inset 0 0 0 1px rgba(217,179,106,0.3), 0 12px 40px rgba(0,0,0,0.45);" +
+      "font-family:'Instrument Sans',sans-serif;font-size:12.5px;max-width:min(460px,calc(100vw - 40px))";
+    const done = Math.round((p.parts_done * p.part_size * 100) / p.total_bytes);
+    el.innerHTML =
+      '<span style="width:6px;height:6px;border-radius:50%;background:#D9B36A;flex:none"></span>' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      (p.filename || "A video") + " stopped at " + Math.min(99, done) + "%</span>" +
+      '<label style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;cursor:pointer">Finish it' +
+      '<input type="file" accept="video/*" id="resumePick" style="display:none"/></label>' +
+      '<button id="resumeDrop" style="flex:none;background:none;border:none;color:rgba(236,236,241,0.4);cursor:pointer;font-family:inherit">Discard</button>';
+    document.body.appendChild(el);
+
+    el.querySelector("#resumeDrop").addEventListener("click", async () => {
+      el.remove();
+      await fetch("/api/uploads/" + p.source_id + "/abort", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }).catch(() => {});
+    });
+
+    el.querySelector("#resumePick").addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (file.name !== p.filename || file.size !== p.total_bytes) {
+        toast("That is a different file — pick " + p.filename);
+        return;
+      }
+      const state = await fetch("/api/uploads/" + p.source_id + "/state").then((r) => r.json());
+      const sw = await uploadWorker();
+      if (!sw) { toast("Couldn't restart that upload"); return; }
+      const msg = {
+        type: "start-upload",
+        file,
+        sourceId: p.source_id,
+        uploadId: state.uploadId,
+        partSize: state.partSize,
+        durationS: 0,
+        resume: true,
+      };
+      inFlight.set(p.source_id, { msg, doneParts: state.parts, timer: null });
+      sw.postMessage({ ...msg, doneParts: state.parts });
+      watchUpload(p.source_id);
+      showUpload({ sourceId: p.source_id, name: file.name, pct: 0, totalBytes: file.size, sent: 0 });
+    });
+  })();
 }
 
 /* ── Home composer ────────────────────────────────────────────────────── */
@@ -267,7 +392,7 @@ if (composer) {
       const start = await fetch("/api/uploads", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: picked.name, contentType: picked.type || "video/mp4" }),
+        body: JSON.stringify({ filename: picked.name, contentType: picked.type || "video/mp4", bytes: picked.size }),
       }).then((r) => r.json());
       if (start.error) throw new Error(start.error);
 
@@ -386,7 +511,7 @@ async function uploadResumable(file, durationS, onProgress, started) {
     (await fetch("/api/uploads", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+      body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
     }).then((r) => r.json()));
 
   const { source, uploadId, partSize } = start;
@@ -872,7 +997,7 @@ if (clipDrop) {
       const start = await fetch("/api/uploads", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
       }).then((r) => r.json());
       if (start.error) throw new Error(start.error);
 

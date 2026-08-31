@@ -157,6 +157,45 @@ const STATEMENTS: string[] = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS auth_tokens_expiry ON auth_tokens(expires_at)`,
+
+  /*
+   * Which parts of an in-flight upload have actually landed.
+   *
+   * This is what makes an upload resumable across sessions rather than only
+   * within one: a browser that reloads, crashes, or comes back tomorrow can
+   * ask what the server already holds and send only the rest — the same shape
+   * as YouTube's resumable protocol, where the client queries the offset
+   * instead of remembering it.
+   *
+   * It also means `complete` reads the part list from here rather than
+   * trusting whatever the client happens to have in memory, which is the
+   * difference between a resumed upload finishing correctly and finishing
+   * short.
+   *
+   * (source_id, part_number) is the key so concurrent parts cannot race, and
+   * re-sending a part simply replaces it.
+   */
+  `CREATE TABLE IF NOT EXISTS upload_parts (
+     source_id TEXT NOT NULL,
+     part_number INTEGER NOT NULL,
+     etag TEXT NOT NULL,
+     bytes INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (source_id, part_number)
+   )`,
+
+  /* The upload's own parameters, so a fresh session can resume without being
+     told them again. Cleared when the upload completes or is abandoned. */
+  `CREATE TABLE IF NOT EXISTS uploads (
+     source_id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL,
+     upload_id TEXT NOT NULL,
+     part_size INTEGER NOT NULL,
+     total_bytes INTEGER,
+     filename TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS uploads_by_user ON uploads(user_id, created_at)`,
 ];
 
 /**

@@ -43,7 +43,13 @@ const running = new Map();
  * chip simply stopped counting. A hung request has to become a failed request
  * before any retry policy means anything.
  */
-const PART_TIMEOUT_MS = 90000;
+function partTimeoutMs(partSize) {
+  /* Scaled to the part, not fixed: parts are now sized for the file, so a
+     multi-gigabyte upload uses 32-64MB parts and a flat 90s would abort a
+     perfectly healthy one on a phone. 30s of slack plus 4s per megabyte is
+     about 2Mbps sustained, well under any connection worth uploading on. */
+  return 30000 + (partSize / (1024 * 1024)) * 4000;
+}
 
 /* Parts in flight at once. Sequential upload of a 2GB file is 268 round trips
    nose to tail, which is both slow and a long window in which something can
@@ -51,13 +57,13 @@ const PART_TIMEOUT_MS = 90000;
    phone's radio. */
 const CONCURRENCY = 4;
 
-async function putPart(sourceId, uploadId, n, chunk) {
+async function putPart(sourceId, uploadId, n, chunk, timeoutMs) {
   let lastErr = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    /* Abort rather than wait forever. A part that has not moved in 90 seconds
-       is not going to. */
+    /* Abort rather than wait forever. This is the fix for the stall: a hung
+       connection has to become a failed request before any retry can happen. */
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), PART_TIMEOUT_MS);
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
     try {
       const res = await fetch("/api/uploads/" + sourceId + "/parts/" + n, {
         method: "PUT",
@@ -81,33 +87,64 @@ async function uploadParts(job) {
   const { file, sourceId, uploadId, partSize, durationS } = job;
   const total = Math.ceil(file.size / partSize);
 
-  /* Parts already stored from an earlier attempt. Resuming means re-sending
-     only what is missing, which is the entire reason uploads are in parts. */
+  /*
+   * Ask the SERVER what it already holds rather than trusting what this
+   * worker remembers. The worker may have been killed, or this may be an
+   * entirely different session picking the file back up — in both cases the
+   * only reliable record of what landed is the one the server wrote as each
+   * part arrived. Same idea as YouTube's resumable upload, where the client
+   * queries the offset instead of assuming it.
+   */
   const done = new Map((job.doneParts || []).map((p) => [p.partNumber, p]));
+  try {
+    const state = await fetch("/api/uploads/" + sourceId + "/state").then((r) => (r.ok ? r.json() : null));
+    if (state && state.parts) for (const p of state.parts) done.set(p.partNumber, p);
+  } catch (err) {
+    /* Falling back to what we remember is fine — worst case a part is sent
+       twice, and the same part number simply replaces itself. */
+  }
   const todo = [];
   for (let n = 1; n <= total; n++) if (!done.has(n)) todo.push(n);
 
   let cursor = 0;
   let failed = null;
+  const timeoutMs = partTimeoutMs(partSize);
 
-  const report = () =>
-    broadcast({
+  /* Bytes already stored before this run, so a resumed upload reports true
+     progress rather than restarting the speed maths from zero. */
+  const bytesAt = (count) => Math.min(count * partSize, file.size);
+  const startedAt = Date.now();
+  const bytesAtStart = bytesAt(done.size);
+
+  const report = () => {
+    const sent = bytesAt(done.size);
+    const elapsed = (Date.now() - startedAt) / 1000;
+    /* Measured from bytes the server has actually accepted — never a timer,
+       and never counting the parts still in flight. */
+    const bps = elapsed > 0 ? (sent - bytesAtStart) / elapsed : 0;
+    const left = file.size - sent;
+    return broadcast({
       type: "upload-progress",
       sourceId,
       name: file.name,
       pct: Math.round((done.size / total) * 100),
+      sent,
+      totalBytes: file.size,
+      bps,
+      etaS: bps > 0 ? Math.round(left / bps) : null,
       /* The page keeps this so it can hand the work back if this worker is
          killed — Safari terminates service workers aggressively, and a 2GB
          upload is a long time to stay alive. */
       doneParts: [...done.values()],
     });
+  };
 
   async function worker() {
     while (cursor < todo.length && !failed) {
       if (running.get(sourceId) === "cancelled") return;
       const n = todo[cursor++];
       try {
-        const part = await putPart(sourceId, uploadId, n, file.slice((n - 1) * partSize, n * partSize));
+        const part = await putPart(sourceId, uploadId, n, file.slice((n - 1) * partSize, n * partSize), timeoutMs);
         done.set(n, part);
         await report();
       } catch (err) {
@@ -142,6 +179,8 @@ async function uploadParts(job) {
   const data = await res.json();
   await broadcast({
     type: "upload-done",
+    sent: file.size,
+    totalBytes: file.size,
     sourceId,
     name: file.name,
     href: "/sources/" + sourceId,
