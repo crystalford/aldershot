@@ -115,14 +115,23 @@ app.post("/auth/start", async (c) => {
   const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
   const { url, sent } = await startLogin(c.env, email, origin);
 
+  if (sent) return c.redirect(`/?sent=${encodeURIComponent(email)}`, 302);
+
   /*
-   * With no mail provider configured the link is only logged, so saying
-   * "check your email" would be a lie. In that case the link is handed
-   * straight back instead — which is also what makes local development work
-   * without a Resend key.
+   * The mail provider is not configured, so the link was only logged.
+   *
+   * Handing it back in the response is a DEVELOPMENT convenience and nothing
+   * else. In production it is an authentication bypass: type any address,
+   * receive that account's login link on screen, and you are them. This
+   * shipped that way for a few minutes and anyone could have signed in as the
+   * owner — hence the guard, and hence it keys off the same var that already
+   * marks a machine as development.
+   *
+   * Everywhere else, say plainly that sign-in is not available rather than
+   * claiming an email was sent.
    */
-  if (!sent) return c.redirect(`/?link=${encodeURIComponent(url)}`, 302);
-  return c.redirect(`/?sent=${encodeURIComponent(email)}`, 302);
+  if (c.env.DEV_LOGIN_EMAIL) return c.redirect(`/?link=${encodeURIComponent(url)}`, 302);
+  return c.redirect("/?error=nomail", 302);
 });
 
 /** Follows a link: proves the address, mints the session, lands on Home. */

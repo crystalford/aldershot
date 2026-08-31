@@ -153,9 +153,11 @@ function signInForm(id: string, buttonLabel: string, primary: boolean): string {
 /**
  * What happened to the last sign-in attempt.
  *
- * The dev branch shows the link on screen. That is not a shortcut: with no mail
- * provider configured the link is only logged, and saying "check your email"
- * when nothing was sent is the kind of quiet lie this codebase avoids.
+ * The devLink branch shows the link on screen, and the route only ever sets it
+ * on a development machine. It shipped ungated for a few minutes and that was
+ * an authentication bypass: type any address, get that account's link, become
+ * them. In production a missing mail provider now says so instead — still not
+ * claiming an email was sent, which is the point that mattered.
  */
 function notice(d: LandingData): string {
   if (d.sentTo) {
@@ -165,7 +167,7 @@ function notice(d: LandingData): string {
   }
   if (d.devLink) {
     return `<div style="margin:20px auto 0;max-width:640px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.3);font-size:13px;color:rgba(236,236,241,0.75);line-height:1.6">
-      No mail provider is configured, so nothing was sent. Your link:
+      Development only — no mail provider is configured, so nothing was sent. Your link:
       <a href="${esc(d.devLink)}" style="display:block;margin-top:8px;color:${GOLD};font-family:${MONO};font-size:12px;word-break:break-all">${esc(d.devLink)}</a>
     </div>`;
   }
@@ -173,7 +175,9 @@ function notice(d: LandingData): string {
     const message =
       d.error === "link"
         ? "That link has expired or has already been used. Ask for a new one."
-        : "That doesn't look like an email address.";
+        : d.error === "nomail"
+          ? "Sign-in isn't switched on yet — email delivery isn't configured. Nothing was sent."
+          : "That doesn't look like an email address.";
     return `<div style="margin:20px auto 0;max-width:520px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.3);font-size:13.5px;color:rgba(236,236,241,0.75)">${message}</div>`;
   }
   return "";
