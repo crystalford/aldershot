@@ -49,6 +49,7 @@ import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseC
 import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
+import { SW_JS } from "./ui/sw.ts";
 import { currentUser, userForEmail } from "./user.ts";
 import { PLANS } from "./plans.ts";
 import { consume, dispatch } from "./queue.ts";
@@ -82,6 +83,21 @@ async function body<T extends object>(c: { req: { json<U>(): Promise<U> } }): Pr
 
 /** Health check — no auth, no schema work, so it stays honest when D1 is down. */
 app.get("/api/health", (c) => c.json({ ok: true }));
+
+/**
+ * The upload service worker.
+ *
+ * Served from the root so its scope covers every surface — a worker registered
+ * at a deeper path could not keep an upload alive across a navigation to a
+ * different section, which is the entire reason it exists.
+ */
+app.get("/sw.js", (c) =>
+  c.body(SW_JS, 200, {
+    "content-type": "text/javascript; charset=utf-8",
+    "cache-control": "no-cache",
+    "service-worker-allowed": "/",
+  }),
+);
 
 /** The client runtime: keyboard map, composer, toasts. Served as a module. */
 app.get("/app.js", (c) =>

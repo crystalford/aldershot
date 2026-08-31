@@ -59,7 +59,8 @@ function stateChip(state: SourceRow["transcript_state"]): string {
     pending: ["Queued", C.ink45],
     running: ["Reading", ACCENT.gold],
     ready: ["Ready", ACCENT.green],
-    failed: ["Couldn't read it", ACCENT.red],
+    // The prototype's own word for this state, and its own red.
+    failed: ["Failed", ACCENT.red],
   };
   const [label, color] = map[state];
   return `<span style="flex:none;font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${color}">${esc(label)}</span>`;

@@ -83,9 +83,13 @@ export function renderSource(d: SourceViewData): string {
   if (s.transcript_state === "failed") {
     return `${head}
     <div style="margin-top:24px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24)">
-      <div style="font-size:${SIZE.body};color:${ACCENT.red}">${esc(job?.error ?? "Couldn't read that video.")}</div>
+      <!-- The job's own recorded reason, which is more use than a generic
+           line and is data rather than chrome. "Failed" is the prototype's
+           word for the state; the sentence under it is what actually went
+           wrong. -->
+      <div data-content style="font-size:${SIZE.body};color:${ACCENT.red}">${esc(job?.error ?? "Failed")}</div>
       <form method="POST" action="/api/sources/${esc(s.id)}/retry" style="margin-top:12px">
-        <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Try again</button>
+        <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Retry</button>
       </form>
     </div>`;
   }

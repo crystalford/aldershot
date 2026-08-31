@@ -90,6 +90,83 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ── Uploads that survive navigation ───────────────────────────────────
+   The part loop lives in a service worker (src/ui/sw.ts), because that is the
+   only thing in a browser that outlives the page which started it. Everything
+   below is the page's half: hand over the file, then render whatever progress
+   the worker broadcasts — on any surface, not just the one that began it. */
+
+let swReady = null;
+async function uploadWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  if (!swReady) {
+    swReady = navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => reg.active)
+      .catch(() => null);
+  }
+  return await swReady;
+}
+
+/* A single persistent chip, bottom-left, present on every page while an
+   upload is in flight. It is deliberately not a toast: a toast implies
+   something that has happened, and this is something still happening. */
+function showUpload({ sourceId, name, pct, state, href, error }) {
+  let el = document.querySelector("#uploadChip");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "uploadChip";
+    el.style.cssText =
+      "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:12px;" +
+      "padding:12px 16px;border-radius:9px;background:#141418;color:#ECECF1;" +
+      "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.45);" +
+      "font-family:'Instrument Sans',sans-serif;font-size:12.5px;max-width:min(420px,calc(100vw - 40px))";
+    document.body.appendChild(el);
+  }
+  el.setAttribute("data-source", sourceId);
+
+  const dot =
+    state === "failed" ? "#E06A6A" : state === "done" ? "#5EC98F" : "#5EB8C9";
+  const line =
+    state === "failed"
+      ? error || "The upload stopped"
+      : state === "done"
+        ? "Reading " + name
+        : "Uploading " + name + " — " + pct + "%";
+
+  el.innerHTML =
+    '<span style="width:6px;height:6px;border-radius:50%;background:' + dot + ';flex:none"></span>' +
+    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + line + "</span>" +
+    (state === "done" && href
+      ? '<a href="' + href + '" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1">Open</a>'
+      : "") +
+    (!state
+      ? '<div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#232329;border-radius:0 0 9px 9px;overflow:hidden">' +
+        '<div style="height:100%;width:' + pct + '%;background:#5EB8C9"></div></div>'
+      : "");
+  el.style.position = "fixed";
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    const m = e.data || {};
+    if (m.type === "upload-progress") showUpload(m);
+    else if (m.type === "upload-done") {
+      showUpload({ ...m, state: "done" });
+      /* The read starts server-side the moment the upload completes, so the
+         chip stays as the way back in rather than yanking the user off
+         whatever they were looking at. */
+    } else if (m.type === "upload-failed") {
+      showUpload({ ...m, state: "failed" });
+    } else if (m.type === "upload-cancelled") {
+      document.querySelector("#uploadChip")?.remove();
+    }
+  });
+  /* Register early so the worker is live before the first upload, not after. */
+  uploadWorker();
+}
+
 /* ── Home composer ────────────────────────────────────────────────────── */
 const composer = $("#composer");
 if (composer) {
@@ -147,31 +224,70 @@ if (composer) {
          BEFORE any money is spent reading it. */
       const durationS = await readDuration(picked).catch(() => 0);
 
-      const data = await uploadResumable(picked, durationS, (pct) => {
-        button.textContent = "Uploading " + pct + "%";
-      });
+      const start = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: picked.name, contentType: picked.type || "video/mp4" }),
+      }).then((r) => r.json());
+      if (start.error) throw new Error(start.error);
 
-      /* A quarter of the way in, past titles and black frames.
-         Awaited, not fired-and-forgotten: navigating away cancels an in-flight
-         request, which silently loses every poster. Bounded so a slow decode
-         never holds the user on this page — a missing poster is a blank
-         thumbnail, which is honest; a fake one is not. */
-      button.textContent = "Reading…";
-      await Promise.race([
-        grabPoster(picked, Math.max(1, (durationS || 8) * 0.25))
-          .then((blob) =>
-            blob &&
-            fetch("/api/sources/" + data.source.id + "/poster", {
-              method: "POST",
-              headers: { "content-type": "image/jpeg" },
-              body: blob,
-            }),
-          )
-          .catch(() => {}),
-        new Promise((r) => setTimeout(r, 4000)),
-      ]);
+      /*
+       * The poster is grabbed and sent NOW, before the bytes go up, because it
+       * only needs the local file and this page might not exist by the time
+       * the upload finishes. It used to run after the upload, which meant
+       * navigating away lost it.
+       */
+      grabPoster(picked, Math.max(1, (durationS || 8) * 0.25))
+        .then((blob) =>
+          blob &&
+          fetch("/api/sources/" + start.source.id + "/poster", {
+            method: "POST",
+            headers: { "content-type": "image/jpeg" },
+            body: blob,
+          }),
+        )
+        .catch(() => {});
 
-      location.href = "/sources/" + data.source.id;
+      /*
+       * Hand the file to the service worker and stop being responsible for it.
+       * The worker outlives this page, so clicking a link no longer cancels
+       * the upload — which is what it used to do, silently.
+       */
+      const sw = await uploadWorker();
+      if (sw) {
+        sw.postMessage({
+          type: "start-upload",
+          file: picked,
+          sourceId: start.source.id,
+          uploadId: start.uploadId,
+          partSize: start.partSize,
+          durationS,
+        });
+        showUpload({ sourceId: start.source.id, name: picked.name, pct: 0 });
+        button.disabled = false;
+        button.textContent = original;
+        picked = null;
+        attached.hidden = true;
+        brief.value = "";
+        return;
+      }
+
+      /*
+       * No service worker — an old browser, or an insecure origin. Fall back to
+       * uploading in the page, and WARN before leaving, because here it really
+       * would be cancelled. A warning is worse than the worker and much better
+       * than losing the file with no word.
+       */
+      const guard = (ev) => { ev.preventDefault(); ev.returnValue = ""; };
+      window.addEventListener("beforeunload", guard);
+      try {
+        await uploadResumable(picked, durationS, (pct) => {
+          button.textContent = "Uploading " + pct + "%";
+        }, start);
+        location.href = "/sources/" + start.source.id;
+      } finally {
+        window.removeEventListener("beforeunload", guard);
+      }
     } catch (err) {
       button.disabled = false;
       button.textContent = original;
@@ -217,12 +333,18 @@ document.querySelectorAll(".intake-chip").forEach((chip) => {
    single PUT cannot carry it, and without parts one blip means starting the
    whole upload again. Each part retries on its own, and progress is the
    fraction of bytes actually accepted — never a timer. */
-async function uploadResumable(file, durationS, onProgress) {
-  const start = await fetch("/api/uploads", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
-  }).then((r) => r.json());
+async function uploadResumable(file, durationS, onProgress, started) {
+  /* "started" is passed by the composer, which has already opened the upload
+     so it could send the poster early. Without it we open one here — the
+     Clipping drop zone still calls it that way.
+     NB: no backticks in this file's comments; it is a String.raw template. */
+  const start =
+    started ||
+    (await fetch("/api/uploads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+    }).then((r) => r.json()));
 
   const { source, uploadId, partSize } = start;
   const total = Math.ceil(file.size / partSize);
@@ -703,24 +825,54 @@ if (clipDrop) {
     if (label) label.textContent = "Uploading…";
     try {
       const durationS = await readDuration(file).catch(() => 0);
-      const data = await uploadResumable(file, durationS, (pct) => {
-        if (label) label.textContent = "Uploading " + pct + "%";
-      });
-      if (label) label.textContent = "Reading…";
-      await Promise.race([
-        grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
-          .then((blob) =>
-            blob &&
-            fetch("/api/sources/" + data.source.id + "/poster", {
-              method: "POST",
-              headers: { "content-type": "image/jpeg" },
-              body: blob,
-            }),
-          )
-          .catch(() => {}),
-        new Promise((r) => setTimeout(r, 4000)),
-      ]);
-      location.href = "/clipping?source=" + data.source.id;
+
+      const start = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+      }).then((r) => r.json());
+      if (start.error) throw new Error(start.error);
+
+      /* Poster first, from the local file, so navigating away cannot lose it. */
+      grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
+        .then((blob) =>
+          blob &&
+          fetch("/api/sources/" + start.source.id + "/poster", {
+            method: "POST",
+            headers: { "content-type": "image/jpeg" },
+            body: blob,
+          }),
+        )
+        .catch(() => {});
+
+      /* Same worker as the composer. A drop here used to die on navigation for
+         exactly the same reason, and would have been easy to miss once the
+         composer was fixed. */
+      const sw = await uploadWorker();
+      if (sw) {
+        sw.postMessage({
+          type: "start-upload",
+          file,
+          sourceId: start.source.id,
+          uploadId: start.uploadId,
+          partSize: start.partSize,
+          durationS,
+        });
+        showUpload({ sourceId: start.source.id, name: file.name, pct: 0 });
+        if (label) label.innerHTML = original;
+        return;
+      }
+
+      const guard = (ev) => { ev.preventDefault(); ev.returnValue = ""; };
+      window.addEventListener("beforeunload", guard);
+      try {
+        await uploadResumable(file, durationS, (pct) => {
+          if (label) label.textContent = "Uploading " + pct + "%";
+        }, start);
+        location.href = "/clipping?source=" + start.source.id;
+      } finally {
+        window.removeEventListener("beforeunload", guard);
+      }
     } catch (err) {
       if (label) label.innerHTML = original;
       toast(err.message || "Couldn't add that video");
