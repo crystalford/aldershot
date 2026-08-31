@@ -143,11 +143,64 @@ function mark(size: number, gold = GOLD): string {
  * a link has been followed — a "Start free" button that 302s to a login page
  * would be the same click with an extra step.
  */
-function signInForm(id: string, buttonLabel: string, primary: boolean): string {
-  return `<form method="post" action="/auth/start" id="${id}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center">
-    <input name="email" type="email" required placeholder="you@example.com" aria-label="Your email" style="flex:0 1 260px;min-width:min(220px,100%);background:#1A1A1F;border:none;outline:none;color:#ECECF1;font-size:14px;padding:12px 14px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);font-family:inherit"/>
-    <button type="submit" style="flex:none;font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:${primary ? "#ECECF1" : "#232329"};color:${primary ? "#131316" : "#ECECF1"};white-space:nowrap;border:none;cursor:pointer;font-family:inherit">${buttonLabel}</button>
-  </form>`;
+function signInForm(id: string, buttonLabel: string, primary: boolean, google: boolean): string {
+  /*
+   * Google leads. Most people editing footage for YouTube already have the
+   * account, it needs no mail provider, and it cannot be lost to a spam
+   * folder. The email link sits under it for anyone who would rather not.
+   */
+  const googleButton = google
+    /*
+     * Text only, no mark. A four-colour circle standing in for Google's logo
+     * is an approximation of somebody else's trademark — the same class of
+     * substitution this codebase refuses everywhere else, and the fidelity
+     * check flagged its invented hexes immediately. Google's own guidelines
+     * require their real asset or nothing; nothing is the honest option.
+     */
+    ? `<a href="/auth/google" style="display:inline-flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Continue with Google</a>
+      <div style="font-size:12px;color:rgba(236,236,241,0.3);margin:14px 0 10px">or use your email</div>`
+    : "";
+
+  return `<div style="display:flex;flex-direction:column;align-items:center">
+    ${googleButton}
+    <form method="post" action="/auth/start" id="${id}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center">
+      <input name="email" type="email" required placeholder="you@example.com" aria-label="Your email" style="flex:0 1 260px;min-width:min(220px,100%);background:#1A1A1F;border:none;outline:none;color:#ECECF1;font-size:14px;padding:12px 14px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);font-family:inherit"/>
+      <button type="submit" style="flex:none;font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:${primary && !google ? "#ECECF1" : "#232329"};color:${primary && !google ? "#131316" : "#ECECF1"};white-space:nowrap;border:none;cursor:pointer;font-family:inherit">${google ? "Email me a link" : buttonLabel}</button>
+    </form>
+  </div>`;
+}
+
+/**
+ * The page a login link lands on.
+ *
+ * Deliberately a form, not an automatic sign-in: the token is spent by the
+ * POST, so a mail scanner that fetches the URL cannot burn it. Nothing
+ * automated submits a form.
+ */
+export function renderConfirm(token: string): string {
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sign in to Aldershot</title>
+<meta name="robots" content="noindex"/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>*{box-sizing:border-box}body{margin:0}</style>
+</head>
+<body>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:420px;width:100%;text-align:center">
+    <div style="display:inline-flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em">aldershot${mark(15.5)}</div>
+    <h1 style="margin:26px 0 0;font-size:26px;font-weight:700;letter-spacing:-0.03em">One more tap.</h1>
+    <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">Confirm it was you who asked for this link.</p>
+    <form method="post" action="/auth/callback" style="margin-top:24px">
+      <input type="hidden" name="token" value="${esc(token)}"/>
+      <button type="submit" style="width:100%;font-size:14.5px;font-weight:600;padding:13px;border-radius:5px;background:#ECECF1;color:#131316;border:none;cursor:pointer;font-family:inherit">Sign in</button>
+    </form>
+    <p style="margin:18px 0 0;font-size:12px;color:rgba(236,236,241,0.3);line-height:1.6">If you didn't ask for this, close this page — nothing has happened yet.</p>
+  </div>
+</div>
+</body></html>`;
 }
 
 /**
@@ -175,7 +228,11 @@ function notice(d: LandingData): string {
     const message =
       d.error === "link"
         ? "That link has expired or has already been used. Ask for a new one."
-        : d.error === "nomail"
+        : d.error === "google"
+          ? "That didn't complete. Try again, or use your email instead."
+          : d.error === "nogoogle"
+            ? "Google sign-in isn't configured yet. Use your email instead."
+            : d.error === "nomail"
           ? "Sign-in isn't switched on yet — email delivery isn't configured. Nothing was sent."
           : "That doesn't look like an email address.";
     return `<div style="margin:20px auto 0;max-width:520px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.3);font-size:13.5px;color:rgba(236,236,241,0.75)">${message}</div>`;
@@ -189,6 +246,8 @@ export interface LandingData {
   /** The link itself, when no mail provider is configured. */
   devLink: string | null;
   error: string | null;
+  /** Whether Google sign-in is configured. Absent, the email link stands alone. */
+  google: boolean;
 }
 
 export function renderLanding(d: LandingData): string {
@@ -244,7 +303,7 @@ export function renderLanding(d: LandingData): string {
       <div style="${EYEBROW};color:${GOLD}">NO TIMELINE · NO SCRUBBING · NO NLE</div>
       <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">Editing is<br>reading now.</h1>
       <p style="margin:20px auto 0;max-width:560px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop an hour of video and say what you want out of it. Aldershot reads the whole thing and makes the first cut — you strike what's weak, keep what's good, and it's done.</p>
-      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start cutting — free", true)}</div>
+      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start cutting — free", true, d.google)}</div>
       <div style="margin-top:10px;font-size:12px;color:rgba(236,236,241,0.3)">No card. 300 processing minutes a month on the house.</div>
       ${notice(d)}
 
@@ -426,7 +485,7 @@ export function renderLanding(d: LandingData): string {
   <div style="${PAD};background:#0C0C0F">
     <div style="${WRAP};padding:clamp(56px,8vw,90px) 0;text-align:center">
       <h2 style="margin:0 auto;font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-0.03em;max-width:600px;line-height:1.1">The footage is sitting there.<br>Go read it into a video.</h2>
-      <div style="margin-top:26px">${signInForm("footer-form", "Start cutting — free", true)}</div>
+      <div style="margin-top:26px">${signInForm("footer-form", "Start cutting — free", true, d.google)}</div>
       <div style="margin-top:52px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px;color:rgba(236,236,241,0.3)">
         <span style="display:flex;align-items:baseline;gap:4px;font-weight:600;color:rgba(236,236,241,0.5)">aldershot${mark(12.5, "rgba(217,179,106,0.85)")}</span>
         <span>Clips · Cuts · Reactions · Essays</span>

@@ -39,6 +39,17 @@ export interface Env {
   RESEND_API_KEY?: string;
 
   /**
+   * Sign in with Google — the primary path (src/oauth.ts). Needs no domain and
+   * no mail provider, so it works before DNS does. Without these two the
+   * landing page falls back to the email link alone.
+   *
+   *   npx wrangler secret put GOOGLE_CLIENT_ID
+   *   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+
+  /**
    * Public origin, e.g. https://aldershot.io. Login links are built from it so
    * they point at the real site rather than whatever host served the request —
    * which matters behind a proxy, and on preview deployments.

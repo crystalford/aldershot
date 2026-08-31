@@ -60,7 +60,7 @@
   // already exist (confirmed live: error code 10159, "index ... was not
   // found") — so this binding must stay commented out, not just optionally
   // absent, until the index is actually created. One-time setup, in order:
-  //   1. wrangler vectorize create aldershot-clips --dimensions=768 --metric=cosine
+  //   1. wrangler vectorize create aldershot-clips --dimensions=1024 --metric=cosine
   //      (needs a token with Vectorize edit permission — not yet granted)
   //   2. THEN uncomment the block below and deploy.
   // Until both of those happen, env.VECTORIZE is simply undefined and

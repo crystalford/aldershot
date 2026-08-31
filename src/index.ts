@@ -15,7 +15,8 @@ import { HTTPException } from "hono/http-exception";
 import type { Env } from "./env.ts";
 import { ensureV2Schema } from "./schema.ts";
 import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
-import { renderLanding } from "./ui/pages/landing.ts";
+import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
+import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
@@ -134,10 +135,30 @@ app.post("/auth/start", async (c) => {
   return c.redirect("/?error=nomail", 302);
 });
 
-/** Follows a link: proves the address, mints the session, lands on Home. */
+/**
+ * Following a link shows a confirm page. It does NOT sign anyone in.
+ *
+ * The token is spent by the POST below, never by this GET. Mail scanners —
+ * Outlook Safe Links, antivirus, some clients — fetch URLs before a human
+ * clicks them, and a single-use token consumed on GET is already spent by the
+ * time the real click arrives. That is the most common way magic links fail in
+ * practice, and it is silent: the user sees "expired" on a link they just
+ * received.
+ *
+ * One extra click buys immunity from every automated fetcher, because none of
+ * them submit forms.
+ */
 app.get("/auth/callback", async (c) => {
-  await ensureV2Schema(c.env.DB);
   const token = c.req.query("token");
+  if (!token) return c.redirect("/?error=link", 302);
+  return c.html(renderConfirm(token));
+});
+
+/** Spends the token and mints the session. */
+app.post("/auth/callback", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const form = await c.req.parseBody();
+  const token = String(form.token ?? "");
   if (!token) return c.redirect("/?error=link", 302);
 
   const email = await consumeToken(c.env, token);
@@ -145,6 +166,47 @@ app.get("/auth/callback", async (c) => {
 
   const user = await userForEmail(c.env.DB, email);
   const secure = new URL(c.req.url).protocol === "https:";
+  c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
+  return c.redirect("/", 302);
+});
+
+/* ── Sign in with Google ───────────────────────────────────────────────
+ * The primary path. See src/oauth.ts for why this exists rather than the
+ * email link alone. */
+
+app.get("/auth/google", async (c) => {
+  if (!googleConfigured(c.env)) return c.redirect("/?error=nogoogle", 302);
+
+  const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
+  const { url, state } = startGoogle(c.env, origin);
+  c.header("set-cookie", stateCookie(state, new URL(c.req.url).protocol === "https:"));
+  return c.redirect(url, 302);
+});
+
+app.get("/auth/google/callback", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const secure = new URL(c.req.url).protocol === "https:";
+
+  // The state cookie is single-use whatever happens next.
+  c.header("set-cookie", clearStateCookie(secure));
+
+  /*
+   * Verify state BEFORE spending the code. Without this an attacker can run a
+   * sign-in to completion in someone else's browser and silently leave them
+   * inside the attacker's account, where anything they upload is visible.
+   */
+  if (!stateMatches(c.req.query("state"), stateFrom(c.req.header("cookie")))) {
+    return c.redirect("/?error=google", 302);
+  }
+
+  const code = c.req.query("code");
+  if (!code) return c.redirect("/?error=google", 302);
+
+  const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
+  const who = await finishGoogle(c.env, code, origin);
+  if (!who) return c.redirect("/?error=google", 302);
+
+  const user = await userForEmail(c.env.DB, who.email);
   c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
   return c.redirect("/", 302);
 });
@@ -168,6 +230,7 @@ app.get("/", async (c) => {
         sentTo: c.req.query("sent") ?? null,
         devLink: c.req.query("link") ?? null,
         error: c.req.query("error") ?? null,
+        google: googleConfigured(c.env),
       }),
     );
   }

@@ -15,12 +15,33 @@ Cloudflare:
    request — which breaks the moment there's a proxy or a preview deploy in
    front.
 
-## 2. Email — required before anyone but you can sign in
+## 2. Sign in with Google — the fastest way to unblock yourself
 
-Auth is a one-time link sent by email. With no provider configured the link
-is written to the Worker log instead and the page says so plainly rather
-than telling you to check an inbox nothing was sent to. That is fine for
-you and useless for a real user.
+**This needs no domain and no DNS, so you can do it right now.**
+
+1. console.cloud.google.com → new project (or any existing one).
+2. APIs & Services → OAuth consent screen → External. You only need an app
+   name, a support email, and a developer email. Scopes: leave empty — we
+   request `openid email` at request time and nothing else.
+3. Credentials → Create credentials → OAuth client ID → Web application.
+4. Authorised redirect URIs — add both:
+   - `https://aldershot.attenuate.workers.dev/auth/google/callback`
+   - `https://aldershot.io/auth/google/callback` (add once the domain is live)
+5. Add the client ID and secret as repo secrets `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`.
+
+While the consent screen is in "Testing" mode, only accounts you add as test
+users can sign in — which is fine, and is arguably what you want before
+launch. Publishing it is a click when you're ready.
+
+## 3. Email — the fallback, and the only path for people without Google
+
+Auth is a one-time link sent by email. With no provider configured nothing
+is sent, and the page says exactly that rather than claiming otherwise.
+
+You can skip this entirely at first if you set up Google above — but you
+will want it eventually, because not everyone has or wants to use a Google
+account.
 
 1. Sign up at resend.com (free tier is 3,000 emails/month).
 2. Add and verify `aldershot.io` as a sending domain — this is the DNS
@@ -31,7 +52,7 @@ you and useless for a real user.
 The from-address is `hello@aldershot.io`, hardcoded in `src/auth.ts`. If
 you'd rather it were something else, that's a one-line change.
 
-## 3. Cloudflare Queues — required for files over ~30 minutes
+## 4. Cloudflare Queues — required for files over ~30 minutes
 
 Long work currently runs in `waitUntil`, which is bounded by the request's
 own lifetime. It's fine for short sources and will be killed partway through
@@ -48,7 +69,7 @@ changes — `src/queue.ts` already falls back when the binding is absent.
 handle them is built and tested; the lifetime to run it in is not there
 until the queue exists.
 
-## 4. Vectorize — meaning search and automatic threads
+## 5. Vectorize — meaning search and automatic threads
 
 Blocked on a permission, not on code:
 
@@ -63,14 +84,14 @@ command, then uncomment the `vectorize` block in `wrangler.jsonc`.
 Until then Footage's search falls back to exact word matching and says so on
 screen; Threads stays empty rather than inventing groupings.
 
-## 5. Anthropic — optional, better reasoning
+## 6. Anthropic — optional, better reasoning
 
 Workers AI is the default for every role and the product is complete without
 this. Add `ANTHROPIC_API_KEY` as a repo secret and the roles marked
 `preferAnthropic` in `src/models.ts` route to Claude instead. See
 `docs/decisions/models.md`.
 
-## 6. Containers — required for rendering
+## 7. Containers — required for rendering
 
 Rendering runs ffmpeg in a Container, which needs the account on Workers
 Paid with Containers enabled. Without it, everything up to the render works
@@ -87,7 +108,8 @@ Repo secrets (Settings → Secrets and variables → Actions):
 | `CLOUDFLARE_API_TOKEN` | any deploy | nothing deploys |
 | `CLOUDFLARE_ACCOUNT_ID` | any deploy | nothing deploys |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | direct-to-R2 uploads | uploads go through the Worker |
-| `RESEND_API_KEY` | email sign-in | links are logged, not sent |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in | the button is hidden; email link only |
+| `RESEND_API_KEY` | email sign-in | nothing is sent, and the page says so |
 | `APP_ORIGIN` | correct login links | links use the request's host |
 | `ANTHROPIC_API_KEY` | optional upgrade | everything stays on Workers AI |
 
