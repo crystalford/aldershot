@@ -81,6 +81,32 @@ async function body<T extends object>(c: { req: { json<U>(): Promise<U> } }): Pr
   return await c.req.json<Partial<T>>().catch(() => ({}) as Partial<T>);
 }
 
+/**
+ * Every HTML page is per-user and live: it renders this account's footage,
+ * this account's jobs, and whatever state they are in right now.
+ *
+ * These responses carried NO cache-control at all, which does not mean "do not
+ * cache" — it means the browser applies its own heuristics, and Safari in
+ * particular will happily serve a page back for a long while. Two consequences,
+ * one cosmetic and one not:
+ *
+ *   - fixes did not reach a phone that had already loaded the site, which is
+ *     how a corrected mobile layout still looked broken
+ *   - far worse, a user could be shown a stale Footage list, a job that has
+ *     since finished, or an upload that has since landed
+ *
+ * `private` keeps any shared cache from holding a signed-in page; `no-store`
+ * is the honest instruction for something that is different on every request.
+ * Static assets keep their own long cache — this only covers HTML.
+ */
+app.use("*", async (c, next) => {
+  await next();
+  const type = c.res.headers.get("content-type") || "";
+  if (type.includes("text/html")) {
+    c.res.headers.set("cache-control", "private, no-store, must-revalidate");
+  }
+});
+
 /** Health check — no auth, no schema work, so it stays honest when D1 is down. */
 app.get("/api/health", (c) => c.json({ ok: true }));
 

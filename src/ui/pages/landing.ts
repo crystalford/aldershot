@@ -278,7 +278,7 @@ export function renderLanding(d: LandingData): string {
      any horizontal overflow reveals the browser's white default beyond the
      wrapper's edge — which is exactly what the phone screenshot showed: a
      white gutter down the right-hand side of a dark site. */
-  html,body{margin:0;background:#101013;overflow-x:hidden}
+  html,body{margin:0;background:#101013;overflow-x:hidden;overflow-x:clip}
   a{text-decoration:none}
   html{scroll-behavior:smooth}
   ::-webkit-scrollbar{width:10px;height:10px}

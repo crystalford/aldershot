@@ -105,8 +105,13 @@ const GLOBAL_CSS = `
 body{margin:0;background:${C.canvas}}
 /* Nothing may push the page sideways. A horizontal scrollbar on a phone is
    never intentional here, and it hides content off the left edge rather than
-   merely looking untidy. */
-html,body{overflow-x:hidden}
+   merely looking untidy.
+   Both values on purpose: "hidden" still creates a scroll container, which
+   iOS Safari will sometimes let you drag even with nothing overflowing.
+   "clip" is not scrollable at all, and browsers that do not know it ignore the
+   second declaration and keep the first.
+   (No backticks in this constant -- it is inside a template literal.) */
+html,body{overflow-x:hidden;overflow-x:clip}
 a{color:${C.ink};text-decoration:none}
 a:hover{color:#fff}
 ::placeholder{color:${C.ink32}}
