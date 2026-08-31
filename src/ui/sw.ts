@@ -34,66 +34,112 @@ async function broadcast(message) {
    the same file twice. */
 const running = new Map();
 
+/*
+ * How long one 8MB part may take before we give up on that attempt.
+ *
+ * There was NO timeout here, and that is what stalled a 2.14GB upload halfway:
+ * a single connection hung, fetch waited on it forever, and the loop had no way
+ * to notice. It never failed, so nothing retried and nothing reported — the
+ * chip simply stopped counting. A hung request has to become a failed request
+ * before any retry policy means anything.
+ */
+const PART_TIMEOUT_MS = 90000;
+
+/* Parts in flight at once. Sequential upload of a 2GB file is 268 round trips
+   nose to tail, which is both slow and a long window in which something can
+   go wrong. Four is enough to saturate a normal connection without burying a
+   phone's radio. */
+const CONCURRENCY = 4;
+
+async function putPart(sourceId, uploadId, n, chunk) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    /* Abort rather than wait forever. A part that has not moved in 90 seconds
+       is not going to. */
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), PART_TIMEOUT_MS);
+    try {
+      const res = await fetch("/api/uploads/" + sourceId + "/parts/" + n, {
+        method: "PUT",
+        headers: { "x-upload-id": uploadId, "content-type": "application/octet-stream" },
+        body: chunk,
+        signal: ctl.signal,
+      });
+      if (!res.ok) throw new Error("part " + n + " failed (" + res.status + ")");
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr || new Error("part " + n + " failed");
+}
+
 async function uploadParts(job) {
   const { file, sourceId, uploadId, partSize, durationS } = job;
   const total = Math.ceil(file.size / partSize);
-  const parts = [];
-  let sent = 0;
 
-  for (let n = 1; n <= total; n++) {
-    if (running.get(sourceId) === "cancelled") {
-      await fetch("/api/uploads/" + sourceId + "/abort", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ uploadId }),
-      }).catch(() => {});
-      await broadcast({ type: "upload-cancelled", sourceId });
-      return;
-    }
+  /* Parts already stored from an earlier attempt. Resuming means re-sending
+     only what is missing, which is the entire reason uploads are in parts. */
+  const done = new Map((job.doneParts || []).map((p) => [p.partNumber, p]));
+  const todo = [];
+  for (let n = 1; n <= total; n++) if (!done.has(n)) todo.push(n);
 
-    const chunk = file.slice((n - 1) * partSize, n * partSize);
-    let lastErr = null;
+  let cursor = 0;
+  let failed = null;
 
-    /* Three attempts per part with a widening gap — the same policy the page
-       used. A part is small enough that retrying it is cheap, which is the
-       whole point of parts. */
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch("/api/uploads/" + sourceId + "/parts/" + n, {
-          method: "PUT",
-          headers: { "x-upload-id": uploadId, "content-type": "application/octet-stream" },
-          body: chunk,
-        });
-        if (!res.ok) throw new Error("part " + n + " failed");
-        parts.push(await res.json());
-        lastErr = null;
-        break;
-      } catch (err) {
-        lastErr = err;
-        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-      }
-    }
-    if (lastErr) throw lastErr;
-
-    /* Progress is the fraction of bytes the server has actually accepted,
-       never a timer. */
-    sent += chunk.size;
-    await broadcast({
+  const report = () =>
+    broadcast({
       type: "upload-progress",
       sourceId,
       name: file.name,
-      pct: Math.round((sent / file.size) * 100),
+      pct: Math.round((done.size / total) * 100),
+      /* The page keeps this so it can hand the work back if this worker is
+         killed — Safari terminates service workers aggressively, and a 2GB
+         upload is a long time to stay alive. */
+      doneParts: [...done.values()],
     });
+
+  async function worker() {
+    while (cursor < todo.length && !failed) {
+      if (running.get(sourceId) === "cancelled") return;
+      const n = todo[cursor++];
+      try {
+        const part = await putPart(sourceId, uploadId, n, file.slice((n - 1) * partSize, n * partSize));
+        done.set(n, part);
+        await report();
+      } catch (err) {
+        failed = err;
+      }
+    }
   }
 
-  const done = await fetch("/api/uploads/" + sourceId + "/complete", {
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
+
+  if (running.get(sourceId) === "cancelled") {
+    await fetch("/api/uploads/" + sourceId + "/abort", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ uploadId }),
+    }).catch(() => {});
+    await broadcast({ type: "upload-cancelled", sourceId });
+    return;
+  }
+  if (failed) throw failed;
+
+  /* R2 wants the parts in order; concurrency finishes them out of order. */
+  const parts = [...done.values()].sort((a, b) => a.partNumber - b.partNumber);
+
+  const res = await fetch("/api/uploads/" + sourceId + "/complete", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ uploadId, parts, durationS }),
   });
-  if (!done.ok) throw new Error((await done.json().catch(() => ({}))).error || "couldn't finish the upload");
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "couldn't finish the upload");
 
-  const data = await done.json();
+  const data = await res.json();
   await broadcast({
     type: "upload-done",
     sourceId,
@@ -112,7 +158,12 @@ self.addEventListener("message", (event) => {
   }
 
   if (msg.type !== "start-upload") return;
-  if (running.has(msg.sourceId)) return;
+
+  /* A resume is allowed to take over: the page only sends one when progress
+     has stopped, which means either this worker was killed (and the map is
+     empty anyway) or the previous run is wedged. Re-sending a part that is
+     already stored is harmless — the same part number simply replaces it. */
+  if (running.has(msg.sourceId) && !msg.resume) return;
   running.set(msg.sourceId, "running");
 
   /*

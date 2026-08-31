@@ -148,18 +148,58 @@ function showUpload({ sourceId, name, pct, state, href, error }) {
   el.style.position = "fixed";
 }
 
+/* What the page remembers about an upload it started, so it can hand the work
+   back if the worker stops. Safari terminates service workers aggressively and
+   a multi-gigabyte upload is a long time to stay alive; the page is the thing
+   still holding the File, so the page is what can restart it. */
+const inFlight = new Map();
+
+/* If no progress arrives for this long, assume the worker is gone or wedged
+   and resume from the parts we know landed. Generous, because a slow part on a
+   phone is normal and restarting too eagerly wastes the connection. */
+const STALL_MS = 60000;
+
+function watchUpload(sourceId) {
+  const job = inFlight.get(sourceId);
+  if (!job) return;
+  clearTimeout(job.timer);
+  job.timer = setTimeout(async () => {
+    const sw = await uploadWorker();
+    if (!sw || !inFlight.has(sourceId)) return;
+    const j = inFlight.get(sourceId);
+    /* resume:true lets this take over a run that is stuck. Parts already
+       stored are skipped, so the cost of being wrong is a little bandwidth. */
+    sw.postMessage({ ...j.msg, doneParts: j.doneParts, resume: true });
+    watchUpload(sourceId);
+  }, STALL_MS);
+}
+
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
     const m = e.data || {};
-    if (m.type === "upload-progress") showUpload(m);
+    if (m.type === "upload-progress") {
+      const job = inFlight.get(m.sourceId);
+      if (job && m.doneParts) job.doneParts = m.doneParts;
+      watchUpload(m.sourceId);
+      showUpload(m);
+    }
     else if (m.type === "upload-done") {
+      const job = inFlight.get(m.sourceId);
+      if (job) clearTimeout(job.timer);
+      inFlight.delete(m.sourceId);
       showUpload({ ...m, state: "done" });
       /* The read starts server-side the moment the upload completes, so the
          chip stays as the way back in rather than yanking the user off
          whatever they were looking at. */
     } else if (m.type === "upload-failed") {
+      const job = inFlight.get(m.sourceId);
+      if (job) clearTimeout(job.timer);
+      inFlight.delete(m.sourceId);
       showUpload({ ...m, state: "failed" });
     } else if (m.type === "upload-cancelled") {
+      const job = inFlight.get(m.sourceId);
+      if (job) clearTimeout(job.timer);
+      inFlight.delete(m.sourceId);
       document.querySelector("#uploadChip")?.remove();
     }
   });
@@ -255,14 +295,17 @@ if (composer) {
        */
       const sw = await uploadWorker();
       if (sw) {
-        sw.postMessage({
+        const msg = {
           type: "start-upload",
           file: picked,
           sourceId: start.source.id,
           uploadId: start.uploadId,
           partSize: start.partSize,
           durationS,
-        });
+        };
+        inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
+        sw.postMessage(msg);
+        watchUpload(start.source.id);
         showUpload({ sourceId: start.source.id, name: picked.name, pct: 0 });
         button.disabled = false;
         button.textContent = original;
@@ -850,14 +893,17 @@ if (clipDrop) {
          composer was fixed. */
       const sw = await uploadWorker();
       if (sw) {
-        sw.postMessage({
+        const msg = {
           type: "start-upload",
           file,
           sourceId: start.source.id,
           uploadId: start.uploadId,
           partSize: start.partSize,
           durationS,
-        });
+        };
+        inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
+        sw.postMessage(msg);
+        watchUpload(start.source.id);
         showUpload({ sourceId: start.source.id, name: file.name, pct: 0 });
         if (label) label.innerHTML = original;
         return;
