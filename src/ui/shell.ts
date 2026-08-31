@@ -93,7 +93,20 @@ function nav(view: View, shortsCtx: ShortsCtx): string {
  * Kept as a single constant so scripts/check-fidelity.sh can diff it.
  */
 const GLOBAL_CSS = `
+/* Border-box everywhere.
+   The prototype never needed this because it sizes with flex rather than
+   percentages, but the app does use width:100% on padded rows — and under the
+   default content-box that adds the padding ON TOP of the 100%, pushing the
+   row past its parent. That is what made the editor scroll sideways on a
+   phone: a 361px column holding a 393px row. The landing page always had this
+   rule in its own <style>; the app shell did not, which is exactly the kind of
+   difference that only shows up on a narrow screen. */
+*,*::before,*::after{box-sizing:border-box}
 body{margin:0;background:${C.canvas}}
+/* Nothing may push the page sideways. A horizontal scrollbar on a phone is
+   never intentional here, and it hides content off the left edge rather than
+   merely looking untidy. */
+html,body{overflow-x:hidden}
 a{color:${C.ink};text-decoration:none}
 a:hover{color:#fff}
 ::placeholder{color:${C.ink32}}
@@ -108,6 +121,15 @@ p,div{text-wrap:pretty}
 [hidden]{display:none!important}
 [data-screen-label]{animation:viewIn .26s cubic-bezier(.2,.7,.3,1) both}
 @media (max-width: 720px){ [data-screen-label]{padding-left:16px!important;padding-right:16px!important} }
+/* The nav on a phone.
+   Wordmark, four surfaces, a search field, a "?" and two icons will not sit on
+   one 393px row, so it wrapped into three stacked lines and ate a third of the
+   screen before any content. The two that go are the two a phone does not
+   want: the search field opens a palette driven by a keyboard shortcut, and
+   "?" opens the shortcut list itself. Everything you navigate with stays. */
+@media (max-width: 640px){
+  #navSearch,#navKeys{display:none!important}
+}
 @keyframes blip{0%,100%{opacity:.35}50%{opacity:1}}
 @keyframes viewIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @keyframes popIn{from{opacity:0;transform:translateX(-50%) scale(.98)}to{opacity:1;transform:translateX(-50%) scale(1)}}

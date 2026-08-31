@@ -160,6 +160,25 @@ async function checkStrings() {
    * quote PAIRS misaligns after any odd quote and silently loses real strings —
    * it dropped every stage-tab label when tried.
    */
+  /*
+   * Deliberate additions, each with the reason it exists.
+   *
+   * This list is the ONLY sanctioned way to add copy the prototype does not
+   * contain, and it is kept tiny on purpose: the whole value of this check is
+   * that it fails loudly on invented wording. Loosening the matcher instead
+   * would have hidden the next paraphrase along with this one.
+   */
+  const SIGNED_OFF = new Map([
+    [
+      "Good morning.",
+      "The prototype greets 'Good morning, Chris.' because its demo account " +
+        "always has a name. A real account may not — an email address with no " +
+        "separator yields no usable first name — and greeting someone by a " +
+        "mangled surname-mashup, or by the owner's name, is worse than " +
+        "dropping the vocative.",
+    ],
+  ]);
+
   const SHORT = 24;
   const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const onBoundary = (t) => {
@@ -170,6 +189,7 @@ async function checkStrings() {
   /* The arrow is a glyph; the prototype assembles these as "← " + surface name. */
   const strip = (t) => t.replace(/^[\u2190]\s*/, "");
   const known = (t) => {
+    if (SIGNED_OFF.has(t.trim())) return true;
     const v = strip(t);
     return v.length <= SHORT ? onBoundary(v) : proto.includes(v) || protoRaw.includes(v);
   };
@@ -302,7 +322,12 @@ async function checkStrings() {
   if (suspect.length) {
     fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.join('\n'));
   } else {
-    pass('strings', `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype`);
+    const used = [...SIGNED_OFF.keys()].filter((k) => seen.has(k));
+    pass(
+      'strings',
+      `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype` +
+        (used.length ? ` (+${used.length} signed off: ${used.map((u) => JSON.stringify(u)).join(', ')})` : ''),
+    );
   }
 }
 

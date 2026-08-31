@@ -34,11 +34,24 @@ export interface User {
  */
 const OWNER_EMAIL = "chrisrobtelford@gmail.com";
 
-/** A display name from an address, used until the user sets one. */
-function nameFromEmail(email: string): string {
-  const local = email.split("@")[0] ?? "";
-  const first = local.split(/[._-]+/)[0] ?? local;
-  return first ? first.charAt(0).toUpperCase() + first.slice(1) : "You";
+/**
+ * A first name from an address — only when the address actually contains one.
+ *
+ * "chrisrobtelford@gmail.com" has no separator, so splitting on [._-] returned
+ * the whole local part and the greeting read "Good morning, Chrisrobtelford."
+ * Returning null instead lets the caller greet without a name, which is better
+ * than greeting with a wrong one.
+ *
+ * A separated address ("chris.telford@") still yields "Chris", and anything a
+ * provider tells us outright beats guessing entirely.
+ */
+function nameFromEmail(email: string): string | null {
+  const local = (email.split("@")[0] ?? "").replace(/\d+$/, "");
+  const first = local.split(/[._+-]+/)[0] ?? "";
+
+  // A plausible given name: letters only, and not a run-on of a full name.
+  if (!/^[a-z]+$/i.test(first) || first.length > 12) return null;
+  return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
 export async function getUserById(db: D1Database, id: string): Promise<User | null> {
@@ -51,16 +64,29 @@ export async function getUserById(db: D1Database, id: string): Promise<User | nu
  * Called on a proven login, so creating on first sight IS the signup — there
  * is no separate register step in an email-link product.
  */
-export async function userForEmail(db: D1Database, emailRaw: string): Promise<User> {
+export async function userForEmail(
+  db: D1Database,
+  emailRaw: string,
+  /* A name the identity provider gave us. Always better than deriving one. */
+  providedName?: string | null,
+): Promise<User> {
   const email = emailRaw.trim().toLowerCase();
   const existing = await db.prepare(`SELECT * FROM v2_users WHERE email=?`).bind(email).first<User>();
-  if (existing) return existing;
+  if (existing) {
+    // Fill a name in later if we learn one — signing in with Google after an
+    // email signup should stop the greeting being nameless.
+    if (!existing.name && providedName) {
+      await db.prepare(`UPDATE v2_users SET name=? WHERE id=?`).bind(providedName, existing.id).run();
+      return { ...existing, name: providedName };
+    }
+    return existing;
+  }
 
   const isOwner = email === OWNER_EMAIL;
   const user: User = {
     id: ulid(),
     email,
-    name: nameFromEmail(email),
+    name: providedName || nameFromEmail(email),
     // The owner is on Studio so caps never block their own testing, and
     // is_owner gates the cost panel (03-DATA-MODEL.md).
     plan: isOwner ? "studio" : "free",

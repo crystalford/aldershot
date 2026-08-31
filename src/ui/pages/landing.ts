@@ -273,14 +273,24 @@ export function renderLanding(d: LandingData): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
-  *{box-sizing:border-box}
-  body{margin:0}
+  *,*::before,*::after{box-sizing:border-box}
+  /* The background belongs on body, not only on the page wrapper. Without it
+     any horizontal overflow reveals the browser's white default beyond the
+     wrapper's edge — which is exactly what the phone screenshot showed: a
+     white gutter down the right-hand side of a dark site. */
+  html,body{margin:0;background:#101013;overflow-x:hidden}
   a{text-decoration:none}
   html{scroll-behavior:smooth}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:#101013}
   ::-webkit-scrollbar-thumb{background:#2A2A31;border-radius:99px;border:2px solid #101013}
   @keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+  /* On a phone the wordmark plus four no-wrap links ran 78px past the screen,
+     which scrolled the whole site sideways and cut "aldershot" down to
+     "ershot". The section anchors are what does not fit and what a phone needs
+     least: the page is a single scroll, and "Start free" is the only thing
+     anyone taps up here. */
+  @media (max-width:640px){ .nav-anchor{display:none} }
 </style>
 </head>
 <body>
@@ -290,9 +300,9 @@ export function renderLanding(d: LandingData): string {
     <div style="${WRAP};display:flex;align-items:center;justify-content:space-between;gap:18px;height:58px">
       <div style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em">aldershot${mark(15.5)}</div>
       <div style="display:flex;align-items:center;gap:clamp(14px,2.4vw,26px);font-size:13.5px">
-        <a href="#what" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">What it does</a>
-        <a href="#how" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">How it works</a>
-        <a href="#pricing" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Pricing</a>
+        <a class="nav-anchor" href="#what" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">What it does</a>
+        <a class="nav-anchor" href="#how" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">How it works</a>
+        <a class="nav-anchor" href="#pricing" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Pricing</a>
         <a href="#start" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
       </div>
     </div>
@@ -317,9 +327,15 @@ export function renderLanding(d: LandingData): string {
           <div style="flex:none;font-size:13.5px;font-weight:600;padding:9px 22px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</div>
         </div>
       </div>
-      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;align-items:center;font-size:12px;color:rgba(236,236,241,0.35)">
-        <span style="width:6px;height:6px;border-radius:50%;background:${GREEN};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-        <span>Reads as a cut — this becomes a project you can come back to.</span>
+      <!-- inline-flex, so the row shrink-wraps its two children and stays
+           centred as a unit. As a plain flex row the text span filled the
+           width once it wrapped, stranding the dot against the left edge — a
+           phone-only break, since the line fits on one row on a desktop. -->
+      <div style="margin-top:14px;text-align:center">
+        <div style="display:inline-flex;gap:8px;align-items:baseline;font-size:12px;color:rgba(236,236,241,0.35);text-align:left">
+          <span style="width:6px;height:6px;border-radius:50%;background:${GREEN};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
+          <span>Reads as a cut — this becomes a project you can come back to.</span>
+        </div>
       </div>
     </div>
   </div>

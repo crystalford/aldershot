@@ -225,7 +225,7 @@ app.get("/auth/google/callback", async (c) => {
   const who = await finishGoogle(c.env, code, origin);
   if (!who) return c.redirect("/?error=google", 302);
 
-  const user = await userForEmail(c.env.DB, who.email);
+  const user = await userForEmail(c.env.DB, who.email, who.name);
   c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
   return c.redirect("/", 302);
 });

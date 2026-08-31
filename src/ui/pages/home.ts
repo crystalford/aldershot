@@ -50,8 +50,17 @@ const HOW_THIS_GOES: Array<[string, string]> = [
  * the fresh half is ever true.
  */
 function greeting(name: string | null, isFresh: boolean, landedOvernight: number): string {
-  const who = name || "Chris";
-  if (isFresh) return `Welcome, ${who}. Nothing here yet — that's the right amount to start with.`;
+  /*
+   * No name means no name — not a stand-in. "Chris" was a placeholder from the
+   * prototype's demo data and would have greeted every other account by the
+   * owner's first name.
+   */
+  const hello = name ? `Good morning, ${name}.` : "Good morning.";
+  if (isFresh) {
+    return name
+      ? `Welcome, ${name}. Nothing here yet — that's the right amount to start with.`
+      : `Welcome. Nothing here yet — that's the right amount to start with.`;
+  }
 
   // The prototype's line is "Good morning, {who}. Four videos landed
   // overnight." — and "morning" is what it says, at every hour.
@@ -66,9 +75,9 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
   // exactly the kind this product exists to avoid.
   if (landedOvernight > 0) {
     const n = landedOvernight === 1 ? "One video" : `${landedOvernight} videos`;
-    return `Good morning, ${who}. ${n} landed overnight.`;
+    return `${hello} ${n} landed overnight.`;
   }
-  return `Good morning, ${who}.`;
+  return hello;
 }
 
 function composer(): string {
