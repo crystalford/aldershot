@@ -180,6 +180,38 @@ if (composer) {
   });
 }
 
+/* "Open" on a source in the editor intake: start a cut from footage that is
+   already here, then follow the editor where the server says it lives. */
+document.querySelectorAll(".open-source").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/begin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: btn.getAttribute("data-source"), brief: "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't open that");
+      location.href = data.href;
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message || "Couldn't open that");
+    }
+  });
+});
+
+/* The editor intake's brief chips. "Skip the brief" submits with nothing
+   written, which the intent parser reads as a plain cut. */
+document.querySelectorAll(".intake-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const brief = $("#brief");
+    if (!brief) return;
+    brief.value = chip.getAttribute("data-brief") || "";
+    chip.closest("form")?.requestSubmit();
+  });
+});
+
 /* Sends the file to R2 in 8MB parts.
    A 45-180 minute source is gigabytes, so this is not an optimisation: a
    single PUT cannot carry it, and without parts one blip means starting the

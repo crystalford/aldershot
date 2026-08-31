@@ -30,6 +30,7 @@ import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
 import { renderProjects } from "./ui/pages/projects.ts";
+import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
 import { ACCENT } from "./ui/tokens.ts";
 
@@ -1158,18 +1159,61 @@ app.post("/api/projects/:id/passes", async (c) => {
  * because the editor is a verb, but you reach a stage through a project. With
  * nothing made yet, say so plainly rather than 404ing.
  */
+/**
+ * The editor with nothing open — the intake state.
+ *
+ * See docs/reference/06-editor-intake.png. This rendered as a heading and one
+ * line of grey text until the owner pointed out that Editor and Clipping look
+ * like blank screens rather than tools before you have uploaded anything. They
+ * were right, and so was the design: this state was drawn and I missed it.
+ */
 app.get("/editor", async (c) => {
   await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const [sources, projects, clipCounts] = await Promise.all([
+    listSources(c.env.DB, user.id),
+    listProjects(c.env.DB, user.id),
+    clipCountsBySource(c.env.DB, user.id),
+  ]);
+
+  const byId = new Map(sources.map((s) => [s.id, s]));
+  const live = projects.filter((p) => !p.archived_at).sort((a, b) => b.updated_at - a.updated_at);
+
+  const edits = await Promise.all(
+    live.slice(0, 6).map(async (p) => {
+      const clips = p.source_id ? await listClipsForSource(c.env.DB, p.source_id, user.id) : [];
+      const kept = clips.filter((cl) => cl.kept);
+      return {
+        id: p.id,
+        title: p.title,
+        // A project borrows its first clip's frame until it has been rendered,
+        // for the same reason Projects does: a black rectangle stops the
+        // surface reading as a video tool.
+        poster_r2_key: p.poster_r2_key ?? kept[0]?.frame_r2_key ?? null,
+        sourceFilename: p.source_id ? (byId.get(p.source_id)?.filename ?? null) : null,
+        kept: kept.length,
+        runtime_s: kept.length
+          ? Math.round(kept.reduce((n, cl) => n + (cl.end_ms - cl.start_ms), 0) / 1000)
+          : null,
+        updated_at: p.updated_at,
+      };
+    }),
+  );
+
   return c.html(
     surface(
       "cut",
       "Cutting room",
       "Editor — Aldershot",
-      // The prototype has no "editor with nothing open" state — you always
-      // arrive at the editor through a project. Rather than invent copy for it,
-      // reuse Projects' own real empty line, which says the same true thing.
-      // Flagged in docs/decisions/open-questions.md for the owner to rule on.
-      pageHeading("Editor") + emptyState("Nothing in Projects yet — start something above."),
+      renderEditorIntake({
+        sources: sources.map((s) => ({
+          id: s.id, title: s.title, duration_s: s.duration_s,
+          poster_r2_key: s.poster_r2_key, transcript_state: s.transcript_state,
+          clip_count: clipCounts.get(s.id) ?? 0,
+        })),
+        edits,
+      }),
     ),
   );
 });
