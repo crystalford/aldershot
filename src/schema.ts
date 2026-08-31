@@ -193,6 +193,11 @@ const STATEMENTS: string[] = [
      part_size INTEGER NOT NULL,
      total_bytes INTEGER,
      filename TEXT,
+     /* "direct" = the browser PUTs to R2 with presigned URLs; "worker" = bytes
+        stream through us. Recorded because completion differs: a direct
+        upload must be completed over the S3 API with the same uploadId that
+        issued the part URLs. */
+     mode TEXT NOT NULL DEFAULT 'worker',
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS uploads_by_user ON uploads(user_id, created_at)`,
@@ -207,6 +212,18 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   // Script mode's transcript cuts, as JSON ranges. On the project because
   // Script edits the whole source transcript, not one block.
   { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },
+
+  /*
+   * Which transport an upload is using. Listed here as well as in the CREATE
+   * above because CREATE TABLE IF NOT EXISTS does nothing to a table that
+   * already exists — any deployment that saw the first version of `uploads`
+   * would otherwise fail every upload with "no column named mode".
+   */
+  {
+    table: "uploads",
+    column: "mode",
+    ddl: "ALTER TABLE uploads ADD COLUMN mode TEXT NOT NULL DEFAULT 'worker'",
+  },
 ];
 
 let ensured = false;

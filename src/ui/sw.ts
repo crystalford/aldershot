@@ -57,6 +57,53 @@ function partTimeoutMs(partSize) {
    phone's radio. */
 const CONCURRENCY = 4;
 
+/* Presigned URLs, fetched a batch at a time and reused across retries. */
+async function partUrls(sourceId, numbers) {
+  const res = await fetch("/api/uploads/" + sourceId + "/part-urls", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parts: numbers }),
+  });
+  if (!res.ok) return {};
+  return (await res.json()).urls || {};
+}
+
+/**
+ * Send one part straight to R2.
+ *
+ * The Worker never sees these bytes — its only job was to say who may write
+ * here, which the presigned URL already carries. R2 answers with an ETag, which
+ * is its receipt for the part; we hand that back so the server can record what
+ * landed and complete the upload later. The ETag is only readable because the
+ * bucket CORS policy exposes it (scripts/set-cors.mjs).
+ */
+async function putPartDirect(sourceId, url, n, chunk, timeoutMs) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { method: "PUT", body: chunk, signal: ctl.signal });
+      if (!res.ok) throw new Error("part " + n + " failed (" + res.status + ")");
+      const etag = res.headers.get("etag");
+      if (!etag) throw new Error("part " + n + " gave no etag");
+
+      await fetch("/api/uploads/" + sourceId + "/parts/" + n + "/done", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ etag, bytes: chunk.size }),
+      });
+      return { partNumber: n, etag };
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr || new Error("part " + n + " failed");
+}
+
 async function putPart(sourceId, uploadId, n, chunk, timeoutMs) {
   let lastErr = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -109,6 +156,17 @@ async function uploadParts(job) {
   let cursor = 0;
   let failed = null;
   const timeoutMs = partTimeoutMs(partSize);
+  const direct = job.mode === "direct";
+
+  /* URLs are fetched in blocks so a long upload is not holding hundreds of
+     write capabilities open from the start. */
+  let urls = {};
+  const urlFor = async (n) => {
+    if (urls[n]) return urls[n];
+    const block = todo.slice(todo.indexOf(n), todo.indexOf(n) + 32);
+    urls = { ...urls, ...(await partUrls(sourceId, block)) };
+    return urls[n];
+  };
 
   /* Bytes already stored before this run, so a resumed upload reports true
      progress rather than restarting the speed maths from zero. */
@@ -144,7 +202,15 @@ async function uploadParts(job) {
       if (running.get(sourceId) === "cancelled") return;
       const n = todo[cursor++];
       try {
-        const part = await putPart(sourceId, uploadId, n, file.slice((n - 1) * partSize, n * partSize), timeoutMs);
+        const chunk = file.slice((n - 1) * partSize, n * partSize);
+        let part;
+        if (direct) {
+          const url = await urlFor(n);
+          if (!url) throw new Error("couldn't get an upload URL for part " + n);
+          part = await putPartDirect(sourceId, url, n, chunk, timeoutMs);
+        } else {
+          part = await putPart(sourceId, uploadId, n, chunk, timeoutMs);
+        }
         done.set(n, part);
         await report();
       } catch (err) {

@@ -52,10 +52,11 @@ import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
 import { currentUser, userForEmail } from "./user.ts";
 import { PLANS } from "./plans.ts";
+import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
-import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
+import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, recentlyFinished, startJob } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
@@ -306,6 +307,7 @@ app.get("/", async (c) => {
         landedOvernight: sources.filter((s) => Date.now() - s.created_at < 12 * 3600 * 1000).length,
         working: jobs.map((j) => ({
           label: byId.get(j.ref_id ?? "")?.title ?? "a video",
+          type: j.type,
           stage: j.stage_label ?? "working on",
           pct: j.pct,
         })),
@@ -1415,19 +1417,40 @@ app.post("/api/uploads", async (c) => {
   const filename = b.filename || "upload.mp4";
 
   const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
-  const started = await startUpload(c.env.MEDIA, src.r2_key, b.contentType, b.bytes);
+  const partSize = partSizeFor(b.bytes);
+
+  /*
+   * Prefer sending the bytes straight to R2.
+   *
+   * The Worker's job is to say who may write where, which is exactly what a
+   * presigned URL is — streaming gigabytes through it as well is work nobody
+   * needs. Falls back to the through-Worker path when the R2 API credentials
+   * are absent, so the product still uploads on a deployment that has not been
+   * given them.
+   */
+  let uploadId: string | null = null;
+  let mode: "direct" | "worker" = "worker";
+
+  if (canPresign(c.env)) {
+    uploadId = await createMultipart(c.env, src.r2_key, b.contentType);
+    if (uploadId) mode = "direct";
+  }
+  if (!uploadId) {
+    const started = await startUpload(c.env.MEDIA, src.r2_key, b.contentType, b.bytes);
+    uploadId = started.uploadId;
+  }
 
   // Remembered server-side so a browser that reloads, crashes, or comes back
   // tomorrow can ask what is already stored instead of starting over.
   await c.env.DB
     .prepare(
-      `INSERT OR REPLACE INTO uploads (source_id,user_id,upload_id,part_size,total_bytes,filename,created_at)
-       VALUES (?,?,?,?,?,?,?)`,
+      `INSERT OR REPLACE INTO uploads (source_id,user_id,upload_id,part_size,total_bytes,filename,mode,created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
     )
-    .bind(src.id, user.id, started.uploadId, started.partSize, b.bytes ?? null, filename, Date.now())
+    .bind(src.id, user.id, uploadId, partSize, b.bytes ?? null, filename, mode, Date.now())
     .run();
 
-  return c.json({ source: src, ...started });
+  return c.json({ source: src, uploadId, key: src.r2_key, partSize, mode });
 });
 
 /** One part. Part numbers are 1-indexed; order does not matter. */
@@ -1477,7 +1500,7 @@ app.get("/api/uploads/:sourceId/state", async (c) => {
   const up = await c.env.DB
     .prepare(`SELECT * FROM uploads WHERE source_id=? AND user_id=?`)
     .bind(c.req.param("sourceId"), user.id)
-    .first<{ upload_id: string; part_size: number; total_bytes: number | null; filename: string | null }>();
+    .first<{ upload_id: string; part_size: number; total_bytes: number | null; filename: string | null; mode: string }>();
   if (!up) return c.json({ error: "not found" }, 404);
 
   const { results } = await c.env.DB
@@ -1490,8 +1513,68 @@ app.get("/api/uploads/:sourceId/state", async (c) => {
     partSize: up.part_size,
     totalBytes: up.total_bytes,
     filename: up.filename,
+    /* A resumed upload must keep using the transport it started on: a direct
+       upload's parts belong to an S3 uploadId the binding cannot complete. */
+    mode: up.mode,
     parts: (results ?? []).map((r) => ({ partNumber: r.part_number, etag: r.etag })),
   });
+});
+
+/**
+ * Presigned URLs for a batch of parts.
+ *
+ * Handed out in batches rather than all at once: a 150-part upload does not
+ * need 150 write capabilities alive from the start, and short-lived URLs mean
+ * an abandoned upload stops being writable on its own.
+ */
+app.post("/api/uploads/:sourceId/part-urls", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const up = await c.env.DB
+    .prepare(`SELECT upload_id, mode FROM uploads WHERE source_id=? AND user_id=?`)
+    .bind(src.id, user.id)
+    .first<{ upload_id: string; mode: string }>();
+  if (!up || up.mode !== "direct") return c.json({ error: "not a direct upload" }, 409);
+
+  const b = await body<{ parts: number[] }>(c);
+  const wanted = (b.parts ?? []).filter((n) => Number.isInteger(n) && n > 0).slice(0, 64);
+
+  const urls: Record<string, string> = {};
+  for (const n of wanted) {
+    const url = await presignPart(c.env, src.r2_key, up.upload_id, n);
+    if (url) urls[String(n)] = url;
+  }
+  return c.json({ urls });
+});
+
+/**
+ * The browser reports a part it PUT straight to R2.
+ *
+ * With a direct upload the Worker never sees the bytes, so it cannot record
+ * the part itself — but the resume machinery depends on that record existing.
+ * The ETag is R2's own receipt for the part, so this is the browser passing on
+ * proof rather than being taken at its word: a wrong ETag fails completion.
+ */
+app.post("/api/uploads/:sourceId/parts/:n/done", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
+  if (!src) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ etag: string; bytes: number }>(c);
+  if (!b.etag) return c.json({ error: "missing etag" }, 400);
+
+  await c.env.DB
+    .prepare(
+      `INSERT OR REPLACE INTO upload_parts (source_id,part_number,etag,bytes,created_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .bind(src.id, Number(c.req.param("n")), b.etag, b.bytes ?? 0, Date.now())
+    .run();
+  return c.json({ ok: true });
 });
 
 /** Uploads this account has started and not finished. */
@@ -1546,10 +1629,23 @@ app.post("/api/uploads/:sourceId/complete", async (c) => {
     return c.json({ error: `That upload is missing part ${missing[0]} — it needs to finish sending.` }, 409);
   }
 
-  try {
-    await completeUpload(c.env.MEDIA, src.r2_key, body.uploadId, parts);
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : "couldn't finish the upload" }, 400);
+  /* A direct upload has to be completed over the same API that issued its
+     part URLs — the binding does not know that uploadId. */
+  const up = await c.env.DB
+    .prepare(`SELECT upload_id, mode FROM uploads WHERE source_id=?`)
+    .bind(src.id)
+    .first<{ upload_id: string; mode: string }>();
+  const uploadId = up?.upload_id ?? body.uploadId;
+
+  if (up?.mode === "direct") {
+    const done = await completeMultipart(c.env, src.r2_key, uploadId, parts);
+    if (!done.ok) return c.json({ error: done.error }, 400);
+  } else {
+    try {
+      await completeUpload(c.env.MEDIA, src.r2_key, uploadId, parts);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "couldn't finish the upload" }, 400);
+    }
   }
 
   // The upload is done; its bookkeeping is no longer resumable state.
@@ -1577,14 +1673,27 @@ app.post("/api/uploads/:sourceId/abort", async (c) => {
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("sourceId"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
-  const uploadId = c.req.header("x-upload-id");
-  if (uploadId) await abortUpload(c.env.MEDIA, src.r2_key, uploadId).catch(() => {});
-  await c.env.DB.prepare(`UPDATE sources SET deleted_at=? WHERE id=?`).bind(Date.now(), src.id).run();
-  return c.json({ ok: true });
+  /* The stored record is the authority on which API opened this upload, and on
+     its id — the client may not have either after a reload. */
+  const up = await c.env.DB
+    .prepare(`SELECT upload_id, mode FROM uploads WHERE source_id=?`)
+    .bind(src.id)
+    .first<{ upload_id: string; mode: string }>();
+  const uploadId = up?.upload_id ?? c.req.header("x-upload-id");
+
+  if (uploadId) {
+    if (up?.mode === "direct") await abortMultipart(c.env, src.r2_key, uploadId);
+    else await abortUpload(c.env.MEDIA, src.r2_key, uploadId).catch(() => {});
+  }
+
+  /* Cleanup used to sit AFTER the return, so it never ran and every abandoned
+     upload left its parts behind to be offered as resumable forever. */
   await c.env.DB.batch([
-    c.env.DB.prepare(`DELETE FROM upload_parts WHERE source_id=?`).bind(c.req.param("sourceId")),
-    c.env.DB.prepare(`DELETE FROM uploads WHERE source_id=?`).bind(c.req.param("sourceId")),
+    c.env.DB.prepare(`DELETE FROM upload_parts WHERE source_id=?`).bind(src.id),
+    c.env.DB.prepare(`DELETE FROM uploads WHERE source_id=?`).bind(src.id),
+    c.env.DB.prepare(`UPDATE sources SET deleted_at=? WHERE id=?`).bind(Date.now(), src.id),
   ]);
+  return c.json({ ok: true });
 });
 
 app.get("/api/sources", async (c) => {

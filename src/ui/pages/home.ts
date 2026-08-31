@@ -147,22 +147,42 @@ function howThisGoes(): string {
  */
 export interface WorkingJob {
   label: string;
+  /** The job's type, which decides the verb. */
+  type: string;
   stage: string;
   pct: number;
 }
+
+/**
+ * The verb this job contributes to Home's working line.
+ *
+ * NOT the job's stage_label. That is a standalone phrase for the source page —
+ * "reading it" — and used here it produced "reading it a video", because this
+ * line puts a filename straight after the verb. The prototype's line is
+ * "reading jones_quartering_full (62%)", so the verb has to be a verb.
+ */
+const WORKING_VERB: Record<string, string> = {
+  transcribe: "reading",
+  score: "reading",
+  pass: "reading",
+  shorts: "burning captions on",
+  render: "rendering",
+  tts: "generating voice for",
+};
 
 function workingLine(jobs: WorkingJob[]): string {
   const things = jobs.length === 1 ? "1 thing" : `${jobs.length} things`;
   const byStage = new Map<string, WorkingJob[]>();
   for (const j of jobs) {
-    if (!byStage.has(j.stage)) byStage.set(j.stage, []);
-    byStage.get(j.stage)!.push(j);
+    const verb = WORKING_VERB[j.type] ?? "working on";
+    if (!byStage.has(verb)) byStage.set(verb, []);
+    byStage.get(verb)!.push(j);
   }
-  const clauses = [...byStage.entries()].map(([stage, group]) => {
+  const clauses = [...byStage.entries()].map(([verb, group]) => {
     const named = group.map((j) => (j.pct > 0 ? `${j.label} (${j.pct}%)` : j.label));
     const joined =
       named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
-    return `${stage} ${joined}`;
+    return `${verb} ${joined}`;
   });
   return `Working on ${things} — ${clauses.join(", ")}.`;
 }

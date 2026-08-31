@@ -321,6 +321,7 @@ if ("serviceWorker" in navigator) {
         sourceId: p.source_id,
         uploadId: state.uploadId,
         partSize: state.partSize,
+        mode: state.mode,
         durationS: 0,
         resume: true,
       };
@@ -426,6 +427,7 @@ if (composer) {
           sourceId: start.source.id,
           uploadId: start.uploadId,
           partSize: start.partSize,
+          mode: start.mode,
           durationS,
         };
         inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
@@ -1024,6 +1026,7 @@ if (clipDrop) {
           sourceId: start.source.id,
           uploadId: start.uploadId,
           partSize: start.partSize,
+          mode: start.mode,
           durationS,
         };
         inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
