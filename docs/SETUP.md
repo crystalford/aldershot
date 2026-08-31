@@ -130,3 +130,32 @@ it with one line to get the app back:
 ```
 echo 'DEV_LOGIN_EMAIL="chrisrobtelford@gmail.com"' > .dev.vars
 ```
+
+---
+
+## How uploads work now
+
+Bytes go **straight from the browser to R2**. The Worker issues short-lived
+presigned URLs — its job is to say who may write where, not to carry the
+file — so a multi-gigabyte upload never streams through it.
+
+Verified in production: a 25MB file uploaded direct to
+`…r2.cloudflarestorage.com`, and the stored object's SHA-256 matched the
+original exactly.
+
+It survives things going wrong:
+
+- **Navigating** — the upload runs in a service worker, so browsing the app
+  does not cancel it.
+- **The worker being killed** — Safari does this aggressively. The page
+  notices progress has stopped and hands the job back.
+- **Closing the browser entirely** — the server records each part as it
+  lands, so a later session is offered *"…stopped at 41% — Finish it"*. You
+  re-pick the file (a browser cannot hold one across sessions) and it sends
+  only what is missing. The file is checked by name and size first.
+
+If the R2 API credentials are ever missing, uploads fall back to going
+through the Worker automatically. Slower, but nothing breaks.
+
+Parts are sized to the file — about 100 of them, between 8MB and 64MB. A
+2.14GB upload is 64 parts rather than 268.
