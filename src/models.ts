@@ -129,6 +129,28 @@ export const TRANSCRIBE_DIARIZED: ModelSpec = {
  * Pooling: `mean` (the default). Embeddings made with `cls` pooling are NOT
  * compatible with mean-pooled ones — changing this later means a full re-embed.
  */
+/**
+ * Text-to-speech — the DEFAULT tier.
+ *
+ * The design specifies ElevenLabs with the user's own key, which is a fine
+ * upgrade and a bad default: it makes a core control ("Generate it" on a beat
+ * that wants your voice) dead until the user has gone and got a third-party
+ * account. That control shipped visible and doing nothing, which is worse than
+ * not shipping it.
+ *
+ * MeloTTS is the Workers AI text-to-speech model. It is not a cloned voice and
+ * is not pretending to be one — it fills a beat so the cut can be watched end
+ * to end, and the UI still offers recording as the real answer. Same shape as
+ * every other role here: a good default, a better paid option the user opts
+ * into.
+ */
+export const TTS: ModelSpec = {
+  id: "@cf/myshell-ai/melotts",
+  context: 0,
+  jsonSchema: false,
+  native: true,
+};
+
 export const EMBED: ModelSpec = {
   id: "@cf/baai/bge-large-en-v1.5",
   context: 512,

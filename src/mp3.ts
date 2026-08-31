@@ -353,3 +353,41 @@ export async function indexMp3Chunks(
   }
   return ranges;
 }
+
+/**
+ * Duration of a WAV buffer, in milliseconds.
+ *
+ * Generated voice comes back as WAV, and its length has to be exact: `dur_ms`
+ * drives Build's timecodes, the project runtime, and the width of every
+ * segment in the preview scrubber.
+ *
+ * The chunks are walked rather than assuming the canonical 44-byte header —
+ * encoders insert LIST/fact chunks, and a fixed offset silently reads the
+ * wrong numbers when they do. Returns 0 when the buffer is not WAV, so a
+ * caller records "unknown" instead of a fabricated length.
+ */
+export function wavDurationMs(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (o: number) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+  if (bytes.byteLength < 44 || tag(0) !== "RIFF" || tag(8) !== "WAVE") return 0;
+
+  let byteRate = 0;
+  let dataBytes = 0;
+
+  for (let off = 12; off + 8 <= bytes.byteLength; ) {
+    const id = tag(off);
+    const size = view.getUint32(off + 4, true);
+    if (id === "fmt " && off + 8 + 16 <= bytes.byteLength) {
+      byteRate = view.getUint32(off + 16, true);
+    } else if (id === "data") {
+      // A streamed WAV can carry a zero or absurd size; trust what is here.
+      dataBytes = Math.min(size || bytes.byteLength - (off + 8), bytes.byteLength - (off + 8));
+      break;
+    }
+    // Chunks are word-aligned: an odd size is followed by a pad byte.
+    off += 8 + size + (size % 2);
+  }
+
+  if (!byteRate || !dataBytes) return 0;
+  return Math.round((dataBytes / byteRate) * 1000);
+}

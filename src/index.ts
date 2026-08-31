@@ -56,6 +56,8 @@ import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, recentlyFinished, startJob } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
+import { TTS } from "./models.ts";
+import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
@@ -497,13 +499,59 @@ app.post("/api/sources/:id/poster", async (c) => {
 });
 
 /** Media out of R2. Posters and, later, frames and renders. */
+/**
+ * Serves media out of R2.
+ *
+ * RANGE REQUESTS MATTER HERE. The design routes preview playback through
+ * Cloudflare Stream; we serve from R2 instead, because Stream bills per minute
+ * both stored and delivered and the design's own costs page warns that putting
+ * originals there is "the single easiest way to make this product
+ * unprofitable". That is the right call — but Stream was also doing something
+ * for us, and this is it: a `<video>` element cannot seek without ranges, and
+ * Safari will not begin playback at all without a 206. Serving the whole
+ * object every time was fine for posters and quietly broke video.
+ */
 app.get("/media/*", async (c) => {
   const key = c.req.path.replace(/^\/media\//, "");
+  const range = c.req.header("range");
+
+  if (range) {
+    // Only `bytes=start-` and `bytes=start-end` occur in practice; anything
+    // else falls through to a normal 200, which is a legal answer to a range
+    // request and better than guessing.
+    const m = /^bytes=(\d+)-(\d*)$/.exec(range.trim());
+    if (m) {
+      const offset = Number(m[1]);
+      const end = m[2] ? Number(m[2]) : undefined;
+      const object = await c.env.MEDIA.get(key, {
+        range: end === undefined ? { offset } : { offset, length: end - offset + 1 },
+      });
+      if (!object) return c.notFound();
+
+      const total = object.size;
+      const last = end === undefined ? total - 1 : Math.min(end, total - 1);
+      return new Response(object.body, {
+        status: 206,
+        headers: {
+          "content-type": object.httpMetadata?.contentType || "application/octet-stream",
+          "content-range": `bytes ${offset}-${last}/${total}`,
+          "content-length": String(last - offset + 1),
+          "accept-ranges": "bytes",
+          "cache-control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+  }
+
   const object = await c.env.MEDIA.get(key);
   if (!object) return c.notFound();
   return new Response(object.body, {
     headers: {
       "content-type": object.httpMetadata?.contentType || "application/octet-stream",
+      "content-length": String(object.size),
+      // Advertised even on a full response: without it a browser will not
+      // attempt a range request, so seeking never starts.
+      "accept-ranges": "bytes",
       // Immutable: a poster for a given source never changes.
       "cache-control": "public, max-age=31536000, immutable",
     },
@@ -940,6 +988,100 @@ app.post("/api/projects/:id/outline", async (c) => {
     type: "outline", jobId: job.id, userId: user.id, projectId: project.id, topic,
   });
   return c.json({ jobId: job.id });
+});
+
+/**
+ * Generate the voice for a beat.
+ *
+ * Backs the "Generate it" control on a beat that wants your voice. That button
+ * shipped visible and wired to nothing, because the design specified
+ * ElevenLabs-with-your-own-key — a reasonable upgrade and a bad default, since
+ * it leaves a core control dead until the user has gone and got a third-party
+ * account.
+ *
+ * This is Workers AI, so it works out of the box. It is not a cloned voice and
+ * the UI does not claim otherwise: Record is still offered as the real answer,
+ * and this fills the beat so the cut can be watched end to end.
+ */
+app.post("/api/beats/:id/tts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const beat = await c.env.DB
+    .prepare(
+      `SELECT b.* FROM beats b JOIN v2_projects p ON p.id = b.project_id
+        WHERE b.id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{ id: string; project_id: string; text: string | null }>();
+  if (!beat) return c.json({ error: "not found" }, 404);
+
+  const text = (beat.text ?? "").trim();
+  if (!text) return c.json({ error: "there's nothing written on this beat yet" }, 400);
+
+  try {
+    /*
+     * `lang` is required by this model; without it the call fails with a bare
+     * "3043: Internal server error" that names nothing. Measured, not assumed.
+     *
+     * Retried with backoff, because this model returns an opaque "3043:
+     * Internal server error" under load. That reads like flakiness and is not:
+     * measured at 3/6 when called back to back, and 3/3 when the same calls
+     * are spaced twelve seconds apart. It is a rate limit wearing a 500's
+     * clothing, so the backoff is in seconds — retrying fast just spends every
+     * attempt inside the same closed window.
+     */
+    let out: unknown;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        out = await c.env.AI.run(TTS.id as never, { prompt: text, lang: "en" } as never);
+        break;
+      } catch (err) {
+        if (attempt >= 3) throw err;
+        // Seconds, not milliseconds — see the note above. Retrying fast
+        // against a rate limit just spends the remaining attempts inside the
+        // same closed window.
+        await new Promise((r) => setTimeout(r, [1000, 3000, 6000][attempt]));
+      }
+    }
+
+    // The model returns base64 audio on this route; tolerate a raw body too
+    // rather than assuming one shape and failing opaquely if it changes.
+    let bytes: Uint8Array;
+    if (out instanceof ArrayBuffer) {
+      bytes = new Uint8Array(out);
+    } else if (out && typeof out === "object" && "audio" in out && typeof out.audio === "string") {
+      const bin = atob(out.audio);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new Uint8Array(await new Response(out as ReadableStream).arrayBuffer());
+    }
+    if (!bytes.byteLength) return c.json({ error: "nothing came back" }, 502);
+
+    /*
+     * This model returns WAV, not MP3. Naming it .mp3 and labelling it
+     * audio/mpeg would be a lie about the bytes — the browser mostly copes,
+     * but the render container is handed the file by name and building a
+     * concat plan around a mislabelled stream is how a render fails at the
+     * last step for no visible reason.
+     */
+    const key = `u/${user.id}/beats/${beat.id}/generated.wav`;
+    await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "audio/wav" } });
+
+    /*
+     * Duration comes out of the WAV header, exactly. Left at zero, Build's
+     * timecodes, its runtime and every segment width in the preview scrubber
+     * read wrong — the same defect that made the whole surface show "0:00"
+     * when clip beats were written without it.
+     */
+    await setBeatMedia(c.env.DB, beat.id, key, wavDurationMs(bytes));
+    await meter(c.env.DB, { user_id: user.id, job_type: "tts", cpu_ms: 0 });
+
+    return c.json({ ok: true, key });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "couldn't generate that" }, 502);
+  }
 });
 
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */

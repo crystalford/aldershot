@@ -585,6 +585,28 @@ if (build) {
   });
 }
 
+/* "Generate it" on a beat that wants your voice.
+   Recording is still the real answer and stays the primary button; this is
+   for filling a beat so the whole cut can be watched before you commit to
+   recording anything. */
+document.querySelectorAll('.beat-action[data-action="Generate it"]').forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    try {
+      const res = await fetch("/api/beats/" + btn.getAttribute("data-beat") + "/tts", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't generate that");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = original;
+      toast(err.message || "Couldn't generate that");
+    }
+  });
+});
+
 /* In-browser recording for a vo or react beat.
    Recording never touches the server until the user stops — a take they
    abandon should cost nothing and leave nothing behind. */

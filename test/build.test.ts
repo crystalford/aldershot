@@ -69,3 +69,54 @@ test("a hand-picked clip is allowed to have no score", () => {
   assert.equal(clip.score, null);
   assert.equal(clip.quote, "a line someone chose");
 });
+
+/* ── Generated voice ──────────────────────────────────────────────────── */
+
+import { wavDurationMs } from "../src/mp3.ts";
+
+/** Builds a WAV whose header says exactly what we expect to read back. */
+function wav({ seconds, rate = 44100, channels = 1, bits = 16, extraChunk = false }: {
+  seconds: number; rate?: number; channels?: number; bits?: number; extraChunk?: boolean;
+}): Uint8Array {
+  const byteRate = (rate * channels * bits) / 8;
+  const dataBytes = Math.round(byteRate * seconds);
+  const extra = extraChunk ? 8 + 10 : 0;
+  const buf = new Uint8Array(12 + 24 + extra + 8 + dataBytes);
+  const view = new DataView(buf.buffer);
+  const put = (o: number, s: string) => { for (let i = 0; i < s.length; i++) buf[o + i] = s.charCodeAt(i); };
+
+  put(0, "RIFF"); view.setUint32(4, buf.length - 8, true); put(8, "WAVE");
+  let o = 12;
+  put(o, "fmt "); view.setUint32(o + 4, 16, true);
+  view.setUint16(o + 8, 1, true); view.setUint16(o + 10, channels, true);
+  view.setUint32(o + 12, rate, true); view.setUint32(o + 16, byteRate, true);
+  view.setUint16(o + 20, (channels * bits) / 8, true); view.setUint16(o + 22, bits, true);
+  o += 24;
+  if (extraChunk) { put(o, "LIST"); view.setUint32(o + 4, 10, true); o += 18; }
+  put(o, "data"); view.setUint32(o + 4, dataBytes, true);
+  return buf;
+}
+
+test("a generated take reports its real length", () => {
+  assert.equal(wavDurationMs(wav({ seconds: 7 })), 7000);
+  assert.equal(wavDurationMs(wav({ seconds: 0.5 })), 500);
+});
+
+/*
+ * Encoders insert LIST/fact chunks before the data. Assuming the canonical
+ * 44-byte header reads the wrong numbers when they do, and a wrong dur_ms
+ * misplaces every beat after it.
+ */
+test("a WAV with an extra chunk before the data is still measured correctly", () => {
+  assert.equal(wavDurationMs(wav({ seconds: 3, extraChunk: true })), 3000);
+});
+
+test("rate and channel count are read, not assumed", () => {
+  assert.equal(wavDurationMs(wav({ seconds: 2, rate: 22050, channels: 2 })), 2000);
+});
+
+/* Not-WAV returns 0 so the caller records "unknown" rather than a fiction. */
+test("a buffer that isn't WAV measures as unknown, not as zero-length audio", () => {
+  assert.equal(wavDurationMs(new Uint8Array(100)), 0);
+  assert.equal(wavDurationMs(new Uint8Array([0xff, 0xfb, 0x90, 0x00])), 0);
+});
