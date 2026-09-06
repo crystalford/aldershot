@@ -839,7 +839,11 @@ app.get("/p/:id/:stagePath", async (c) => {
     const segs = await getSegments(c.env.DB, source.id);
     pickSegments = segs;
     const cuts = parseCuts(project.cuts);
-    const minus = (ms: number) => `−${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
+    /* Only quote a saving that is worth quoting. Under a second this printed
+       "11 found · −0:00", which reads as a broken number rather than as "not
+       much" — and the count on its own is the honest thing to say. */
+    const minus = (ms: number) =>
+      ms >= 1000 ? `−${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}` : "";
 
     const fillers = fillerCuts(segs);
     const fillersLeft = fillers.filter((f) => !cuts.some((x) => x.seg === f.seg && x.words?.[0] === f.words?.[0]));
@@ -860,7 +864,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         id: "fillers",
         name: "Remove the ums and uhs",
         sub: fillersLeft.length
-          ? `${fillersLeft.length} found · ${minus(timeSaved(segs, cuts, fillersLeft))}`
+          ? [`${fillersLeft.length} found`, minus(timeSaved(segs, cuts, fillersLeft))].filter(Boolean).join(" · ")
           : fillers.length
             ? `${fillers.length} gone`
             : "none found",
@@ -871,7 +875,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         id: "pauses",
         name: "Tighten long pauses",
         sub: pausesLeft.length
-          ? `anything over 2s · ${minus(timeSaved(segs, cuts, pausesLeft))}`
+          ? ["anything over 2s", minus(timeSaved(segs, cuts, pausesLeft))].filter(Boolean).join(" · ")
           : pauses.length
             ? "tightened"
             : "none over 2s",

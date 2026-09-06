@@ -1276,21 +1276,24 @@ if (scratch) {
       ? h + ":" + String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0")
       : mm + ":" + String(ss).padStart(2, "0");
     runtimeEl.textContent = n + " kept \u00b7 " + clock;
+    /* The header carries the same two numbers and is server-rendered, so
+       without this the top of the page said "38 kept" while its own footer
+       said 37. One edit, one count. */
+    const hr = document.querySelector("#head-runtime");
+    const hk = document.querySelector("#head-kept");
+    if (hr) hr.textContent = clock;
+    if (hk) hk.textContent = n + " kept";
   };
 
   const paint = (block, kept) => {
-    const btn = block.querySelector(".seg-keep");
     const text = block.querySelector("[data-seg-text]");
     block.setAttribute("data-kept", kept ? "1" : "0");
-    block.style.opacity = kept ? "" : ".55";
+    block.style.opacity = kept ? "" : ".5";
     if (text) text.style.textDecoration = kept ? "" : "line-through";
-    if (btn) {
-      btn.setAttribute("data-kept", kept ? "1" : "0");
-      const pill = btn.querySelector(".seg-pill");
-      if (pill) {
-        pill.textContent = kept ? "Keeping" : "Add back";
-        pill.setAttribute("data-kept", kept ? "1" : "0");
-      }
+    const pill = block.querySelector(".seg-pill");
+    if (pill) {
+      pill.textContent = kept ? "Cut" : "Add back";
+      pill.setAttribute("data-kept", kept ? "1" : "0");
     }
   };
 
@@ -1305,13 +1308,16 @@ if (scratch) {
     });
   });
 
+  /* Both the line and the pill toggle it, so the whole row is the target. The
+     in-flight guard lives on the BLOCK rather than the button, or clicking the
+     text and then the pill would fire two toggles that cancel out. */
   scratch.querySelectorAll(".seg-keep").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const block = btn.closest("[data-seg-block]");
-      if (!block || btn.disabled) return;
+      if (!block || block.dataset.busy === "1") return;
       const next = block.getAttribute("data-kept") !== "1";
 
-      btn.disabled = true;
+      block.dataset.busy = "1";
       paint(block, next);
       retotal();
 
@@ -1327,7 +1333,7 @@ if (scratch) {
         retotal();
         toast((err && err.message) || "That didn't save");
       } finally {
-        btn.disabled = false;
+        block.dataset.busy = "0";
       }
     });
   });

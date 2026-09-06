@@ -178,6 +178,14 @@ async function checkStrings() {
         "dropping the vocative.",
     ],
     [
+      "Good morning. One video landed overnight.",
+      "The prototype's line is 'Good morning, {who}. Four videos landed " +
+        "overnight.' Both halves are interpolated: the name (see above) and " +
+        "the count, which is real data and is whatever actually landed. It " +
+        "can never match a fixed string, and rounding a real count to the " +
+        "prototype's 'four' would be a lie about the user's own library.",
+    ],
+    [
       "drafting the acts",
       "A job stage label. The prototype names a few stages ('reading it for " +
         "meaning', 'picking out the moments') but never enumerates them, and " +

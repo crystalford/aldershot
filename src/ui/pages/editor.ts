@@ -202,8 +202,8 @@ export function editorHeader(d: EditorData): string {
         ? `<span data-content style="font-size:${SIZE.meta};padding:2px 7px;border-radius:4px;background:${accentBg(KIND_ACCENT[d.kind] ?? ACCENT.gold)};color:${KIND_ACCENT[d.kind] ?? ACCENT.gold}">${esc(d.kind.charAt(0).toUpperCase() + d.kind.slice(1))}</span>
            <span data-content style="margin-left:auto;font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono};white-space:nowrap;flex:none">${runtimeLabel}</span>`
         : `<span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.35);font-family:${FONT.mono}">${esc(d.sourceFilename ?? d.sourceTitle)}</span>
-           ${titleIsHeading ? `<span style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
-           <span style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>` : ""}`
+           ${titleIsHeading ? `<span id="head-runtime" style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(runtimeMs / 1000)}</span>
+           <span id="head-kept" style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${kept} kept</span>` : ""}`
     }
   </div>
   ${isBuild ? `<div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px">${ledeFor(d.kind)} ${esc(d.summary ?? "every beat is filled.")}</div>` : ""}`;
@@ -386,31 +386,38 @@ function exportsStrip(d: EditorData): string {
  * The unassisted half of the editor: the same reading-and-deciding as a scored
  * cut, with nothing having decided for you. Dropping uses the same cut model
  * as Script, so the two stages edit one thing rather than two.
+ *
+ * Two things this deliberately does NOT do, both learned from looking at it
+ * with a real 38-line transcript in it rather than a one-line test file:
+ *
+ *  - No thumbnail. A scored clip has its own frame, so a column of them tells
+ *    you something. A transcript line does not, so every block was handed the
+ *    SAME source poster — thirty-eight identical pictures down the page,
+ *    eating 92px of every row to say nothing. The timecode is the useful part
+ *    and it is now the thing you click to play.
+ *
+ *  - No green "Keeping" badge on every line. Everything starts kept, so that
+ *    was thirty-eight green pills shouting the default state, while the thing
+ *    you actually came to do — drop a line — was the quiet one. The states are
+ *    inverted: keeping is silent, and the control offers the action.
+ *
+ * The whole line is the target. Clicking the text strikes it, which is the
+ * gesture Script already uses on words.
  */
 function segmentBlock(
   seg: { idx: number; start_ms: number; end_ms: number; text: string },
   kept: boolean,
-  poster: string | null | undefined,
 ): string {
-  /* One element in both states, styled by .seg-pill in the shell's CSS, so the
-     client can flip it without knowing any colours. */
-  const toggle = `<span class="seg-pill" data-kept="${kept ? 1 : 0}">${kept ? "Keeping" : "Add back"}</span>`;
+  const action = kept
+    ? `<span class="seg-pill" data-kept="1">Cut</span>`
+    : `<span class="seg-pill" data-kept="0">Add back</span>`;
 
-  /* data-ms so the running total is recomputed from the blocks themselves
-     when one is toggled, rather than from a number the page would have to
-     reload to refresh. */
-  return `<div data-seg-block="${seg.idx}" data-kept="${kept ? 1 : 0}" data-ms="${seg.end_ms - seg.start_ms}" style="display:flex;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};${kept ? "" : "opacity:.55;"}">
-    <button class="seg-play" data-start="${seg.start_ms}" aria-label="Play from ${tc(seg.start_ms / 1000)}" style="flex:none;width:92px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);border:none;padding:0;cursor:pointer;display:block">
-      ${poster ? `<img loading="lazy" src="/media/${esc(poster)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>` : ""}
-      <span style="position:absolute;left:4px;bottom:3px;font-size:9.5px;font-family:${FONT.mono};background:rgba(0,0,0,.6);border-radius:2px;padding:1px 4px;color:${C.ink}">${tc(seg.start_ms / 1000)}</span>
+  return `<div data-seg-block="${seg.idx}" data-kept="${kept ? 1 : 0}" data-ms="${seg.end_ms - seg.start_ms}" style="display:flex;gap:12px;align-items:baseline;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface};${kept ? "" : "opacity:.5;"}">
+    <button class="seg-play" data-start="${seg.start_ms}" aria-label="Play from ${tc(seg.start_ms / 1000)}" style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};background:none;border:none;padding:0;cursor:pointer;font-variant-numeric:tabular-nums">${tc(seg.start_ms / 1000)}</button>
+    <button class="seg-keep" data-seg="${seg.idx}" style="flex:1;min-width:0;text-align:left;background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}">
+      <span data-seg-text data-content style="font-size:${SIZE.body};line-height:1.55;color:${C.ink};${kept ? "" : "text-decoration:line-through;"};text-decoration-color:rgba(236,236,241,0.4)">${esc(seg.text)}</span>
     </button>
-    <div style="flex:1;min-width:0">
-      <div data-seg-text data-content style="font-size:${SIZE.body};line-height:1.5;color:${C.ink};${kept ? "" : "text-decoration:line-through;"};text-decoration-color:rgba(236,236,241,0.35)">${esc(seg.text)}</div>
-      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}">${hms((seg.end_ms - seg.start_ms) / 1000)}</div>
-    </div>
-    <div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-      <button class="seg-keep" data-seg="${seg.idx}" data-kept="${kept ? 1 : 0}" style="background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}">${toggle}</button>
-    </div>
+    <button class="seg-keep" data-seg="${seg.idx}" style="flex:none;background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}">${action}</button>
   </div>`;
 }
 
@@ -507,7 +514,7 @@ export function renderEditor(d: EditorData): string {
         <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.5">Click any line to play it. Strike what goes — nothing was decided for you.</div>`
       : "";
 
-    const blocks = d.segments.map((sg) => segmentBlock(sg, !cutSet.has(sg.idx), d.sourcePoster));
+    const blocks = d.segments.map((sg) => segmentBlock(sg, !cutSet.has(sg.idx)));
 
     return `${head}
     ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
