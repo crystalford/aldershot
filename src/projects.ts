@@ -181,11 +181,50 @@ export async function nameUntitledEdits(db: D1Database, userId: string): Promise
     .run();
 }
 
+/**
+ * Has anything actually been DONE to this edit?
+ *
+ * Opening a video creates a project, because the editor edits a project and
+ * something has to hold the cuts. That is an implementation detail, and it was
+ * leaking: every video you so much as looked at appeared in "Pick up an edit"
+ * and in Projects, so browsing your own library filled it with edits you never
+ * made. The owner's words — "it still immediately makes an edit when I click
+ * on one of the footages."
+ *
+ * The row still gets created. It just is not an EDIT until there is an edit in
+ * it: a brief you asked for, a cut you made, a beat, a render, or a name you
+ * typed. Renaming counts, which is why the title is compared against the
+ * source's — an untouched one is named after its footage.
+ *
+ * A project with no source was made deliberately from the composer and is
+ * always real.
+ */
+const TOUCHED = `(
+  v2_projects.source_id IS NULL
+  OR (brief IS NOT NULL AND TRIM(brief) <> '')
+  OR (cuts IS NOT NULL AND cuts <> '' AND cuts <> '[]')
+  OR title <> COALESCE((SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id), title)
+  OR EXISTS (SELECT 1 FROM beats b WHERE b.project_id = v2_projects.id)
+  OR EXISTS (SELECT 1 FROM renders r WHERE r.project_id = v2_projects.id)
+)`;
+
+/**
+ * The edits worth listing.
+ *
+ * Deliberately NOT how a single project is loaded — getProject has no such
+ * filter, so an untouched edit still opens perfectly from its own URL. It is
+ * only absent from lists, which is the difference between "not made yet" and
+ * "does not exist".
+ */
 export async function listProjects(db: D1Database, userId: string): Promise<Project[]> {
   await reapDuplicateEdits(db, userId);
   await nameUntitledEdits(db, userId);
   const { results } = await db
-    .prepare(`SELECT * FROM v2_projects WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC`)
+    .prepare(
+      `SELECT * FROM v2_projects
+        WHERE user_id=? AND deleted_at IS NULL AND ${TOUCHED}
+        ORDER BY updated_at DESC`,
+    )
     .bind(userId)
     .all<Project>();
   return results ?? [];
