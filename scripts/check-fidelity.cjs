@@ -196,6 +196,15 @@ async function checkStrings() {
         "here yet' is its wording on Home.",
     ],
     [
+      "New edit",
+      "The prototype has no source page at all — clicking footage in it goes " +
+        "straight to a scored editor — so it has no word for starting a " +
+        "SECOND cut of one video. Its nearest phrasings are a heading (\"Want " +
+        "anything else from this footage?\", used verbatim above this button) " +
+        "and \"Skip the brief — edit it yourself\", which describes the first " +
+        "edit rather than another one. Two words, its own vocabulary.",
+    ],
+    [
       "Make a short",
       "The prototype puts shorts on a surface of their own and its verb is " +
         "'Cut shorts from it' — a batch, on a whole video. The control this " +

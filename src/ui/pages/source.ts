@@ -40,10 +40,56 @@ function line(s: SegmentRow): string {
 }
 
 export interface SourceViewData {
-  source: SourceRow;
+  /*
+   * More than a Footage card needs: this page PLAYS the footage, so it needs
+   * the object key. Widened here rather than pushing r2_key onto SourceRow,
+   * which every card in a grid would then have to carry.
+   */
+  source: SourceRow & { r2_key: string };
   segments: SegmentRow[];
   /** Live job for this source, when it is still being read. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
+  /**
+   * The edits made from this footage.
+   *
+   * The whole reason this page exists as a destination again. One source can
+   * carry as many cuts as you like and none of them consume it — but that is
+   * only believable if you can see them listed against it.
+   */
+  edits: Array<{ id: string; title: string; brief: string | null; cuts: string | null; updated_at: number }>;
+}
+
+/** Edits made from this footage, and the way to start another. */
+function editsFrom(d: SourceViewData): string {
+  if (d.source.transcript_state !== "ready") return "";
+
+  const row = (e: SourceViewData["edits"][number]) => {
+    /* How much has actually been done to it — the same question the intake
+       asks, answered from the cut itself rather than a stored counter. */
+    let struck = 0;
+    try {
+      struck = (JSON.parse(e.cuts ?? "[]") as unknown[]).length;
+    } catch {
+      struck = 0;
+    }
+    const meta = [e.brief?.trim() ? "asked for" : "unassisted", struck ? `${struck} cut${struck === 1 ? "" : "s"}` : "nothing cut yet"].join(" · ");
+    return `<a href="/p/${esc(e.id)}/cut" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface};flex-wrap:wrap">
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.body};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.title)}</span>
+      <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${esc(meta)}</span>
+    </a>`;
+  };
+
+  return `<div style="margin-top:28px">
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span style="font-size:${SIZE.body};font-weight:600;color:${C.ink45}">Want anything else from this footage?</span>
+      <a href="/sources/${esc(d.source.id)}/edit?fresh=1" style="margin-left:auto;font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">New edit</a>
+    </div>
+    ${
+      d.edits.length
+        ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">${d.edits.map(row).join("")}</div>`
+        : `<div data-content style="margin-top:12px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing cut from this yet. An edit never changes the footage — you can make as many as you like.</div>`
+    }
+  </div>`;
 }
 
 export function renderSource(d: SourceViewData): string {
@@ -76,11 +122,17 @@ export function renderSource(d: SourceViewData): string {
   const actions =
     s.transcript_state === "ready"
       ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">
-          <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;border:none;font-family:${FONT.ui}">Edit</button>
+          <a href="/sources/${esc(s.id)}/edit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Edit</a>
           <a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70}">Clip it</a>
           <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;border:none;font-family:${FONT.ui}">React to it</button>
         </div>`
       : "";
+
+  /* The footage, playable. This page is the source; not showing it was the
+     clearest sign that it had stopped being a real destination. */
+  const player = `<video id="src-video" playsinline preload="metadata"${
+    s.poster_r2_key ? ` poster="/media/${esc(s.poster_r2_key)}"` : ""
+  } src="/media/${esc(s.r2_key)}" controls style="width:100%;max-width:520px;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block;margin-top:18px"></video>`;
 
   const head = `<a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:${C.ink45}">← Footage</a>
   <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em;line-height:1.2;margin-top:14px" data-content>${esc(s.title)}</div>
@@ -112,8 +164,12 @@ export function renderSource(d: SourceViewData): string {
     </div>`;
   }
 
-  if (!segments.length) return head + emptyState("Nothing kept yet — add a clip back.");
+  if (!segments.length) return head + player + emptyState("Nothing kept yet — add a clip back.");
 
   return `${head}
-  <div style="margin-top:24px">${segments.map(line).join("")}</div>`;
+  ${player}
+  ${editsFrom(d)}
+  <!-- The transcript needs no heading: it is the obvious remaining thing on a
+       page about one video, and the section above it is already labelled. -->
+  <div style="margin-top:28px">${segments.map(line).join("")}</div>`;
 }

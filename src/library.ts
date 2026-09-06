@@ -22,17 +22,46 @@ export interface Moment {
   used_count: number;
   frame_r2_key: string;
   source_title: string;
+  source_id: string;
+  source_key: string;
+  short_key: string | null;
   thread_name: string | null;
 }
 
 const SELECT_MOMENTS = `
   SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.used_count, c.frame_r2_key,
+         c.source_id,
          s.title AS source_title,
+         /* The footage this came from, so a clip can PLAY. A moment is a range
+            of a video, and a video element given #t=start,end plays exactly
+            that range — no render, no second file. Without this the cards were
+            stills you could not click. */
+         s.r2_key AS source_key,
+         /* Whether it has already been made into a short, so the card can show
+            the finished thing rather than offering to make it twice. */
+         (SELECT r.r2_key FROM renders r
+           WHERE r.clip_id = c.id AND r.state = 'ready' AND r.r2_key IS NOT NULL
+           ORDER BY r.created_at DESC LIMIT 1) AS short_key,
          (SELECT t.name FROM v2_clip_threads ct JOIN v2_threads t ON t.id = ct.thread_id
            WHERE ct.clip_id = c.id ORDER BY ct.confidence DESC LIMIT 1) AS thread_name
     FROM v2_clips c
     JOIN sources s ON s.id = c.source_id
    WHERE c.user_id = ? AND c.deleted_at IS NULL AND c.kept = 1`;
+
+/**
+ * How many moments there are, without loading them.
+ *
+ * The Footage tab bar shows this on every tab; loading the rows themselves
+ * just to count them would fetch sixteen quotes and frames to render one
+ * number.
+ */
+export async function countMoments(db: D1Database, userId: string): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM v2_clips WHERE user_id=? AND deleted_at IS NULL AND kept=1`)
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
 
 /** Everything kept, newest first. */
 export async function listMoments(db: D1Database, userId: string, limit = 60): Promise<Moment[]> {

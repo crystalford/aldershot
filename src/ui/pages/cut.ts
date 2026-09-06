@@ -30,6 +30,8 @@ export interface CutData {
   projectId: string;
   title: string;
   sourceId: string | null;
+  /** What the footage is called, for the line that links back to it. */
+  sourceTitle: string | null;
   sourceKey: string | null;
   posterKey: string | null;
   blocks: Block[];
@@ -432,6 +434,21 @@ export function renderCut(d: CutData): string {
   <div style="margin-top:20px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
     <div class="editor-aside">
       ${player}
+      ${
+        /*
+         * WHICH FOOTAGE this cut is made from, and a way back to it.
+         *
+         * An edit never changes its footage — cuts live on the project and a
+         * render writes a new file — but the editor gave no sign of that, and
+         * /sources/:id used to redirect straight back here, so the footage was
+         * genuinely unreachable. Naming it and linking to it is the difference
+         * between "this edit consumed my video" and "this edit is one of
+         * several I can make from it".
+         */
+        d.sourceId
+          ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
+          : ""
+      }
       <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.55">Strike a line or a word to cut it. Move a block to change the order. The + adds your voice between them.</div>
       ${assist(d)}
     </div>

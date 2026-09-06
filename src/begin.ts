@@ -40,6 +40,8 @@ export async function begin(
     sourceTitle?: string | null;
     /** The name worked out from the transcript. See src/naming.ts. */
     cutTitle?: string | null;
+    /** Force a new edit rather than reopening the existing unbriefed one. */
+    fresh?: boolean;
   },
 ): Promise<BeginResult> {
   const read = readIntent(opts.brief);
@@ -61,7 +63,10 @@ export async function begin(
    * gets its own project, because the user is asking for a different thing
    * from the same footage.
    */
-  const wantsSomethingNew = opts.brief.trim().length > 0;
+  /* `fresh` is the "New edit" button on a source: a second unassisted cut of
+     the same footage, deliberately asked for. Without it there is no way to
+     have two, because an unbriefed open always returns the existing one. */
+  const wantsSomethingNew = opts.brief.trim().length > 0 || opts.fresh === true;
 
   let project = null;
   let reused = false;

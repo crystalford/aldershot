@@ -2723,6 +2723,35 @@ async function record(button) {
   recorder.start();
 }
 
+/*
+ * "Make a short" on a moment in Footage.
+ *
+ * The same route Clipping's own card uses — a moment is a moment wherever you
+ * are looking at it, and there is no second renderer.
+ */
+document.querySelectorAll(".moment-short").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = "Making it…";
+    try {
+      const res = await fetch("/api/clips/" + btn.getAttribute("data-clip") + "/render", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ aspect: "9:16", captionStyle: "None" }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't start");
+      toast("Making it — it'll show up here when it's done.");
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = was;
+      toast((err && err.message) || "That didn't start");
+    }
+  });
+});
+
 /* Clipping's drop zone. The video lands in Footage like any other source —
    the surface says so — and then this page reopens on it, so the drop and the
    clip run are one gesture rather than two. Reuses the same resumable upload

@@ -91,6 +91,33 @@ test("deleting a video takes its edits and restore brings them back together", a
   );
 });
 
+/*
+ * The cascade runs ONE WAY, and this is the property that makes the product
+ * safe to use: footage is material, an edit is a thing made from it.
+ *
+ * The owner's question, in their words: "so that if i start an edit it is
+ * just using the footage not editing that and making the source footage then
+ * inaccessible". If deleting an edit could take the video with it, one
+ * tidy-up would destroy the only copy of the original.
+ */
+test("deleting an edit never touches the footage or the other edits", async () => {
+  const w = world();
+
+  const del = await softDelete(w.db as never, "project", "P1", ME);
+  assert.equal(del.ok, true);
+
+  assert.equal(
+    w.count("SELECT COUNT(*) n FROM sources WHERE deleted_at IS NULL AND user_id='" + ME + "'"),
+    1,
+    "the footage an edit was made from survives the edit",
+  );
+  assert.equal(
+    w.count("SELECT COUNT(*) n FROM v2_projects WHERE deleted_at IS NULL AND user_id='" + ME + "'"),
+    1,
+    "the other edit of the same footage is untouched",
+  );
+});
+
 test("a delete never reaches another account", async () => {
   const w = world();
   const del = await softDelete(w.db as never, "source", "S9", ME);

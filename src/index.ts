@@ -21,7 +21,7 @@ import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
-import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip } from "./library.ts";
+import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
@@ -489,6 +489,10 @@ app.get("/footage", async (c) => {
   const reading = await activeJobs(c.env.DB, user.id);
   const pctFor = new Map(reading.filter((j) => j.type === "transcribe").map((j) => [j.ref_id, j.pct]));
 
+  /* The count on every tab, the LIST only where it is shown. A count is one
+     cheap query; sixteen rows of quotes and frames are not. */
+  const momentCount = await countMoments(c.env.DB, user.id);
+
   let moments: Awaited<ReturnType<typeof listMoments>> = [];
   let meaningUnavailable = false;
 
@@ -522,7 +526,7 @@ app.get("/footage", async (c) => {
       renderFootageFull({
         tab,
         sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
-        moments, threads, mode, q: query, meaningUnavailable, thread, sort,
+        moments, momentCount, threads, mode, q: query, meaningUnavailable, thread, sort,
       }),
     ),
   );
@@ -594,54 +598,84 @@ function cameFrom(referer: string | undefined): [string, string] {
  * being read, and when the read failed and there is a retry to offer. There is
  * genuinely nothing to edit in either case.
  */
+/**
+ * Opening the edit — a VERB, so it redirects.
+ *
+ * Footage cards point here: "when i click the video it just takes me to the
+ * transcript page.. that's not what should happen", so a click still lands
+ * you in the editor. What changed is that /sources/:id no longer does this,
+ * because a noun that redirects is a page you can never reach.
+ */
+app.get("/sources/:id/edit", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (!src) return c.notFound();
+  /* Not readable yet: the source page is where the reading, and any failure
+     with its reason and a Retry, actually live. */
+  if (src.transcript_state !== "ready") return c.redirect(`/sources/${src.id}`, 302);
+
+  /*
+   * Name it NOW if nobody has. Once per source, on the way in — the sweep
+   * that catches older footage runs hourly and does not help the person
+   * standing here.
+   */
+  let cutTitle = src.cut_title;
+  if (!cutTitle) {
+    const segs = await getSegments(c.env.DB, src.id);
+    cutTitle = await nameSourceCut(c.env, src, segs.slice(0, 40).map((sg) => sg.text).join(" "));
+  }
+
+  const { href } = await begin(c.env, {
+    userId: user.id,
+    sourceId: src.id,
+    brief: (c.req.query("brief") || "").trim(),
+    sourceTitle: src.title,
+    cutTitle,
+    fresh: c.req.query("fresh") === "1",
+  });
+  return c.redirect(href, 302);
+});
+
+/**
+ * The footage itself — a NOUN, so it is a page.
+ *
+ * This used to 302 straight into the editor the moment a transcript was
+ * ready, which meant the source page only ever rendered while a video was
+ * still being read or had failed. Your own footage became unreachable the
+ * instant it became useful, and an edit looked like it had consumed it.
+ *
+ * Nothing about editing touches what is here: cuts live on the project, the
+ * transcript is written once, and a render writes a new file rather than
+ * overwriting the original. The page just has to say so by existing.
+ */
 app.get("/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.notFound();
 
-  if (src.transcript_state === "ready") {
-    /*
-     * Name it NOW if nobody has.
-     *
-     * Naming happens inside the read, and the hourly sweep catches footage
-     * read before naming existed. Neither helps the person standing here: the
-     * owner opened a real video and the heading still said
-     * "DJI 20260826052802 0025 D", because its read predated the feature and
-     * the sweep had not come round yet.
-     *
-     * So it is done on the way in, once per source, before the cut is made —
-     * a model call inside a redirect, which is a real cost and the reason I
-     * avoided it. Being told your video is called DJI_2026… is a worse one.
-     * It is skipped the moment a name exists, so it never happens twice.
-     */
-    let cutTitle = src.cut_title;
-    if (!cutTitle) {
-      const segs = await getSegments(c.env.DB, src.id);
-      const text = segs.slice(0, 40).map((sg) => sg.text).join(" ");
-      cutTitle = await nameSourceCut(c.env, src, text);
-    }
-
-    const { href } = await begin(c.env, {
-      userId: user.id,
-      sourceId: src.id,
-      brief: "",
-      sourceTitle: src.title,
-      cutTitle,
-    });
-    return c.redirect(href, 302);
-  }
-
   /* The LATEST job, not the active one: this page renders the failed state and
      needs the reason that failure recorded, which activeJobs can never
      return. */
-  const [segments, job] = await Promise.all([
+  const [segments, job, edits] = await Promise.all([
     getSegments(c.env.DB, src.id),
     latestJobFor(c.env.DB, src.id, user.id, ["transcribe"]),
+    /* Every edit made from this footage. The point of the page: one source,
+       as many cuts as you like, none of them consuming it. */
+    c.env.DB
+      .prepare(
+        `SELECT id, title, brief, cuts, updated_at FROM v2_projects
+          WHERE source_id=? AND user_id=? AND deleted_at IS NULL AND archived_at IS NULL
+          ORDER BY updated_at DESC`,
+      )
+      .bind(src.id, user.id)
+      .all<{ id: string; title: string; brief: string | null; cuts: string | null; updated_at: number }>()
+      .then((r) => r.results ?? []),
   ]);
 
   return c.html(
-    surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job })),
+    surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job, edits })),
   );
 });
 
@@ -778,11 +812,15 @@ app.get("/clipping", async (c) => {
    * an empty list, so landing on Clipping shows what you have made rather than
    * asking you to remember which video you made it from.
    */
-  const shorts = (
-    source
-      ? await listClipsForSource(c.env.DB, source.id, user.id)
-      : await listShorts(c.env.DB, user.id)
-  ).filter((cl) => cl.origin === "clipping");
+  /*
+   * Shorts are moments that have been made into a vertical video, or asked to
+   * be — not "rows a particular surface created". The origin filter here was
+   * the other half of Footage saying thirteen and Clipping saying two about
+   * the same table.
+   */
+  const shorts = source
+    ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
+    : await listShorts(c.env.DB, user.id);
 
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */
@@ -917,6 +955,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         projectId: project.id,
         title: project.title,
         sourceId: source?.id ?? null,
+        sourceTitle: source?.title ?? null,
         sourceKey: source?.r2_key ?? null,
         posterKey: source?.poster_r2_key ?? null,
         blocks,

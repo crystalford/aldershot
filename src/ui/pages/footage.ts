@@ -7,7 +7,7 @@
  * they show their real empty states rather than a fabricated preview.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
+import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
 import { iconSearch } from "../icons.ts";
@@ -184,7 +184,7 @@ function sourceCard(s: SourceRow): string {
     ${selectBox("sources", s.id)}
     ${
       ready
-        ? `<a href="/sources/${esc(s.id)}" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
+        ? `<a href="/sources/${esc(s.id)}/edit" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
         : art + label
     }
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -210,7 +210,12 @@ export interface MomentRow {
   origin: string;
   used_count: number;
   frame_r2_key: string;
+  source_id: string;
   source_title: string;
+  /** The footage's own object, so the moment can play its range in place. */
+  source_key: string;
+  /** A finished 9:16 short of this moment, when one has been made. */
+  short_key: string | null;
   thread_name: string | null;
 }
 
@@ -259,21 +264,53 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
   </form>`;
 }
 
+/**
+ * One moment, and the three things you can do with it.
+ *
+ * This was a <div> with a still and some text in it — no link, no player, no
+ * control of any kind. Sixteen dead cards. The owner: "i can't click any
+ * clips in footage -> clips".
+ *
+ * A moment is a RANGE of a video, so it plays as one: a video element given
+ * #t=start,end plays exactly that stretch, with no render and no second file.
+ * Once a 9:16 short has actually been made of it, the card shows the short
+ * instead of offering to make it again.
+ */
 function momentCard(m: MomentRow): string {
-  const frame = m.frame_r2_key
-    ? `<img loading="lazy" src="/media/${esc(m.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
-    : "";
   const used = m.used_count > 0 ? `used in ${m.used_count} ${m.used_count === 1 ? "essay" : "essays"}` : null;
+  const from = m.start_ms / 1000;
+  const to = m.end_ms / 1000;
 
-  return `<div style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
+  /* The short if there is one, otherwise the moment itself. Both are real
+     video; neither is a still pretending to be a player. */
+  const media = m.short_key
+    ? `<video preload="none" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.short_key)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`
+    : `<video preload="metadata" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.source_key)}#t=${from},${to}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`;
+
+  return `<div data-moment="${esc(m.id)}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
     <div style="position:relative;aspect-ratio:16/9;background:#0B0B0E">
-      ${frame}
-      <span data-content style="position:absolute;right:3px;bottom:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(255,255,255,0.8);background:rgba(0,0,0,0.55);padding:1px 5px;border-radius:3px">${hms((m.end_ms - m.start_ms) / 1000)}</span>
+      ${media}
+      ${
+        m.short_key
+          ? `<span data-content style="position:absolute;left:6px;top:6px;font-size:${SIZE.pill};font-weight:600;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};pointer-events:none">Short</span>`
+          : ""
+      }
+      <span data-content style="position:absolute;right:3px;bottom:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(255,255,255,0.8);background:rgba(0,0,0,0.55);padding:1px 5px;border-radius:3px;pointer-events:none">${hms((m.end_ms - m.start_ms) / 1000)}</span>
     </div>
     <div style="padding:12px 14px;display:flex;flex-direction:column;gap:5px;flex:1">
       ${m.thread_name ? `<div data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${ACCENT.cyan}">${esc(m.thread_name)}</div>` : ""}
       <div data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${C.ink}">${esc(m.quote.slice(0, 120))}</div>
-      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:auto;padding-top:4px">${esc(m.source_title)} · ${hms(m.start_ms / 1000)}${used ? ` · ${used}` : ""}</div>
+      <!-- Where it came from, as a link. A moment belongs to a video and you
+           should be able to get to it — that is the whole footage/edit
+           relationship in one line. -->
+      <a href="/sources/${esc(m.source_id)}" data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:auto;padding-top:4px">${esc(m.source_title)} · ${hms(m.start_ms / 1000)}${used ? ` · ${used}` : ""}</a>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-top:8px">
+        ${
+          m.short_key
+            ? `<a href="/media/${esc(m.short_key)}?download=1" style="font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink}">Download</a>`
+            : `<button class="moment-short" data-clip="${esc(m.id)}" style="font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Make a short</button>`
+        }
+      </div>
     </div>
   </div>`;
 }
@@ -292,7 +329,17 @@ function threadCard(t: ThreadRow): string {
 export interface FootageData {
   tab: FootTab;
   sources: SourceRow[];
+  /** The moments SHOWN — only loaded on the Clips tab. */
   moments: MomentRow[];
+  /**
+   * How many there are, whichever tab you are on.
+   *
+   * This used to be `moments.length`, and moments is only fetched on the
+   * Clips tab — so every other tab read "Clips · 0" and clicking it showed
+   * sixteen. A count that disagrees with the list it counts is worse than no
+   * count: it is the tab bar telling you there is nothing there.
+   */
+  momentCount: number;
   threads: ThreadRow[];
   mode: SearchMode;
   q: string;
@@ -370,7 +417,7 @@ export function renderFootageFull(d: FootageData): string {
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
     searchBox(d.tab, d.mode, d.q) +
-    tabs(d.tab, { moments: d.moments.length, threads: d.threads.length, sources: d.sources.length });
+    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length });
 
   if (d.tab === "find") return head + findPanel();
 
@@ -402,7 +449,7 @@ export function renderFootageFull(d: FootageData): string {
     ? `<div style="margin-top:12px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
     : "";
 
-  const chips = d.threads.length ? threadChips(d.threads, d.moments.length, d.thread) : "";
+  const chips = d.threads.length ? threadChips(d.threads, d.momentCount, d.thread) : "";
 
   if (!d.moments.length) {
     return head + chips + notice + emptyState(d.q ? "No footage yet" : "Nothing kept yet — add a clip back.");

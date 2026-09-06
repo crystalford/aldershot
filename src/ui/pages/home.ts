@@ -201,7 +201,11 @@ function sectionHead(title: string, count: string): string {
 function workingRow(jobs: WorkingJob[]): string {
   return `<div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
     <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-    <span id="workingLine" style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(workingLine(jobs))}</span>
+    <!-- data-content: this sentence is assembled around the user's own video
+         titles, so it can never match the prototype's fixed wording. It was
+         only passing the check while every title happened to be a filename
+         the crawler skipped; auto-naming put real words in it. -->
+    <span id="workingLine" data-content style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(workingLine(jobs))}</span>
     <a href="/footage?tab=sources" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer">Watch</a>
   </div>`;
 }

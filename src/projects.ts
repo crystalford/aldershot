@@ -338,17 +338,28 @@ export function overlapFraction(
 }
 
 /**
- * Every short this account has made, newest first.
+ * The shorts — moments that have been made into a vertical video, or asked to
+ * be.
  *
- * Clipping's landing state needs the whole library rather than one video's,
- * because it is a shelf of what you made, not a filter on one source.
+ * Defined by what has HAPPENED to a moment, not by which surface created it.
+ * It used to be `origin='clipping'`, which meant Footage counted thirteen
+ * moments while Clipping counted two, and the two numbers had no relationship
+ * a person could see. The owner: "when i click on clips shows 16 clips / then
+ * i go to clipping shows 2 clips".
+ *
+ * Now Clipping is a subset of the library rather than a rival to it: every
+ * moment lives in Footage, and the ones you have turned into shorts also show
+ * up here. A moment clipped from the editor and one found by a batch are the
+ * same thing and finally look it.
  */
 export async function listShorts(db: D1Database, userId: string, limit = 60): Promise<Clip[]> {
   const { results } = await db
     .prepare(
-      `SELECT * FROM v2_clips
-        WHERE user_id=? AND origin='clipping' AND deleted_at IS NULL
-        ORDER BY created_at DESC LIMIT ?`,
+      `SELECT c.* FROM v2_clips c
+        WHERE c.user_id=? AND c.deleted_at IS NULL
+          AND (c.origin='clipping'
+               OR EXISTS (SELECT 1 FROM renders r WHERE r.clip_id = c.id AND r.kind='short'))
+        ORDER BY c.created_at DESC LIMIT ?`,
     )
     .bind(userId, limit)
     .all<Clip>();
