@@ -261,7 +261,7 @@ function preview(d: BuildData): string {
     .join("");
 
   return `<div style="border-radius:11px;overflow:hidden;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,0.07)">
-    <div style="position:relative;width:100%;aspect-ratio:16/9;background:#07070a">
+    <div style="position:relative;width:100%;aspect-ratio:16/9;background:#07070a;overflow:hidden">
       ${
         /*
          * A real video, not a picture of one. The play button and the scrubber
@@ -275,9 +275,17 @@ function preview(d: BuildData): string {
             ? `<img loading="lazy" src="/media/${esc(cur.frame_r2_key)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"/>`
             : ""
       }
-      <div style="position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between">
-        <div style="padding:12px 14px">${cur?.act ? `<span data-content style="font-size:${SIZE.meta};font-weight:600;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.55);padding:3px 8px;border-radius:4px">${esc(cur.act)}</span>` : ""}</div>
-        <div style="padding:0 18px 16px"><div data-content style="font-size:15.5px;line-height:1.45;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.8);max-width:85%">${esc(cur?.text ?? "")}</div></div>
+      <div style="position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden">
+        <div style="padding:12px 14px;flex:none">${cur?.act ? `<span data-content style="font-size:${SIZE.meta};font-weight:600;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.55);padding:3px 8px;border-radius:4px">${esc(cur.act)}</span>` : ""}</div>
+        <!-- CLAMPED. A beat's text is a transcript quote and can be a
+             paragraph; this was unbounded and absolutely positioned, so a long
+             one grew straight through the bottom of the frame and printed
+             itself over the play button and the scrubber. Three lines, faded
+             out at the cut, with the full text still readable in the beat
+             block beside it. -->
+        <div style="padding:0 18px 16px;flex:none;min-height:0">
+          <div data-content style="font-size:15.5px;line-height:1.45;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.8);max-width:85%;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(cur?.text ?? "")}</div>
+        </div>
       </div>
     </div>
     <div style="padding:11px 13px;background:#131316;display:flex;align-items:center;gap:12px">

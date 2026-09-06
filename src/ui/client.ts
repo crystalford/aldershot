@@ -286,6 +286,64 @@ document.addEventListener("keydown", (e) => {
    below is the page's half: hand over the file, then render whatever progress
    the worker broadcasts — on any surface, not just the one that began it. */
 
+/**
+ * The file, kept somewhere that outlives the page.
+ *
+ * "when i click away browsing the site it cancels the upload" — reported
+ * twice, and the service worker was supposed to have fixed it. It had not,
+ * for a reason that only shows up once you follow the whole chain:
+ *
+ *   1. The page hands the File to the worker and remembers it in inFlight.
+ *   2. You navigate. That page is destroyed, and inFlight with it.
+ *   3. watchUpload -- the stall timer that re-sends a wedged upload -- reads
+ *      inFlight, so on the new page it returns immediately and there is NO
+ *      recovery for anything already running.
+ *   4. Chrome does not keep a service worker alive indefinitely for a message
+ *      event's waitUntil. On a multi-gigabyte upload it gets terminated
+ *      mid-file, and by then nothing anywhere is watching.
+ *
+ * So the upload stops, silently, and the next page you land on offers you
+ * "Finish it" and asks you to pick the same file again. Which reads exactly
+ * like being cancelled for browsing your own site.
+ *
+ * The file goes in IndexedDB, which belongs to the origin rather than to any
+ * page. Any page, on any surface, can then find an interrupted upload and
+ * restart it without asking you for anything.
+ */
+const UPLOAD_DB = "aldershot-uploads";
+
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(UPLOAD_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("files")) req.result.createObjectStore("files");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbRun(mode, fn) {
+  /* Private windows and blocked site-data both throw here. An upload that
+     cannot be parked is still an upload -- it just loses the ability to
+     resume itself, which is what we had before. */
+  try {
+    const db = await idb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("files", mode);
+      const out = fn(tx.objectStore("files"));
+      tx.oncomplete = () => resolve(out && out.result !== undefined ? out.result : undefined);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    return undefined;
+  }
+}
+
+const parkFile = (id, file) => idbRun("readwrite", (st) => st.put(file, id));
+const takeFile = (id) => idbRun("readonly", (st) => st.get(id));
+const dropFile = (id) => idbRun("readwrite", (st) => st.delete(id));
+
 let swReady = null;
 async function uploadWorker() {
   if (!("serviceWorker" in navigator)) return null;
@@ -425,6 +483,9 @@ if ("serviceWorker" in navigator) {
       const job = inFlight.get(m.sourceId);
       if (job) clearTimeout(job.timer);
       inFlight.delete(m.sourceId);
+      /* The bytes are in R2; the parked copy is just taking up the browser's
+         storage quota now. */
+      dropFile(m.sourceId);
       showUpload({ ...m, state: "done" });
       /* The read starts server-side the moment the upload completes, so the
          chip stays as the way back in rather than yanking the user off
@@ -439,6 +500,7 @@ if ("serviceWorker" in navigator) {
       const job = inFlight.get(m.sourceId);
       if (job) clearTimeout(job.timer);
       inFlight.delete(m.sourceId);
+      dropFile(m.sourceId);
       document.querySelector("#uploadChip")?.remove();
     }
   });
@@ -463,10 +525,50 @@ if ("serviceWorker" in navigator) {
       const res = await fetch("/api/uploads/pending");
       if (!res.ok) return;
       pending = (await res.json()).pending || [];
-    } catch { return; }
+    } catch (err) { return; }
     if (!pending.length || document.querySelector("#uploadChip")) return;
 
     const p = pending[0];
+
+    /*
+     * ADOPT IT. No button, no asking for the file again.
+     *
+     * The file was parked in IndexedDB when the upload started, so whichever
+     * page you happen to be on can hand it back to the worker and carry on
+     * from whatever the server already holds. This is the whole point of the
+     * exercise: browsing your own site is not cancelling anything, and it
+     * should not cost you a click to prove it.
+     */
+    const parked = await takeFile(p.source_id);
+    if (parked && parked.size === p.total_bytes) {
+      const sw = await uploadWorker();
+      if (sw) {
+        const msg = {
+          type: "start-upload",
+          file: parked,
+          sourceId: p.source_id,
+          uploadId: p.upload_id,
+          partSize: p.part_size,
+          mode: p.mode,
+          durationS: p.duration_s || 0,
+          resume: true,
+        };
+        inFlight.set(p.source_id, { msg, doneParts: [], timer: null });
+        sw.postMessage(msg);
+        watchUpload(p.source_id);
+        showUpload({
+          sourceId: p.source_id,
+          name: p.filename || "A video",
+          pct: Math.min(99, Math.round((p.parts_done * p.part_size * 100) / (p.total_bytes || 1))),
+          totalBytes: p.total_bytes,
+          sent: p.parts_done * p.part_size,
+        });
+        return;
+      }
+    }
+
+    /* No parked copy — a different browser, cleared site data, or a private
+       window. Then we genuinely do have to ask, and this is the old path. */
     if (!p.total_bytes || !p.parts_done) return;
 
     const el = document.createElement("div");
@@ -488,6 +590,7 @@ if ("serviceWorker" in navigator) {
 
     el.querySelector("#resumeDrop").addEventListener("click", async () => {
       el.remove();
+      dropFile(p.source_id);
       await fetch("/api/uploads/" + p.source_id + "/abort", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -558,8 +661,19 @@ if (composer) {
     attached.hidden = false;
   }
   let picked = null;
-  composer.addEventListener("drop", (e) => { picked = e.dataTransfer?.files?.[0] || picked; attach(picked); });
-  $("#filePick")?.addEventListener("change", (e) => { picked = e.target.files?.[0] || null; attach(picked); });
+  /* The composer takes ONE video plus a brief, because the brief is about
+     that video. Drop several and the first is attached; the rest are not
+     thrown away — they start uploading, which is what you meant by dropping
+     them. (startUploads is a hoisted function declaration, defined below.) */
+  const takeFiles = (files) => {
+    const list = [...(files || [])];
+    if (!list.length) return;
+    picked = list[0];
+    attach(picked);
+    if (list.length > 1) startUploads(list.slice(1));
+  };
+  composer.addEventListener("drop", (e) => takeFiles(e.dataTransfer?.files));
+  $("#filePick")?.addEventListener("change", (e) => { takeFiles(e.target.files); e.target.value = ""; });
   $("#clearFile")?.addEventListener("click", () => { picked = null; attached.hidden = true; });
 
   /* Begin: upload the video, then follow it to where it is being read.
@@ -1361,52 +1475,104 @@ document.querySelectorAll(".beat-text").forEach((box) => {
   });
 });
 
+/**
+ * Start uploading one file.
+ *
+ * Lifted out of Footage's change handler so every entry point shares it —
+ * the button, a drop, and the bulk path below. It was inline and therefore
+ * single-file by construction.
+ */
+async function startUpload(file) {
+  const durationS = await readDuration(file).catch(() => 0);
+  const start = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
+  }).then((r) => r.json());
+  if (start.error) throw new Error(start.error);
+
+  grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
+    .then((blob) =>
+      blob &&
+      fetch("/api/sources/" + start.source.id + "/poster", {
+        method: "POST",
+        headers: { "content-type": "image/jpeg" },
+        body: blob,
+      }),
+    )
+    .catch(() => {});
+
+  const sw = await uploadWorker();
+  if (!sw) throw new Error("Uploads need a modern browser here");
+
+  /* Parked before the worker is told about it, so an upload can always be
+     picked back up even if this page goes away one second later. */
+  await parkFile(start.source.id, file);
+
+  const msg = {
+    type: "start-upload",
+    file,
+    sourceId: start.source.id,
+    uploadId: start.uploadId,
+    partSize: start.partSize,
+    mode: start.mode,
+    durationS,
+  };
+  inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
+  sw.postMessage(msg);
+  watchUpload(start.source.id);
+  showUpload({ sourceId: start.source.id, name: file.name, pct: 0, totalBytes: file.size, sent: 0 });
+  return start.source.id;
+}
+
+/**
+ * Start several.
+ *
+ * You could only ever add one video at a time, because every picker was a bare
+ * input with no multiple attribute and every handler read files[0]. Anyone
+ * with a shoot to load had to sit through them one by one.
+ *
+ * Started in sequence rather than all at once: each one opens an R2 multipart
+ * upload and the service worker already runs four parts concurrently, so
+ * firing ten together would mean forty parallel connections fighting for the
+ * same uplink and every file crawling. They queue, and the worker keeps going
+ * across navigation regardless.
+ */
+async function startUploads(files) {
+  const list = [...(files || [])].filter((f) => f && f.size > 0);
+  if (!list.length) return;
+
+  let failed = 0;
+  for (const file of list) {
+    try {
+      await startUpload(file);
+    } catch (err) {
+      failed += 1;
+      toast((err && err.message) || ("Couldn't add " + file.name));
+    }
+  }
+  const ok = list.length - failed;
+  if (list.length > 1 && ok > 0) toast(ok + " videos uploading — you can carry on browsing");
+}
+
 /* Footage's Upload button. It was a bare label with a file input and no
    handler at all, so the most obvious way into the product did nothing. */
 const footageUpload = document.querySelector("#footageUpload");
 if (footageUpload) {
-  footageUpload.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const durationS = await readDuration(file).catch(() => 0);
-      const start = await fetch("/api/uploads", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
-      }).then((r) => r.json());
-      if (start.error) throw new Error(start.error);
-
-      grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
-        .then((blob) =>
-          blob &&
-          fetch("/api/sources/" + start.source.id + "/poster", {
-            method: "POST",
-            headers: { "content-type": "image/jpeg" },
-            body: blob,
-          }),
-        )
-        .catch(() => {});
-
-      const sw = await uploadWorker();
-      if (!sw) { toast("Uploads need a modern browser here"); return; }
-      const msg = {
-        type: "start-upload",
-        file,
-        sourceId: start.source.id,
-        uploadId: start.uploadId,
-        partSize: start.partSize,
-        mode: start.mode,
-        durationS,
-      };
-      inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
-      sw.postMessage(msg);
-      watchUpload(start.source.id);
-      showUpload({ sourceId: start.source.id, name: file.name, pct: 0, totalBytes: file.size, sent: 0 });
-    } catch (err) {
-      toast(err.message || "Couldn't add that video");
-    }
+  footageUpload.addEventListener("change", (e) => {
+    startUploads(e.target.files);
+    /* Clear it, or picking the same file twice in a row fires no change
+       event and looks like the button broke. */
+    e.target.value = "";
   });
+}
+
+/* Drop anywhere on Footage. The grid is the obvious target and was inert. */
+const footageDrop = document.querySelector("#footage-grid");
+if (footageDrop) {
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  footageDrop.addEventListener("dragover", stop);
+  footageDrop.addEventListener("drop", (e) => { stop(e); startUploads(e.dataTransfer?.files); });
 }
 
 /* ── Build: beats, seams, recording ────────────────────────────────────

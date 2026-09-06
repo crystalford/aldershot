@@ -118,7 +118,7 @@ export function renderEditorIntake(d: EditorIntakeData): string {
       <div tabindex="0" role="button" id="clearFile" style="flex:none;cursor:pointer;color:rgba(236,236,241,0.4);font-size:15px;line-height:1;padding:2px 5px">×</div>
     </div>
     <label style="display:block;padding:13px 14px 6px;cursor:pointer;font-size:${SIZE.body};color:${C.ink45}">Drop a video file or paste a link…
-      <input type="file" accept="video/*" id="filePick" style="display:none"/>
+      <input type="file" accept="video/*" multiple id="filePick" style="display:none"/>
     </label>
     <textarea name="brief" id="brief" rows="2" placeholder="What do you want from it? — “a supercut of every weird awkward moment”" style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:8px 14px;resize:none;line-height:1.5;font-family:${FONT.ui}"></textarea>
     <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;padding:0 8px 8px;flex-wrap:wrap">

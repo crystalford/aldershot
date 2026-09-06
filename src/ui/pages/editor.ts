@@ -11,7 +11,7 @@
  */
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
-import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
+import { iconArrowDown, iconArrowUp, iconPlay } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { hms, tc } from "./footage.ts";
 
@@ -136,8 +136,20 @@ function ledeFor(kind: string): string {
  * stops feeling like one place.
  */
 export function editorHeader(d: EditorData): string {
-  const kept = d.clips.filter((c) => c.kept).length;
-  const runtimeMs = d.clips.filter((c) => c.kept).reduce((n, c) => n + (c.end_ms - c.start_ms), 0);
+  /*
+   * An unassisted cut has no clips, so counting clips reported "0:00 · 0 kept"
+   * at the top of a page whose own footer said "38 kept · 5:17". Two counters
+   * on one screen disagreeing about the same edit. The count follows whatever
+   * the edit is actually made of.
+   */
+  const scratch = !d.clips.length && Boolean(d.segments?.length);
+  const dropped = new Set((d.cuts ?? []).filter((x) => x.words === null).map((x) => x.seg));
+  const keptSegs = scratch ? (d.segments ?? []).filter((sg) => !dropped.has(sg.idx)) : [];
+
+  const kept = scratch ? keptSegs.length : d.clips.filter((c) => c.kept).length;
+  const runtimeMs = scratch
+    ? keptSegs.reduce((n, sg) => n + (sg.end_ms - sg.start_ms), 0)
+    : d.clips.filter((c) => c.kept).reduce((n, c) => n + (c.end_ms - c.start_ms), 0);
 
   /*
    * Script demotes the project title to 13.5px, because "Trim it by text" is
@@ -247,12 +259,20 @@ function skippedStretch(fromMs: number, toMs: number): string {
   </div>`;
 }
 
-/** The seam between blocks — how anything gets inserted mid-piece. */
-function seam(): string {
-  return `<div style="display:flex;justify-content:center;padding:2px 0">
-    <span role="button" tabindex="0" style="width:22px;height:22px;border-radius:50%;background:${C.surface};display:flex;align-items:center;justify-content:center;color:${C.ink45};cursor:pointer">${iconPlus({ size: 13 })}</span>
-  </div>`;
-}
+/*
+ * The seam between blocks USED TO BE HERE, and it did nothing.
+ *
+ * It rendered a round "+" with role="button" and a pointer cursor between
+ * every pair of blocks, and carried no class — so the only handler that looks
+ * for a seam (Build's, which inserts a beat) never matched a single one of
+ * them. On a 38-line transcript that is 39 controls that look clickable and
+ * are not.
+ *
+ * Build's seams are real and stay. Here there is nothing to insert: Pick is
+ * about what of your footage stays, not about adding to it. Same rule the
+ * clean-up chips and "Queue it" already follow — a control appears when it
+ * works.
+ */
 
 /**
  * One block. The kept/dropped state is the edit — a dropped block stays
@@ -461,6 +481,14 @@ export function renderEditor(d: EditorData): string {
    * An unassisted cut: no scoring pass ran, so the blocks are the transcript
    * and everything starts kept. You cut it down by reading, which is the
    * product's claim minus the model having gone first.
+   *
+   * THE SAME LAYOUT AS THE SCORED CUT. There is one editor, not two. This
+   * shipped as a full-width banner player pinned to the top of the page, so
+   * opening a video filled the screen with a 540px-tall video and pushed every
+   * block you were meant to be reading below the fold — the exact full-screen
+   * editor the owner had already asked to be removed once. Same two columns as
+   * below: the player small and sticky on the left, the blocks on the right,
+   * matching docs/reference/07-editor-pick-what-stays.png.
    */
   if (!d.clips.length && d.segments?.length) {
     /* words:null is a whole line struck — the gesture that drops a block.
@@ -469,34 +497,31 @@ export function renderEditor(d: EditorData): string {
     const keptSegs = d.segments.filter((sg) => !cutSet.has(sg.idx));
     const runtime = keptSegs.reduce((n, sg) => n + (sg.end_ms - sg.start_ms), 0);
 
-    /*
-     * THE VIDEO IS IN THE ROOM.
-     *
-     * Opening a video used to give you its transcript and nothing else, which
-     * is how a video editor ends up feeling like a document viewer. The player
-     * sticks to the top while you read down the transcript, and clicking any
-     * line seeks it there — so reading and watching are the same gesture,
-     * which is the entire claim this product makes.
-     *
-     * It is a plain <video> against /media, which already serves range
-     * requests, so seeking works without loading the file.
-     */
+    /* A real player rather than the scored surface's still frame, because
+       there is no scored clip to show a frame OF — but the same size and the
+       same place, so the two stages are one room. */
     const player = d.sourceKey
-      ? `<div style="position:sticky;top:56px;z-index:3;margin-top:20px;background:${C.canvas};padding-bottom:10px">
-          <video id="scratch-video" playsinline preload="metadata"${d.sourcePoster ? ` poster="/media/${esc(d.sourcePoster)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
-        </div>`
+      ? `<div style="border-radius:${RADIUS.card};overflow:hidden;background:#0B0B0E;position:relative">
+          <video id="scratch-video" playsinline preload="metadata"${d.sourcePoster ? ` poster="/media/${esc(d.sourcePoster)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;display:block"></video>
+        </div>
+        <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.5">Click any line to play it. Strike what goes — nothing was decided for you.</div>`
       : "";
 
+    const blocks = d.segments.map((sg) => segmentBlock(sg, !cutSet.has(sg.idx), d.sourcePoster));
+
     return `${head}
-    ${player}
-    <div data-content style="margin-top:${d.sourceKey ? "14px" : "22px"};font-size:${SIZE.secondary};color:${C.ink45}">Read it and strike what goes. Nothing was decided for you — ask for something in the box on Home and it will make the first pass itself.</div>
     ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
-    <div id="pick-scratch" data-project="${esc(d.projectId)}" style="margin-top:16px;display:flex;flex-direction:column;gap:2px">
-      ${d.segments.map((sg) => segmentBlock(sg, !cutSet.has(sg.idx), d.sourcePoster)).join("")}
+    <div style="margin-top:24px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px">
+        ${player}
+      </div>
+      <div id="pick-scratch" data-project="${esc(d.projectId)}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:2px">
+        ${blocks.join("")}
+      </div>
     </div>
-    <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
-      <span id="scratch-runtime" data-content style="flex:1;font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono}">${keptSegs.length} kept · ${hms(runtime / 1000)}</span>
-      <button class="render-cut" data-project="${esc(d.projectId)}" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export as</button>
+    <div style="position:sticky;bottom:0;margin-top:20px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
+      <span id="scratch-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${keptSegs.length} kept · ${hms(runtime / 1000)}</span>
+      <button class="render-cut" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
     </div>
     ${exportsStrip(d)}`;
   }
@@ -511,12 +536,11 @@ export function renderEditor(d: EditorData): string {
 
 
   // Blocks, with the footage that was passed over shown striped between them.
-  const parts: string[] = [seam()];
+  const parts: string[] = [];
   d.clips.forEach((c, i) => {
     const prev = d.clips[i - 1];
     if (prev && c.start_ms > prev.end_ms) parts.push(skippedStretch(prev.end_ms, c.start_ms));
     parts.push(block(c, i, d.clips.length));
-    parts.push(seam());
   });
 
   const kept = d.clips.filter((c) => c.kept);

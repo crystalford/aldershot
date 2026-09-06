@@ -250,7 +250,7 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
           <input name="q" value="${esc(q)}" placeholder="${esc(placeholder)}" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};font-family:${FONT.ui}"/>
         </div>
       </div>
-      <label style="flex:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap">Upload<input type="file" accept="video/*" id="footageUpload" style="display:none"/></label>
+      <label style="flex:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap">Upload<input type="file" accept="video/*" multiple id="footageUpload" style="display:none"/></label>
     </div>
     <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${chip("meaning", "By meaning")}${chip("exact", "Exact words")}</div>
   </form>`;
@@ -309,7 +309,7 @@ export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
     if (!sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
     return (
       head +
-      `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>`
+      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>`
     );
   }
 
@@ -355,7 +355,7 @@ export function renderFootageFull(d: FootageData): string {
 
   if (d.tab === "sources") {
     if (!d.sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
-    return head + `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>`;
+    return head + `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>`;
   }
 
   if (d.tab === "threads") {

@@ -1893,7 +1893,11 @@ app.get("/api/uploads/pending", async (c) => {
   const user = await requireUser(c);
   const { results } = await c.env.DB
     .prepare(
-      `SELECT u.source_id, u.filename, u.total_bytes, u.part_size,
+      /* upload_id and mode come back too: a page that adopts an interrupted
+         upload has to hand the worker the SAME multipart id that issued the
+         part URLs, and completion differs between direct and worker mode. */
+      `SELECT u.source_id, u.filename, u.total_bytes, u.part_size, u.upload_id, u.mode,
+              s.duration_s,
               (SELECT COUNT(*) FROM upload_parts p WHERE p.source_id = u.source_id) AS parts_done
          FROM uploads u
          JOIN sources s ON s.id = u.source_id

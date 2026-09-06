@@ -101,7 +101,7 @@ function composer(): string {
       <label style="flex:none;display:flex;align-items:center;gap:6px;font-size:${SIZE.secondary};padding:5px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer">
         ${iconPlus({ size: 13 })}
         <span>Video</span>
-        <input type="file" accept="video/*" id="filePick" style="display:none"/>
+        <input type="file" accept="video/*" multiple id="filePick" style="display:none"/>
       </label>
       <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${chips}</div>
       <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Begin →</button>
