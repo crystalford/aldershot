@@ -81,11 +81,33 @@ export async function extractAudio(
   }
 
   /*
-   * Streamed into R2 rather than buffered. The audio is small, but "small"
-   * is exactly the assumption that produced the bug this fixes, and a stream
-   * costs nothing here.
+   * Streamed into R2 rather than buffered. The audio is small for a short
+   * clip, but "small" is exactly the assumption that produced the bug this
+   * fixes: six hours of speech is ~86MB, which is not something to hold.
+   *
+   * R2 will not accept a stream of unknown length — "Provided readable stream
+   * must have a known length" — and although the container sets Content-Length,
+   * it does not survive as a known-length body through the container proxy.
+   * FixedLengthStream is the way to hand R2 a length it will accept, and
+   * pipeTo runs alongside the put rather than before it, or the two deadlock
+   * waiting on each other.
    */
-  await env.MEDIA.put(key, res.body, { httpMetadata: { contentType: "audio/mpeg" } });
+  const declared = Number(res.headers.get("content-length") || 0);
+
+  if (declared > 0) {
+    const fixed = new FixedLengthStream(declared);
+    void res.body.pipeTo(fixed.writable);
+    await env.MEDIA.put(key, fixed.readable, { httpMetadata: { contentType: "audio/mpeg" } });
+  } else {
+    /* No length declared. Buffering is the only option left, so it is bounded
+       — better a clear refusal than an out-of-memory crash, which is the whole
+       class of failure this file exists to end. */
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > 64 * 1024 * 1024) {
+      throw new Error("the extracted audio was too large to handle in one piece");
+    }
+    await env.MEDIA.put(key, buf, { httpMetadata: { contentType: "audio/mpeg" } });
+  }
 
   const head = await env.MEDIA.head(key);
   if (!head?.size) throw new Error("the extractor produced no audio");
