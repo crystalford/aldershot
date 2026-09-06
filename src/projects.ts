@@ -160,8 +160,30 @@ export async function reapDuplicateEdits(db: D1Database, userId: string): Promis
     .run();
 }
 
+/**
+ * Names the edits that were created before edits got named.
+ *
+ * begin() titles an unbriefed edit after its footage now, but the rows already
+ * in the database kept the old placeholder — so an account that had been used
+ * for a while showed a list of "Untitled cut" that no amount of new behaviour
+ * would fix. Only rows still carrying the exact placeholder are touched, so a
+ * title anybody typed is never overwritten.
+ */
+export async function nameUntitledEdits(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE v2_projects SET title = COALESCE(
+          (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id),
+          title)
+        WHERE user_id=? AND deleted_at IS NULL AND title='Untitled cut' AND source_id IS NOT NULL`,
+    )
+    .bind(userId)
+    .run();
+}
+
 export async function listProjects(db: D1Database, userId: string): Promise<Project[]> {
   await reapDuplicateEdits(db, userId);
+  await nameUntitledEdits(db, userId);
   const { results } = await db
     .prepare(`SELECT * FROM v2_projects WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC`)
     .bind(userId)

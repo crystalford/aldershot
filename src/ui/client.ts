@@ -930,6 +930,54 @@ function grabPoster(file, atSeconds) {
   });
 }
 
+/**
+ * Heals a missing poster from the video that is already on screen.
+ *
+ * A poster is only ever grabbed in the browser at upload time. If that failed
+ * — a codec the browser could not decode, a tab closed before it ran, a file
+ * picked on a phone — the source had no poster and no way to ever get one, so
+ * it stayed a black rectangle in Footage for good. There is no server-side
+ * frame extractor to fall back on.
+ *
+ * The editor has the actual video loaded, which is a frame grabber we are
+ * already paying for. So a source with no poster gets one the first time
+ * anybody opens it, using the same endpoint the upload path uses.
+ */
+async function healPoster(video, sourceId) {
+  try {
+    const at = Math.max(1, (video.duration || 8) * 0.25);
+    await new Promise((resolve, reject) => {
+      const onSeek = () => { video.removeEventListener("seeked", onSeek); resolve(); };
+      video.addEventListener("seeked", onSeek);
+      video.addEventListener("error", reject, { once: true });
+      video.currentTime = Math.min(at, Math.max(0, (video.duration || 1) - 0.1));
+      setTimeout(reject, 8000);
+    });
+
+    const c = document.createElement("canvas");
+    const w = 640;
+    c.width = w;
+    c.height = Math.round((video.videoHeight / video.videoWidth) * w) || 360;
+    c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+    if (!blob) return;
+    await fetch("/api/sources/" + sourceId + "/poster", {
+      method: "POST",
+      headers: { "content-type": "image/jpeg" },
+      body: blob,
+    });
+  } catch (err) {
+    /* Cross-origin taint, a codec the browser will not decode, a seek that
+       never lands. A missing poster is cosmetic; failing to fix it must not
+       be louder than the thing it was fixing. */
+  } finally {
+    /* Put the playhead back wherever it was, so healing a poster does not
+       silently scrub the video the user is about to watch. */
+    try { video.currentTime = 0; } catch (e) {}
+  }
+}
+
 /* Reads a video's real duration without uploading it first. */
 function readDuration(file) {
   return new Promise((resolve, reject) => {
@@ -1300,6 +1348,13 @@ if (scratch) {
   /* Clicking a line's frame seeks the player to it. Reading and watching are
      the same gesture here — that is the point of the surface. */
   const scratchVideo = document.querySelector("#scratch-video");
+
+  /* No poster on this source? Take one from the video that is right here. */
+  if (scratchVideo && scratchVideo.dataset.needsPoster === "1" && scratchVideo.dataset.source) {
+    const grab = () => healPoster(scratchVideo, scratchVideo.dataset.source);
+    if (scratchVideo.readyState >= 1) grab();
+    else scratchVideo.addEventListener("loadedmetadata", grab, { once: true });
+  }
   scratch.querySelectorAll(".seg-play").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!scratchVideo) return;

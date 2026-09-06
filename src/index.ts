@@ -981,6 +981,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         cuts: parseCuts(project.cuts),
         sourcePoster: source?.poster_r2_key ?? null,
         sourceKey: source?.r2_key ?? null,
+        sourceId: source?.id ?? null,
         renders,
         cameFrom: cameFrom(c.req.header("referer")),
         projectId: project.id,

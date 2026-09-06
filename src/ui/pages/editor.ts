@@ -50,6 +50,7 @@ export interface EditorData {
   sourcePoster?: string | null;
   /** The video itself, so the workspace has the footage in it and not just words. */
   sourceKey?: string | null;
+  sourceId?: string | null;
   /** Finished (and in-flight) exports of THIS edit. */
   renders?: RenderRow[];
   /** Live scoring job, when the pass is still running. */
@@ -509,7 +510,7 @@ export function renderEditor(d: EditorData): string {
        same place, so the two stages are one room. */
     const player = d.sourceKey
       ? `<div style="border-radius:${RADIUS.card};overflow:hidden;background:#0B0B0E;position:relative">
-          <video id="scratch-video" playsinline preload="metadata"${d.sourcePoster ? ` poster="/media/${esc(d.sourcePoster)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;display:block"></video>
+          <video id="scratch-video" playsinline preload="metadata" data-source="${esc(d.sourceId ?? "")}" data-needs-poster="${d.sourcePoster ? 0 : 1}"${d.sourcePoster ? ` poster="/media/${esc(d.sourcePoster)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;display:block"></video>
         </div>
         <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.5">Click any line to play it. Strike what goes — nothing was decided for you.</div>`
       : "";
