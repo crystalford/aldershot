@@ -97,7 +97,38 @@ export async function getSource(db: D1Database, id: string, userId: string): Pro
     .first<Source>();
 }
 
+/**
+ * Clears sources whose upload never finished.
+ *
+ * A source row is created when an upload STARTS, because the resume machinery
+ * needs an id to hang parts off. The cost is that an upload which dies before
+ * completing leaves a row behind that looks exactly like a real video in
+ * Footage — the owner saw two of them and reasonably read them as duplicates.
+ * They were ghosts: no object in R2, no read job, nothing to open.
+ *
+ * A ghost is a source that is still `pending`, has no job, has no upload in
+ * flight, and is old enough that it is not simply mid-upload right now. An
+ * hour is far longer than the gap between starting an upload and the first
+ * part landing, and resumable uploads keep their `uploads` row, so this cannot
+ * reap anything a user could still finish.
+ */
+const GHOST_AFTER_MS = 60 * 60 * 1000;
+
+export async function reapGhostSources(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE sources SET deleted_at=?
+        WHERE user_id=? AND deleted_at IS NULL AND transcript_state='pending'
+          AND created_at < ?
+          AND id NOT IN (SELECT source_id FROM uploads)
+          AND id NOT IN (SELECT ref_id FROM jobs WHERE ref_id IS NOT NULL)`,
+    )
+    .bind(Date.now(), userId, Date.now() - GHOST_AFTER_MS)
+    .run();
+}
+
 export async function listSources(db: D1Database, userId: string): Promise<Source[]> {
+  await reapGhostSources(db, userId);
   const { results } = await db
     .prepare(`SELECT * FROM sources WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC`)
     .bind(userId)
