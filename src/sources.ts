@@ -32,6 +32,8 @@ export interface Source {
    * Deliberately not `title`: see src/naming.ts.
    */
   cut_title: string | null;
+  /** What the user asked for when they added it. See src/schema.ts. */
+  brief: string | null;
   created_at: number;
   deleted_at: number | null;
 }
@@ -63,7 +65,7 @@ export function r2KeyFor(userId: string, sourceId: string, filename: string): st
 
 export async function createSource(
   db: D1Database,
-  opts: { user_id: string; filename: string; origin: Source["origin"]; title?: string },
+  opts: { user_id: string; filename: string; origin: Source["origin"]; title?: string; brief?: string },
 ): Promise<Source> {
   const id = ulid();
   const src: Source = {
@@ -80,18 +82,19 @@ export async function createSource(
     transcript_state: "pending",
     poster_r2_key: null,
     cut_title: null,
+    brief: opts.brief?.trim() || null,
     created_at: Date.now(),
     deleted_at: null,
   };
   await db
     .prepare(
-      `INSERT INTO sources (id,user_id,title,filename,origin,r2_key,stream_uid,duration_s,width,height,transcript_state,poster_r2_key,created_at,deleted_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO sources (id,user_id,title,filename,origin,r2_key,stream_uid,duration_s,width,height,transcript_state,poster_r2_key,brief,created_at,deleted_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       src.id, src.user_id, src.title, src.filename, src.origin, src.r2_key, src.stream_uid,
       src.duration_s, src.width, src.height, src.transcript_state, src.poster_r2_key,
-      src.created_at, src.deleted_at,
+      src.brief, src.created_at, src.deleted_at,
     )
     .run();
   return src;

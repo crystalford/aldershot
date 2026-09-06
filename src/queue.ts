@@ -82,12 +82,28 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
     case "transcribe": {
       const src = await getSource(env.DB, msg.sourceId, msg.userId);
       if (!src) return void (await failJob(env.DB, msg.jobId, "That video is no longer here."));
+      /*
+       * A place for the read to hand back follow-on work.
+       *
+       * Once the transcript exists, ingest starts whatever the user's brief
+       * asked for (see sources.brief). We are already inside background work
+       * here, so the right thing is to AWAIT that rather than fire it into a
+       * waitUntil that this invocation may outlive — collecting the promises
+       * keeps the consumer alive until the follow-up is really queued.
+       *
+       * In production dispatch() hands straight to env.JOBS and these resolve
+       * immediately; this only does real waiting in dev, where there is no
+       * queue and the work runs inline.
+       */
+      const after: Array<Promise<unknown>> = [];
       await readSource(env, src, {
         plan: msg.plan,
         diarize: msg.diarize,
         knownDurationS: msg.knownDurationS,
         jobId: msg.jobId,
+        ctx: { waitUntil: (p) => void after.push(p) },
       });
+      await Promise.allSettled(after);
       return;
     }
     case "score":

@@ -10,6 +10,7 @@
 
 import type { Env } from "./env.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
+import { begin } from "./begin.ts";
 import { nameSourceCut } from "./naming.ts";
 import { meter } from "./usage.ts";
 import { checkCap, type Plan } from "./plans.ts";
@@ -29,6 +30,15 @@ export interface IngestOpts {
    * this the job would not exist until the work was already underway.
    */
   jobId?: string;
+  /**
+   * For starting the work the user asked for, once the transcript exists.
+   *
+   * The read runs inside a queue consumer or a waitUntil; begin() needs the
+   * same handle to dispatch what the brief turned out to mean. Optional
+   * because a caller with no context can still read a video — it just cannot
+   * follow it with a pass.
+   */
+  ctx?: { waitUntil(p: Promise<unknown>): void };
 }
 
 /**
@@ -115,6 +125,33 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
      */
     await advance(env.DB, job.id, 92, "naming it");
     await nameSourceCut(env, src, result.segments.map((s) => s.text).join(" "), job.id);
+
+    /*
+     * NOW do what they asked for.
+     *
+     * Home is one sentence and a file, and the sentence was thrown away: the
+     * composer cleared the field and never sent it, so "Begin →" began
+     * nothing. It rides on the source instead (sources.brief), because this is
+     * the first moment it can be acted on — there was no transcript to score,
+     * react to or outline until this line.
+     *
+     * Cleared once used, so re-reading the footage later does not re-run a
+     * request from last week. Failure here must not fail the READ, which
+     * succeeded: the transcript is saved either way and the user can ask again.
+     */
+    if (src.brief?.trim() && opts.ctx) {
+      try {
+        await env.DB.prepare(`UPDATE sources SET brief=NULL WHERE id=?`).bind(src.id).run();
+        await begin(env, {
+          userId: src.user_id,
+          sourceId: src.id,
+          brief: src.brief.trim(),
+          sourceTitle: src.title,
+        }, opts.ctx);
+      } catch (err) {
+        console.log(`[ingest] couldn't start "${src.brief}": ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
 
     await env.DB
       .prepare(`UPDATE sources SET duration_s=?, transcript_state='ready' WHERE id=?`)

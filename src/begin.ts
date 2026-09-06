@@ -9,6 +9,7 @@
 
 import type { Env } from "./env.ts";
 import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
+import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
 import { createProject, putBeats, saveClips, titleFromBrief } from "./projects.ts";
 import { scorePass } from "./score.ts";
@@ -43,6 +44,7 @@ export async function begin(
     /** Force a new edit rather than reopening the existing unbriefed one. */
     fresh?: boolean;
   },
+  ctx: { waitUntil(p: Promise<unknown>): void },
 ): Promise<BeginResult> {
   const read = readIntent(opts.brief);
   // "unclear" is only ever a UI state — by the time we are here the user has
@@ -144,13 +146,52 @@ export async function begin(
     : null;
   const skipScore = !wantsSomethingNew || (already?.n ?? 0) > 0;
 
-  const job = skipScore
-    ? null
-    : await createJob(env.DB, {
+  /*
+   * DO WHAT THE SENTENCE SAID.
+   *
+   * intentLabel tells the user, in the prototype's own words, "Reads as an
+   * essay — five acts, built out of footage you've already kept" or "Reads as
+   * a reaction — a project with room between the blocks for your voice". This
+   * function then created a `score` job and nothing else, for every intent —
+   * so the product announced what it understood and then ran a generic
+   * scoring pass regardless. essay.ts, reactions.ts, their queue handlers and
+   * their routes were all written and unreachable.
+   *
+   * The dispatch lives here rather than in the route because there were two
+   * callers, only one dispatched anything, and the one that did hardcoded
+   * "score" — so /sources/:id/edit could create a job that nothing ever ran.
+   * One place decides the intent, the job type and the message together.
+   */
+  const work: JobMessage | null =
+    skipScore || !project
+      ? intent === "shorts" && !skipScore
+        ? { type: "shorts", jobId: "", userId: opts.userId, sourceId: opts.sourceId, length: "30-60", count: 8, query: "" }
+        : null
+      : intent === "react"
+        ? { type: "reactions", jobId: "", userId: opts.userId, projectId: project.id, about: opts.brief }
+        : intent === "essay"
+          ? { type: "outline", jobId: "", userId: opts.userId, projectId: project.id, topic: opts.brief }
+          : {
+              type: "score",
+              jobId: "",
+              userId: opts.userId,
+              sourceId: opts.sourceId,
+              projectId: project.id,
+              brief: opts.brief,
+              upgrade: opts.upgrade,
+            };
+
+  const job = work
+    ? await createJob(env.DB, {
         user_id: opts.userId,
-        type: "score",
+        /* A reaction and an outline are both "a pass over the transcript" to
+           the metering and the job list; only a shorts run is its own type. */
+        type: work.type === "shorts" ? "shorts" : work.type === "score" ? "score" : "pass",
         ref_id: project?.id ?? opts.sourceId,
-      });
+      })
+    : null;
+
+  if (job && work) await dispatch(env, ctx, { ...work, jobId: job.id } as JobMessage);
 
   return {
     intent,

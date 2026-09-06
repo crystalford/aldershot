@@ -146,7 +146,10 @@ export function renderSource(d: SourceViewData): string {
     return `${head}
     <div id="reading" data-source="${esc(s.id)}" style="margin-top:24px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
       <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-      <span style="flex:1;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(stage)}</span>
+      <!-- The live stage from the job row — "reading it", "reading it — part 3
+           of 7", "writing down what it heard". Data, not fixed chrome, and the
+           editor's own progress strip already marks its copy of this. -->
+      <span data-content style="flex:1;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(stage)}</span>
     </div>`;
   }
 

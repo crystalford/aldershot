@@ -636,14 +636,18 @@ app.get("/sources/:id/edit", async (c) => {
     cutTitle = await nameSourceCut(c.env, src, segs.slice(0, 40).map((sg) => sg.text).join(" "));
   }
 
-  const { href } = await begin(c.env, {
-    userId: user.id,
-    sourceId: src.id,
-    brief: (c.req.query("brief") || "").trim(),
-    sourceTitle: src.title,
-    cutTitle,
-    fresh: c.req.query("fresh") === "1",
-  });
+  const { href } = await begin(
+    c.env,
+    {
+      userId: user.id,
+      sourceId: src.id,
+      brief: (c.req.query("brief") || "").trim(),
+      sourceTitle: src.title,
+      cutTitle,
+      fresh: c.req.query("fresh") === "1",
+    },
+    c.executionCtx,
+  );
   return c.redirect(href, 302);
 });
 
@@ -2283,7 +2287,7 @@ app.post("/api/sources", async (c) => {
 app.post("/api/uploads", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ filename: string; contentType: string; bytes: number }>(c);
+  const b = await body<{ filename: string; contentType: string; bytes: number; brief?: string }>(c);
   const filename = b.filename || "upload.mp4";
 
   /*
@@ -2305,7 +2309,15 @@ app.post("/api/uploads", async (c) => {
   const room = await checkStorage(c.env.DB, user.id, user.plan, Number(b.bytes) || 0);
   if (!room.ok) return c.json({ error: room.message }, 413);
 
-  const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
+  /* The sentence rides with the footage. It cannot be acted on until there is
+     a transcript, and the page that typed it may be gone by then — see
+     src/schema.ts on sources.brief. */
+  const src = await createSource(c.env.DB, {
+    user_id: user.id,
+    filename,
+    origin: "upload",
+    brief: (b.brief || "").trim(),
+  });
   const partSize = partSizeFor(b.bytes);
 
   /*
@@ -2631,29 +2643,22 @@ app.post("/api/begin", async (c) => {
   const src = await getSource(c.env.DB, b.sourceId, user.id);
   if (!src) return c.json({ error: "not found" }, 404);
 
-  const result = await begin(c.env, {
-    userId: user.id,
-    sourceId: src.id,
-    brief: b.brief || "",
-    upgrade: b.upgrade,
-    sourceTitle: src.title,
-    cutTitle: src.cut_title,
-  });
-
-  /* No job means this reopened an edit that already has its clips — there is
-     nothing to run, and re-running would cost minutes and money for an answer
-     already on screen. */
-  if (result.jobId) {
-    await dispatch(c.env, c.executionCtx, {
-      type: "score",
-      jobId: result.jobId,
+  const result = await begin(
+    c.env,
+    {
       userId: user.id,
       sourceId: src.id,
-      projectId: result.projectId,
       brief: b.brief || "",
       upgrade: b.upgrade,
-    });
-  }
+      sourceTitle: src.title,
+      cutTitle: src.cut_title,
+    },
+    c.executionCtx,
+  );
+
+  /* begin() dispatches its own work now — it is the only thing that knows
+     which job the sentence asked for. Dispatching here as well ran every
+     brief through a scoring pass on top of whatever it actually wanted. */
   return c.json(result);
 });
 

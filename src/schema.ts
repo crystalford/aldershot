@@ -294,6 +294,20 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * page load, and would risk two opens producing two different names.
    */
   { table: "sources", column: "cut_title", ddl: "ALTER TABLE sources ADD COLUMN cut_title TEXT" },
+
+  /*
+   * What the user asked for when they added this footage.
+   *
+   * Home is one text field and a file. The sentence has to outlive the upload
+   * — which can take forty minutes, survive a navigation, and finish on a
+   * different page or after this one is gone — and it cannot be acted on
+   * until the transcript exists. A column on the source is the only place
+   * that is true of; the composer used to just clear the field and drop it.
+   *
+   * Cleared once it has been acted on, so re-opening the footage later does
+   * not silently re-run a request from last week.
+   */
+  { table: "sources", column: "brief", ddl: "ALTER TABLE sources ADD COLUMN brief TEXT" },
 ];
 
 let ensured = false;

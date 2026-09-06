@@ -1534,7 +1534,16 @@ if (composer) {
       const start = await fetch("/api/uploads", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: picked.name, contentType: picked.type || "video/mp4", bytes: picked.size }),
+        /* The sentence goes WITH the file. It used to be dropped here — the
+           handler cleared brief.value and returned, so "Begin →" began
+           nothing. It cannot be acted on until there is a transcript, and this
+           page may be long gone by then, so it rides on the source. */
+        body: JSON.stringify({
+          filename: picked.name,
+          contentType: picked.type || "video/mp4",
+          bytes: picked.size,
+          brief: brief.value.trim(),
+        }),
       }).then((r) => r.json());
       if (start.error) throw new Error(start.error);
 
@@ -1562,6 +1571,20 @@ if (composer) {
        */
       const sw = await uploadWorker();
       if (sw) {
+        /*
+         * Park a copy before handing it over.
+         *
+         * The worker outlives a navigation but not its own termination —
+         * Safari, or a long file. Adoption on the next page load reads the
+         * parked copy; without one there is nothing to adopt and the user
+         * gets "stopped at 62% / Finish it", i.e. re-pick the same file.
+         *
+         * startUpload (Footage) has always done this. THE COMPOSER NEVER DID,
+         * so the fix for "when i click away browsing the site it cancels the
+         * upload" was missing from the one path most uploads go through.
+         */
+        await parkFile(start.source.id, picked).catch(() => {});
+
         const msg = {
           type: "start-upload",
           file: picked,
