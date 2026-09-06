@@ -138,12 +138,9 @@ function threadChips(threads: ThreadRow[], total: number, active: string | null)
  * none of those actions can work yet.
  */
 function sourceCard(s: SourceRow): string {
-  const meta = [
-    s.duration_s ? hms(s.duration_s) : null,
-    new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /* The duration is stamped on the poster, so repeating it here printed
+     "0:20 · test · 0:20 · 30 Aug" across every card. */
+  const meta = new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
   const ready = s.transcript_state === "ready";
   const working = s.transcript_state === "running" || s.transcript_state === "pending";

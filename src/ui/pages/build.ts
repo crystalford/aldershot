@@ -336,9 +336,17 @@ function addBeat(projectId: string, hasActs: boolean): string {
 
 export function renderBuild(d: BuildData): string {
   if (!d.beats.length) {
-    return `<div style="margin-top:24px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface}">
-      <div data-content style="font-size:${SIZE.body};color:${C.ink45}">nothing laid down yet.</div>
-    </div>`;
+    /*
+     * A stage with nothing on it still has to be a tool.
+     *
+     * This was one grey sentence in a box — "nothing laid down yet." — and no
+     * way to lay anything down, so opening Build on a new edit was a dead
+     * screen with four tabs above it. The panel that adds the first beat
+     * already existed and was already wired; it was simply never shown until
+     * a beat existed, which is the one moment you do not need it.
+     */
+    return `<div data-content style="margin-top:22px;font-size:${SIZE.secondary};color:${C.ink45};max-width:520px;line-height:1.6">Nothing laid down yet. Build is where a cut becomes a piece — your clips in an order, with your own voice between them.</div>
+    ${addBeat(d.projectId, d.hasActs)}`;
   }
 
   const blocks = d.beats

@@ -86,7 +86,24 @@ const BASE = process.env.BASE || 'http://localhost:8787';
     return d;
   };
 
-  const surfaces = [
+  /* Every editor stage of a real project, not just the one you land on. The
+     stages are where the actual work happens and they were never walked. */
+  const projects = await (async () => {
+    await go('/api/projects');
+    try { return JSON.parse(await page.locator('body').innerText()).projects || []; } catch (e) { return []; }
+  })();
+  const scratch = projects.find((p) => !(p.brief || '').trim());
+  const briefed = projects.find((p) => (p.brief || '').trim());
+
+  const stageSurfaces = [];
+  for (const [label, p] of [['scratch', scratch], ['briefed', briefed]]) {
+    if (!p) continue;
+    for (const st of ['pick', 'build', 'script', 'shorts']) {
+      stageSurfaces.push([`${label}/${st}`, `/p/${p.id}/${st}`]);
+    }
+  }
+
+  const surfaces = [...stageSurfaces, 
     ['Home', '/'],
     ['Editor', '/editor'],
     ['Clipping', '/clipping'],

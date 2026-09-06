@@ -109,16 +109,19 @@ function composer(): string {
   </form>`;
 }
 
-function demoCard(): string {
-  return `<div tabindex="0" role="button" id="tryDemo" style="margin-top:24px;display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.24);cursor:pointer;flex-wrap:wrap">
-    <div style="flex:none;width:76px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)"><img loading="lazy" src="/assets/frame-3.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
-    <div style="flex:1 1 220px;min-width:min(200px,100%)">
-      <div style="font-size:${SIZE.wordmark};font-weight:600">Don't have a video handy? Try it on ours.</div>
-      <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.55">A 48-minute podcast, already read. Twelve clips found, nothing kept yet — see the whole thing work before you upload anything.</div>
-    </div>
-    <div style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;white-space:nowrap">Open the demo</div>
-  </div>`;
-}
+/*
+ * The demo card is not rendered.
+ *
+ * It read "Don't have a video handy? Try it on ours. A 48-minute podcast,
+ * already read. Twelve clips found" — and clicking it did nothing, because
+ * there is no shared demo library and no account has that podcast in it. The
+ * most prominent card on the most important page was a promise of content
+ * that does not exist, attached to a control with no handler.
+ *
+ * It comes back when there is a real demo source to open, seeded for every
+ * account. Same rule as the clean-up chips and "Queue it": it appears when it
+ * works. See docs/decisions/empty-states.md.
+ */
 
 function howThisGoes(): string {
   const rows = HOW_THIS_GOES.map(
@@ -295,5 +298,5 @@ ${
       `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${d.motion.map(motionRow).join("")}</div>`
     : ""
 }
-${d.isFresh ? demoCard() + howThisGoes() : ""}`;
+${d.isFresh ? howThisGoes() : ""}`;
 }
