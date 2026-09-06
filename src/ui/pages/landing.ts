@@ -234,6 +234,10 @@ function notice(d: LandingData): string {
             ? "Google sign-in isn't configured yet. Use your email instead."
             : d.error === "nomail"
           ? "Sign-in isn't switched on yet — email delivery isn't configured. Nothing was sent."
+          /* Without its own line this fell through to "that doesn't look like
+             an email address", which is a lie about a perfectly good one. */
+          : d.error === "toomany"
+            ? "That's a few links already — check your inbox, or try again in a few minutes."
           : "That doesn't look like an email address.";
     return `<div style="margin:20px auto 0;max-width:520px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.3);font-size:13.5px;color:rgba(236,236,241,0.75)">${message}</div>`;
   }

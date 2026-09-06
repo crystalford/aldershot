@@ -139,6 +139,20 @@ const STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS usage_by_user_month ON usage_events(user_id, created_at)`,
 
+  /*
+   * Rate-limit counters. Fixed windows, one row per key per window.
+   *
+   * On D1 rather than the rate-limiting binding because a binding is per-colo,
+   * and "how many login emails has this address been sent" has to hold across
+   * all of them.
+   */
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+     k TEXT NOT NULL,
+     window_start INTEGER NOT NULL,
+     hits INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (k, window_start)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS trash (
      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT NOT NULL,
      label TEXT NOT NULL, payload TEXT NOT NULL, deleted_at INTEGER NOT NULL

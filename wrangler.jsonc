@@ -23,6 +23,13 @@
 
   // D1 — projects + videos. Create with: wrangler d1 create aldershot
   // then paste the returned id below and run: wrangler d1 migrations apply aldershot --remote
+  /*
+   * The hourly sweep. Everything that reconciles state in this product runs
+   * lazily, on the surface that would otherwise show the lie — which never
+   * happens for a user who does not come back. See `scheduled` in src/index.ts.
+   */
+  "triggers": { "crons": ["17 * * * *"] },
+
   "d1_databases": [
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
   ],

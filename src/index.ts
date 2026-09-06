@@ -30,6 +30,7 @@ import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from 
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
+import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
@@ -60,10 +61,10 @@ import { currentUser, userForEmail } from "./user.ts";
 import { PLANS } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
-import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort } from "./sources.ts";
+import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob } from "./jobs.ts";
+import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
@@ -164,6 +165,17 @@ app.post("/auth/start", async (c) => {
   if (!email.includes("@") || email.length < 5) {
     return c.redirect("/?error=email", 302);
   }
+
+  /*
+   * Limited per ADDRESS, not per IP.
+   *
+   * The harm is someone else's inbox filling with our links and our sending
+   * reputation paying for it, and that harm is keyed to the address being
+   * targeted — an attacker rotating IPs would sail past an IP limit while
+   * doing exactly the same damage to one person.
+   */
+  const gate = await rateLimit(c.env.DB, `auth:${email}`, LIMITS.authStart);
+  if (!gate.ok) return c.redirect("/?error=toomany", 302);
 
   const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
   const { url, sent } = await startLogin(c.env, email, origin);
@@ -1990,6 +2002,13 @@ app.post("/api/uploads", async (c) => {
    * after the file has landed. So it refused the cheap thing and permitted the
    * expensive one, and a refused upload was still billed storage for ever.
    */
+  const rate = await rateLimit(c.env.DB, `upload:${user.id}`, LIMITS.upload);
+  if (!rate.ok) {
+    return c.json({ error: "That is a lot of uploads at once — give it a minute." }, 429, {
+      "retry-after": String(rate.retryAfterS),
+    });
+  }
+
   const room = await checkStorage(c.env.DB, user.id, user.plan, Number(b.bytes) || 0);
   if (!room.ok) return c.json({ error: room.message }, 413);
 
@@ -2373,7 +2392,46 @@ app.get("/api/usage/month", async (c) => {
  * ever calls it — dispatch() falls back to waitUntil — but it ships now so
  * that provisioning the queue is a config change and not a code change.
  */
+/**
+ * The sweep.
+ *
+ * Everything that reconciles state in this product runs LAZILY — reapStaleJobs
+ * when active jobs are read, reapGhostSources when sources are listed, the
+ * duplicate-edit reap when projects are listed. That is a good pattern with
+ * one hole: it only happens on a surface someone opens. A job that dies
+ * belonging to a user who does not come back is never closed out, so their
+ * next visit — days later — still shows work in progress that stopped long
+ * ago. There was no scheduled handler at all.
+ *
+ * Hourly, and it does exactly what the lazy paths do, for everyone. Nothing
+ * here is new behaviour; it is the existing behaviour arriving on time.
+ */
+async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+  await ensureV2Schema(env.DB);
+
+  const { results } = await env.DB
+    .prepare(
+      `SELECT DISTINCT user_id FROM jobs WHERE state IN ('queued','running')
+       UNION
+       SELECT DISTINCT user_id FROM sources WHERE transcript_state='pending' AND deleted_at IS NULL`,
+    )
+    .all<{ user_id: string }>();
+
+  await reapRateLimits(env.DB);
+
+  for (const { user_id } of results ?? []) {
+    /* One user's bad row must not stop the sweep for everyone else. */
+    try {
+      await reapStaleJobs(env.DB, user_id);
+      await reapGhostSources(env.DB, user_id);
+    } catch (err) {
+      console.log(`[sweep] ${user_id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
 export default {
   fetch: app.fetch,
   queue: consume,
+  scheduled,
 };
