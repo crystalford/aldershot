@@ -91,6 +91,8 @@ export const FONT = {
 export const SIZE = {
   pageTitle: "24px",
   wordmark: "15.5px",
+  /** A block's own words in the editor. The prototype sets its quote at this. */
+  quote: "15.5px",
   body: "13.5px",
   secondary: "12.5px",
   meta: "11px",

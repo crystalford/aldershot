@@ -348,6 +348,81 @@ if (blocksEl) {
   const headRuntime = document.querySelector("#head-runtime");
   const headKept = document.querySelector("#head-kept");
 
+  /*
+   * Paint each block its own frame.
+   *
+   * Per-block stills are not extracted anywhere — a clip points at the
+   * source's own poster — so a server-rendered thumbnail would put the SAME
+   * image on all 24 rows, which is worse than none. A second, hidden video on
+   * the same source is seeked to each block in turn and drawn to its canvas.
+   *
+   * Same origin, so the canvas is never tainted. One at a time and only for
+   * rows that come into view: 24 simultaneous seeks on a 4K source is a way to
+   * lock the tab. Every failure is silent by design — the badge and the
+   * timecode are already on the button, so a row with no frame is still a
+   * complete, legible control.
+   */
+  const paintFrames = () => {
+    const canvases = [...blocksEl.querySelectorAll(".blk-frame")];
+    if (!canvases.length || !video || !video.getAttribute("src")) return;
+
+    const shot = document.createElement("video");
+    shot.src = video.getAttribute("src");
+    shot.muted = true;
+    shot.playsInline = true;
+    shot.preload = "metadata";
+    /* No crossOrigin: the source is same-origin, so the canvas is never
+       tainted, and setting it forces a CORS preflight that can only turn a
+       working load into a failed one. */
+
+    const queue = [];
+    let running = false;
+
+    const drain = async () => {
+      if (running || !queue.length) return;
+      running = true;
+      while (queue.length) {
+        const canvas = queue.shift();
+        const at = Number(canvas.closest(".blk-play")?.getAttribute("data-start") || 0) / 1000;
+        try {
+          await new Promise((resolve, reject) => {
+            const done = () => { cleanup(); resolve(); };
+            const fail = () => { cleanup(); reject(new Error("seek")); };
+            const cleanup = () => {
+              shot.removeEventListener("seeked", done);
+              shot.removeEventListener("error", fail);
+              clearTimeout(timer);
+            };
+            /* A source that will not seek must not stall the queue behind it
+               forever; the rest of the rows still deserve their frames. */
+            const timer = setTimeout(fail, 4000);
+            shot.addEventListener("seeked", done, { once: true });
+            shot.addEventListener("error", fail, { once: true });
+            shot.currentTime = at;
+          });
+          canvas.getContext("2d").drawImage(shot, 0, 0, canvas.width, canvas.height);
+          canvas.dataset.painted = "1";
+        } catch (err) {
+          /* No frame for this one. The button is still complete without it. */
+        }
+      }
+      running = false;
+    };
+
+    const watch = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting || e.target.dataset.painted === "1" || e.target.dataset.queued === "1") continue;
+        e.target.dataset.queued = "1";
+        queue.push(e.target);
+      }
+      void drain();
+    }, { rootMargin: "300px" });
+
+    shot.addEventListener("loadedmetadata", () => canvases.forEach((c) => watch.observe(c)), { once: true });
+    shot.load();
+  };
+  paintFrames();
+
   const clock = (ms) => {
     const s2 = Math.max(0, Math.round(ms / 1000));
     const h = Math.floor(s2 / 3600), m = Math.floor((s2 % 3600) / 60), sec = s2 % 60;
@@ -398,14 +473,69 @@ if (blocksEl) {
     return await res.json().catch(() => ({}));
   };
 
+  /* The line an inserted block says, saved when you look away rather than on
+     every keystroke — a request per character is not an autosave, it is a
+     flood. Focus is never stolen and nothing reloads, so you can write, tab
+     to Record it, and speak. */
+  blocksEl.addEventListener(
+    "blur",
+    async (e) => {
+      const field = e.target.closest?.(".blk-text");
+      if (!field) return;
+      const next = field.value.trim();
+      if (next === (field.dataset.saved ?? field.defaultValue.trim())) return;
+      try {
+        const res = await fetch("/api/beats/" + field.getAttribute("data-beat") + "/text", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: next }),
+        });
+        if (!res.ok) throw new Error("That didn't save");
+        field.dataset.saved = next;
+      } catch (err) {
+        toast((err && err.message) || "That didn't save");
+      }
+    },
+    true,
+  );
+
   blocksEl.addEventListener("click", async (e) => {
+    /* Typing in a block is not clicking it. Without this the delegation below
+       reads a click in the text field as a click on the row. */
+    if (e.target.closest(".blk-text")) return;
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");
     const short = e.target.closest(".blk-short");
+    const rec = e.target.closest(".blk-record");
+    const tts = e.target.closest(".blk-tts");
     const move = e.target.closest(".blk-move");
     const play = e.target.closest(".blk-play");
     const insert = e.target.closest(".blk-insert");
     const row = e.target.closest(".blk");
+
+    /* Give this block your voice. record() handles the whole take and only
+       touches the server once you stop, so an abandoned one costs nothing. */
+    if (rec) { void record(rec); return; }
+
+    /* Or have it spoken, so the cut can be watched end to end before you
+       commit to recording anything. */
+    if (tts) {
+      if (tts.dataset.busy === "1") return;
+      tts.dataset.busy = "1";
+      const was = tts.textContent;
+      tts.textContent = "Speaking it…";
+      try {
+        const res = await fetch("/api/beats/" + tts.getAttribute("data-beat") + "/tts", { method: "POST" });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "That didn't work");
+        location.reload();
+      } catch (err) {
+        tts.dataset.busy = "0";
+        tts.textContent = was;
+        toast((err && err.message) || "That didn't work");
+      }
+      return;
+    }
 
     /* Play from here. Reading and watching are the same gesture, which is the
        whole claim — so the timecode is the control. */

@@ -20,7 +20,7 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
-import { iconArrowDown, iconArrowUp, iconPlus } from "../icons.ts";
+import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
 import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
@@ -67,19 +67,33 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
             }">${esc(w.w)}</span>`;
           })
           .join(" ")
-      : `<span data-content style="${struck ? "text-decoration:line-through;" : ""}">${esc(b.text || (b.origin === "voice" ? "Your voice" : "A visual"))}</span>`;
+      : /*
+         * An inserted block, and the reason this is a form rather than a label.
+         *
+         * It used to render the words "Your voice" next to a pill that also
+         * said "Your voice", and that was the whole block: you could add one
+         * and then do nothing with it. The building blocks were back and still
+         * inert.
+         *
+         * Writing the line comes first because both ways of filling it need
+         * it — recording reads it back to you, and TTS refuses without it.
+         */
+        `<textarea class="blk-text" data-content data-beat="${esc(b.id.slice(2))}" rows="2" placeholder="What you want to say here…"
+          style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:0;color:rgba(236,236,241,0.9);font-family:${FONT.ui};font-size:${SIZE.quote};line-height:1.5;${
+            struck ? "text-decoration:line-through;" : ""
+          }">${esc(b.text ?? "")}</textarea>`;
 
   /* The model's opinion, when it has one. Absent is absent — an unjudged block
      shows nothing rather than a zero, which would read as "bad". */
   const judged =
     b.score != null
-      ? `<span data-content title="${esc(b.why ?? "")}" style="flex:none;font-size:${SIZE.pill};font-weight:600;font-family:${FONT.mono};padding:2px 6px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green}">${b.score}</span>`
+      ? `<span data-content style="flex:none;font-size:${SIZE.pill};font-weight:600;font-family:${FONT.mono};padding:2px 6px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green}">${b.score}</span>`
       : "";
 
   const originTag =
     b.origin === "footage"
       ? ""
-      : `<span data-content style="flex:none;font-size:${SIZE.pill};padding:2px 6px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold}">${b.origin === "voice" ? "Your voice" : "Visual"}</span>`;
+      : `<span data-content style="display:inline-block;font-size:${SIZE.pill};padding:2px 6px;border-radius:4px;margin-right:7px;vertical-align:middle;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold}">${b.origin === "voice" ? "Your voice" : "Visual"}</span>`;
 
   const arrow = (dir: -1 | 1, disabled: boolean) =>
     `<button class="blk-move" data-block="${esc(b.id)}" data-dir="${dir}" ${disabled ? "disabled" : ""}
@@ -106,16 +120,83 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
         style="background:none;border:none;padding:0 2px;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill">Make a short</span></button>`
       : "";
 
-  return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
-      style="display:flex;gap:12px;align-items:baseline;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface};${struck ? "opacity:.5;" : ""}">
-    <button class="blk-play" data-start="${b.start_ms}" data-media="${esc(b.mediaKey ?? "")}"
+  /*
+   * The thumbnail.
+   *
+   * The prototype gives every block a 78px frame with a play badge and its
+   * timecode on it, and clicking it jumps the preview. I shipped a bare
+   * monospace timecode instead and the surface read as a list of paragraphs
+   * — the owner's words: "the text is not even proper.. we had a better
+   * design before".
+   *
+   * The frame is painted client-side by seeking the source video and drawing
+   * to this canvas (src/ui/client.ts), because per-block frames are not
+   * extracted anywhere yet and showing the SAME source poster on all 24 rows
+   * would be worse than showing none. The badge and timecode are server-
+   * rendered, so the control is complete and legible before any of that runs
+   * and stays so if it never does.
+   */
+  const thumb = `<button class="blk-play" data-start="${b.start_ms}" data-media="${esc(b.mediaKey ?? "")}"
       aria-label="Play from ${tc(b.start_ms / 1000)}"
-      style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};background:none;border:none;padding:0;cursor:pointer;font-variant-numeric:tabular-nums">${
-        b.origin === "footage" ? tc(b.start_ms / 1000) : hms((b.end_ms - b.start_ms) / 1000)
-      }</button>
-    <div style="flex:1;min-width:0;font-size:${SIZE.body};line-height:1.55;color:${C.ink}">${originTag}${body}</div>
-    ${judged}
-    <div style="flex:none;display:flex;align-items:center;gap:2px">
+      style="flex:none;width:78px;aspect-ratio:16/9;border-radius:5px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);background:#0B0B0E;cursor:pointer;padding:0;border:none">
+    ${
+      b.origin === "footage"
+        ? `<canvas class="blk-frame" width="156" height="88" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>`
+        : ""
+    }
+    <span style="position:absolute;left:4px;top:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center">${iconPlay(8)}</span>
+    <span data-content style="position:absolute;right:3px;bottom:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(255,255,255,0.8);background:rgba(0,0,0,0.55);padding:1px 5px;border-radius:3px">${
+      b.origin === "footage" ? tc(b.start_ms / 1000) : hms((b.end_ms - b.start_ms) / 1000)
+    }</span>
+  </button>`;
+
+  /* What this block is, under its words: how long it runs, and why the model
+     liked it when it had an opinion. */
+  /*
+   * Record it, or have it spoken.
+   *
+   * Both existed already and neither could be reached: the recorder was bound
+   * to #build, a surface that no longer exists, so recording a voiceover has
+   * been impossible since the editor was rebuilt. A block that says it wants
+   * your voice has to offer a way to give it.
+   */
+  const fill =
+    b.origin === "voice" && !struck
+      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <button class="blk-record" data-beat="${esc(b.id.slice(2))}"
+            style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${
+              b.mediaKey ? C.pill : ACCENT.gold
+            };color:${b.mediaKey ? C.ink70 : "#131316"};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${
+              b.mediaKey ? "Another take" : "Record it"
+            }</button>
+          <button class="blk-tts" data-beat="${esc(b.id.slice(2))}"
+            style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
+        </div>`
+      : "";
+
+  const meta = [
+    b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",
+    b.why ?? "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
+      style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
+        b.score != null ? `inset 0 0 0 1px ${accentBg(ACCENT.green)}` : "none"
+      };${struck ? "opacity:.5;" : ""}">
+    ${thumb}
+    <div style="flex:1;min-width:0">
+      <div style="font-size:${SIZE.quote};line-height:1.5;color:rgba(236,236,241,0.92)">${originTag}${body}</div>
+      ${
+        meta
+          ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(meta)}</div>`
+          : ""
+      }
+      ${fill}
+    </div>
+    <div style="flex:none;display:flex;align-items:center;gap:4px">
+      ${judged}
       ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
       ${short}
       <button class="blk-strike" data-block="${esc(b.id)}"

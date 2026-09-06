@@ -177,7 +177,16 @@ p,div{text-wrap:pretty}
 .exp-chip:has(input:disabled){opacity:.45;cursor:default}
 /* Keeping is the default and stays silent; the control offers the action.
    Green-badging all 38 lines shouted the state nobody needed told. */
-.seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:4px 10px;border-radius:${RADIUS.button};white-space:nowrap;transition:background-color .12s ease,color .12s ease}
+/* The row's actions.
+   The base rule had no background at all, so a pill with no data-kept — which
+   is what "Make a short" is — rendered as bare grey text sitting in a row of
+   bare grey text. It is the prototype's own action chip: a filled pill that
+   lifts on hover. */
+.seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};white-space:nowrap;background:${C.pill};color:${C.ink70};transition:background-color .12s ease,color .12s ease}
+.seg-pill:hover{background:${C.active};color:${C.ink}}
+/* "Cut" stays quiet until you are on its row: 24 loud Cut buttons is a wall,
+   and the gesture you reach for most should not be the loudest thing on the
+   page. It still reads as a control, which is what was actually wrong. */
 .seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
 .blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}

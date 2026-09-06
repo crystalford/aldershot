@@ -34,7 +34,7 @@ import { renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
-import { nameUnnamedSources } from "./naming.ts";
+import { nameSourceCut, nameUnnamedSources } from "./naming.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
@@ -601,12 +601,33 @@ app.get("/sources/:id", async (c) => {
   if (!src) return c.notFound();
 
   if (src.transcript_state === "ready") {
+    /*
+     * Name it NOW if nobody has.
+     *
+     * Naming happens inside the read, and the hourly sweep catches footage
+     * read before naming existed. Neither helps the person standing here: the
+     * owner opened a real video and the heading still said
+     * "DJI 20260826052802 0025 D", because its read predated the feature and
+     * the sweep had not come round yet.
+     *
+     * So it is done on the way in, once per source, before the cut is made —
+     * a model call inside a redirect, which is a real cost and the reason I
+     * avoided it. Being told your video is called DJI_2026… is a worse one.
+     * It is skipped the moment a name exists, so it never happens twice.
+     */
+    let cutTitle = src.cut_title;
+    if (!cutTitle) {
+      const segs = await getSegments(c.env.DB, src.id);
+      const text = segs.slice(0, 40).map((sg) => sg.text).join(" ");
+      cutTitle = await nameSourceCut(c.env, src, text);
+    }
+
     const { href } = await begin(c.env, {
       userId: user.id,
       sourceId: src.id,
       brief: "",
       sourceTitle: src.title,
-      cutTitle: src.cut_title,
+      cutTitle,
     });
     return c.redirect(href, 302);
   }
@@ -1411,6 +1432,36 @@ app.post("/api/projects/:id/outline", async (c) => {
  * the UI does not claim otherwise: Record is still offered as the real answer,
  * and this fills the beat so the cut can be watched end to end.
  */
+/**
+ * What this inserted block says.
+ *
+ * There was no way to write it. You could add a block, and then it sat there
+ * as the words "Your voice" with nothing to do — the "building blocks" the
+ * owner remembered, added and inert. Both things that can fill one need this
+ * first: recording reads it back to you, and TTS refuses without it
+ * ("there's nothing written on this beat yet").
+ */
+app.post("/api/beats/:id/text", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ text?: string }>(c);
+
+  /* Ownership through the project, the same join the other beat routes use —
+     a beat id alone says nothing about who it belongs to. */
+  const beat = await c.env.DB
+    .prepare(
+      `SELECT b.id FROM beats b JOIN v2_projects p ON p.id = b.project_id
+        WHERE b.id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{ id: string }>();
+  if (!beat) return c.json({ error: "not found" }, 404);
+
+  const text = (b.text ?? "").trim().slice(0, 2000);
+  await c.env.DB.prepare(`UPDATE beats SET text=? WHERE id=?`).bind(text || null, beat.id).run();
+  return c.json({ ok: true, text });
+});
+
 app.post("/api/beats/:id/tts", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
