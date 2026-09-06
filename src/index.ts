@@ -1141,10 +1141,55 @@ app.post("/api/projects/:id/beats/:beatId", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ text: string }>(c);
+  const b = await body<{ text: string; clearMedia?: boolean; clipId?: string }>(c);
+  const beatId = c.req.param("beatId");
+
+  /*
+   * "Swap clip" / "Pick from Footage" — point this beat at a different moment.
+   *
+   * There was no way to do this at all: a clip beat's clip was set when the
+   * beat was created and could never be changed, while four buttons offering
+   * exactly that rendered on every beat and did nothing.
+   */
+  if (b.clipId) {
+    const owned = await c.env.DB
+      .prepare(`SELECT id FROM v2_clips WHERE id=? AND user_id=? AND deleted_at IS NULL`)
+      .bind(b.clipId, user.id)
+      .first<{ id: string }>();
+    if (!owned) return c.json({ error: "not found" }, 404);
+
+    await c.env.DB
+      .prepare(`UPDATE beats SET clip_id=?, kind='clip' WHERE id=? AND project_id=?`)
+      .bind(b.clipId, beatId, project.id)
+      .run();
+    return c.json({ ok: true });
+  }
+
+  /*
+   * "Redo" — throw the take away so Record comes back.
+   *
+   * The recording is deleted from R2 rather than merely unlinked. It is being
+   * explicitly discarded by the person who made it, and an unlinked object is
+   * invisible to every cleanup path in the product, so leaving it would mean
+   * every abandoned take billed forever with nothing able to find it again.
+   */
+  if (b.clearMedia) {
+    const beat = await c.env.DB
+      .prepare(`SELECT media_r2_key FROM beats WHERE id=? AND project_id=?`)
+      .bind(beatId, project.id)
+      .first<{ media_r2_key: string | null }>();
+
+    if (beat?.media_r2_key) await c.env.MEDIA.delete(beat.media_r2_key).catch(() => {});
+    await c.env.DB
+      .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL WHERE id=? AND project_id=?`)
+      .bind(beatId, project.id)
+      .run();
+    return c.json({ ok: true });
+  }
+
   await c.env.DB
     .prepare(`UPDATE beats SET text=? WHERE id=? AND project_id=?`)
-    .bind(b.text ?? null, c.req.param("beatId"), project.id)
+    .bind(b.text ?? null, beatId, project.id)
     .run();
   return c.json({ ok: true });
 });
@@ -1322,6 +1367,25 @@ app.post("/api/beats/:id/tts", async (c) => {
 });
 
 /** Keep or drop a block. Undoable — nothing here hard-deletes. */
+/** The moments available to a beat — what the clip picker offers. */
+app.get("/api/projects/:id/clips", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ clips: [] });
+
+  const clips = await listClipsForSource(c.env.DB, project.source_id, user.id);
+  return c.json({
+    clips: clips.map((cl) => ({
+      id: cl.id,
+      quote: cl.quote,
+      start_ms: cl.start_ms,
+      end_ms: cl.end_ms,
+      frame_r2_key: cl.frame_r2_key,
+    })),
+  });
+});
+
 app.post("/api/clips/:id/keep", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

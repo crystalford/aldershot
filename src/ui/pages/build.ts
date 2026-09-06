@@ -334,6 +334,26 @@ function addBeat(projectId: string, hasActs: boolean): string {
   </div>`;
 }
 
+/**
+ * The clip picker.
+ *
+ * Four buttons — "Swap clip", "Swap", "Pick from Footage", "Pick a clip" —
+ * rendered on beats and did nothing, and there was no route to change a beat's
+ * clip either: it was set when the beat was created and fixed forever.
+ *
+ * Markup only, hidden; the client fills the list from
+ * GET /api/projects/:id/clips. It lives here rather than being built in JS so
+ * its colours come from the tokens like everything else.
+ */
+function clipPicker(projectId: string): string {
+  return `<div id="clip-picker" data-project="${esc(projectId)}" hidden style="position:fixed;inset:0;z-index:70;background:rgba(6,6,8,0.62);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:10vh 16px 16px">
+    <div style="background:#141418;border-radius:${RADIUS.card};box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,0.07);width:min(560px,100%);overflow:hidden">
+      <div style="padding:14px 18px;font-size:${SIZE.body};font-weight:600;border-bottom:1px solid ${C.hairline}">Pick a clip</div>
+      <div id="clip-picker-list" style="max-height:min(56vh,460px);overflow-y:auto"></div>
+    </div>
+  </div>`;
+}
+
 export function renderBuild(d: BuildData): string {
   if (!d.beats.length) {
     /*
@@ -363,7 +383,8 @@ export function renderBuild(d: BuildData): string {
       </div>
       ${addBeat(d.projectId, d.hasActs)}
     </div>
-  </div>`;
+  </div>
+  ${clipPicker(d.projectId)}`;
 }
 
 /**

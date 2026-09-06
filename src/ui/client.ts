@@ -264,8 +264,11 @@ function toggle(el, on) {
 
 /** Closes anything open. Returns whether there was something to close. */
 function closeOverlays() {
+  /* The clip picker is looked up here rather than hoisted, because Build is
+     the only surface that renders it. */
+  const clipPick = document.querySelector("#clip-picker");
   let closed = false;
-  for (const el of [palette, keysheet, notifpanel]) {
+  for (const el of [palette, keysheet, notifpanel, clipPick]) {
     if (el && !el.hidden) { el.hidden = true; closed = true; }
   }
   return closed;
@@ -1855,6 +1858,67 @@ if (footageDrop) {
   footageDrop.addEventListener("drop", (e) => { stop(e); startUploads(e.dataTransfer?.files); });
 }
 
+/**
+ * Pick a clip for a beat.
+ *
+ * Four buttons offered this and none worked, and there was no route behind
+ * them either — a beat's clip was fixed at creation. The overlay markup is
+ * rendered by the page (hidden) so its colours stay tokens; this fills it.
+ */
+async function openClipPicker(beatId, projectId) {
+  const picker = document.querySelector("#clip-picker");
+  const list = document.querySelector("#clip-picker-list");
+  if (!picker || !list) return;
+
+  list.innerHTML = '<div class="pal-note">Loading…</div>';
+  picker.hidden = false;
+
+  try {
+    const res = await fetch("/api/projects/" + projectId + "/clips");
+    const { clips } = await res.json();
+    if (!clips || !clips.length) {
+      list.innerHTML = '<div class="pal-note">No clips in this footage yet — ask for a pass first.</div>';
+      return;
+    }
+    const mmss = (ms) => {
+      const t = Math.max(0, Math.round(ms / 1000));
+      return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+    };
+    list.innerHTML = clips
+      .map(
+        (c) =>
+          '<button class="pal-row pick-clip" data-clip="' + c.id + '" style="width:100%;border:none;text-align:left;font-family:inherit">' +
+          '<span class="pal-title">' + escapeHtml(c.quote) + "</span>" +
+          '<span class="pal-sub">' + mmss(c.start_ms) + "</span></button>",
+      )
+      .join("");
+
+    list.querySelectorAll(".pick-clip").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const r = await fetch("/api/projects/" + projectId + "/beats/" + beatId, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ clipId: btn.getAttribute("data-clip") }),
+          });
+          if (!r.ok) throw new Error("That didn't attach");
+          location.reload();
+        } catch (err) {
+          toast((err && err.message) || "That didn't attach");
+        }
+      });
+    });
+  } catch (err) {
+    list.innerHTML = '<div class="pal-note">Couldn\'t load your clips.</div>';
+  }
+}
+
+/* Clicking the scrim closes the picker, like every other overlay here. */
+const clipPickerEl = document.querySelector("#clip-picker");
+if (clipPickerEl) {
+  clipPickerEl.addEventListener("click", (e) => { if (e.target === clipPickerEl) clipPickerEl.hidden = true; });
+}
+
 /* ── Build: beats, seams, recording ────────────────────────────────────
    The seam is how anything gets inserted mid-piece; recording happens in the
    browser and only reaches the server once the user has a take they want. */
@@ -1865,7 +1929,20 @@ if (build) {
   build.addEventListener("click", async (e) => {
     const seamBtn = e.target.closest(".seam");
     const moveBtn = e.target.closest(".move-beat");
-    const recBtn = e.target.closest(".record");
+    /*
+     * ROUTED ON data-action, not on a class.
+     *
+     * actionButton renders every beat action as .beat-action, and this
+     * listener used to look for .record — a class Build has never rendered.
+     * So the recording handler and POST /api/beats/:id/record both existed
+     * and could not be reached from anywhere: you could not record a
+     * voiceover at all, which is the one thing Build uniquely offers.
+     *
+     * Routing on the label the button already carries fixes every action at
+     * once and cannot drift from the markup the way a parallel class can.
+     */
+    const actionBtn = e.target.closest(".beat-action");
+    const action = actionBtn ? actionBtn.getAttribute("data-action") : null;
 
     if (seamBtn) {
       /* A seam inserts a beat that needs the user's voice — the common case.
@@ -1895,7 +1972,51 @@ if (build) {
       return;
     }
 
-    if (recBtn) record(recBtn);
+    if (action === "Record" || action === "Record reaction") {
+      record(actionBtn);
+      return;
+    }
+
+    if (action === "Redo") {
+      /* Throw the take away, then go straight back into recording — "Redo"
+         means do it again, not "now find the record button". */
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/beats/" + actionBtn.getAttribute("data-beat"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clearMedia: true }),
+        });
+        if (!res.ok) throw new Error("Couldn't clear that take");
+        record(actionBtn);
+      } catch (err) {
+        toast((err && err.message) || "Couldn't clear that take");
+      }
+      return;
+    }
+
+    if (action === "Generate" || action === "Generate it") {
+      /* "Generate" and "Generate it" are the same job; only "Generate it" was
+         ever bound, so the shorter label was dead on every beat that used it. */
+      const original = actionBtn.textContent;
+      actionBtn.disabled = true;
+      actionBtn.textContent = "Generating…";
+      try {
+        const res = await fetch("/api/beats/" + actionBtn.getAttribute("data-beat") + "/tts", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Couldn't generate that");
+        location.reload();
+      } catch (err) {
+        actionBtn.disabled = false;
+        actionBtn.textContent = original;
+        toast((err && err.message) || "Couldn't generate that");
+      }
+      return;
+    }
+
+    if (action === "Swap clip" || action === "Swap" || action === "Pick from Footage" || action === "Pick a clip") {
+      openClipPicker(actionBtn.getAttribute("data-beat"), projectId);
+      return;
+    }
   });
 }
 
@@ -1903,23 +2024,9 @@ if (build) {
    Recording is still the real answer and stays the primary button; this is
    for filling a beat so the whole cut can be watched before you commit to
    recording anything. */
-document.querySelectorAll('.beat-action[data-action="Generate it"]').forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "Generating…";
-    try {
-      const res = await fetch("/api/beats/" + btn.getAttribute("data-beat") + "/tts", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't generate that");
-      location.reload();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = original;
-      toast(err.message || "Couldn't generate that");
-    }
-  });
-});
+/* The standalone "Generate it" binding lived here. It is handled by the
+   delegated router above now, which also reaches "Generate" — the same job
+   under a shorter label, which was dead because only the longer one was bound. */
 
 /* In-browser recording for a vo or react beat.
    Recording never touches the server until the user stops — a take they
