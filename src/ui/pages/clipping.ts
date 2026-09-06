@@ -78,30 +78,31 @@ function chipRow(name: string, label: string, options: readonly string[], select
 function picker(d: ClippingData): string {
   const ready = d.available.filter((s) => s.transcript_state === "ready");
   /*
-   * "1:22:04 · 6 clips found" — the runtime and what the source has already
-   * given you, in the UI face. Not mono: the prototype reserves the mono face
-   * for timecodes you read against the footage, and this is a sentence.
+   * A STRIP, not a list.
+   *
+   * These were full-width rows — poster, title, meta, a button — which made
+   * Clipping the third page in a row showing the same stack of videos, after
+   * Footage and the Editor's intake. Picking which video to clip is a small
+   * act, and it should not be the largest thing on a page whose subject is
+   * the shorts themselves.
+   *
+   * It scrolls sideways on purpose: a library of any size stays one row, and
+   * the shorts below it stay where the eye lands first.
    */
-  const meta = (s: ClippingSource) => {
-    const parts: string[] = [];
-    if (s.duration_s) parts.push(hms(s.duration_s));
-    if (s.clip_count) parts.push(`${s.clip_count} clip${s.clip_count === 1 ? "" : "s"} found`);
-    return parts.join(" · ");
-  };
-
   const rows = ready
     .map(
-      (s) => `<a href="/clipping?source=${esc(s.id)}" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};cursor:pointer">
-      <div style="flex:none;width:64px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E">${
+      (s) => `<a href="/clipping?source=${esc(s.id)}" style="flex:none;width:132px;display:flex;flex-direction:column;gap:6px">
+      <div style="width:100%;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);position:relative">${
         s.poster_r2_key
           ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
           : ""
+      }${
+        s.duration_s
+          ? `<span style="position:absolute;right:4px;bottom:4px;font-size:${SIZE.pill};font-family:${FONT.mono};background:rgba(0,0,0,.66);border-radius:3px;padding:1px 4px;color:${C.ink}">${hms(s.duration_s)}</span>`
+          : ""
       }</div>
-      <div style="flex:1;min-width:0">
-        <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-        <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">${meta(s)}</div>
-      </div>
-      <span style="font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none">Clip it</span>
+      <div data-content style="font-size:${SIZE.meta};color:${C.ink70};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+      ${s.clip_count ? `<div data-content style="font-size:${SIZE.pill};color:${C.ink32}">${s.clip_count} clip${s.clip_count === 1 ? "" : "s"} found</div>` : ""}
     </a>`,
     )
     .join("");
@@ -120,7 +121,8 @@ function picker(d: ClippingData): string {
 
   return `<div style="margin-top:24px">
     <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45}">Drop a video, or clip one you already have</div>
-    <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${rows}${drop}</div>
+    <div style="margin-top:14px;display:flex;gap:12px;overflow-x:auto;padding-bottom:4px">${rows}</div>
+    <div style="margin-top:12px">${drop}</div>
   </div>`;
 }
 
