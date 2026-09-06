@@ -76,17 +76,28 @@ jobs:
           # Comments are stripped first: this file EXPLAINS why the var must not
           # be here, and a plain grep matched that explanation and failed every
           # deploy. Check what wrangler actually parses, not the prose.
-          if node -e '
+          #
+          # BOTH comment styles. Stripping only // was right until the config
+          # grew /* */ blocks, at which point JSON.parse threw, the check failed
+          # closed — correct — and reported "DEV_LOGIN_EMAIL is a real var",
+          # which was not true and sent me looking in the wrong place. A guard
+          # that cannot tell "unparseable" from "unsafe" wastes the failure it
+          # just caused.
+          node -e '
             const fs=require("fs");
-            const src=fs.readFileSync("wrangler.jsonc","utf8").replace(/^\s*\/\/.*$/gm,"");
-            const vars=(JSON.parse(src).vars)||{};
-            if ("DEV_LOGIN_EMAIL" in vars) process.exit(1);
-          '; then
-            echo "  (no auth bypass in the deployed config)"
-          else
-            echo "DEV_LOGIN_EMAIL is a real var in wrangler.jsonc. It disables auth. Move it to .dev.vars."
-            exit 1
-          fi
+            const src=fs.readFileSync("wrangler.jsonc","utf8")
+              .replace(/\/\*[\s\S]*?\*\//g,"")
+              .replace(/^\s*\/\/.*$/gm,"");
+            let cfg;
+            try { cfg = JSON.parse(src); }
+            catch (e) { console.error("PARSE " + e.message); process.exit(2); }
+            if ("DEV_LOGIN_EMAIL" in (cfg.vars||{})) process.exit(1);
+          '
+          case $? in
+            0) echo "  (no auth bypass in the deployed config)" ;;
+            1) echo "DEV_LOGIN_EMAIL is a real var in wrangler.jsonc. It disables auth. Move it to .dev.vars."; exit 1 ;;
+            *) echo "wrangler.jsonc could not be parsed, so the auth-bypass check could not run. Fix the config."; exit 1 ;;
+          esac
 
           echo "==> Deploying"
           npx wrangler deploy

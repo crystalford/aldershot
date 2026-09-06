@@ -103,7 +103,13 @@ const GLOBAL_CSS = `
    rule in its own <style>; the app shell did not, which is exactly the kind of
    difference that only shows up on a narrow screen. */
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0;background:${C.canvas}}
+/* The font belongs on BODY, not on the page wrapper.
+   It was on the wrapper div, and everything positioned outside that div —
+   the toast host, the palette, the shortcut sheet, the notification panel,
+   the clip picker — fell back to the browser's default serif. The owner
+   spotted it on a delete toast: "DJI ... deleted / Undo" in Times, under a
+   page set entirely in Instrument Sans. */
+body{margin:0;background:${C.canvas};font-family:${FONT.ui};color:${C.ink}}
 /* Nothing may push the page sideways. A horizontal scrollbar on a phone is
    never intentional here, and it hides content off the left edge rather than
    merely looking untidy.

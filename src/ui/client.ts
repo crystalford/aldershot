@@ -650,7 +650,7 @@ function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes,
       "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:12px;" +
       "padding:12px 16px;border-radius:9px;background:#141418;color:#ECECF1;" +
       "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.45);" +
-      "font-family:'Instrument Sans',sans-serif;font-size:12.5px;max-width:min(420px,calc(100vw - 40px))";
+      "font-size:12.5px;max-width:min(420px,calc(100vw - 40px))";
     document.body.appendChild(el);
   }
   el.setAttribute("data-source", sourceId);
@@ -858,7 +858,7 @@ if ("serviceWorker" in navigator) {
       "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:12px;" +
       "padding:12px 16px;border-radius:9px;background:#141418;color:#ECECF1;" +
       "box-shadow:inset 0 0 0 1px rgba(217,179,106,0.3), 0 12px 40px rgba(0,0,0,0.45);" +
-      "font-family:'Instrument Sans',sans-serif;font-size:12.5px;max-width:min(460px,calc(100vw - 40px))";
+      "font-size:12.5px;max-width:min(460px,calc(100vw - 40px))";
     const done = Math.round((p.parts_done * p.part_size * 100) / p.total_bytes);
     el.innerHTML =
       '<span style="width:6px;height:6px;border-radius:50%;background:#D9B36A;flex:none"></span>' +
