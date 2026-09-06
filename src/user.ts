@@ -23,6 +23,8 @@ export interface User {
   plan: Plan;
   is_owner: number;
   created_at: number;
+  /** Set once this account has reached Stripe checkout. Null for most. */
+  stripe_customer_id?: string | null;
 }
 
 /**

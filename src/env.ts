@@ -49,6 +49,19 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 
+  /*
+   * Billing. Absent until there is a Stripe account, and every surface that
+   * would offer to charge checks for them first — a subscribe button that
+   * 500s is worse than one that is honestly not there yet.
+   *
+   *   npx wrangler secret put STRIPE_SECRET_KEY
+   *   npx wrangler secret put STRIPE_PRICE_ID
+   *   npx wrangler secret put STRIPE_WEBHOOK_SECRET
+   */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_PRICE_ID?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+
   /**
    * Public origin, e.g. https://aldershot.io. Login links are built from it so
    * they point at the real site rather than whatever host served the request —

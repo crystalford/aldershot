@@ -896,6 +896,27 @@ document.querySelectorAll(".render-cut").forEach((btn) => {
   });
 });
 
+/* Subscribe, or manage an existing subscription. Both are a redirect to
+   Stripe's own hosted page — no card fields ever live on this origin. */
+const planAction = document.querySelector("#planAction");
+if (planAction) {
+  planAction.addEventListener("click", async () => {
+    planAction.disabled = true;
+    const was = planAction.textContent;
+    planAction.textContent = "One moment…";
+    try {
+      const res = await fetch("/api/billing/" + planAction.getAttribute("data-mode"), { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || "That didn't open");
+      location.href = data.url;
+    } catch (err) {
+      planAction.disabled = false;
+      planAction.textContent = was;
+      toast((err && err.message) || "That didn't open");
+    }
+  });
+}
+
 /*
  * Keep/drop on an unassisted cut.
  *

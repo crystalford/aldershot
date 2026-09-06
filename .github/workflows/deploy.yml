@@ -30,6 +30,11 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           APP_ORIGIN: ${{ secrets.APP_ORIGIN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PRICE_ID: ${{ secrets.STRIPE_PRICE_ID }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
 
@@ -92,6 +97,13 @@ jobs:
           put_secret RESEND_API_KEY "${RESEND_API_KEY:-}"
           put_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
           put_secret APP_ORIGIN "${APP_ORIGIN:-}"
+          put_secret GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"
+          put_secret GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
+          # Billing. Absent until there is a Stripe account; every surface that
+          # would offer to charge checks for them and shows nothing without.
+          put_secret STRIPE_SECRET_KEY "${STRIPE_SECRET_KEY:-}"
+          put_secret STRIPE_PRICE_ID "${STRIPE_PRICE_ID:-}"
+          put_secret STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-}"
 
           # Sessions are signed with this. src/auth.ts refuses to sign without
           # it rather than falling back to a constant, so a deploy that skipped

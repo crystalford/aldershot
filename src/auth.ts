@@ -50,7 +50,7 @@ function b64url(bytes: ArrayBuffer | Uint8Array): string {
 }
 
 /** Constant-time string compare. Length is allowed to leak; content is not. */
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);

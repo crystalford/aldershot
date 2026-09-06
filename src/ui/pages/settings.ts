@@ -34,6 +34,8 @@ export interface SettingsData {
   plan: string;
   isOwner: boolean;
   meters: Meter[];
+  /** Whether Stripe is configured. A button that cannot charge is not shown. */
+  billingReady: boolean;
   /** Null for anyone but the owner — the panel is not rendered at all. */
   cost: {
     lines: CostLine[];
@@ -63,7 +65,7 @@ function account(name: string | null): string {
   </div>`;
 }
 
-function planBlock(plan: string, meters: Meter[]): string {
+function planBlock(plan: string, meters: Meter[], billingReady: boolean): string {
   const pro = plan !== "free";
   const name = pro ? "Studio — $29/mo" : "Free";
   const hint = pro
@@ -93,7 +95,20 @@ function planBlock(plan: string, meters: Meter[]): string {
         <div data-content style="font-size:${SIZE.body};font-weight:500">${name}</div>
         <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px;line-height:1.5">${hint}</div>
       </div>
-      <span style="font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${pro ? C.pill : ACCENT.gold};color:${pro ? C.ink : "#131316"};flex:none;white-space:nowrap">${btn}</span>
+      ${
+        /*
+         * A real button, or nothing.
+         *
+         * This was a <span> — it looked exactly like the control it was
+         * pretending to be and did nothing when pressed, which is the same
+         * class of lie as a progress bar on a timer. With Stripe configured it
+         * opens checkout (or the portal, for an existing subscriber). Without
+         * it, no button at all: an unbuyable plan should not offer to sell.
+         */
+        billingReady
+          ? `<button type="button" id="planAction" data-mode="${pro ? "portal" : "checkout"}" style="font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${pro ? C.pill : ACCENT.gold};color:${pro ? C.ink : "#131316"};flex:none;white-space:nowrap;border:none;cursor:pointer;font-family:${FONT.ui}">${btn}</button>`
+          : ""
+      }
     </div>
     <div style="margin-top:16px;display:flex;flex-direction:column;gap:14px">${meters.map(meterRow).join("")}</div>
   </div>`;
@@ -164,6 +179,6 @@ export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
 <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
 ${account(d.name)}
-${planBlock(d.plan, d.meters)}
+${planBlock(d.plan, d.meters, d.billingReady)}
 ${d.cost ? costPanel(d.cost) : ""}`;
 }

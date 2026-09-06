@@ -26,6 +26,7 @@ import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
+import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -1434,6 +1435,87 @@ app.get("/editor", async (c) => {
   );
 });
 
+/*
+ * Billing.
+ *
+ * Three routes and no more: somewhere to start paying, somewhere to stop, and
+ * the webhook that is the only thing allowed to change what an account is
+ * entitled to.
+ */
+
+/** Start a subscription. Answers with a URL rather than redirecting, because
+    the button is scripted like every other action on Settings. */
+app.post("/api/billing/checkout", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  if (!billingReady(c.env)) return c.json({ error: "billing isn't switched on yet" }, 503);
+
+  try {
+    const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
+    return c.json({ url: await checkoutUrl(c.env, user, origin) });
+  } catch {
+    /* stripe() has already logged Stripe's own message, which can name
+       internal ids. The customer gets something they can act on. */
+    return c.json({ error: "couldn't open checkout — try again in a moment" }, 502);
+  }
+});
+
+/** Manage or cancel an existing subscription, on Stripe's own portal. */
+app.post("/api/billing/portal", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  if (!billingReady(c.env)) return c.json({ error: "billing isn't switched on yet" }, 503);
+
+  try {
+    const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
+    return c.json({ url: await portalUrl(c.env, user, origin) });
+  } catch {
+    return c.json({ error: "couldn't open your billing page — try again in a moment" }, 502);
+  }
+});
+
+/**
+ * Stripe's webhook. THE ONLY THING THAT GRANTS A PLAN.
+ *
+ * Unauthenticated by necessity — Stripe has no session — so the signature IS
+ * the authentication. An unverified body here would let anyone on the internet
+ * POST themselves a subscription, so a missing secret is a refusal rather than
+ * a skipped check.
+ *
+ * The RAW body is read and passed through unparsed: the signature covers the
+ * exact bytes Stripe sent, and re-serialising parsed JSON changes them.
+ *
+ * Always 200 once verified, even when the event is one we ignore. A non-2xx
+ * tells Stripe to retry, and retrying an event nobody handles just fills the
+ * log until Stripe disables the endpoint.
+ */
+app.post("/webhooks/stripe", async (c) => {
+  await ensureV2Schema(c.env.DB);
+
+  if (!c.env.STRIPE_WEBHOOK_SECRET) {
+    console.log("[billing] webhook hit with no STRIPE_WEBHOOK_SECRET set — refusing");
+    return c.text("billing not configured", 503);
+  }
+
+  const raw = await c.req.text();
+  const ok = await verifyWebhook(c.env.STRIPE_WEBHOOK_SECRET, raw, c.req.header("stripe-signature") ?? null);
+  if (!ok) {
+    console.log("[billing] webhook signature did not verify");
+    return c.text("bad signature", 400);
+  }
+
+  try {
+    const outcome = await applyEvent(c.env, JSON.parse(raw));
+    console.log(`[billing] ${outcome}`);
+  } catch (err) {
+    /* The event was genuinely from Stripe but we could not apply it. That is
+       our bug, and it IS worth a retry. */
+    console.log(`[billing] couldn't apply event: ${(err as Error).message}`);
+    return c.text("could not apply", 500);
+  }
+  return c.text("ok");
+});
+
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1524,7 +1606,7 @@ app.get("/settings", async (c) => {
       "settings",
       "Settings",
       "Settings — Aldershot",
-      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost }),
+      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env) }),
     ),
   );
 });

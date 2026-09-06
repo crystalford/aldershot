@@ -224,6 +224,17 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
     column: "mode",
     ddl: "ALTER TABLE uploads ADD COLUMN mode TEXT NOT NULL DEFAULT 'worker'",
   },
+
+  /*
+   * The Stripe customer behind an account, so a webhook can find the user it
+   * is about and a returning subscriber is not charged as a stranger.
+   * Nullable: most accounts never reach checkout.
+   */
+  {
+    table: "v2_users",
+    column: "stripe_customer_id",
+    ddl: "ALTER TABLE v2_users ADD COLUMN stripe_customer_id TEXT",
+  },
 ];
 
 let ensured = false;
