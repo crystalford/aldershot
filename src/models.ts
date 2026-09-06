@@ -50,13 +50,17 @@ export interface ModelSpec {
  * Long-transcript reasoning: score passes, extra passes, intent fallback,
  * reaction placement, essay outlines.
  *
- * Chosen: glm-5.3-flash — 1,048,576-token window, native, json_schema, and
- * ~$0.028 for a 120k-in/20k-out run. Requires a paid billing method on the
- * account (as do all the frontier-tier models); the account is already on
- * Workers Paid for Containers.
+ * Chosen: glm-5.3-flash — 1,048,576-token window, native, json_schema.
+ * Re-checked against the Workers AI catalog on 2026-09-06 and still the right
+ * default: it is the flash variant of the CURRENT GLM-5 series, not an old
+ * model left behind. Per million tokens it is $0.15 in / $0.50 out, against
+ * $1.40 / $4.40 for full glm-5.3 and $1.32 / $3.96 for deepseek-v4-pro —
+ * roughly a ninth of the price for the work a scoring pass actually does.
  *
- * Cheaper alternative worth A/B testing once there is real output to judge:
- * `@cf/google/gemma-4-26b-a4b-it` — 256k window, json_schema, ~$0.018/run.
+ * Cheaper still, if the output ever proves good enough:
+ * `@cf/google/gemma-4-26b-a4b-it` at $0.10 / $0.30, 256k window. Context size
+ * stopped mattering when scorePass started reading in windows, so this is now
+ * a pure quality question and needs real output to judge.
  */
 export const REASON: ModelSpec = {
   id: "@cf/zai-org/glm-5.3-flash",
@@ -164,6 +168,26 @@ export const EMBED_POOLING = "mean" as const;
 /** Anthropic model used for the upgraded path. */
 export const ANTHROPIC_REASON = "claude-sonnet-5";
 
+/**
+ * The reasoning upgrade WITHOUT an external account.
+ *
+ * "Better reasoning" was Claude or nothing, and nothing is what it was: it
+ * needs ANTHROPIC_API_KEY, which is not set, so the upgrade this product
+ * offers in its own UI could not be bought. Full glm-5.3 is the same family
+ * as the default rather than a different one — same 1M window, same
+ * structured output, no second bill and no second key — and it is a real step
+ * up from the flash variant on long or subtle material.
+ *
+ * Claude still wins when a key IS configured; this is the floor, not a
+ * replacement.
+ */
+export const REASON_UPGRADE: ModelSpec = {
+  id: "@cf/zai-org/glm-5.3",
+  context: 1_048_576,
+  jsonSchema: true,
+  native: true,
+};
+
 export interface Resolved {
   provider: "workers-ai" | "anthropic";
   id: string;
@@ -183,9 +207,15 @@ export function resolveModel(
   env: { ANTHROPIC_API_KEY?: string },
   tier: Tier = "default",
 ): Resolved {
-  // Reasoning upgrades to Claude, and only when a key is actually configured.
-  if (role === "reason" && tier === "upgrade" && env.ANTHROPIC_API_KEY) {
-    return { provider: "anthropic", id: ANTHROPIC_REASON, context: 200_000, jsonSchema: true, diarizes: false };
+  // Reasoning upgrades to Claude when a key is configured, and to full
+  // glm-5.3 when it is not — so the upgrade always buys something rather than
+  // silently handing back the default model at the default quality.
+  if (role === "reason" && tier === "upgrade") {
+    if (env.ANTHROPIC_API_KEY) {
+      return { provider: "anthropic", id: ANTHROPIC_REASON, context: 200_000, jsonSchema: true, diarizes: false };
+    }
+    const up = REASON_UPGRADE;
+    return { provider: "workers-ai", id: up.id, context: up.context, jsonSchema: up.jsonSchema, diarizes: false };
   }
   // Transcription upgrades to Deepgram Nova-3, the only diarizing option.
   if (role === "transcribe" && tier === "upgrade") {
@@ -204,8 +234,11 @@ export function resolveModel(
 export const UPGRADES = {
   reason: {
     label: "Better reasoning",
-    detail: "Claude reads the transcript instead of the built-in model. Slower, noticeably better on long or subtle material.",
-    requiresKey: "ANTHROPIC_API_KEY" as const,
+    detail: "A stronger model reads the transcript instead of the quick one. Slower, noticeably better on long or subtle material.",
+    /* No key required any more — see REASON_UPGRADE. It was gated on
+       ANTHROPIC_API_KEY, so the one upgrade this product sells could not be
+       bought on an account that had not gone and got a second AI subscription. */
+    requiresKey: null,
   },
   transcribe: {
     label: "Tell speakers apart",
