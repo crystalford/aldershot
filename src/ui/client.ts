@@ -896,6 +896,96 @@ document.querySelectorAll(".render-cut").forEach((btn) => {
   });
 });
 
+/*
+ * Keep/drop on an unassisted cut.
+ *
+ * The block IS a transcript line, so this posts the same cut model Script
+ * uses — the two stages edit one thing rather than two.
+ *
+ * It repaints the block in place rather than reloading. A reload per line is
+ * what this was, and on a 38-line transcript that is 38 full page loads to
+ * make one edit, each one throwing away your scroll position. The toggle is
+ * already a toggle server-side, so the optimistic flip is always the answer
+ * the server is about to give; if the save fails it flips back and says so.
+ */
+const scratch = document.querySelector("#pick-scratch");
+if (scratch) {
+  const runtimeEl = document.querySelector("#scratch-runtime");
+
+  /* Kept count and runtime, recomputed from the DOM — the blocks carry their
+     own duration, so the total never drifts from what is on screen. */
+  const retotal = () => {
+    if (!runtimeEl) return;
+    let ms = 0;
+    let n = 0;
+    scratch.querySelectorAll("[data-seg-block]").forEach((el) => {
+      if (el.getAttribute("data-kept") !== "1") return;
+      n += 1;
+      ms += Number(el.getAttribute("data-ms") || 0);
+    });
+    const secs = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60), ss = secs % 60;
+    const clock = h > 0
+      ? h + ":" + String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0")
+      : mm + ":" + String(ss).padStart(2, "0");
+    runtimeEl.textContent = n + " kept \u00b7 " + clock;
+  };
+
+  const paint = (block, kept) => {
+    const btn = block.querySelector(".seg-keep");
+    const text = block.querySelector("[data-seg-text]");
+    block.setAttribute("data-kept", kept ? "1" : "0");
+    block.style.opacity = kept ? "" : ".55";
+    if (text) text.style.textDecoration = kept ? "" : "line-through";
+    if (btn) {
+      btn.setAttribute("data-kept", kept ? "1" : "0");
+      const pill = btn.querySelector(".seg-pill");
+      if (pill) {
+        pill.textContent = kept ? "Keeping" : "Add back";
+        pill.setAttribute("data-kept", kept ? "1" : "0");
+      }
+    }
+  };
+
+  /* Clicking a line's frame seeks the player to it. Reading and watching are
+     the same gesture here — that is the point of the surface. */
+  const scratchVideo = document.querySelector("#scratch-video");
+  scratch.querySelectorAll(".seg-play").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!scratchVideo) return;
+      scratchVideo.currentTime = Number(btn.getAttribute("data-start") || 0) / 1000;
+      scratchVideo.play().catch(() => {});
+    });
+  });
+
+  scratch.querySelectorAll(".seg-keep").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const block = btn.closest("[data-seg-block]");
+      if (!block || btn.disabled) return;
+      const next = block.getAttribute("data-kept") !== "1";
+
+      btn.disabled = true;
+      paint(block, next);
+      retotal();
+
+      try {
+        const res = await fetch("/api/projects/" + scratch.getAttribute("data-project") + "/cuts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind: "segment", seg: Number(btn.getAttribute("data-seg")), word: null }),
+        });
+        if (!res.ok) throw new Error("That didn't save");
+      } catch (err) {
+        paint(block, !next);
+        retotal();
+        toast((err && err.message) || "That didn't save");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 /* The Build preview. Plays the real source, seeking to whichever beat you
    click — which is what the scrubber under it always looked like it did. */
 const esVideo = document.querySelector("#es-video");

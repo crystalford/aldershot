@@ -39,6 +39,17 @@ export interface EditorData {
   hasSource: boolean;
   stage: Stage;
   clips: EditorClip[];
+  /*
+   * A cut made without asking for anything gets no scoring pass, so it has no
+   * clips — its blocks are the transcript itself. Uploading a video and
+   * pressing Edit should let you edit it, not hand it to a model that decides
+   * what matters before you have seen it.
+   */
+  segments?: { idx: number; start_ms: number; end_ms: number; text: string }[];
+  cuts?: { seg: number; words: [number, number] | null }[];
+  sourcePoster?: string | null;
+  /** The video itself, so the workspace has the footage in it and not just words. */
+  sourceKey?: string | null;
   /** Live scoring job, when the pass is still running. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** cut | reaction | essay | idea. Drives Build's kind chip and lede. */
@@ -279,6 +290,40 @@ function block(c: EditorClip, i: number, total: number): string {
 }
 
 /**
+ * One transcript line, as a keep/drop block.
+ *
+ * The unassisted half of the editor: the same reading-and-deciding as a scored
+ * cut, with nothing having decided for you. Dropping uses the same cut model
+ * as Script, so the two stages edit one thing rather than two.
+ */
+function segmentBlock(
+  seg: { idx: number; start_ms: number; end_ms: number; text: string },
+  kept: boolean,
+  poster: string | null | undefined,
+): string {
+  /* One element in both states, styled by .seg-pill in the shell's CSS, so the
+     client can flip it without knowing any colours. */
+  const toggle = `<span class="seg-pill" data-kept="${kept ? 1 : 0}">${kept ? "Keeping" : "Add back"}</span>`;
+
+  /* data-ms so the running total is recomputed from the blocks themselves
+     when one is toggled, rather than from a number the page would have to
+     reload to refresh. */
+  return `<div data-seg-block="${seg.idx}" data-kept="${kept ? 1 : 0}" data-ms="${seg.end_ms - seg.start_ms}" style="display:flex;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};${kept ? "" : "opacity:.55;"}">
+    <button class="seg-play" data-start="${seg.start_ms}" aria-label="Play from ${tc(seg.start_ms / 1000)}" style="flex:none;width:92px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);border:none;padding:0;cursor:pointer;display:block">
+      ${poster ? `<img loading="lazy" src="/media/${esc(poster)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>` : ""}
+      <span style="position:absolute;left:4px;bottom:3px;font-size:9.5px;font-family:${FONT.mono};background:rgba(0,0,0,.6);border-radius:2px;padding:1px 4px;color:${C.ink}">${tc(seg.start_ms / 1000)}</span>
+    </button>
+    <div style="flex:1;min-width:0">
+      <div data-seg-text data-content style="font-size:${SIZE.body};line-height:1.5;color:${C.ink};${kept ? "" : "text-decoration:line-through;"};text-decoration-color:rgba(236,236,241,0.35)">${esc(seg.text)}</div>
+      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}">${hms((seg.end_ms - seg.start_ms) / 1000)}</div>
+    </div>
+    <div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+      <button class="seg-keep" data-seg="${seg.idx}" data-kept="${kept ? 1 : 0}" style="background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}">${toggle}</button>
+    </div>
+  </div>`;
+}
+
+/**
  * The preview. Cloudflare Stream is not wired yet, so this shows the real
  * frame and the real quote rather than a fake player — an inert scrub bar
  * would be a worse lie than an honest still.
@@ -341,6 +386,49 @@ export function renderEditor(d: EditorData): string {
     ${askAnotherPass(d)}`;
   }
 
+  /*
+   * An unassisted cut: no scoring pass ran, so the blocks are the transcript
+   * and everything starts kept. You cut it down by reading, which is the
+   * product's claim minus the model having gone first.
+   */
+  if (!d.clips.length && d.segments?.length) {
+    /* words:null is a whole line struck — the gesture that drops a block.
+       A word-range cut trims within a line and leaves the block in. */
+    const cutSet = new Set((d.cuts ?? []).filter((x) => x.words === null).map((x) => x.seg));
+    const keptSegs = d.segments.filter((sg) => !cutSet.has(sg.idx));
+    const runtime = keptSegs.reduce((n, sg) => n + (sg.end_ms - sg.start_ms), 0);
+
+    /*
+     * THE VIDEO IS IN THE ROOM.
+     *
+     * Opening a video used to give you its transcript and nothing else, which
+     * is how a video editor ends up feeling like a document viewer. The player
+     * sticks to the top while you read down the transcript, and clicking any
+     * line seeks it there — so reading and watching are the same gesture,
+     * which is the entire claim this product makes.
+     *
+     * It is a plain <video> against /media, which already serves range
+     * requests, so seeking works without loading the file.
+     */
+    const player = d.sourceKey
+      ? `<div style="position:sticky;top:56px;z-index:3;margin-top:20px;background:${C.canvas};padding-bottom:10px">
+          <video id="scratch-video" playsinline preload="metadata"${d.sourcePoster ? ` poster="/media/${esc(d.sourcePoster)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+        </div>`
+      : "";
+
+    return `${head}
+    ${player}
+    <div data-content style="margin-top:${d.sourceKey ? "14px" : "22px"};font-size:${SIZE.secondary};color:${C.ink45}">Read it and strike what goes. Nothing was decided for you — ask for something in the box on Home and it will make the first pass itself.</div>
+    ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
+    <div id="pick-scratch" data-project="${esc(d.projectId)}" style="margin-top:16px;display:flex;flex-direction:column;gap:2px">
+      ${d.segments.map((sg) => segmentBlock(sg, !cutSet.has(sg.idx), d.sourcePoster)).join("")}
+    </div>
+    <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+      <span id="scratch-runtime" data-content style="flex:1;font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono}">${keptSegs.length} kept · ${hms(runtime / 1000)}</span>
+      <button class="export" data-project="${esc(d.projectId)}" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export as</button>
+    </div>`;
+  }
+
   if (!d.clips.length) {
     return `${head}
     <div style="margin-top:24px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface}">
@@ -348,6 +436,7 @@ export function renderEditor(d: EditorData): string {
     </div>
     ${askAnotherPass(d)}`;
   }
+
 
   // Blocks, with the footage that was passed over shown striped between them.
   const parts: string[] = [seam()];

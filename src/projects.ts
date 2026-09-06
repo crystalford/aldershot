@@ -119,7 +119,49 @@ export async function getProject(db: D1Database, id: string, userId: string): Pr
     .first<Project>();
 }
 
+/**
+ * Collapses duplicate untouched edits of one video.
+ *
+ * The owner's Editor showed four rows reading "Untitled cut · DJI_2026….MP4"
+ * because every press of Edit made another project. begin() stopped doing that,
+ * but the rows it already made are still there and still indistinguishable, so
+ * they have to be cleared rather than merely not repeated.
+ *
+ * The rule is deliberately timid: an edit is only collapsed when it is an
+ * unbriefed cut of the same source as a newer one AND it holds no work of its
+ * own — no cuts, no beats, no renders, no title anyone typed. Anything the
+ * user has touched survives, even if it looks like a duplicate, because
+ * "looks like a duplicate" is not a good enough reason to delete somebody's
+ * edit. It is a soft delete, so nothing is actually gone.
+ */
+export async function reapDuplicateEdits(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE v2_projects SET deleted_at=?
+        WHERE user_id=? AND deleted_at IS NULL
+          AND (brief IS NULL OR TRIM(brief)='')
+          AND (cuts IS NULL OR cuts='' OR cuts='[]')
+          AND title='Untitled cut'
+          AND source_id IS NOT NULL
+          AND id NOT IN (SELECT project_id FROM beats WHERE project_id IS NOT NULL)
+          AND id NOT IN (SELECT project_id FROM renders WHERE project_id IS NOT NULL)
+          AND EXISTS (
+            SELECT 1 FROM v2_projects newer
+             WHERE newer.user_id = v2_projects.user_id
+               AND newer.source_id = v2_projects.source_id
+               AND newer.deleted_at IS NULL
+               AND newer.kind = v2_projects.kind
+               AND (newer.brief IS NULL OR TRIM(newer.brief)='')
+               AND (newer.updated_at > v2_projects.updated_at
+                    OR (newer.updated_at = v2_projects.updated_at AND newer.id > v2_projects.id))
+          )`,
+    )
+    .bind(Date.now(), userId)
+    .run();
+}
+
 export async function listProjects(db: D1Database, userId: string): Promise<Project[]> {
+  await reapDuplicateEdits(db, userId);
   const { results } = await db
     .prepare(`SELECT * FROM v2_projects WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC`)
     .bind(userId)

@@ -36,6 +36,8 @@ export interface IntakeEdit {
   kept: number;
   runtime_s: number | null;
   updated_at: number;
+  /** An edit opened without a brief: its blocks are lines, not scored clips. */
+  scratch?: boolean;
 }
 
 export interface EditorIntakeData {
@@ -90,7 +92,9 @@ export function renderEditorIntake(d: EditorIntakeData): string {
   const editMeta = (e: IntakeEdit) => {
     const parts: string[] = [];
     if (e.sourceFilename) parts.push(e.sourceFilename);
-    if (e.kept) parts.push(`${e.kept} clips kept`);
+    /* "clips" is the scored vocabulary and means nothing on an edit that was
+       never scored — there, the unit is lines of transcript. */
+    if (e.kept) parts.push(e.scratch ? `${e.kept} line${e.kept === 1 ? "" : "s"}` : `${e.kept} clips kept`);
     if (e.runtime_s) parts.push(`${hms(e.runtime_s)} so far`);
     return parts.length ? parts.join(" · ") : touched(e.updated_at);
   };

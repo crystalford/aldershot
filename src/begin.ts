@@ -32,7 +32,7 @@ export interface BeginResult {
  */
 export async function begin(
   env: Env,
-  opts: { userId: string; sourceId: string; brief: string; upgrade?: boolean },
+  opts: { userId: string; sourceId: string; brief: string; upgrade?: boolean; sourceTitle?: string | null },
 ): Promise<BeginResult> {
   const read = readIntent(opts.brief);
   // "unclear" is only ever a UI state — by the time we are here the user has
@@ -58,10 +58,22 @@ export async function begin(
   let project = null;
   let reused = false;
   if (kind && !wantsSomethingNew) {
+    /*
+     * Reuse only an edit that was ALSO opened without a brief.
+     *
+     * Matching on kind alone handed "open this video" back whichever cut
+     * happened to be newest — including one made from a brief, so opening
+     * your own footage dropped you into a scored edit somebody had asked
+     * for earlier, complete with a model's opinion of what mattered. An
+     * unassisted open and a briefed request are different pieces of work
+     * and must not collapse into each other.
+     */
     const existing = await env.DB
       .prepare(
         `SELECT * FROM v2_projects
-          WHERE user_id=? AND source_id=? AND kind=? AND deleted_at IS NULL AND archived_at IS NULL
+          WHERE user_id=? AND source_id=? AND kind=?
+            AND (brief IS NULL OR TRIM(brief)='')
+            AND deleted_at IS NULL AND archived_at IS NULL
           ORDER BY updated_at DESC LIMIT 1`,
       )
       .bind(opts.userId, opts.sourceId, kind)
@@ -75,7 +87,14 @@ export async function begin(
   if (kind && !project) {
     project = await createProject(env.DB, {
       user_id: opts.userId,
-      title: titleFromBrief(opts.brief, "Untitled cut"),
+      /*
+       * An edit with no brief is named after its footage, not "Untitled cut".
+       * Four rows all reading "Untitled cut · DJI_2026…MP4 · 11 clips kept"
+       * are indistinguishable, and a list you cannot tell apart is a list you
+       * cannot use. The brief names it when there is one, because then the
+       * name is the request.
+       */
+      title: titleFromBrief(opts.brief, opts.sourceTitle?.trim() || "Untitled cut"),
       kind,
       source_id: opts.sourceId,
       brief: opts.brief,
@@ -83,8 +102,18 @@ export async function begin(
   }
 
   /*
-   * Reopening an edit that already has clips must not re-score. The pass costs
-   * minutes and money, and the answer is already sitting there.
+   * NO BRIEF MEANS NO MODEL.
+   *
+   * "I uploaded a video, I should be able to edit it" — pressing Edit used to
+   * run a scoring pass that decided what mattered before the owner had seen
+   * their own footage, which is not editing, it is being handed someone else's
+   * opinion. The design already draws this line: "Skip the brief — edit it
+   * yourself" beside "Start cutting →".
+   *
+   * So an empty brief opens the transcript with everything kept and you cut it
+   * down by reading. A brief is what asks for help, and only then does a pass
+   * run. It is also the difference between an edit that costs nothing and one
+   * that costs minutes and money.
    */
   const already = reused
     ? await env.DB
@@ -92,7 +121,7 @@ export async function begin(
         .bind(opts.sourceId)
         .first<{ n: number }>()
     : null;
-  const skipScore = (already?.n ?? 0) > 0;
+  const skipScore = !wantsSomethingNew || (already?.n ?? 0) > 0;
 
   const job = skipScore
     ? null

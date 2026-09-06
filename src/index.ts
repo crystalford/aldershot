@@ -531,12 +531,44 @@ function cameFrom(referer: string | undefined): [string, string] {
   return ["Home", "/"];
 }
 
-/** One source, read. Phase 1's claim made visible. */
+/**
+ * Opening a video.
+ *
+ * This used to be a read-only transcript with three buttons on top, and the
+ * owner's verdict was exact: "when i click the video it just takes me to the
+ * transcript page. that's not what should happen." They were right, and the
+ * reason is worse than a design slip — THERE IS NO SUCH PAGE IN THE DESIGN.
+ * The reference captures go Footage → editor. I invented a reading surface,
+ * put it between the user and the work, and it did nothing but display text.
+ *
+ * So opening a video opens the editor on it. begin() with no brief is
+ * idempotent — it reuses the existing edit rather than making another — so
+ * this resolves to the same workspace every time rather than breeding
+ * "Untitled cut" rows, and it runs no scoring pass, because the user asked to
+ * open their video, not to be told what a model thinks of it.
+ *
+ * A redirect adds no history entry, so Back from the editor goes to Footage
+ * rather than bouncing through here again.
+ *
+ * The page still renders for a video that is not readable yet — while it is
+ * being read, and when the read failed and there is a retry to offer. There is
+ * genuinely nothing to edit in either case.
+ */
 app.get("/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.notFound();
+
+  if (src.transcript_state === "ready") {
+    const { href } = await begin(c.env, {
+      userId: user.id,
+      sourceId: src.id,
+      brief: "",
+      sourceTitle: src.title,
+    });
+    return c.redirect(href, 302);
+  }
 
   const [segments, jobs] = await Promise.all([
     getSegments(c.env.DB, src.id),
@@ -730,7 +762,28 @@ app.get("/p/:id/:stagePath", async (c) => {
   if (!project) return c.notFound();
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
-  const clips = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
+
+  /*
+   * WHOSE CLIPS ARE THESE?
+   *
+   * v2_clips hangs off the SOURCE, not the project — it is the moment library
+   * behind Footage's Clips tab, which is the right shape for a library and
+   * the wrong shape for an edit. The consequence was visible and baffling:
+   * open a video you never asked anything of and it showed you eleven scored
+   * clips with a model's reasons attached, because some earlier briefed edit
+   * of the same footage had left them there. Four edits of one video all read
+   * "11 clips kept · 5:00" because they were all counting one shared set.
+   *
+   * An edit with no brief asked for no pass, so it has no clips of its own and
+   * must not borrow anyone else's. It renders the transcript instead. A briefed
+   * edit is the one that ran a pass and the one that gets the scored blocks.
+   *
+   * This is a scope fix, not the cure: two BRIEFED edits of the same source
+   * still share one `kept` flag, because clip ownership is genuinely wrong in
+   * the schema. See docs/decisions/clip-ownership.md.
+   */
+  const isScratch = !project.brief?.trim();
+  const clips = source && !isScratch ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
 
   /*
    * The Clean up chips' sublabels carry live numbers, so they are computed
@@ -739,8 +792,12 @@ app.get("/p/:id/:stagePath", async (c) => {
    * fabricated count.
    */
   let cleanUps: CleanUp[] = [];
+  /* Pick renders these directly when no pass has run — an unassisted cut's
+     blocks are the transcript itself. */
+  let pickSegments: Awaited<ReturnType<typeof getSegments>> = [];
   if (source && stage === "cut") {
     const segs = await getSegments(c.env.DB, source.id);
+    pickSegments = segs;
     const cuts = parseCuts(project.cuts);
     const minus = (ms: number) => `−${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
 
@@ -873,6 +930,13 @@ app.get("/p/:id/:stagePath", async (c) => {
       renderEditor({
         cleanUps,
         kind: project.kind,
+        /* The transcript, for a cut that never had a pass run over it. */
+        segments: pickSegments.map((sg) => ({
+          idx: sg.idx, start_ms: sg.start_ms, end_ms: sg.end_ms, text: sg.text,
+        })),
+        cuts: parseCuts(project.cuts),
+        sourcePoster: source?.poster_r2_key ?? null,
+        sourceKey: source?.r2_key ?? null,
         cameFrom: cameFrom(c.req.header("referer")),
         projectId: project.id,
         title: project.title,
@@ -1282,8 +1346,49 @@ app.get("/editor", async (c) => {
   const byId = new Map(sources.map((s) => [s.id, s]));
   const live = projects.filter((p) => !p.archived_at).sort((a, b) => b.updated_at - a.updated_at);
 
+  /*
+   * An edit's own numbers, not its source's.
+   *
+   * Every row read "11 clips kept · 5:00 so far" because every row counted the
+   * clips on the SOURCE — so four different edits of one video reported four
+   * identical figures and the list was impossible to tell apart. A scratch
+   * edit has no clips at all; what it has is its own cuts, and its runtime is
+   * the transcript minus them.
+   *
+   * Segments are fetched once per source rather than once per edit, since
+   * several edits of the same video are the normal case here.
+   */
+  const shown = live.slice(0, 6);
+  const scratchSources = [
+    ...new Set(shown.filter((p) => !p.brief?.trim() && p.source_id).map((p) => p.source_id as string)),
+  ];
+  const segsBySource = new Map(
+    await Promise.all(
+      scratchSources.map(async (id) => [id, await getSegments(c.env.DB, id)] as const),
+    ),
+  );
+
   const edits = await Promise.all(
-    live.slice(0, 6).map(async (p) => {
+    shown.map(async (p) => {
+      const isScratch = !p.brief?.trim();
+
+      if (isScratch && p.source_id) {
+        const segs = segsBySource.get(p.source_id) ?? [];
+        const cuts = parseCuts(p.cuts);
+        const dropped = new Set(cuts.filter((x) => x.words === null).map((x) => x.seg));
+        const keptSegs = segs.filter((sg) => !dropped.has(sg.idx));
+        return {
+          id: p.id,
+          title: p.title,
+          poster_r2_key: p.poster_r2_key ?? byId.get(p.source_id)?.poster_r2_key ?? null,
+          sourceFilename: byId.get(p.source_id)?.filename ?? null,
+          kept: keptSegs.length,
+          runtime_s: segs.length ? Math.round(runtimeAfterCuts(segs, cuts)) : null,
+          updated_at: p.updated_at,
+          scratch: true,
+        };
+      }
+
       const clips = p.source_id ? await listClipsForSource(c.env.DB, p.source_id, user.id) : [];
       const kept = clips.filter((cl) => cl.kept);
       return {
@@ -1299,6 +1404,7 @@ app.get("/editor", async (c) => {
           ? Math.round(kept.reduce((n, cl) => n + (cl.end_ms - cl.start_ms), 0) / 1000)
           : null,
         updated_at: p.updated_at,
+        scratch: false,
       };
     }),
   );
@@ -1792,6 +1898,7 @@ app.post("/api/begin", async (c) => {
     sourceId: src.id,
     brief: b.brief || "",
     upgrade: b.upgrade,
+    sourceTitle: src.title,
   });
 
   /* No job means this reopened an edit that already has its clips — there is
