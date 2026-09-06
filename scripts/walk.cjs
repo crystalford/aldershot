@@ -133,7 +133,14 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
     console.log(`   ${d.controls.map((c) => c.name + (c.disabled ? ' [disabled]' : '')).join(' · ')}`);
     if (dead.length) console.log(`   ⚠ links with no destination: ${dead.map((c) => c.name).join(', ')}`);
     if (d.spills.length) console.log('   ⚠ spills past the viewport:\n     ' + d.spills.join('\n     '));
-    const off = d.controls.filter((c) => c.disabled);
+    /*
+     * A disabled control is a finding only when it should be live. The first
+     * block cannot move earlier and the last cannot move later — that is the
+     * control being honest, and reporting it on every single run trains the
+     * reader to skip the warnings that matter.
+     */
+    const EXPECTED_OFF = ['Move earlier', 'Move later'];
+    const off = d.controls.filter((c) => c.disabled && !EXPECTED_OFF.includes(c.name));
     if (off.length) console.log(`   ⚠ disabled: ${off.map((c) => c.name).join(', ')}`);
     return d;
   };
@@ -220,6 +227,18 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
         await page.waitForTimeout(400);
         const nowFirst = await idOf(0);
         console.log(`   reorder:  ${wasFirst} → ${nowFirst}  ${wasFirst !== nowFirst ? 'OK' : '⚠ NO CHANGE'}`);
+      }
+
+      /* Make a short of one block — the OpusClip gesture, in the editor. */
+      const shortBtn = page.locator('.blk-short').first();
+      if (await shortBtn.count()) {
+        const was = ((await shortBtn.textContent()) || '').trim();
+        await shortBtn.click();
+        await page.waitForTimeout(2000);
+        const now = ((await shortBtn.textContent()) || '').trim();
+        console.log(`   short:    "${was}" → "${now}"  ${was !== now ? 'OK' : '⚠ NO CHANGE'}`);
+      } else {
+        console.log('   short:    ⚠ no block offers one');
       }
 
       /* Insert a seam — the "building blocks" gesture. */

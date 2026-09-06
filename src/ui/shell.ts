@@ -179,7 +179,7 @@ p,div{text-wrap:pretty}
    Green-badging all 38 lines shouted the state nobody needed told. */
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:4px 10px;border-radius:${RADIUS.button};white-space:nowrap;transition:background-color .12s ease,color .12s ease}
 .seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
-[data-seg-block]:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
+.blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
 @keyframes blip{0%,100%{opacity:.35}50%{opacity:1}}
 @keyframes viewIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}

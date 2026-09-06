@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildSummary } from "../src/ui/pages/build.ts";
+import { buildSummary } from "../src/ui/pages/cut.ts";
 
 const beat = (o: Partial<{ kind: string; media_r2_key: string | null; clip_id: string | null }> = {}) => ({
   kind: "clip",
@@ -119,4 +119,21 @@ test("rate and channel count are read, not assumed", () => {
 test("a buffer that isn't WAV measures as unknown, not as zero-length audio", () => {
   assert.equal(wavDurationMs(new Uint8Array(100)), 0);
   assert.equal(wavDurationMs(new Uint8Array([0xff, 0xfb, 0x90, 0x00])), 0);
+});
+
+/*
+ * A block you struck is a block you decided against. Counting it as
+ * outstanding made the editor report "3 voiceovers to go." about a cut where
+ * one of the three had already been cut.
+ */
+test("a struck block is not outstanding work", () => {
+  const beats = [
+    beat({ kind: "vo" }),
+    { ...beat({ kind: "vo" }), struck: "1" },
+  ];
+  assert.equal(buildSummary(beats), "1 voiceover to go.");
+});
+
+test("every block struck reads as nothing laid down, not as finished", () => {
+  assert.equal(buildSummary([{ ...beat({ kind: "vo" }), struck: "1" }]), "nothing laid down yet.");
 });

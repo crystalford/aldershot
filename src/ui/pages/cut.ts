@@ -37,6 +37,8 @@ export interface CutData {
   runtimeMs: number;
   keptCount: number;
   plan: string;
+  /** The inserted blocks, for the "what still needs you" line in the footer. */
+  beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown }>;
   cameFrom: [string, string];
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
@@ -86,6 +88,24 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
         dir === -1 ? iconArrowUp({ size: 11 }) : iconArrowDown({ size: 11 })
       }</button>`;
 
+  /*
+   * The OpusClip gesture, on any block you like.
+   *
+   * "A 9:16 export of one strong block IS an OpusClip short. It should not
+   * need a separate place, a separate table, or a separate word."
+   * (docs/decisions/blocks.md). So it is a control on the block, not a
+   * surface — and it is on EVERY block, not only the ones the model scored,
+   * because being able to disagree with the model is the point.
+   *
+   * A recording has no range in the source to make vertical, so it does not
+   * get the control rather than getting one that fails.
+   */
+  const short =
+    b.origin === "footage" && b.end_ms > b.start_ms
+      ? `<button class="blk-short" data-block="${esc(b.id)}"
+        style="background:none;border:none;padding:0 2px;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill">Make a short</span></button>`
+      : "";
+
   return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
       style="display:flex;gap:12px;align-items:baseline;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface};${struck ? "opacity:.5;" : ""}">
     <button class="blk-play" data-start="${b.start_ms}" data-media="${esc(b.mediaKey ?? "")}"
@@ -97,6 +117,7 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
     ${judged}
     <div style="flex:none;display:flex;align-items:center;gap:2px">
       ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
+      ${short}
       <button class="blk-strike" data-block="${esc(b.id)}"
         style="background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill" data-kept="${struck ? 0 : 1}">${struck ? "Add back" : "Cut"}</span></button>
     </div>
@@ -109,6 +130,41 @@ function seam(projectId: string, at: number): string {
     <button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" aria-label="Add something here"
       style="width:22px;height:22px;border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
   </div>`;
+}
+
+/**
+ * What this cut still needs, in the prototype's own phrasing — "2 voiceovers,
+ * 1 clip to go." or "every beat is filled."
+ *
+ * This was the tail of Build's lede. Build is gone, and for a while this
+ * function survived it with nothing but its own test calling it — real,
+ * tested, unreachable. It matters more now than it did there: a block you
+ * inserted and never recorded into is invisible work-in-progress, and the
+ * editor is the only place you would find out.
+ *
+ * Counted from the beats themselves rather than stored, so it cannot drift out
+ * of step with the blocks above it.
+ */
+export function buildSummary(
+  all: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown }>,
+  kind = "essay",
+): string {
+  /* A block you struck is one you decided against; it is not outstanding
+     work. Counting it said "3 voiceovers to go" about a cut where one of the
+     three had already been cut. */
+  const beats = all.filter((b) => !(Boolean(b.struck) && b.struck !== "0"));
+  if (!beats.length) return "nothing laid down yet.";
+
+  const voLeft = beats.filter((b) => (b.kind === "vo" || b.kind === "react") && !b.media_r2_key).length;
+  const srcLeft = beats.filter((b) => (b.kind === "clip" || b.kind === "stock") && !b.clip_id).length;
+  const genLeft = beats.filter((b) => b.kind === "generated" && !b.media_r2_key).length;
+
+  const parts: string[] = [];
+  if (voLeft) parts.push(`${voLeft} ${kind === "reaction" ? "reaction" : "voiceover"}${voLeft > 1 ? "s" : ""}`);
+  if (srcLeft) parts.push(`${srcLeft} clip${srcLeft > 1 ? "s" : ""}`);
+  if (genLeft) parts.push(`${genLeft} visual${genLeft > 1 ? "s" : ""}`);
+
+  return parts.length ? `${parts.join(", ")} to go.` : "every beat is filled.";
 }
 
 export function renderCut(d: CutData): string {
@@ -167,6 +223,14 @@ export function renderCut(d: CutData): string {
   </div>
   <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
     <span id="cut-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${d.keptCount} kept · ${hms(d.runtimeMs / 1000)}</span>
+    ${
+      /* Only when something IS outstanding. "every beat is filled." on a cut
+         with nothing in it is noise, and on a finished one it is a pat on the
+         back nobody asked for. */
+      d.beats.length && buildSummary(d.beats) !== "every beat is filled."
+        ? `<span data-content style="font-size:${SIZE.secondary};color:${ACCENT.gold};white-space:nowrap">${esc(buildSummary(d.beats))}</span>`
+        : ""
+    }
     <button class="export-open" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
   </div>`;
 }

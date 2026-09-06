@@ -363,7 +363,39 @@ export async function listClipsForSource(db: D1Database, sourceId: string, userI
   return results ?? [];
 }
 
-/** Keep or drop a clip. Undoable — nothing here is destructive. */
+/**
+ * Material you can build with — everything except finished shorts.
+ *
+ * A short is an OUTPUT: a 9:16 export of one block, made from the cut. Offering
+ * it back as something to put INTO a cut is circular, and it is how Clipping's
+ * rows ended up mixed into the editor's clip picker.
+ *
+ * The filter lives here rather than at each call site because the call sites
+ * kept forgetting it.
+ */
+export async function cutClips(db: D1Database, sourceId: string, userId: string): Promise<Clip[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM v2_clips
+        WHERE source_id=? AND user_id=? AND deleted_at IS NULL AND origin <> 'clipping'
+        ORDER BY start_ms`,
+    )
+    .bind(sourceId, userId)
+    .all<Clip>();
+  return results ?? [];
+}
+
+/**
+ * Keep or drop a clip. Undoable — nothing here is destructive.
+ *
+ * `kept` means ONE thing: I want this moment. That is what Footage's Clips
+ * shelf lists and what Clipping's toggle sets.
+ *
+ * It used to also decide an edit's runtime and its "N clips kept" line, so
+ * keeping a Clipping short silently edited your cut. It does not any more: a
+ * cut is its blocks — ranges and order, see src/blocks.ts — and every surface
+ * that reports on one now asks blocks rather than clips.
+ */
 export async function setKept(db: D1Database, clipId: string, userId: string, kept: boolean): Promise<void> {
   await db
     .prepare(`UPDATE v2_clips SET kept=? WHERE id=? AND user_id=?`)
@@ -460,6 +492,32 @@ export async function setBeatMedia(db: D1Database, beatId: string, key: string, 
     .prepare(`UPDATE beats SET media_r2_key=?, recorded_at=?, dur_ms=COALESCE(?, dur_ms) WHERE id=?`)
     .bind(key, Date.now(), durMs || null, beatId)
     .run();
+}
+
+/**
+ * Strike an inserted block, or put it back.
+ *
+ * A beat carries its own struck flag rather than living in `cuts`, because
+ * `cuts` are ranges of the SOURCE transcript and a recording has no range in
+ * it. Same discipline either way: nothing is deleted, so it renders struck
+ * through and can be restored.
+ */
+export async function toggleBeatStruck(
+  db: D1Database,
+  projectId: string,
+  beatId: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(`SELECT struck FROM beats WHERE id=? AND project_id=?`)
+    .bind(beatId, projectId)
+    .first<{ struck: string | null }>();
+  if (!row) return false;
+  const next = Boolean(row.struck) && row.struck !== "0" ? null : "1";
+  await db
+    .prepare(`UPDATE beats SET struck=? WHERE id=? AND project_id=?`)
+    .bind(next, beatId, projectId)
+    .run();
+  return next !== null;
 }
 
 export async function getBeats(db: D1Database, projectId: string): Promise<Beat[]> {

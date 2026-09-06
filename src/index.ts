@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip }
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
+import { cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -37,9 +37,7 @@ import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { nameUnnamedSources } from "./naming.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
-import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
-import { renderBuild, buildSummary } from "./ui/pages/build.ts";
 import { renderProjects } from "./ui/pages/projects.ts";
 import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
@@ -901,6 +899,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         sourceKey: source?.r2_key ?? null,
         posterKey: source?.poster_r2_key ?? null,
         blocks,
+        beats,
         cuts,
         runtimeMs: runtimeMs(blocks, cuts),
         keptCount: blocks.filter((b: Block) => !b.struck).length,
@@ -959,6 +958,100 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
  * order records where — so the insert survives even if the transcript later
  * changes underneath it.
  */
+/**
+ * Make a vertical short out of one block.
+ *
+ * This is the whole OpusClip half of the idea, and it belongs HERE rather than
+ * on a surface of its own:
+ *
+ * > "A 9:16 export of one strong block IS an OpusClip short. It should not
+ * >  need a separate place, a separate table, or a separate word."
+ * >  — docs/decisions/blocks.md
+ *
+ * Any block can become one — the model does not have to have picked it. That
+ * is the difference from a tool that only renders what it found: you can
+ * disagree with it.
+ *
+ * A clip row is created for the block's range so the EXISTING short renderer
+ * runs unchanged. It is origin 'clipping' because that is what it is — a
+ * short — and origin is exactly what keeps it out of your cut now that `kept`
+ * means one thing.
+ */
+app.post("/api/projects/:id/blocks/short", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ block?: string; aspect?: string; captionStyle?: string }>(c);
+  if (!b.block) return c.json({ error: "which block?" }, 400);
+
+  const source = await getSource(c.env.DB, project.source_id, user.id);
+  if (!source) return c.json({ error: "not found" }, 404);
+
+  const [segments, beats] = await Promise.all([
+    getSegments(c.env.DB, source.id),
+    getBeats(c.env.DB, project.id),
+  ]);
+  const cuts = parseCuts(project.cuts);
+  const blocks = buildBlocks({
+    segments,
+    beats,
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+    posterKey: source.poster_r2_key,
+  });
+
+  const block = blocks.find((x) => x.id === b.block);
+  if (!block) return c.json({ error: "that block is gone" }, 404);
+  /* A recording has no range in the source to cut from, so there is nothing
+     to make vertical yet. Say so rather than rendering an empty file. */
+  if (block.end_ms <= block.start_ms) {
+    return c.json({ error: "Record something into this block first." }, 400);
+  }
+
+  /* Unrecognised values fall back rather than reaching ffmpeg: 9:16 because a
+     short is vertical, and no captions because burned-in text cannot be taken
+     back out of a finished file. */
+  const aspect = ASPECTS.includes(b.aspect as never) ? (b.aspect as string) : "9:16";
+  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "None";
+
+  /* Reuse a clip already covering this range rather than piling up a row per
+     press — the same overlap rule saveClips uses. */
+  const existing = await listClipsForSource(c.env.DB, source.id, user.id);
+  const hit = existing.find((cl) => cl.origin === "clipping" && overlapFraction(block, cl) > 0.8);
+  const clip =
+    hit ??
+    (
+      await saveClips(
+        c.env.DB,
+        { user_id: user.id, source_id: source.id, origin: "clipping", posterKey: source.poster_r2_key },
+        [{
+          start_ms: block.start_ms,
+          end_ms: block.end_ms,
+          quote: block.text,
+          why: block.why ?? "You picked this one.",
+          score: block.score ?? 0,
+          heat: 0,
+        }],
+      )
+    )[0];
+  if (!clip) return c.json({ error: "couldn't make that one" }, 500);
+
+  const renderId = await createShortRender(c.env.DB, {
+    userId: user.id,
+    clipId: clip.id,
+    aspect,
+    captionStyle,
+  });
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: clip.id });
+  await dispatch(c.env, c.executionCtx, {
+    type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
+  });
+
+  return c.json({ ok: true, clipId: clip.id, renderId, jobId: job.id });
+});
+
 app.post("/api/projects/:id/blocks/insert", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1004,24 +1097,65 @@ app.post("/api/projects/:id/cuts", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ seg: number; word: number | null; kind: "word" | "segment" | "fillers" | "pauses" }>(c);
+  const b = await body<{
+    /** Block id, e.g. "s:12" or "b:<beatId>". Preferred over `seg`. */
+    block?: string;
+    seg?: number;
+    word?: number | null;
+    kind: "word" | "segment" | "fillers" | "pauses";
+  }>(c);
   const segments = await getSegments(c.env.DB, project.source_id);
   let cuts = parseCuts(project.cuts);
 
-  if (b.kind === "fillers") {
+  /*
+   * Striking is a verb on a BLOCK, and blocks come in two kinds.
+   *
+   * A footage block is a range of the transcript, struck through `cuts`. A
+   * block you inserted has no range in the source at all, so it carries its
+   * own flag. The client used to send Number(id.slice(2)) for both, which for
+   * a beat id is NaN — and NaN is typeof "number", so it passed the guard,
+   * wrote {seg: NaN} into cuts, serialised to null, and was thrown away again
+   * by parseCuts on the next read. Striking a block you added did nothing at
+   * all, silently.
+   */
+  if (b.kind === "segment" && b.block?.startsWith("b:")) {
+    const found = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
+    if (!found) return c.json({ error: "that block is gone" }, 404);
+  } else if (b.kind === "fillers") {
     cuts = addCuts(cuts, fillerCuts(segments));
+    await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
   } else if (b.kind === "pauses") {
     cuts = addCuts(cuts, pauseCuts(segments));
-  } else if (b.kind === "segment" && typeof b.seg === "number") {
-    cuts = toggleSegment(cuts, b.seg);
-  } else if (b.kind === "word" && typeof b.seg === "number" && typeof b.word === "number") {
-    cuts = toggleWord(cuts, b.seg, b.word);
+    await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
+  } else if (b.kind === "segment" && Number.isInteger(b.seg)) {
+    cuts = toggleSegment(cuts, b.seg as number);
+    await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
+  } else if (b.kind === "word" && Number.isInteger(b.seg) && Number.isInteger(b.word)) {
+    cuts = toggleWord(cuts, b.seg as number, b.word as number);
+    await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
   } else {
     return c.json({ error: "bad cut" }, 400);
   }
 
-  await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
-  return c.json({ cuts, afterS: runtimeAfterCuts(segments, cuts) });
+  /*
+   * The runtime the BLOCKS give, not the transcript's.
+   *
+   * runtimeAfterCuts knows only about segments, so an inserted recording added
+   * nothing to the figure in the footer and striking one changed nothing —
+   * even once the strike itself worked.
+   */
+  const beats = await getBeats(c.env.DB, project.id);
+  const blocks = buildBlocks({
+    segments,
+    beats,
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+  });
+  return c.json({
+    cuts,
+    afterS: runtimeMs(blocks, cuts) / 1000,
+    kept: blocks.filter((x) => !x.struck).length,
+  });
 });
 
 /**
@@ -1366,7 +1500,9 @@ app.get("/api/projects/:id/clips", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project?.source_id) return c.json({ clips: [] });
 
-  const clips = await listClipsForSource(c.env.DB, project.source_id, user.id);
+  /* Cut material only. A Clipping short is an export of a moment, not
+     something you can put in a beat. */
+  const clips = await cutClips(c.env.DB, project.source_id, user.id);
   return c.json({
     clips: clips.map((cl) => ({
       id: cl.id,
@@ -1518,52 +1654,51 @@ app.get("/editor", async (c) => {
    * several edits of the same video are the normal case here.
    */
   const shown = live.slice(0, 6);
-  const scratchSources = [
-    ...new Set(shown.filter((p) => !p.brief?.trim() && p.source_id).map((p) => p.source_id as string)),
-  ];
+
+  /* Segments once per SOURCE, not once per edit — several edits of one video
+     is the normal case here. */
+  const editSources = [...new Set(shown.map((p) => p.source_id).filter((x): x is string => !!x))];
   const segsBySource = new Map(
-    await Promise.all(
-      scratchSources.map(async (id) => [id, await getSegments(c.env.DB, id)] as const),
-    ),
+    await Promise.all(editSources.map(async (id) => [id, await getSegments(c.env.DB, id)] as const)),
   );
 
   const edits = await Promise.all(
     shown.map(async (p) => {
-      const isScratch = !p.brief?.trim();
+      /*
+       * An edit's numbers come from its BLOCKS, which is what a cut is.
+       *
+       * There were two branches here: a scratch edit counted its transcript
+       * minus its cuts, and a briefed one summed the clips whose `kept` was
+       * set. The second was left from before blocks existed, and it made
+       * `kept` decide two unrelated things — so keeping a Clipping short
+       * changed an edit's runtime. It also disagreed with the editor, which
+       * has always computed the runtime from the cut itself.
+       *
+       * One definition now, the same one src/blocks.ts gives the editor and
+       * the renderer. `kept` is left to mean one thing: a moment you want,
+       * which is what Footage's Clips shelf and Clipping both read it as.
+       */
+      const segs = p.source_id ? (segsBySource.get(p.source_id) ?? []) : [];
+      const beats = await getBeats(c.env.DB, p.id);
+      const cuts = parseCuts(p.cuts);
+      const blocks = buildBlocks({
+        segments: segs,
+        beats,
+        cuts,
+        order: parseOrder(p.block_order ?? null),
+      });
 
-      if (isScratch && p.source_id) {
-        const segs = segsBySource.get(p.source_id) ?? [];
-        const cuts = parseCuts(p.cuts);
-        const dropped = new Set(cuts.filter((x) => x.words === null).map((x) => x.seg));
-        const keptSegs = segs.filter((sg) => !dropped.has(sg.idx));
-        return {
-          id: p.id,
-          title: p.title,
-          poster_r2_key: p.poster_r2_key ?? byId.get(p.source_id)?.poster_r2_key ?? null,
-          sourceFilename: byId.get(p.source_id)?.filename ?? null,
-          kept: keptSegs.length,
-          runtime_s: segs.length ? Math.round(runtimeAfterCuts(segs, cuts)) : null,
-          updated_at: p.updated_at,
-          scratch: true,
-        };
-      }
-
-      const clips = p.source_id ? await listClipsForSource(c.env.DB, p.source_id, user.id) : [];
-      const kept = clips.filter((cl) => cl.kept);
       return {
         id: p.id,
         title: p.title,
-        // A project borrows its first clip's frame until it has been rendered,
-        // for the same reason Projects does: a black rectangle stops the
-        // surface reading as a video tool.
-        poster_r2_key: p.poster_r2_key ?? kept[0]?.frame_r2_key ?? null,
+        poster_r2_key: p.poster_r2_key ?? (p.source_id ? (byId.get(p.source_id)?.poster_r2_key ?? null) : null),
         sourceFilename: p.source_id ? (byId.get(p.source_id)?.filename ?? null) : null,
-        kept: kept.length,
-        runtime_s: kept.length
-          ? Math.round(kept.reduce((n, cl) => n + (cl.end_ms - cl.start_ms), 0) / 1000)
-          : null,
+        kept: blocks.filter((b) => !b.struck).length,
+        runtime_s: blocks.length ? Math.round(runtimeMs(blocks, cuts) / 1000) : null,
         updated_at: p.updated_at,
-        scratch: false,
+        /* Still reported, because the intake words an unbriefed edit's count
+           as "lines" and a briefed one's as "clips kept". */
+        scratch: !p.brief?.trim(),
       };
     }),
   );

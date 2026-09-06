@@ -103,7 +103,13 @@ export function renderEditorIntake(d: EditorIntakeData): string {
     if (e.sourceFilename) parts.push(e.sourceFilename);
     /* "clips" is the scored vocabulary and means nothing on an edit that was
        never scored — there, the unit is lines of transcript. */
-    if (e.kept) parts.push(e.scratch ? `${e.kept} line${e.kept === 1 ? "" : "s"}` : `${e.kept} clips kept`);
+    if (e.kept) {
+      parts.push(
+        e.scratch
+          ? `${e.kept} line${e.kept === 1 ? "" : "s"}`
+          : `${e.kept} clip${e.kept === 1 ? "" : "s"} kept`,
+      );
+    }
     if (e.runtime_s) parts.push(`${hms(e.runtime_s)} so far`);
     return parts.length ? parts.join(" · ") : touched(e.updated_at);
   };

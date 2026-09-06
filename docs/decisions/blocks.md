@@ -89,8 +89,7 @@ Shippable stages, so it can be judged early rather than at the end:
    at `/p/:id/cut`; the four old stage paths are aliases so bookmarks survive.
    Blocks come from segments, with beats interleaved.
 2. ~~**Auto-name the cut.**~~ Done — see below.
-3. **Fold Clipping in.** 9:16 becomes an export; "find the strong bits" becomes
-   an assist that scores blocks in place; `kept` gets one meaning.
+3. ~~**Fold Clipping in.**~~ Done — see below.
 
 ## Naming (stage 2)
 
@@ -118,3 +117,39 @@ Two failure modes are handled by refusing rather than guessing:
 
 Footage read before this existed is named by the hourly sweep, bounded per run
 so a large library costs small calls spread over hours.
+
+## Folding Clipping in (stage 3)
+
+**9:16 is an export.** Every footage block carries "Make a short": it renders
+that block vertical through the renderer that already existed, and the result
+lands on Clipping's shelf beside anything the batch found. Any block can become
+one — the model does not have to have picked it, because being able to disagree
+with the model is the point.
+
+**"Find the strong bits" is an assist**, inside the editor, scoring blocks in
+place. It was already there; what was missing was somewhere for the answer to
+go, which is the control above.
+
+**`kept` means one thing: a moment you want.** That is what Footage's Clips
+shelf lists and what Clipping's toggle sets. It no longer decides anything
+about a cut — a cut is its blocks, ranges and order, and every surface that
+reports on one now asks blocks. Before this, an edit's runtime and its "N clips
+kept" line were summed from clips whose `kept` was set, so keeping a Clipping
+short silently changed your cut's runtime.
+
+### Two things this turned up
+
+**You could not cut a block you inserted.** The client sent
+`Number(id.slice(2))` for every strike; a beat's id is a ULID, so that is NaN —
+and NaN is `typeof "number"`, so it passed the server's guard, wrote `{seg:
+NaN}`, serialised to `null`, and was discarded by `parseCuts` on the next read.
+Silently, every time. Striking is now a verb on a *block*, and the two kinds go
+to the two places that can hold the answer: a footage block to `cuts`, an
+inserted one to its own `struck` flag, which `buildBlocks` had been ignoring.
+
+**Three surfaces were dead code still being maintained.** `editor.ts`,
+`build.ts` and `script.ts` were imported and never called; the walk was driving
+their selectors and reporting "0 blocks" on pages with 24. `buildSummary`
+survived with nothing but its own test calling it, and is now what the editor
+footer uses to say what still needs you — a block you inserted and never
+recorded into is otherwise invisible.

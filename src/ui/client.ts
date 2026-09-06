@@ -401,6 +401,7 @@ if (blocksEl) {
   blocksEl.addEventListener("click", async (e) => {
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");
+    const short = e.target.closest(".blk-short");
     const move = e.target.closest(".blk-move");
     const play = e.target.closest(".blk-play");
     const insert = e.target.closest(".blk-insert");
@@ -422,7 +423,7 @@ if (blocksEl) {
       word.style.textDecoration = gone ? "" : "line-through";
       word.style.color = gone ? "" : "rgba(236,236,241,0.28)";
       try {
-        const out = await sendCut({ kind: "word", seg, word: idx });
+        const out = await sendCut({ kind: "word", block: word.getAttribute("data-block"), seg, word: idx });
         retotal(out.afterS);
       } catch (err) {
         word.dataset.cut = gone ? "1" : "0";
@@ -439,7 +440,11 @@ if (blocksEl) {
       paintBlock(row, next);
       retotal();
       try {
-        const out = await sendCut({ kind: "segment", seg: Number(row.getAttribute("data-block").slice(2)), word: null });
+        /* The BLOCK id, not a number parsed out of it. A beat's id is a ULID,
+           and Number(ULID) is NaN — which the server accepted and then threw
+           away, so striking a block you inserted did nothing. */
+        const id = row.getAttribute("data-block");
+        const out = await sendCut({ kind: "segment", block: id, seg: Number(id.slice(2)), word: null });
         retotal(out.afterS);
       } catch (err) {
         paintBlock(row, !next);
@@ -464,6 +469,34 @@ if (blocksEl) {
       } catch (err) {
         move.disabled = false;
         toast((err && err.message) || "Couldn't move that");
+      }
+      return;
+    }
+
+    /* Make a vertical short of this one block. The OpusClip half of the idea,
+       on the surface you are already editing rather than a place of its own.
+       It renders in the background, so the button reports where it went
+       instead of freezing the row. */
+    if (short) {
+      if (short.dataset.busy === "1") return;
+      short.dataset.busy = "1";
+      const pill = short.querySelector(".seg-pill");
+      const label = pill ? pill.textContent : "";
+      if (pill) pill.textContent = "making it…";
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/blocks/short", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ block: short.getAttribute("data-block"), aspect: "9:16" }),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "Couldn't make that");
+        if (pill) pill.textContent = "in Clipping";
+        toast("Making it — it'll be in Clipping.");
+      } catch (err) {
+        short.dataset.busy = "0";
+        if (pill) pill.textContent = label;
+        toast((err && err.message) || "Couldn't make that");
       }
       return;
     }
@@ -1765,122 +1798,13 @@ if (planAction) {
 }
 
 /*
- * Keep/drop on an unassisted cut.
- *
- * The block IS a transcript line, so this posts the same cut model Script
- * uses — the two stages edit one thing rather than two.
- *
- * It repaints the block in place rather than reloading. A reload per line is
- * what this was, and on a 38-line transcript that is 38 full page loads to
- * make one edit, each one throwing away your scroll position. The toggle is
- * already a toggle server-side, so the optimistic flip is always the answer
- * the server is about to give; if the save fails it flips back and says so.
+ * The unassisted-cut keep/drop handler lived here, bound to #pick-scratch,
+ * .seg-keep and [data-seg-block] — the markup of the four-stage editor,
+ * deleted with src/ui/pages/editor.ts. It had been unreachable since the
+ * rebuild and was still being maintained: the walk was driving those same
+ * selectors and reporting "0 blocks" on pages with 24. The live handler is
+ * the .blk delegation further up this file.
  */
-const scratch = document.querySelector("#pick-scratch");
-if (scratch) {
-  const runtimeEl = document.querySelector("#scratch-runtime");
-
-  /* Kept count and runtime, recomputed from the DOM — the blocks carry their
-     own duration, so the total never drifts from what is on screen. */
-  const setTotals = (n, ms) => {
-    if (!runtimeEl) return;
-    const secs = Math.max(0, Math.round(ms / 1000));
-    const h = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60), ss = secs % 60;
-    const clock = h > 0
-      ? h + ":" + String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0")
-      : mm + ":" + String(ss).padStart(2, "0");
-    runtimeEl.textContent = n + " kept \u00b7 " + clock;
-    /* The header carries the same two numbers and is server-rendered, so
-       without this the top of the page said "38 kept" while its own footer
-       said 37. One edit, one count. */
-    const hr = document.querySelector("#head-runtime");
-    const hk = document.querySelector("#head-kept");
-    if (hr) hr.textContent = clock;
-    if (hk) hk.textContent = n + " kept";
-  };
-
-  /* The optimistic figure, from the blocks themselves — instant, and
-     corrected by the server's answer a moment later. */
-  const retotal = () => {
-    let ms = 0;
-    let n = 0;
-    scratch.querySelectorAll("[data-seg-block]").forEach((el) => {
-      if (el.getAttribute("data-kept") !== "1") return;
-      n += 1;
-      ms += Number(el.getAttribute("data-ms") || 0);
-    });
-    setTotals(n, ms);
-  };
-
-  const paint = (block, kept) => {
-    const text = block.querySelector("[data-seg-text]");
-    block.setAttribute("data-kept", kept ? "1" : "0");
-    block.style.opacity = kept ? "" : ".5";
-    if (text) text.style.textDecoration = kept ? "" : "line-through";
-    const pill = block.querySelector(".seg-pill");
-    if (pill) {
-      pill.textContent = kept ? "Cut" : "Add back";
-      pill.setAttribute("data-kept", kept ? "1" : "0");
-    }
-  };
-
-  /* Clicking a line's frame seeks the player to it. Reading and watching are
-     the same gesture here — that is the point of the surface. */
-  const scratchVideo = document.querySelector("#scratch-video");
-
-  /* No poster on this source? Take one from the video that is right here. */
-  if (scratchVideo && scratchVideo.dataset.needsPoster === "1" && scratchVideo.dataset.source) {
-    const grab = () => healPoster(scratchVideo, scratchVideo.dataset.source);
-    if (scratchVideo.readyState >= 1) grab();
-    else scratchVideo.addEventListener("loadedmetadata", grab, { once: true });
-  }
-  scratch.querySelectorAll(".seg-play").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!scratchVideo) return;
-      scratchVideo.currentTime = Number(btn.getAttribute("data-start") || 0) / 1000;
-      scratchVideo.play().catch(() => {});
-    });
-  });
-
-  /* Both the line and the pill toggle it, so the whole row is the target. The
-     in-flight guard lives on the BLOCK rather than the button, or clicking the
-     text and then the pill would fire two toggles that cancel out. */
-  scratch.querySelectorAll(".seg-keep").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const block = btn.closest("[data-seg-block]");
-      if (!block || block.dataset.busy === "1") return;
-      const next = block.getAttribute("data-kept") !== "1";
-
-      block.dataset.busy = "1";
-      paint(block, next);
-      retotal();
-
-      try {
-        const res = await fetch("/api/projects/" + scratch.getAttribute("data-project") + "/cuts", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ kind: "segment", seg: Number(btn.getAttribute("data-seg")), word: null }),
-        });
-        if (!res.ok) throw new Error("That didn't save");
-        /* Correct to the server's own figure. The optimistic total above adds
-           and subtracts whole segments, but a line can carry word-level trims
-           made in Script, so the local guess drifts. afterS comes from the
-           same function the render uses. */
-        const out = await res.json().catch(() => null);
-        if (out && typeof out.afterS === "number" && runtimeEl) {
-          const n = scratch.querySelectorAll('[data-seg-block][data-kept="1"]').length;
-          setTotals(n, out.afterS * 1000);
-        }
-      } catch (err) {
-        paint(block, !next);
-        retotal();
-        toast((err && err.message) || "That didn't save");
-      } finally {
-        block.dataset.busy = "0";
-      }
-    });
-  });
-}
 
 /* The Build preview. Plays the real source, seeking to whichever beat you
    click — which is what the scrubber under it always looked like it did. */

@@ -196,6 +196,16 @@ async function checkStrings() {
         "here yet' is its wording on Home.",
     ],
     [
+      "Make a short",
+      "The prototype puts shorts on a surface of their own and its verb is " +
+        "'Cut shorts from it' — a batch, on a whole video. The control this " +
+        "labels is one block, in the editor: a 9:16 export of the piece you " +
+        "are looking at. Its own word for the result is 'short', and the " +
+        "plural batch phrasing is wrong for a single block, so the noun is " +
+        "the prototype's and only the number changed. See " +
+        "docs/decisions/blocks.md — shorts are an export, not a surface.",
+    ],
+    [
       "Close account",
       "The prototype is a permanently-signed-in demo with no account lifecycle " +
         "at all, so it has no string for this. It cannot be skipped: you " +

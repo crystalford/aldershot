@@ -56,6 +56,14 @@ export interface BeatLike {
   dur_ms: number | null;
   media_r2_key: string | null;
   clip_id: string | null;
+  /**
+   * Struck, as stored. Anything truthy counts — the column is TEXT and has
+   * held 1, '1' and null over its life.
+   *
+   * This was not read at all: fromBeat hardcoded struck:false, so a block you
+   * inserted could be cut on screen and was never cut in the render.
+   */
+  struck?: unknown;
 }
 
 export interface ScoreLike {
@@ -119,7 +127,7 @@ export function buildBlocks(opts: {
     end_ms: b.dur_ms ?? 0,
     text: b.text ?? "",
     words: [],
-    struck: false,
+    struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: null,
     mediaKey: b.media_r2_key,
