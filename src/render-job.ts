@@ -24,6 +24,39 @@ import { ulid } from "./id.ts";
 export type Format = "mp4_720" | "mp4_1080" | "mp4_4k";
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:5";
 
+/**
+ * What you can actually export as, and what each one is for.
+ *
+ * These existed only as a type. "Export as" hardcoded mp4_1080 and 16:9 —
+ * a button whose label promises a choice and then asks nothing — so vertical
+ * was impossible to produce and 4K, which Settings SELLS as a Studio feature,
+ * could not be selected by anyone at all.
+ *
+ * `pro` marks what the paid plan is for. The gate is enforced server-side as
+ * well as shown here, because the API took whatever it was handed: a free
+ * account could have posted mp4_4k directly and been rendered it.
+ */
+export const FORMATS: Array<{ id: Format; label: string; note: string; pro?: boolean }> = [
+  { id: "mp4_720", label: "720p", note: "small file" },
+  { id: "mp4_1080", label: "1080p", note: "the usual" },
+  { id: "mp4_4k", label: "4K", note: "Studio", pro: true },
+];
+
+export const RENDER_ASPECTS: Array<{ id: Aspect; label: string; note: string }> = [
+  { id: "16:9", label: "16:9", note: "landscape" },
+  { id: "9:16", label: "9:16", note: "vertical" },
+  { id: "1:1", label: "1:1", note: "square" },
+  { id: "4:5", label: "4:5", note: "portrait" },
+];
+
+export function isFormat(v: unknown): v is Format {
+  return FORMATS.some((f) => f.id === v);
+}
+
+export function isAspect(v: unknown): v is Aspect {
+  return RENDER_ASPECTS.some((a) => a.id === v);
+}
+
 export interface RenderRow {
   id: string;
   project_id: string | null;

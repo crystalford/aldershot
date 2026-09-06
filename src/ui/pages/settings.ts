@@ -12,6 +12,7 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
+import type { TrashRow } from "../../library-ops.ts";
 
 export interface Meter {
   label: string;
@@ -36,6 +37,8 @@ export interface SettingsData {
   meters: Meter[];
   /** Whether Stripe is configured. A button that cannot charge is not shown. */
   billingReady: boolean;
+  /** What is in the bin, so the "deleted pile" the subtitle promises exists. */
+  trash: TrashRow[];
   /** Null for anyone but the owner — the panel is not rendered at all. */
   cost: {
     lines: CostLine[];
@@ -61,6 +64,12 @@ function account(name: string | null): string {
       <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">Solo workspace · no one else has access</div>
     </div>
     <a href="/landing" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};flex:none;white-space:nowrap">Signed-out site</a>
+    <!-- There was no way to sign out. Anywhere. A form post rather than a
+         link, because signing out is a state change and a GET that ends your
+         session can be triggered by anything that prefetches a URL. -->
+    <form method="POST" action="/auth/signout" style="flex:none">
+      <button type="submit" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap;border:none;cursor:pointer;font-family:${FONT.ui}">Sign out</button>
+    </form>
     <span style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none;white-space:nowrap">Manage</span>
   </div>`;
 }
@@ -175,10 +184,37 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
   </div>`;
 }
 
+/**
+ * The deleted pile.
+ *
+ * This page's own subtitle has always said "Defaults, storage, and the deleted
+ * pile", and there was no deleted pile — the trash table sat in the schema
+ * unwritten and unread. Now that things can be deleted, the promise has to be
+ * kept, or deleting means losing.
+ */
+function trashBlock(rows: TrashRow[]): string {
+  const when = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  const row = (t: TrashRow) => `<div data-item-row style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+    <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.label)}</span>
+    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(t.entity === "source" ? "video" : "edit")} · ${esc(when(t.deleted_at))}</span>
+    <button class="trash-restore" data-kind="${t.entity === "source" ? "sources" : "projects"}" data-id="${esc(t.entity_id)}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Put it back</button>
+  </div>`;
+
+  return `${sectionLabel("Deleted")}
+  <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
+    rows.length
+      ? rows.map(row).join("")
+      : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing deleted</div>`
+  }</div>
+  <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Nothing is ever deleted. Sources can live here against your storage, move to cold storage, or be pointed at your own bucket.</div>`;
+}
+
 export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
 <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
 ${account(d.name)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
+${trashBlock(d.trash)}
 ${d.cost ? costPanel(d.cost) : ""}`;
 }

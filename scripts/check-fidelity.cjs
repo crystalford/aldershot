@@ -196,6 +196,13 @@ async function checkStrings() {
         "here yet' is its wording on Home.",
     ],
     [
+      "Sign out",
+      "The prototype is a demo that is always signed in, so it has no sign-out " +
+        "anywhere and no string for one. Real accounts need to be able to leave; " +
+        "'Sign out' is the plainest words for it and matches the voice of the " +
+        "controls beside it.",
+    ],
+    [
       "drafting the acts",
       "A job stage label. The prototype names a few stages ('reading it for " +
         "meaning', 'picking out the moments') but never enumerates them, and " +

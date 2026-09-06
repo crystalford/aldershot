@@ -163,6 +163,11 @@ p,div{text-wrap:pretty}
    screens. */
 .editor-aside{flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px}
 @media (max-width: 760px){ .editor-aside{position:static;max-width:100%} }
+/* Export chips. Radio labels, so the selected one is styled by :has() rather
+   than by the client setting colours it would have to hardcode. */
+.exp-chip{display:flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:${RADIUS.button};background:${C.pill};cursor:pointer;white-space:nowrap}
+.exp-chip:has(input:checked){background:${C.active}}
+.exp-chip:has(input:disabled){opacity:.45;cursor:default}
 /* Keeping is the default and stays silent; the control offers the action.
    Green-badging all 38 lines shouted the state nobody needed told. */
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:4px 10px;border-radius:${RADIUS.button};white-space:nowrap;transition:background-color .12s ease,color .12s ease}

@@ -58,6 +58,21 @@ window.doUndoable = function (label, apply, revert) {
   toast(label, () => { const r = undoStack.pop(); if (r) r(); });
 };
 
+/* Put it back, from Settings' deleted pile. */
+document.querySelectorAll(".trash-restore").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/" + btn.getAttribute("data-kind") + "/" + btn.getAttribute("data-id") + "/restore", { method: "POST" });
+      if (!res.ok) throw new Error("That didn't restore");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      toast((err && err.message) || "That didn't restore");
+    }
+  });
+});
+
 /* ── Rename and delete ─────────────────────────────────────────────────
    The verbs every platform has and this one had none of. Projects rendered
    "Branch a version" and "Archive" as <span> elements — decoration shaped
@@ -1303,32 +1318,51 @@ document.querySelectorAll(".cleanup[data-project]").forEach((btn) => {
 });
 
 /* Export. Every render is a new version — the old one is never replaced. */
-document.querySelectorAll(".render-cut").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = "Putting it together…";
+/* "Export as" opens the choice it always implied. It used to post mp4_1080 and
+   16:9 straight away — hardcoded — so vertical was unreachable and 4K, the
+   thing Settings sells, could not be picked. */
+const exportPanel = document.querySelector("#export-panel");
+document.querySelectorAll(".export-open").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!exportPanel) return;
+    exportPanel.hidden = !exportPanel.hidden;
+    if (!exportPanel.hidden) exportPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+});
+
+if (exportPanel) {
+  exportPanel.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const submit = exportPanel.querySelector("button[type=submit]");
+    const data = new FormData(exportPanel);
+    submit.disabled = true;
+    submit.textContent = "Putting it together…";
     try {
       const res = await fetch("/api/renders", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId: btn.getAttribute("data-project"), format: "mp4_1080", aspect: "16:9" }),
+        body: JSON.stringify({
+          projectId: exportPanel.getAttribute("data-project"),
+          format: data.get("format"),
+          aspect: data.get("aspect"),
+        }),
       });
-      const out = await res.json();
+      const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't render");
-      /* Reload rather than toast about somewhere else.
-         This used to say "it'll appear in Exports when it's done" and there
-         WAS NO EXPORTS — the render finished, landed in R2, and nothing in
-         the product ever showed it to anyone. The list is on this page now,
-         so the honest thing is to show it appearing. */
+      /* Reload so the export appears in the list below, which is where it
+         lives now — the old code toasted about an "Exports" that never was. */
       location.reload();
     } catch (err) {
-      btn.textContent = original;
-      btn.disabled = false;
-      toast(err.message);
+      submit.disabled = false;
+      submit.textContent = "Export";
+      toast((err && err.message) || "That didn't render");
     }
   });
-});
+
+  /* No JS repaint for the chips: .exp-chip:has(input:checked) in the shell's
+     CSS does it, which keeps the colours as tokens rather than hexes the
+     client would have to hardcode. */
+}
 
 /* An export in flight. Polls only while something is actually working —
    data-working is 0 once every render has finished, and then this does

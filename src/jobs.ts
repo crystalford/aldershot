@@ -165,10 +165,26 @@ export async function reapStaleJobs(db: D1Database, userId: string): Promise<voi
  * the user was shown "Failed" and a Retry button. That is the difference
  * between knowing what to do next and concluding the product is broken.
  */
-export async function latestJobFor(db: D1Database, refId: string, userId: string): Promise<Job | null> {
+export async function latestJobFor(
+  db: D1Database,
+  refId: string,
+  userId: string,
+  /*
+   * WHICH KIND of job. Not optional in practice, and the reason is a bug this
+   * caused: several kinds of work hang off one ref_id — a project has scoring
+   * passes AND renders — so matching on ref_id alone handed the editor the
+   * newest RENDER job and let it render that as the state of the cut. Press
+   * Export, and the whole editor turned into the render's status.
+   *
+   * A render's state belongs in the exports list, which has its own. The
+   * editor wants the pass that produced the blocks.
+   */
+  types?: JobType[],
+): Promise<Job | null> {
+  const filter = types?.length ? ` AND type IN (${types.map(() => "?").join(",")})` : "";
   return await db
-    .prepare(`SELECT * FROM jobs WHERE ref_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1`)
-    .bind(refId, userId)
+    .prepare(`SELECT * FROM jobs WHERE ref_id=? AND user_id=?${filter} ORDER BY created_at DESC LIMIT 1`)
+    .bind(refId, userId, ...(types ?? []))
     .first<Job>();
 }
 

@@ -51,7 +51,7 @@ import { runShorts } from "./shorts-job.ts";
 import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord } from "./cuts.ts";
 import type { CleanUp } from "./ui/pages/editor.ts";
-import { createRender, edlForProject, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
 import { currentUser, userForEmail } from "./user.ts";
@@ -579,7 +579,7 @@ app.get("/sources/:id", async (c) => {
      return. */
   const [segments, job] = await Promise.all([
     getSegments(c.env.DB, src.id),
-    latestJobFor(c.env.DB, src.id, user.id),
+    latestJobFor(c.env.DB, src.id, user.id, ["transcribe"]),
   ]);
 
   return c.html(
@@ -890,7 +890,7 @@ app.get("/p/:id/:stagePath", async (c) => {
   /* Same as the source page: renderEditor has a failed branch, and looking the
      job up through activeJobs meant that branch could never fire — a scoring
      pass that died showed an empty cut with no explanation. */
-  const job = await latestJobFor(c.env.DB, project.id, user.id);
+  const job = await latestJobFor(c.env.DB, project.id, user.id, ["score", "pass"]);
 
   if (stage === "essay") {
     const beats = await getBeats(c.env.DB, project.id);
@@ -990,6 +990,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         sourcePoster: source?.poster_r2_key ?? null,
         sourceKey: source?.r2_key ?? null,
         sourceId: source?.id ?? null,
+        plan: user.plan,
         renders,
         cameFrom: cameFrom(c.req.header("referer")),
         projectId: project.id,
@@ -1049,11 +1050,26 @@ app.post("/api/renders", async (c) => {
   const project = await getProject(c.env.DB, b.projectId, user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
+  /*
+   * Validate, and enforce the plan.
+   *
+   * This took whatever it was handed and defaulted anything falsy, so a
+   * request could name any format string at all — and 4K, which Settings
+   * sells as a Studio feature, was renderable by a free account that posted
+   * it directly. A gate that only exists in the interface is not a gate.
+   */
+  const format = isFormat(b.format) ? b.format : "mp4_1080";
+  const aspect = isAspect(b.aspect) ? b.aspect : "16:9";
+
+  if (format === "mp4_4k" && user.plan === "free") {
+    return c.json({ error: "4K renders are on Studio. 1080p is available on Free." }, 402);
+  }
+
   const render = await createRender(c.env.DB, {
     user_id: user.id,
     project_id: project.id,
-    format: b.format || "mp4_1080",
-    aspect: b.aspect || "16:9",
+    format,
+    aspect,
   });
   const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: project.id });
 
@@ -1715,7 +1731,7 @@ app.get("/settings", async (c) => {
       "settings",
       "Settings",
       "Settings — Aldershot",
-      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env) }),
+      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
     ),
   );
 });

@@ -11,6 +11,7 @@
  */
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
+import { FORMATS, RENDER_ASPECTS } from "../../render-job.ts";
 import { iconArrowDown, iconArrowUp, iconPlay } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { itemMenu } from "../item-menu.ts";
@@ -52,6 +53,8 @@ export interface EditorData {
   /** The video itself, so the workspace has the footage in it and not just words. */
   sourceKey?: string | null;
   sourceId?: string | null;
+  /** Which plan the account is on — 4K is Studio-only. */
+  plan?: string;
   /** What the cut actually plays, word-level trims included. */
   runtimeAfterCutsMs?: number;
   /** Finished (and in-flight) exports of THIS edit. */
@@ -317,6 +320,43 @@ function block(c: EditorClip, i: number, total: number): string {
   </div>`;
 }
 
+/**
+ * The choice "Export as" always implied and never offered.
+ *
+ * It rendered a button that posted mp4_1080 and 16:9, hardcoded — so a
+ * vertical cut was impossible to produce from the editor, and 4K, which
+ * Settings sells as the reason to pay, could not be chosen by anybody.
+ *
+ * Rendered inline and hidden rather than built in JS, so the options come from
+ * the same FORMATS/RENDER_ASPECTS the server validates against and the two
+ * cannot drift apart.
+ */
+function exportPanel(projectId: string, plan: string): string {
+  const free = plan === "free";
+
+  const chip = (name: string, id: string, label: string, note: string, on: boolean, locked: boolean) =>
+    `<label class="exp-chip">
+      <input type="radio" name="${name}" value="${esc(id)}" ${on ? "checked" : ""} ${locked ? "disabled" : ""} style="position:absolute;opacity:0;pointer-events:none"/>
+      <span style="font-size:${SIZE.secondary};font-weight:500;color:${C.ink}">${esc(label)}</span>
+      <span data-content style="font-size:${SIZE.meta};color:${C.ink45}">${esc(note)}</span>
+    </label>`;
+
+  return `<form id="export-panel" data-project="${esc(projectId)}" hidden style="margin-top:10px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+    <div style="font-size:${SIZE.secondary};color:${C.ink45}">Size</div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${FORMATS.map((f) =>
+      chip("format", f.id, f.label, f.pro && free ? "Studio" : f.note, f.id === "mp4_1080", Boolean(f.pro && free)),
+    ).join("")}</div>
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:14px">Shape</div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${RENDER_ASPECTS.map((a) =>
+      chip("aspect", a.id, a.label, a.note, a.id === "16:9", false),
+    ).join("")}</div>
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
+      <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
+    </div>
+  </form>`;
+}
+
 export interface RenderRow {
   id: string;
   format: string;
@@ -542,8 +582,9 @@ export function renderEditor(d: EditorData): string {
     </div>
     <div style="position:sticky;bottom:0;margin-top:20px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
       <span id="scratch-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${keptSegs.length} kept · ${hms(runtime / 1000)}</span>
-      <button class="render-cut" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
+      <button class="export-open" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
     </div>
+    ${exportPanel(d.projectId, d.plan ?? "free")}
     ${exportsStrip(d)}`;
   }
 
@@ -587,7 +628,8 @@ export function renderEditor(d: EditorData): string {
   </div>
   <div style="position:sticky;bottom:0;margin-top:20px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
     <span data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${kept.length} kept · ${hms(runtimeMs / 1000)}</span>
-    <button class="render-cut" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
+    <button class="export-open" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
   </div>
+  ${exportPanel(d.projectId, d.plan ?? "free")}
   ${exportsStrip(d)}`;
 }
