@@ -123,6 +123,83 @@ const UI_FILES = walk(path.join(ROOT, 'src/ui'));
  * Needs the dev server. Without it this check is SKIPPED and says so — a
  * silent skip would be worse than no check at all.
  */
+/**
+ * WIRING — every control reaches code, and every handler reaches a control.
+ *
+ * The other four checks compare what we render against the design. None of
+ * them can see a button that renders perfectly and does nothing, which is the
+ * failure that has actually bitten, repeatedly:
+ *
+ *   - the recorder bound to #build, a surface deleted with the old editor —
+ *     twice, so recording a voiceover was impossible for two rebuilds;
+ *   - renderEditor, build.ts and script.ts imported and never called, while
+ *     the walk drove their selectors and reported "0 blocks" on pages with 24;
+ *   - renderFootage, a dead near-copy edited twice instead of the live one.
+ *
+ * Each was invisible to typecheck, tests and every fidelity check. Both halves
+ * below are cheap and would have caught all of them:
+ *
+ *   ids   — the client looks for an element no page renders  (a dead handler)
+ *   classes — a page renders a control the client never reads (a dead button)
+ *
+ * Presentational classes are exempt by allowlist, because a styling hook is
+ * not a control and there is no way to tell from the markup alone.
+ */
+function checkWiring() {
+  const client = fs.readFileSync(path.join(ROOT, 'src/ui/client.ts'), 'utf8');
+  const pageFiles = walk(path.join(ROOT, 'src/ui')).filter((f) => !f.endsWith('client.ts'));
+  const pages = pageFiles.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+
+  /* Ids the client hunts for, against ids anything renders. */
+  const wanted = [...new Set([...client.matchAll(/(?:\$|document\.querySelector)\("#([A-Za-z0-9_-]+)"\)/g)].map((m) => m[1]))];
+  /* Some elements the client builds itself — the upload chip is created on
+     first use and appended to the body, so no page renders it and it is not
+     orphaned. Anything client.ts assigns an id to counts as rendered. */
+  const madeInJs = new Set([...client.matchAll(/\.id\s*=\s*"([A-Za-z0-9_-]+)"/g)].map((m) => m[1]));
+  const orphanIds = wanted.filter((id) => !madeInJs.has(id) && !new RegExp(`id="${id}"`).test(pages));
+
+  /* Classes rendered on something interactive, against classes the client
+     references. A class on a plain div is styling; a class on a button, a
+     form, or something with a role is a control that has to be reachable. */
+  const INTERACTIVE = /<(?:button|form|input|textarea|select|a|audio|video)\b[^>]*class="([a-z][a-z0-9 -]*)"|class="([a-z][a-z0-9 -]*)"[^>]*role="button"/g;
+  const rendered = new Set();
+  for (const m of pages.matchAll(INTERACTIVE)) {
+    for (const cls of (m[1] || m[2]).split(/\s+/)) if (cls) rendered.add(cls);
+  }
+  /* Hooks that exist for CSS or layout only. Each one is a deliberate
+     exemption, not a way to quiet the check. */
+  const PRESENTATIONAL = new Set(['chip', 'editor-aside', 'nav-anchor', 'sel-box', 'seg-pill', 'rec-bar', 'blk-frame']);
+  const orphanClasses = [...rendered]
+    .filter((c) => !PRESENTATIONAL.has(c))
+    .filter((c) => !new RegExp(`["'.]${c.replace(/[-]/g, '\\-')}\\b`).test(client));
+
+  /*
+   * And the direction that actually caused the worst of these: a class the
+   * CLIENT binds that no page renders. The recorder was bound to .record for
+   * a whole rebuild while Build rendered .beat-action — the handler and the
+   * route both existed and recording a voiceover was impossible.
+   */
+  const bound = [...new Set([
+    ...[...client.matchAll(/querySelectorAll?\("\.([a-z][a-z0-9-]*)"/g)].map((m) => m[1]),
+    ...[...client.matchAll(/\.closest\("\.([a-z][a-z0-9-]*)"/g)].map((m) => m[1]),
+  ])];
+  const orphanHandlers = bound.filter((c) => !new RegExp(`class="[^"]*\\b${c}\\b`).test(pages));
+
+  if (orphanIds.length || orphanClasses.length || orphanHandlers.length) {
+    fail(
+      'wiring',
+      'A control and its code are not connected. Either it is dead and should go, or it was never wired.',
+      [
+        ...orphanIds.map((id) => `client.ts looks for #${id} — no page renders it`),
+        ...orphanClasses.map((c) => `.${c} is rendered on a control — client.ts never reads it`),
+        ...orphanHandlers.map((c) => `client.ts binds .${c} — no page renders it`),
+      ].join('\n'),
+    );
+  } else {
+    pass('wiring', `${wanted.length} ids and ${bound.length} classes bound, ${rendered.size} controls rendered — all connected`);
+  }
+}
+
 async function checkStrings() {
   const BASE = process.env.BASE || 'http://localhost:8787';
   const ROUTES = ['/', '/projects', '/footage', '/footage?tab=sources', '/clipping', '/editor', '/settings'];
@@ -444,6 +521,8 @@ async function checkStrings() {
     else pass('layout', '960px law enforced in the shell; no page overrides it');
   }
 }
+
+checkWiring();
 
 checkStrings().then(() => {
   console.log(findings ? `\n${findings} finding(s)` : '\nAll checks passed');

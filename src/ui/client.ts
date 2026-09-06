@@ -913,11 +913,8 @@ function toggle(el, on) {
 
 /** Closes anything open. Returns whether there was something to close. */
 function closeOverlays() {
-  /* The clip picker is looked up here rather than hoisted, because Build is
-     the only surface that renders it. */
-  const clipPick = document.querySelector("#clip-picker");
   let closed = false;
-  for (const el of [palette, keysheet, notifpanel, clipPick]) {
+  for (const el of [palette, keysheet, notifpanel]) {
     if (el && !el.hidden) { el.hidden = true; closed = true; }
   }
   return closed;
@@ -1973,116 +1970,9 @@ if (scoring) {
    Clicking a word strikes that word; clicking the timecode strikes the line.
    Both route through doUndoable like every other edit, so ⌘Z reverts them.
 
-   The struck state is applied optimistically and reconciled against the
-   server's answer — the server owns the cut list, and letting the client
-   compute it independently is how the two drift and the wrong video gets cut. */
-const script = $("#script");
-if (script) {
-  const projectId = script.getAttribute("data-project");
-
-  async function sendCut(payload) {
-    const res = await fetch("/api/projects/" + projectId + "/cuts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error("That didn't save");
-    return res.json();
-  }
-
-  /* Re-paints from the server's cut list, which is the only authority. */
-  function paint(cuts) {
-    const cutLine = new Set();
-    const cutWord = new Set();
-    for (const c of cuts) {
-      if (c.words === null) cutLine.add(c.seg);
-      else for (let i = c.words[0]; i <= c.words[1]; i++) cutWord.add(c.seg + ":" + i);
-    }
-    script.querySelectorAll(".seg-row").forEach((row) => {
-      const seg = Number(row.getAttribute("data-seg"));
-      row.style.background = cutLine.has(seg) ? "transparent" : "#17171B";
-    });
-    script.querySelectorAll(".w").forEach((el) => {
-      const seg = Number(el.getAttribute("data-seg"));
-      const w = Number(el.getAttribute("data-word"));
-      const struck = cutLine.has(seg) || cutWord.has(seg + ":" + w);
-      el.style.textDecoration = struck ? "line-through" : "";
-      el.style.color = struck ? "rgba(236,236,241,0.3)" : "";
-    });
-  }
-
-  function runtimeLabel(seconds) {
-    const s = Math.max(0, Math.round(seconds));
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-    return h > 0
-      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
-      : m + ":" + String(sec).padStart(2, "0");
-  }
-
-  async function applyCut(payload, label) {
-    try {
-      const { cuts, afterS } = await sendCut(payload);
-      paint(cuts);
-      /* The "After your cuts" figure, refreshed from the server's own
-         calculation rather than recomputed here — the render uses the
-         server's ranges, so the number the user reads must come from the
-         same place. */
-      const stat = script.parentElement.querySelector("[data-after]");
-      if (stat) stat.textContent = runtimeLabel(afterS);
-    } catch (err) {
-      toast(err.message || "That didn't save");
-    }
-  }
-
-  script.addEventListener("click", async (e) => {
-    const word = e.target.closest(".w");
-    const segBtn = e.target.closest(".seg-cut");
-    const shortBtn = e.target.closest(".make-short");
-
-    /* Make a short out of the line you are reading, without leaving Script.
-       The clip goes to Footage like any other, so the button confirms in
-       place and links there rather than navigating away mid-edit. */
-    if (shortBtn) {
-      shortBtn.disabled = true;
-      try {
-        const res = await fetch("/api/projects/" + script.getAttribute("data-project") + "/shorts-from-line", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ segIdx: Number(shortBtn.getAttribute("data-seg")) }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Couldn't make that");
-        shortBtn.textContent = data.made ? "Short made ✓" : "Already saved ✓";
-        shortBtn.style.color = "#5EC98F";
-      } catch (err) {
-        shortBtn.disabled = false;
-        toast(err.message || "Couldn't make that");
-      }
-      return;
-    }
-
-    if (word) {
-      const payload = { kind: "word", seg: Number(word.getAttribute("data-seg")), word: Number(word.getAttribute("data-word")) };
-      const struck = word.style.textDecoration === "line-through";
-      window.doUndoable(struck ? "Put back" : "Cut", () => applyCut(payload), () => applyCut(payload));
-      return;
-    }
-    if (segBtn) {
-      const payload = { kind: "segment", seg: Number(segBtn.getAttribute("data-seg")), word: null };
-      window.doUndoable("Line cut", () => applyCut(payload), () => applyCut(payload));
-    }
-  });
-
-  document.querySelectorAll("#script ~ * .cleanup, .cleanup[data-kind='fillers-script']").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      await applyCut({ kind: "fillers", seg: 0, word: null });
-      btn.textContent = "Fillers removed ✓";
-      btn.style.background = "transparent";
-      btn.style.color = "#5EC98F";
-    });
-  });
-}
+/* The transcript-editor handler lived here, bound to #script and .seg-cut —
+ * the markup of script.ts, deleted with the four-stage editor. The live
+ * word and line gestures are the .blk delegation further up this file. */
 
 /* Clean up, from the Pick surface. Same server-side cut model as Script — the
    two surfaces are different views of one edit, not two edits. */
@@ -2198,156 +2088,19 @@ if (planAction) {
   });
 }
 
-/*
- * The unassisted-cut keep/drop handler lived here, bound to #pick-scratch,
- * .seg-keep and [data-seg-block] — the markup of the four-stage editor,
- * deleted with src/ui/pages/editor.ts. It had been unreachable since the
- * rebuild and was still being maintained: the walk was driving those same
- * selectors and reporting "0 blocks" on pages with 24. The live handler is
- * the .blk delegation further up this file.
- */
-
-/* The Build preview. Plays the real source, seeking to whichever beat you
-   click — which is what the scrubber under it always looked like it did. */
-const esVideo = document.querySelector("#es-video");
-if (esVideo) {
-  const toggle = document.querySelector("#es-toggle");
-  /* Both icons are already in the button; this only swaps which is hidden.
-     No SVG lives in this file — icons.ts is the only place they come from. */
-  const paint = () => {
-    const play = toggle?.querySelector("[data-play]");
-    const pause = toggle?.querySelector("[data-pause]");
-    if (!play || !pause) return;
-    play.hidden = !esVideo.paused;
-    pause.hidden = esVideo.paused;
-  };
-  toggle?.addEventListener("click", () => { esVideo.paused ? esVideo.play() : esVideo.pause(); });
-  esVideo.addEventListener("play", paint);
-  esVideo.addEventListener("pause", paint);
-
-  document.querySelectorAll(".es-seek").forEach((seg) => {
-    seg.addEventListener("click", () => {
-      const at = Number(seg.getAttribute("data-at") || 0) / 1000;
-      esVideo.currentTime = at;
-      esVideo.play().catch(() => {});
-    });
-  });
-
-  /* Space plays or pauses, which the surface has always claimed underneath it. */
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== " " || inField(e.target)) return;
-    e.preventDefault();
-    esVideo.paused ? esVideo.play() : esVideo.pause();
-  });
-}
+/* The Build preview player lived here, bound to #es-video and #es-toggle,
+ * both from build.ts, deleted with the four-stage editor. The editor's own
+ * player is #cut-video. */
 
 /* ── Build: the controls that were rendered and wired to nothing ───────
    Each of these looked operable and did nothing, which is worse than not
    shipping them. The endpoints all existed; the UI pointed at routes that
    were never defined, or at no route at all. */
 
-/* "Run it" — an extra instruction against what the pass already found. */
-document.querySelectorAll(".pass-composer").forEach((box) => {
-  const input = box.querySelector(".pass-input");
-  const run = box.querySelector(".pass-run");
-  const go = async () => {
-    const instruction = (input.value || "").trim();
-    if (!instruction) { input.focus(); return; }
-    run.disabled = true;
-    const was = run.textContent;
-    run.textContent = "Running…";
-    try {
-      const res = await fetch("/api/projects/" + box.getAttribute("data-project") + "/passes", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "That pass didn't run");
-      location.reload();
-    } catch (err) {
-      run.disabled = false;
-      run.textContent = was;
-      toast(err.message || "That pass didn't run");
-    }
-  };
-  run.addEventListener("click", go);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-});
 
-/* "Add a beat" — the act chips set where it lands, the kind chips create it. */
-document.querySelectorAll(".add-beat").forEach((chip) => {
-  chip.addEventListener("click", async () => {
-    const kind = chip.getAttribute("data-kind");
-    if (!kind) return;
-    const panel = chip.closest("#add-beat");
-    const act = panel?.querySelector('input[name="act"]:checked')?.value || null;
-    chip.disabled = true;
-    try {
-      const res = await fetch("/api/projects/" + chip.getAttribute("data-project") + "/beats", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind, act }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't add that");
-      location.reload();
-    } catch (err) {
-      chip.disabled = false;
-      toast(err.message || "Couldn't add that");
-    }
-  });
-});
 
-/* The act chips are radios; the selected one has to look selected. */
-document.querySelectorAll(".act-pick input").forEach((radio) => {
-  radio.addEventListener("change", () => {
-    document.querySelectorAll(".act-pick").forEach((l) => {
-      l.style.background = l.querySelector("input")?.checked ? "#2E2E36" : "#232329";
-    });
-  });
-});
 
-/* Remove a beat. Undoable, like every other destructive edit here. */
-document.querySelectorAll(".remove-beat").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const build = document.querySelector("#build");
-    if (!build) return;
-    btn.disabled = true;
-    try {
-      const res = await fetch(
-        "/api/projects/" + build.getAttribute("data-project") + "/beats/" + btn.getAttribute("data-beat"),
-        { method: "DELETE" },
-      );
-      if (!res.ok) throw new Error("Couldn't remove that");
-      location.reload();
-    } catch (err) {
-      btn.disabled = false;
-      toast(err.message || "Couldn't remove that");
-    }
-  });
-});
 
-/* Beat text. Saved on blur rather than per keystroke — this is prose being
-   written, and a request per character would be absurd. */
-document.querySelectorAll(".beat-text").forEach((box) => {
-  let saved = box.value;
-  box.addEventListener("blur", async () => {
-    const text = box.value;
-    if (text === saved) return;
-    const build = document.querySelector("#build");
-    if (!build) return;
-    try {
-      const res = await fetch(
-        "/api/projects/" + build.getAttribute("data-project") + "/beats/" + box.getAttribute("data-beat"),
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) },
-      );
-      if (!res.ok) throw new Error("That didn't save");
-      saved = text;
-    } catch (err) {
-      toast(err.message || "That didn't save");
-    }
-  });
-});
 
 /**
  * Start uploading one file.
@@ -2449,167 +2202,15 @@ if (footageDrop) {
   footageDrop.addEventListener("drop", (e) => { stop(e); startUploads(e.dataTransfer?.files); });
 }
 
-/**
- * Pick a clip for a beat.
- *
- * Four buttons offered this and none worked, and there was no route behind
- * them either — a beat's clip was fixed at creation. The overlay markup is
- * rendered by the page (hidden) so its colours stay tokens; this fills it.
+/*
+ * The clip picker lived here — openPicker(), #clip-picker, #clip-picker-list
+ * and .pick-clip — rendered only by build.ts, which went with the
+ * four-stage editor. It is the machinery behind the seam's "A clip"
+ * option, which the one editor does not offer yet; git has it when that
+ * is built, and a copy nothing can reach is worse than no copy.
  */
-async function openClipPicker(beatId, projectId) {
-  const picker = document.querySelector("#clip-picker");
-  const list = document.querySelector("#clip-picker-list");
-  if (!picker || !list) return;
 
-  list.innerHTML = '<div class="pal-note">Loading…</div>';
-  picker.hidden = false;
 
-  try {
-    const res = await fetch("/api/projects/" + projectId + "/clips");
-    const { clips } = await res.json();
-    if (!clips || !clips.length) {
-      list.innerHTML = '<div class="pal-note">No clips in this footage yet — ask for a pass first.</div>';
-      return;
-    }
-    const mmss = (ms) => {
-      const t = Math.max(0, Math.round(ms / 1000));
-      return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
-    };
-    list.innerHTML = clips
-      .map(
-        (c) =>
-          '<button class="pal-row pick-clip" data-clip="' + c.id + '" style="width:100%;border:none;text-align:left;font-family:inherit">' +
-          '<span class="pal-title">' + escapeHtml(c.quote) + "</span>" +
-          '<span class="pal-sub">' + mmss(c.start_ms) + "</span></button>",
-      )
-      .join("");
-
-    list.querySelectorAll(".pick-clip").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        try {
-          const r = await fetch("/api/projects/" + projectId + "/beats/" + beatId, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ clipId: btn.getAttribute("data-clip") }),
-          });
-          if (!r.ok) throw new Error("That didn't attach");
-          location.reload();
-        } catch (err) {
-          toast((err && err.message) || "That didn't attach");
-        }
-      });
-    });
-  } catch (err) {
-    list.innerHTML = '<div class="pal-note">Couldn\'t load your clips.</div>';
-  }
-}
-
-/* Clicking the scrim closes the picker, like every other overlay here. */
-const clipPickerEl = document.querySelector("#clip-picker");
-if (clipPickerEl) {
-  clipPickerEl.addEventListener("click", (e) => { if (e.target === clipPickerEl) clipPickerEl.hidden = true; });
-}
-
-/* ── Build: beats, seams, recording ────────────────────────────────────
-   The seam is how anything gets inserted mid-piece; recording happens in the
-   browser and only reaches the server once the user has a take they want. */
-const build = $("#build");
-if (build) {
-  const projectId = build.getAttribute("data-project");
-
-  build.addEventListener("click", async (e) => {
-    const seamBtn = e.target.closest(".seam");
-    const moveBtn = e.target.closest(".move-beat");
-    /*
-     * ROUTED ON data-action, not on a class.
-     *
-     * actionButton renders every beat action as .beat-action, and this
-     * listener used to look for .record — a class Build has never rendered.
-     * So the recording handler and POST /api/beats/:id/record both existed
-     * and could not be reached from anywhere: you could not record a
-     * voiceover at all, which is the one thing Build uniquely offers.
-     *
-     * Routing on the label the button already carries fixes every action at
-     * once and cannot drift from the markup the way a parallel class can.
-     */
-    const actionBtn = e.target.closest(".beat-action");
-    const action = actionBtn ? actionBtn.getAttribute("data-action") : null;
-
-    if (seamBtn) {
-      /* A seam inserts a beat that needs the user's voice — the common case.
-         The block appears immediately with Record on it. */
-      try {
-        const res = await fetch("/api/projects/" + projectId + "/beats", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ at: Number(seamBtn.getAttribute("data-at")), kind: "vo" }),
-        });
-        if (!res.ok) throw new Error("Couldn't add that");
-        location.reload();
-      } catch (err) { toast(err.message); }
-      return;
-    }
-
-    if (moveBtn) {
-      try {
-        const res = await fetch(
-          "/api/projects/" + projectId + "/beats/" + moveBtn.getAttribute("data-beat") + "/move",
-          { method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ dir: Number(moveBtn.getAttribute("data-dir")) }) },
-        );
-        if (!res.ok) throw new Error("Couldn't move that");
-        location.reload();
-      } catch (err) { toast(err.message); }
-      return;
-    }
-
-    if (action === "Record" || action === "Record reaction") {
-      record(actionBtn);
-      return;
-    }
-
-    if (action === "Redo") {
-      /* Throw the take away, then go straight back into recording — "Redo"
-         means do it again, not "now find the record button". */
-      try {
-        const res = await fetch("/api/projects/" + projectId + "/beats/" + actionBtn.getAttribute("data-beat"), {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clearMedia: true }),
-        });
-        if (!res.ok) throw new Error("Couldn't clear that take");
-        record(actionBtn);
-      } catch (err) {
-        toast((err && err.message) || "Couldn't clear that take");
-      }
-      return;
-    }
-
-    if (action === "Generate" || action === "Generate it") {
-      /* "Generate" and "Generate it" are the same job; only "Generate it" was
-         ever bound, so the shorter label was dead on every beat that used it. */
-      const original = actionBtn.textContent;
-      actionBtn.disabled = true;
-      actionBtn.textContent = "Generating…";
-      try {
-        const res = await fetch("/api/beats/" + actionBtn.getAttribute("data-beat") + "/tts", { method: "POST" });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Couldn't generate that");
-        location.reload();
-      } catch (err) {
-        actionBtn.disabled = false;
-        actionBtn.textContent = original;
-        toast((err && err.message) || "Couldn't generate that");
-      }
-      return;
-    }
-
-    if (action === "Swap clip" || action === "Swap" || action === "Pick from Footage" || action === "Pick a clip") {
-      openClipPicker(actionBtn.getAttribute("data-beat"), projectId);
-      return;
-    }
-  });
-}
 
 /* "Generate it" on a beat that wants your voice.
    Recording is still the real answer and stays the primary button; this is
