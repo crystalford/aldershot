@@ -60,7 +60,7 @@ import { currentUser, userForEmail } from "./user.ts";
 import { PLANS } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
-import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
+import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob } from "./jobs.ts";
@@ -446,7 +446,8 @@ app.get("/footage", async (c) => {
    * tens of rows — and loading only the active tab left the other two reading
    * "Threads" with no number, which looks like zero.
    */
-  const sources = await listSources(c.env.DB, user.id);
+  const sort = isSourceSort(c.req.query("sort")) ? (c.req.query("sort") as SourceSort) : "newest";
+  const sources = await listSources(c.env.DB, user.id, sort);
   const threads = await listThreads(c.env.DB, user.id);
 
   /* Live read progress per source, so a row that is being read shows a moving
@@ -488,7 +489,7 @@ app.get("/footage", async (c) => {
       renderFootageFull({
         tab,
         sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
-        moments, threads, mode, q: query, meaningUnavailable, thread,
+        moments, threads, mode, q: query, meaningUnavailable, thread, sort,
       }),
     ),
   );
@@ -1679,6 +1680,30 @@ app.post("/api/projects/:id/duplicate", async (c) => {
  * reachable from one place — the deleted pile — and only for something
  * already deleted, so it takes two decisions rather than one.
  */
+/**
+ * Empty the bin.
+ *
+ * Purging was one item at a time, which is the wrong shape for the one job a
+ * bin exists to do. Each item still goes through purge() rather than a bulk
+ * query, because that function is where the refusals live — a second way to
+ * remove things is always the one that misses a rule the first one enforces.
+ */
+app.post("/api/trash/empty", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  let freedBytes = 0;
+  let removed = 0;
+  for (const row of await listTrash(c.env.DB, user.id, 200)) {
+    const out = await purge(c.env, row.entity, row.entity_id, user.id);
+    if (out.ok) {
+      freedBytes += out.freedBytes;
+      removed += 1;
+    }
+  }
+  return c.json({ ok: true, removed, freedBytes });
+});
+
 app.post("/api/:kind{projects|sources}/:id/purge", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

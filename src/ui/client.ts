@@ -122,6 +122,30 @@ if (closeAccountBtn) {
   });
 }
 
+/* Empty the bin. The whole point of a bin, and it could only be emptied one
+   item at a time. Irreversible, so it asks — and it says what it will free. */
+const emptyBin = document.querySelector("#empty-bin");
+if (emptyBin) {
+  emptyBin.addEventListener("click", async () => {
+    const n = document.querySelectorAll(".trash-purge").length;
+    if (!confirm("Delete " + n + " item" + (n === 1 ? "" : "s") + " for good? This frees the storage and cannot be undone.")) return;
+    emptyBin.disabled = true;
+    emptyBin.textContent = "Emptying…";
+    try {
+      const res = await fetch("/api/trash/empty", { method: "POST" });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't empty");
+      const mb = Math.round((out.freedBytes || 0) / 1e6);
+      toast(mb > 0 ? out.removed + " deleted — " + mb + " MB freed" : out.removed + " deleted");
+      setTimeout(() => location.reload(), 900);
+    } catch (err) {
+      emptyBin.disabled = false;
+      emptyBin.textContent = "Empty the bin";
+      toast((err && err.message) || "That didn't empty");
+    }
+  });
+}
+
 /* Delete for good. The one irreversible action in the product, so it is the
    one place a confirm is right — everywhere else a dialog would be theatre
    in front of something Undo already covers. */
@@ -144,6 +168,75 @@ document.querySelectorAll(".trash-purge").forEach((btn) => {
     }
   });
 });
+
+/* ── Selecting several ────────────────────────────────────────────────
+   Every list could only act on one row, which is fine until the product has
+   made a mess and you have to clear it up an item at a time. */
+const selBar = document.querySelector("#sel-bar");
+if (selBar) {
+  const boxes = [...document.querySelectorAll(".sel-item")];
+  const count = document.querySelector("#sel-count");
+  const noun = selBar.getAttribute("data-noun") || "item";
+
+  const chosen = () => boxes.filter((b) => b.checked);
+
+  const refresh = () => {
+    const n = chosen().length;
+    selBar.hidden = n === 0;
+    if (count) count.textContent = n + " " + noun + (n === 1 ? "" : "s") + " selected";
+  };
+
+  boxes.forEach((b) => b.addEventListener("change", refresh));
+
+  document.querySelector("#sel-clear").addEventListener("click", () => {
+    boxes.forEach((b) => { b.checked = false; });
+    refresh();
+  });
+
+  document.querySelector("#sel-delete").addEventListener("click", async () => {
+    const picked = chosen();
+    if (!picked.length) return;
+    const btn = document.querySelector("#sel-delete");
+    btn.disabled = true;
+    btn.textContent = "Deleting…";
+
+    /* One request each, against the route a single delete already uses — a
+       bulk endpoint would be a second way to delete things, and the second way
+       is always the one that misses a rule the first one enforces. */
+    const done = [];
+    for (const box of picked) {
+      const kind = box.getAttribute("data-kind");
+      const id = box.getAttribute("data-id");
+      try {
+        const res = await fetch("/api/" + kind + "/" + id + "/delete", { method: "POST" });
+        if (res.ok) {
+          done.push({ kind, id });
+          const row = box.closest("[data-item-row]");
+          if (row) row.remove();
+        }
+      } catch (err) {
+        /* Keep going: one failure should not strand the rest of the batch. */
+      }
+    }
+
+    btn.disabled = false;
+    btn.textContent = "Delete";
+    refresh();
+
+    if (!done.length) { toast("Nothing was deleted"); return; }
+
+    /* Undo puts back everything the batch took, in one gesture — the same
+       promise a single delete makes. */
+    toast(done.length + " " + noun + (done.length === 1 ? "" : "s") + " deleted", async () => {
+      for (const d of done) {
+        await fetch("/api/" + d.kind + "/" + d.id + "/restore", { method: "POST" }).catch(() => {});
+      }
+      location.reload();
+    });
+  });
+
+  refresh();
+}
 
 /* ── Rename and delete ─────────────────────────────────────────────────
    The verbs every platform has and this one had none of. Projects rendered

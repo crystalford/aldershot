@@ -12,6 +12,7 @@ import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
 import { iconSearch } from "../icons.ts";
 import { itemMenu } from "../item-menu.ts";
+import { selectBar, selectBox } from "../select-bar.ts";
 
 export type FootTab = "moments" | "threads" | "sources" | "find";
 
@@ -179,7 +180,8 @@ function sourceCard(s: SourceRow): string {
       <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:2px;font-family:${FONT.mono}">${esc(meta)}</div>
     </div>`;
 
-  return `<div data-item-row style="display:flex;flex-direction:column;gap:9px">
+  return `<div data-item-row style="position:relative;display:flex;flex-direction:column;gap:9px">
+    ${selectBox("sources", s.id)}
     ${
       ready
         ? `<a href="/sources/${esc(s.id)}" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
@@ -298,7 +300,30 @@ export interface FootageData {
   meaningUnavailable: boolean;
   /** The thread being filtered to, or null for "Everything". */
   thread: string | null;
+  /** How the video grid is ordered. */
+  sort?: string;
 }
+
+/*
+ * Sorting. There was no sort control anywhere in the product — every list
+ * was newest first and that was the only order available. It carries the
+ * current search and mode with it so choosing an order does not silently
+ * drop what you had typed.
+ */
+function sortBar(current: string, q: string, mode: string): string {
+  const opt = (id: string, label: string) => {
+    const on = current === id;
+    const params = new URLSearchParams({ tab: "sources", sort: id });
+    if (q) params.set("q", q);
+    if (mode) params.set("mode", mode);
+    return `<a href="/footage?${params.toString()}" style="font-size:${SIZE.meta};padding:5px 10px;border-radius:${RADIUS.button};background:${on ? C.active : "transparent"};color:${on ? C.ink : C.ink45};white-space:nowrap">${label}</a>`;
+  };
+  return `<div style="margin-top:16px;display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:${SIZE.meta};color:${C.ink32};margin-right:4px">Sort</span>
+    ${opt("newest", "Newest")}${opt("oldest", "Oldest")}${opt("longest", "Longest")}${opt("name", "Name")}
+  </div>`;
+}
+
 
 export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
   const head =
@@ -316,7 +341,7 @@ export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
     if (!sources.length) return head + emptyState("Nothing here yet — upload a video and it starts reading.");
     return (
       head +
-      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>`
+      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>${selectBar("video")}`
     );
   }
 
@@ -362,7 +387,11 @@ export function renderFootageFull(d: FootageData): string {
 
   if (d.tab === "sources") {
     if (!d.sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
-    return head + `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>`;
+    return (
+      head +
+      sortBar(d.sort ?? "newest", d.q, d.mode) +
+      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
+    );
   }
 
   if (d.tab === "threads") {

@@ -13,6 +13,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { itemMenu } from "../item-menu.ts";
+import { selectBar, selectBox } from "../select-bar.ts";
 import { hms } from "./footage.ts";
 
 export interface ProjectRow {
@@ -115,6 +116,7 @@ function card(p: ProjectRow): string {
      a click. data-item-row lets the client take this card off the page when
      it is deleted, rather than reloading and throwing away the Undo. */
   return `<div data-item-row style="position:relative;display:flex">
+  ${selectBox("projects", p.id)}
   <div style="position:absolute;right:6px;top:6px;z-index:5;background:rgba(11,11,14,0.66);border-radius:${RADIUS.button}">${itemMenu("projects", p.id, p.title, "edit")}</div>
   <a href="/p/${esc(p.id)}/build" style="flex:1;min-width:0;border-radius:11px;background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
     <div style="width:100%;aspect-ratio:16/9;background:#0B0B0E;position:relative">
@@ -171,6 +173,7 @@ export function renderProjects(projects: ProjectRow[]): string {
       ? `<div style="margin-top:32px">
           <div style="font-size:${SIZE.body};font-weight:600;color:rgba(236,236,241,0.5);padding-left:2px">Everything else</div>
           <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:8px">${rest.map(card).join("")}</div>
+          ${selectBar("edit")}
         </div>`
       : ""
   }`;

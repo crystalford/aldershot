@@ -127,10 +127,35 @@ export async function reapGhostSources(db: D1Database, userId: string): Promise<
     .run();
 }
 
-export async function listSources(db: D1Database, userId: string): Promise<Source[]> {
+/**
+ * How a library may be ordered.
+ *
+ * There was no sort control anywhere in the product — every list was newest
+ * first and that was that. The clauses are a fixed map rather than anything
+ * built from the request, because the sort arrives as a query parameter and a
+ * parameter that reaches an ORDER BY is an injection waiting to happen.
+ */
+export const SOURCE_SORTS = {
+  newest: "created_at DESC",
+  oldest: "created_at ASC",
+  longest: "duration_s DESC NULLS LAST, created_at DESC",
+  name: "LOWER(title) ASC",
+} as const;
+
+export type SourceSort = keyof typeof SOURCE_SORTS;
+
+export function isSourceSort(v: unknown): v is SourceSort {
+  return typeof v === "string" && v in SOURCE_SORTS;
+}
+
+export async function listSources(
+  db: D1Database,
+  userId: string,
+  sort: SourceSort = "newest",
+): Promise<Source[]> {
   await reapGhostSources(db, userId);
   const { results } = await db
-    .prepare(`SELECT * FROM sources WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC`)
+    .prepare(`SELECT * FROM sources WHERE user_id=? AND deleted_at IS NULL ORDER BY ${SOURCE_SORTS[sort]}`)
     .bind(userId)
     .all<Source>();
   return results ?? [];

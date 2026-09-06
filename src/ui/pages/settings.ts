@@ -229,7 +229,14 @@ function trashBlock(rows: TrashRow[]): string {
     <button class="trash-purge" data-kind="${t.entity === "source" ? "sources" : "projects"}" data-id="${esc(t.entity_id)}" data-label="${esc(t.label)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:transparent;color:${C.ink45};border:none;cursor:pointer;font-family:${FONT.ui}">Delete for good</button>
   </div>`;
 
-  return `${sectionLabel("Deleted")}
+  return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <div style="flex:1">${sectionLabel("Deleted")}</div>
+    ${
+      rows.length
+        ? `<button id="empty-bin" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:transparent;color:${C.ink45};border:none;cursor:pointer;font-family:${FONT.ui}">Empty the bin</button>`
+        : ""
+    }
+  </div>
   <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
     rows.length
       ? rows.map(row).join("")
