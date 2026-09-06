@@ -17,7 +17,7 @@
  */
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
-import { iconArrowDown, iconArrowUp, iconPlay } from "../icons.ts";
+import { iconArrowDown, iconArrowUp, iconPause, iconPlay } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { hms, tc } from "./footage.ts";
 
@@ -41,6 +41,8 @@ export interface BuildBeat {
 
 export interface BuildData {
   projectId: string;
+  /** The source video, so the preview can actually play. */
+  sourceKey?: string | null;
   beats: BuildBeat[];
   /** Acts only exist on essays; a cut has none and the bar is hidden. */
   hasActs: boolean;
@@ -221,10 +223,13 @@ function actBar(beats: BuildBeat[]): string {
 /** The pass composer — every instruction the user gives, in their words. */
 function passComposer(projectId: string): string {
   return `<div style="margin-top:14px;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
-    <form method="post" action="/p/${esc(projectId)}/pass" style="display:flex;gap:8px;align-items:center;background:#131316;border-radius:${RADIUS.input};padding:4px 4px 4px 12px;flex-wrap:wrap">
-      <input name="instruction" placeholder="Tell it what you want — “tighten the middle” · “add a reaction after the schedule clip”" style="flex:1 1 200px;min-width:min(180px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:13px;padding:7px 0;font-family:${FONT.ui}"/>
-      <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:7px 15px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Run it</button>
-    </form>
+    <!-- Scripted, not a form post: this posted to /p/:id/pass, which does not
+         exist and 404'd every time. The pass endpoint is
+         /api/projects/:id/passes and answers with JSON. -->
+    <div class="pass-composer" data-project="${esc(projectId)}" style="display:flex;gap:8px;align-items:center;background:#131316;border-radius:${RADIUS.input};padding:4px 4px 4px 12px;flex-wrap:wrap">
+      <input class="pass-input" placeholder="Tell it what you want — “tighten the middle” · “add a reaction after the schedule clip”" style="flex:1 1 200px;min-width:min(180px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:13px;padding:7px 0;font-family:${FONT.ui}"/>
+      <button type="button" class="pass-run" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:7px 15px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Run it</button>
+    </div>
   </div>`;
 }
 
@@ -249,7 +254,7 @@ function preview(d: BuildData): string {
   const blocks = d.beats
     .map(
       (b, i) =>
-        `<button class="es-seek" data-idx="${i}" style="flex:${b.dur_ms ?? 1};border-radius:3px;background:${i === d.playIdx ? "#3A3A45" : C.pill};cursor:pointer;position:relative;overflow:hidden;min-width:6px;border:none;padding:0">
+        `<button class="es-seek" data-idx="${i}" data-at="${b.start_ms ?? 0}" style="flex:${b.dur_ms ?? 1};border-radius:3px;background:${i === d.playIdx ? "#3A3A45" : C.pill};cursor:pointer;position:relative;overflow:hidden;min-width:6px;border:none;padding:0">
           <div style="position:absolute;left:0;right:0;bottom:0;height:3px;background:${EDGE[b.kind]}"></div>
         </button>`,
     )
@@ -257,14 +262,31 @@ function preview(d: BuildData): string {
 
   return `<div style="border-radius:11px;overflow:hidden;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,0.07)">
     <div style="position:relative;width:100%;aspect-ratio:16/9;background:#07070a">
-      ${cur?.frame_r2_key ? `<img loading="lazy" src="/media/${esc(cur.frame_r2_key)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"/>` : ""}
+      ${
+        /*
+         * A real video, not a picture of one. The play button and the scrubber
+         * were rendered and wired to nothing — the preview looked like a
+         * player and could not play. Range requests on /media are what make
+         * seeking to a beat work without downloading the whole source.
+         */
+        d.sourceKey
+          ? `<video id="es-video" preload="metadata" playsinline ${cur?.frame_r2_key ? `poster="/media/${esc(cur.frame_r2_key)}"` : ""} src="/media/${esc(d.sourceKey)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;background:#07070a"></video>`
+          : cur?.frame_r2_key
+            ? `<img loading="lazy" src="/media/${esc(cur.frame_r2_key)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"/>`
+            : ""
+      }
       <div style="position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between">
         <div style="padding:12px 14px">${cur?.act ? `<span data-content style="font-size:${SIZE.meta};font-weight:600;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.55);padding:3px 8px;border-radius:4px">${esc(cur.act)}</span>` : ""}</div>
         <div style="padding:0 18px 16px"><div data-content style="font-size:15.5px;line-height:1.45;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.8);max-width:85%">${esc(cur?.text ?? "")}</div></div>
       </div>
     </div>
     <div style="padding:11px 13px;background:#131316;display:flex;align-items:center;gap:12px">
-      <button id="es-toggle" aria-label="Play" style="flex:none;width:32px;height:32px;border-radius:${RADIUS.button};background:${C.ink};display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;padding:0">${iconPlay(12, "#131316")}</button>
+      <!-- Both icons rendered, one hidden — the same shape the prototype uses, and
+     it keeps every SVG inside icons.ts where the icon check requires them. -->
+      <button id="es-toggle" aria-label="Play" style="flex:none;width:32px;height:32px;border-radius:${RADIUS.button};background:${C.ink};display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;padding:0">
+        <span data-play>${iconPlay(12, "#131316")}</span>
+        <span data-pause hidden>${iconPause(12, "#131316")}</span>
+      </button>
       <div style="flex:1;display:flex;gap:2px;align-items:stretch;height:24px">${blocks}</div>
       <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(236,236,241,0.4)">0:00 / ${hms(total / 1000)}</span>
     </div>
@@ -289,19 +311,19 @@ function addBeat(projectId: string, hasActs: boolean): string {
   ];
   const KINDS = hasActs ? ALL : ALL.filter(([k]) => k === "clip" || k === "vo" || k === "react");
   const chip = (label: string, name: string, value: string) =>
-    `<button form="add-beat" name="${name}" value="${esc(value)}" style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${esc(label)}</button>`;
+    `<button type="button" class="add-beat" data-project="${esc(projectId)}" data-${name}="${esc(value)}" style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${esc(label)}</button>`;
 
   /* Which act the new beat lands in. Development is the prototype's default. */
   const actChip = (a: string) =>
-    `<label style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${a === "Development" ? C.active : C.pill};color:${C.ink};cursor:pointer;white-space:nowrap">
+    `<label class="act-pick" style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${a === "Development" ? C.active : C.pill};color:${C.ink};cursor:pointer;white-space:nowrap">
       <input type="radio" name="act" value="${esc(a)}" ${a === "Development" ? "checked" : ""} style="position:absolute;opacity:0;pointer-events:none"/>${esc(a)}
     </label>`;
 
-  return `<form id="add-beat" method="post" action="/p/${esc(projectId)}/beats" style="margin-top:16px;padding:16px 18px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+  return `<div id="add-beat" data-project="${esc(projectId)}" style="margin-top:16px;padding:16px 18px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
     <div data-content style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">Add a beat</div>
     ${hasActs ? `<div style="margin-top:9px;display:flex;gap:5px;flex-wrap:wrap">${ACTS.map((a) => actChip(a)).join("")}</div>` : ""}
     <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">${KINDS.map(([k, label]) => chip(label, "kind", k)).join("")}</div>
-  </form>`;
+  </div>`;
 }
 
 export function renderBuild(d: BuildData): string {

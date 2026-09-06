@@ -896,6 +896,196 @@ document.querySelectorAll(".render-cut").forEach((btn) => {
   });
 });
 
+/* The Build preview. Plays the real source, seeking to whichever beat you
+   click — which is what the scrubber under it always looked like it did. */
+const esVideo = document.querySelector("#es-video");
+if (esVideo) {
+  const toggle = document.querySelector("#es-toggle");
+  /* Both icons are already in the button; this only swaps which is hidden.
+     No SVG lives in this file — icons.ts is the only place they come from. */
+  const paint = () => {
+    const play = toggle?.querySelector("[data-play]");
+    const pause = toggle?.querySelector("[data-pause]");
+    if (!play || !pause) return;
+    play.hidden = !esVideo.paused;
+    pause.hidden = esVideo.paused;
+  };
+  toggle?.addEventListener("click", () => { esVideo.paused ? esVideo.play() : esVideo.pause(); });
+  esVideo.addEventListener("play", paint);
+  esVideo.addEventListener("pause", paint);
+
+  document.querySelectorAll(".es-seek").forEach((seg) => {
+    seg.addEventListener("click", () => {
+      const at = Number(seg.getAttribute("data-at") || 0) / 1000;
+      esVideo.currentTime = at;
+      esVideo.play().catch(() => {});
+    });
+  });
+
+  /* Space plays or pauses, which the surface has always claimed underneath it. */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== " " || inField(e.target)) return;
+    e.preventDefault();
+    esVideo.paused ? esVideo.play() : esVideo.pause();
+  });
+}
+
+/* ── Build: the controls that were rendered and wired to nothing ───────
+   Each of these looked operable and did nothing, which is worse than not
+   shipping them. The endpoints all existed; the UI pointed at routes that
+   were never defined, or at no route at all. */
+
+/* "Run it" — an extra instruction against what the pass already found. */
+document.querySelectorAll(".pass-composer").forEach((box) => {
+  const input = box.querySelector(".pass-input");
+  const run = box.querySelector(".pass-run");
+  const go = async () => {
+    const instruction = (input.value || "").trim();
+    if (!instruction) { input.focus(); return; }
+    run.disabled = true;
+    const was = run.textContent;
+    run.textContent = "Running…";
+    try {
+      const res = await fetch("/api/projects/" + box.getAttribute("data-project") + "/passes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "That pass didn't run");
+      location.reload();
+    } catch (err) {
+      run.disabled = false;
+      run.textContent = was;
+      toast(err.message || "That pass didn't run");
+    }
+  };
+  run.addEventListener("click", go);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+});
+
+/* "Add a beat" — the act chips set where it lands, the kind chips create it. */
+document.querySelectorAll(".add-beat").forEach((chip) => {
+  chip.addEventListener("click", async () => {
+    const kind = chip.getAttribute("data-kind");
+    if (!kind) return;
+    const panel = chip.closest("#add-beat");
+    const act = panel?.querySelector('input[name="act"]:checked')?.value || null;
+    chip.disabled = true;
+    try {
+      const res = await fetch("/api/projects/" + chip.getAttribute("data-project") + "/beats", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind, act }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't add that");
+      location.reload();
+    } catch (err) {
+      chip.disabled = false;
+      toast(err.message || "Couldn't add that");
+    }
+  });
+});
+
+/* The act chips are radios; the selected one has to look selected. */
+document.querySelectorAll(".act-pick input").forEach((radio) => {
+  radio.addEventListener("change", () => {
+    document.querySelectorAll(".act-pick").forEach((l) => {
+      l.style.background = l.querySelector("input")?.checked ? "#2E2E36" : "#232329";
+    });
+  });
+});
+
+/* Remove a beat. Undoable, like every other destructive edit here. */
+document.querySelectorAll(".remove-beat").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const build = document.querySelector("#build");
+    if (!build) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(
+        "/api/projects/" + build.getAttribute("data-project") + "/beats/" + btn.getAttribute("data-beat"),
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error("Couldn't remove that");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message || "Couldn't remove that");
+    }
+  });
+});
+
+/* Beat text. Saved on blur rather than per keystroke — this is prose being
+   written, and a request per character would be absurd. */
+document.querySelectorAll(".beat-text").forEach((box) => {
+  let saved = box.value;
+  box.addEventListener("blur", async () => {
+    const text = box.value;
+    if (text === saved) return;
+    const build = document.querySelector("#build");
+    if (!build) return;
+    try {
+      const res = await fetch(
+        "/api/projects/" + build.getAttribute("data-project") + "/beats/" + box.getAttribute("data-beat"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) },
+      );
+      if (!res.ok) throw new Error("That didn't save");
+      saved = text;
+    } catch (err) {
+      toast(err.message || "That didn't save");
+    }
+  });
+});
+
+/* Footage's Upload button. It was a bare label with a file input and no
+   handler at all, so the most obvious way into the product did nothing. */
+const footageUpload = document.querySelector("#footageUpload");
+if (footageUpload) {
+  footageUpload.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const durationS = await readDuration(file).catch(() => 0);
+      const start = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
+      }).then((r) => r.json());
+      if (start.error) throw new Error(start.error);
+
+      grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
+        .then((blob) =>
+          blob &&
+          fetch("/api/sources/" + start.source.id + "/poster", {
+            method: "POST",
+            headers: { "content-type": "image/jpeg" },
+            body: blob,
+          }),
+        )
+        .catch(() => {});
+
+      const sw = await uploadWorker();
+      if (!sw) { toast("Uploads need a modern browser here"); return; }
+      const msg = {
+        type: "start-upload",
+        file,
+        sourceId: start.source.id,
+        uploadId: start.uploadId,
+        partSize: start.partSize,
+        mode: start.mode,
+        durationS,
+      };
+      inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
+      sw.postMessage(msg);
+      watchUpload(start.source.id);
+      showUpload({ sourceId: start.source.id, name: file.name, pct: 0, totalBytes: file.size, sent: 0 });
+    } catch (err) {
+      toast(err.message || "Couldn't add that video");
+    }
+  });
+}
+
 /* ── Build: beats, seams, recording ────────────────────────────────────
    The seam is how anything gets inserted mid-piece; recording happens in the
    browser and only reaches the server once the user has a take they want. */

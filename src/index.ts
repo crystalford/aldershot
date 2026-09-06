@@ -305,12 +305,19 @@ app.get("/", async (c) => {
         // "Overnight" is the last 12 hours — real arrivals only, never a
         // number invented to make the greeting feel alive.
         landedOvernight: sources.filter((s) => Date.now() - s.created_at < 12 * 3600 * 1000).length,
-        working: jobs.map((j) => ({
-          label: byId.get(j.ref_id ?? "")?.title ?? "a video",
-          type: j.type,
-          stage: j.stage_label ?? "working on",
-          pct: j.pct,
-        })),
+        /* A job whose source has been deleted is not work in progress — it is
+           a leftover. Showing it produced "reading a video and a video". */
+        working: jobs
+          .filter((j) => !j.ref_id || byId.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+          .map((j) => ({
+            label:
+              byId.get(j.ref_id ?? "")?.title ??
+              projects.find((p) => p.id === j.ref_id)?.title ??
+              "a video",
+            type: j.type,
+            stage: j.stage_label ?? "working on",
+            pct: j.pct,
+          })),
         /*
          * The feed reports finished JOBS, so it can only ever say what really
          * ran. A failure is included and named — coming back to a silent gap
@@ -413,8 +420,16 @@ app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const t = c.req.query("tab");
+  /*
+   * Videos first, not Clips.
+   *
+   * The prototype opens on Clips; the owner's actual use is the opposite —
+   * clicking Footage is nearly always "find the video I uploaded so I can edit
+   * it", and landing on a wall of clips buries that. Their call, and a
+   * deliberate departure from the prototype rather than a slip.
+   */
   const tab: FootTab =
-    t === "threads" ? "threads" : t === "sources" ? "sources" : t === "find" ? "find" : "moments";
+    t === "threads" ? "threads" : t === "moments" ? "moments" : t === "find" ? "find" : "sources";
   const mode: SearchMode = c.req.query("mode") === "exact" ? "exact" : "meaning";
   const query = (c.req.query("q") || "").trim();
   const thread = c.req.query("thread") || null;
@@ -784,6 +799,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         }) +
           renderBuild({
             projectId: project.id,
+            sourceKey: source?.r2_key ?? null,
             hasActs: Boolean(project.has_acts),
             playIdx: 0,
             beats: beats.map((b) => {
@@ -957,14 +973,42 @@ app.post("/api/projects/:id/beats", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ at: number; kind: string; text: string; clipId: string }>(c);
+  const b = await body<{ at: number; kind: string; text: string; clipId: string; act: string }>(c);
   const kind = (["clip", "vo", "react", "generated", "stock"] as const).find((k) => k === b.kind) ?? "vo";
-  const beats = await insertBeat(c.env.DB, project.id, Number(b.at ?? 0), {
+
+  /* Added from the "Add a beat" panel rather than a seam, so it goes on the
+     end — `at` is only sent when a specific seam was clicked. */
+  const existing = await getBeats(c.env.DB, project.id);
+  const at = b.at == null ? existing.length : Number(b.at);
+
+  const beats = await insertBeat(c.env.DB, project.id, at, {
     kind,
+    act: b.act ?? null,
     text: b.text ?? null,
     clip_id: b.clipId ?? null,
   });
   return c.json({ beats });
+});
+
+/**
+ * Edit what a beat says.
+ *
+ * The textarea on every beat was rendered, editable, and wired to nothing —
+ * you could type into it and the words were gone on reload. Saved on blur
+ * rather than per keystroke: this is prose being written.
+ */
+app.post("/api/projects/:id/beats/:beatId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ text: string }>(c);
+  await c.env.DB
+    .prepare(`UPDATE beats SET text=? WHERE id=? AND project_id=?`)
+    .bind(b.text ?? null, c.req.param("beatId"), project.id)
+    .run();
+  return c.json({ ok: true });
 });
 
 app.post("/api/projects/:id/beats/:beatId/move", async (c) => {

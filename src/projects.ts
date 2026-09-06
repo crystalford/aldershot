@@ -269,7 +269,7 @@ export async function insertBeat(
   db: D1Database,
   projectId: string,
   atIdx: number,
-  beat: { kind: BeatKind; text?: string | null; clip_id?: string | null; dur_ms?: number | null },
+  beat: { kind: BeatKind; act?: string | null; text?: string | null; clip_id?: string | null; dur_ms?: number | null },
 ): Promise<Beat[]> {
   const beats = await getBeats(db, projectId);
   const next = [...beats];
@@ -278,7 +278,7 @@ export async function insertBeat(
     project_id: projectId,
     idx: 0,
     kind: beat.kind,
-    act: null,
+    act: beat.act ?? null,
     clip_id: beat.clip_id ?? null,
     text: beat.text ?? null,
     struck: null,

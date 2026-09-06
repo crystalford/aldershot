@@ -177,6 +177,13 @@ async function checkStrings() {
         "mangled surname-mashup, or by the owner's name, is worse than " +
         "dropping the vocative.",
     ],
+    [
+      "drafting the acts",
+      "A job stage label. The prototype names a few stages ('reading it for " +
+        "meaning', 'picking out the moments') but never enumerates them, and " +
+        "essay outlining is a stage it does not cover. Written in the same " +
+        "voice as the ones it does.",
+    ],
   ]);
 
   const SHORT = 24;
