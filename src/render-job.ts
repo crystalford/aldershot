@@ -76,16 +76,16 @@ export interface RenderRow {
 
 export async function createRender(
   db: D1Database,
-  opts: { user_id: string; project_id: string; format: Format; aspect: Aspect },
+  opts: { user_id: string; project_id: string; format: Format; aspect: Aspect; captionStyle?: string | null; kind?: string },
 ): Promise<RenderRow> {
   const row: RenderRow = {
     id: ulid(),
     project_id: opts.project_id,
     user_id: opts.user_id,
-    kind: "cut",
+    kind: opts.kind ?? "cut",
     format: opts.format,
     aspect: opts.aspect,
-    caption_style: null,
+    caption_style: opts.captionStyle ?? null,
     r2_key: null,
     stream_uid: null,
     duration_s: null,
@@ -208,7 +208,7 @@ export async function runRender(
      * Two hours is comfortably longer than any render and shorter than a URL
      * being worth stealing.
      */
-    const plan = buildRenderPlan(built.edl, render.format, render.aspect);
+    const plan = buildRenderPlan(built.edl, render.format, render.aspect, render.caption_style);
     const urls = await Promise.all(
       plan.cuts.map(async (c) => {
         const signed =

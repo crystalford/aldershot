@@ -235,6 +235,17 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
     column: "stripe_customer_id",
     ddl: "ALTER TABLE v2_users ADD COLUMN stripe_customer_id TEXT",
   },
+
+  /*
+   * Which clip a render is OF, for shorts.
+   *
+   * A cut render belongs to a project and gets its ranges from that project's
+   * beats. A short is one moment from the library and has no project at all —
+   * Clipping deliberately produces material rather than edits. Without this
+   * there was nowhere to hang a rendered short, which is part of why Clipping
+   * has never rendered anything.
+   */
+  { table: "renders", column: "clip_id", ddl: "ALTER TABLE renders ADD COLUMN clip_id TEXT" },
 ];
 
 let ensured = false;

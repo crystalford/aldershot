@@ -1439,6 +1439,7 @@ if (exportPanel) {
           projectId: exportPanel.getAttribute("data-project"),
           format: data.get("format"),
           aspect: data.get("aspect"),
+          captionStyle: data.get("captionStyle"),
         }),
       });
       const out = await res.json().catch(() => ({}));
@@ -2166,6 +2167,53 @@ if (clipDrop) {
   clipDrop.addEventListener("drop", (e) => send(e.dataTransfer?.files?.[0]));
 }
 
+/* Make the video of one short. Rendering costs money, so it happens when you
+   ask and not because a scoring pass found something. */
+document.querySelectorAll(".make-short").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = "Making it…";
+    /* The Shape and Captions chips on this page were decorative — the client
+       never sent them and the API had no field for them. They drive the render
+       now; with no form on the page (the library view) a short is vertical
+       with no captions, which is what a short is. */
+    const form = document.querySelector(".clip-form");
+    const data = form ? new FormData(form) : null;
+    try {
+      const res = await fetch("/api/clips/" + btn.getAttribute("data-clip") + "/render", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          aspect: data ? data.get("aspect") : "9:16",
+          captionStyle: data ? data.get("captionStyle") : "None",
+        }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "That didn't start");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = was;
+      toast((err && err.message) || "That didn't start");
+    }
+  });
+});
+
+/* A short being made. Polls only while one actually is, and stops when none
+   are — the same rule as the exports list. */
+if (document.querySelector('[data-short][data-state="queued"], [data-short][data-state="running"]')) {
+  const tick = setInterval(async () => {
+    try {
+      const res = await fetch("/api/jobs");
+      if (!res.ok) return;
+      const { jobs } = await res.json();
+      if (!(jobs || []).some((j) => j.type === "render")) { clearInterval(tick); location.reload(); }
+    } catch (err) {
+      /* A blip is not a reason to stop watching. */
+    }
+  }, 4000);
+}
+
 /* ── Clipping ──────────────────────────────────────────────────────────
    Two ways to find a moment: a scored batch, or a search for one it missed.
    Both start a job the page then follows. */
@@ -2196,6 +2244,10 @@ if (clipForm) {
           sourceId: clipForm.getAttribute("data-source"),
           length: data.get("length"),
           count: Number(data.get("count")),
+          /* Shape and Captions were on the form and never left the page: the
+             client did not send them, /api/shorts had no field for them, and
+             ShortsOpts had none either. They are the render's, not the search's
+             — carried on each short's own render request. */
         }),
       });
       const out = await res.json();

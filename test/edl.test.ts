@@ -5,7 +5,7 @@
  */
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { buildEdl, buildRenderPlan, buildSrt } from "../src/edl.ts";
+import { buildEdl, buildRenderPlan, buildSrt, captionCues } from "../src/edl.ts";
 import { toggleSegment, toggleWord } from "../src/cuts.ts";
 
 /** Three lines, a word a second: "one two three" / "four five six" / "seven eight nine". */
@@ -179,4 +179,74 @@ test("the flag survives into the plan the container runs", () => {
   const plan = buildRenderPlan(edl, "mp4_1080", "16:9");
   const flags = plan.cuts.map((c) => Boolean(c.audioOnly));
   assert.deepEqual(flags, [false, true], "only the voiceover is audio-only");
+});
+
+/**
+ * Burned-in captions.
+ *
+ * The container has had a complete ASS caption writer with two styles since it
+ * was written, and NOTHING in src/ ever set plan.captions or plan.captionStyle
+ * — so its `cues` array was always empty, the caption branch never ran, and no
+ * render has ever had a word burned into it. On a surface whose lede promises
+ * "captions burned in".
+ *
+ * These pin the plumbing, and pin that captions stay OPT-IN: burned-in text
+ * cannot be taken back out of a finished file, so the default has to be the
+ * reversible one.
+ */
+test("captions are absent unless a style is asked for", () => {
+  const segments = [{ idx: 0, start_ms: 0, end_ms: 4000, words: null, text: "a line" }];
+  const edl = buildEdl("src.mp4", [{ kind: "clip", start_ms: 0, end_ms: 4000 }], segments, []);
+
+  for (const style of [undefined, null, "None"]) {
+    const plan = buildRenderPlan(edl, "mp4_1080", "16:9", style as never);
+    assert.equal(plan.captions, undefined, `style ${String(style)} must not burn captions`);
+    assert.equal(plan.captionStyle, undefined);
+  }
+});
+
+test("asking for a style puts real cues in the plan", () => {
+  const segments = [{ idx: 0, start_ms: 0, end_ms: 4000, words: null, text: "a line" }];
+  const edl = buildEdl("src.mp4", [{ kind: "clip", start_ms: 0, end_ms: 4000 }], segments, []);
+  const plan = buildRenderPlan(edl, "mp4_1080", "9:16", "Bold");
+
+  assert.equal(plan.captionStyle, "Bold");
+  assert.ok(plan.captions && plan.captions.length > 0, "a captioned plan needs cues");
+});
+
+test("cues are timed against the finished video, not the source", () => {
+  /* The whole difficulty: every cut shifts what follows it, so a line 22
+     minutes into a source has to start at 0 in a short made from it. This is
+     what buildSrt always computed and what nothing could reach. */
+  const segments = [
+    { idx: 0, start_ms: 0, end_ms: 5000, words: null, text: "the opening" },
+    { idx: 1, start_ms: 600000, end_ms: 603000, words: null, text: "the bit we want" },
+  ];
+  const edl = buildEdl(
+    "src.mp4",
+    [{ kind: "clip", start_ms: 600000, end_ms: 603000 }],
+    segments,
+    [],
+  );
+  const cues = captionCues(edl);
+  assert.equal(cues.length, 1);
+  assert.equal(cues[0].start_ms, 0, "the first cue of a piece starts at zero");
+  assert.equal(cues[0].end_ms, 3000);
+});
+
+test("the SRT and the burned captions come from one source of truth", () => {
+  const segments = [
+    { idx: 0, start_ms: 0, end_ms: 2000, words: null, text: "first" },
+    { idx: 1, start_ms: 2000, end_ms: 5000, words: null, text: "second" },
+  ];
+  const edl = buildEdl("src.mp4", [{ kind: "clip", start_ms: 0, end_ms: 5000 }], segments, []);
+  const cues = captionCues(edl);
+  const srt = buildSrt(edl);
+
+  /* Every cue's start has to appear in the sidecar, or the two would drift and
+     a viewer's subtitles would disagree with the picture. */
+  for (const c of cues) {
+    const mm = String(Math.floor(c.start_ms / 60000)).padStart(2, "0");
+    assert.ok(srt.includes(`00:${mm}:`), "srt and cues must share a clock");
+  }
 });

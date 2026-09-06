@@ -128,22 +128,40 @@ function srtTime(ms: number): string {
  * 0:14 in the cut. Getting this wrong produces subtitles that drift further
  * out of sync the longer the video runs.
  */
-export function buildSrt(edl: Edl): string {
-  const blocks: string[] = [];
+export interface CaptionCue {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
+/**
+ * What is said, on the FINISHED timeline rather than the source's.
+ *
+ * Both the sidecar .srt and the burned-in captions need exactly this, and the
+ * timing is the fiddly part — every cut shifts everything after it, so the
+ * output clock has to be accumulated rather than read off the source. It was
+ * computed inside buildSrt and nowhere else, which is half of why burned-in
+ * captions were never wired: the numbers existed but only in a form that could
+ * be written to a file.
+ */
+export function captionCues(edl: Edl): CaptionCue[] {
+  const cues: CaptionCue[] = [];
   let outMs = 0;
-  let n = 1;
 
   for (const cut of edl.cuts) {
     const dur = cut.end_ms - cut.start_ms;
     const text = cut.text.trim();
-    if (text) {
-      blocks.push(`${n}\n${srtTime(outMs)} --> ${srtTime(outMs + dur)}\n${text}\n`);
-      n++;
-    }
+    if (text) cues.push({ start_ms: outMs, end_ms: outMs + dur, text });
     outMs += dur;
   }
 
-  return blocks.join("\n");
+  return cues;
+}
+
+export function buildSrt(edl: Edl): string {
+  return captionCues(edl)
+    .map((c, i) => `${i + 1}\n${srtTime(c.start_ms)} --> ${srtTime(c.end_ms)}\n${c.text}\n`)
+    .join("\n");
 }
 
 /**
@@ -156,10 +174,31 @@ export interface RenderPlan {
   format: string;
   aspect: string;
   durationS: number;
+  /*
+   * Burned-in captions. The container has had a complete ASS writer with two
+   * styles since it was written, and NOTHING EVER SET THESE — so `cues` was
+   * always empty, the caption branch never ran, and no render has ever had a
+   * word burned into it. Clipping's whole promise is "captions burned in".
+   *
+   * Opt-in, and absent by default: captions belong on a short, not on every
+   * export, and the owner's instruction was explicit that they are a choice
+   * rather than something applied to everything.
+   */
+  captions?: CaptionCue[];
+  captionStyle?: string;
 }
 
-export function buildRenderPlan(edl: Edl, format: string, aspect: string): RenderPlan {
+export function buildRenderPlan(
+  edl: Edl,
+  format: string,
+  aspect: string,
+  captionStyle?: string | null,
+): RenderPlan {
+  /* "None" is a real choice the picker offers, not a missing value. */
+  const wantsCaptions = Boolean(captionStyle && captionStyle !== "None");
+
   return {
+    ...(wantsCaptions ? { captions: captionCues(edl), captionStyle: captionStyle as string } : {}),
     cuts: edl.cuts.map((c) => ({
       key: c.sourceKey,
       start_s: c.start_ms / 1000,

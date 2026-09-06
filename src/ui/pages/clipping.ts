@@ -10,11 +10,18 @@
  */
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
-import { iconPlay, iconPlus, iconSearch } from "../icons.ts";
+import { iconPlus, iconSearch } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
 import { pageHeading } from "./empty.ts";
 import { ASPECTS, CAPTION_STYLES, CLIP_COUNTS, CLIP_LENGTHS } from "../../shorts.ts";
+
+export interface ShortRender {
+  id: string;
+  state: string;
+  r2_key: string | null;
+  error: string | null;
+}
 
 export interface ShortRow {
   id: string;
@@ -25,6 +32,8 @@ export interface ShortRow {
   score: number | null;
   kept: number;
   frame_r2_key: string;
+  /** The video of this moment, once one has been made. */
+  render?: ShortRender | null;
 }
 
 export interface ClippingSource {
@@ -154,18 +163,53 @@ function shortCard(s: ShortRow): string {
     ? `<img loading="lazy" src="/media/${esc(s.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
     : "";
 
-  return `<div style="border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
+  /*
+   * THE VIDEO, once one exists.
+   *
+   * This card used to stretch a 16:9 still into a 9:16 box behind a play
+   * button that was a <span> — decoration in the shape of a player, on a
+   * surface whose own lede promises "scored vertical shorts". Nothing here
+   * ever rendered anything.
+   *
+   * A short that has been made plays in place and can be downloaded. One that
+   * has not shows the frame and offers to make it, because rendering costs
+   * money and this product does not spend it unasked.
+   */
+  const r = s.render;
+  const media = r && r.state === "ready" && r.r2_key
+    ? `<video preload="metadata" playsinline controls${s.frame_r2_key ? ` poster="/media/${esc(s.frame_r2_key)}"` : ""} src="/media/${esc(r.r2_key)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`
+    : frame;
+
+  const overlay = r && r.state === "ready"
+    ? ""
+    : r && (r.state === "queued" || r.state === "running")
+      ? `<span data-content style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:${SIZE.meta};color:${C.ink70};background:rgba(10,10,11,.7);padding:5px 10px;border-radius:${RADIUS.button}">making it…</span>`
+      : `<div style="position:absolute;left:8px;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:8px">
+          ${
+            /* A failure says why AND offers the button again. Showing only the
+               reason leaves a card that can never be anything else, which is
+               how a recoverable problem starts looking permanent. */
+            r && r.state === "failed"
+              ? `<span data-content style="font-size:${SIZE.meta};color:${ACCENT.red};background:rgba(10,10,11,.85);padding:6px 8px;border-radius:${RADIUS.button};text-align:center;line-height:1.4">${esc(r.error ?? "That didn't render")}</span>`
+              : ""
+          }
+          <button class="make-short" data-clip="${esc(s.id)}" style="font-size:${SIZE.meta};font-weight:600;padding:7px 13px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">${r && r.state === "failed" ? "Retry" : "Make the video"}</button>
+        </div>`;
+
+  return `<div data-short="${esc(s.id)}" data-state="${esc(r?.state ?? "none")}" style="border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
     <div style="position:relative;aspect-ratio:9/16;background:#0B0B0E">
-      ${frame}
-      <span style="position:absolute;top:8px;left:8px;font-size:${SIZE.pill};font-weight:600;padding:3px 8px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-family:${FONT.mono}">${s.score ?? 0}</span>
-      <span data-content style="position:absolute;bottom:8px;right:8px;font-size:${SIZE.pill};font-family:${FONT.mono};background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px">${hms((s.end_ms - s.start_ms) / 1000)}</span>
-      <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:rgba(10,10,11,.55);display:grid;place-items:center">${iconPlay(13)}</span>
+      ${media}
+      <span style="position:absolute;top:8px;left:8px;font-size:${SIZE.pill};font-weight:600;padding:3px 8px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-family:${FONT.mono};pointer-events:none">${s.score ?? 0}</span>
+      ${r && r.state === "ready" ? "" : `<span data-content style="position:absolute;bottom:8px;right:8px;font-size:${SIZE.pill};font-family:${FONT.mono};background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px">${hms((s.end_ms - s.start_ms) / 1000)}</span>`}
+      ${overlay}
     </div>
     <div style="padding:12px;display:flex;flex-direction:column;gap:6px;flex:1">
       <div data-content style="font-size:${SIZE.secondary};line-height:1.45;color:${C.ink}">${esc(s.quote.slice(0, 110))}</div>
       ${s.why ? `<div data-content style="font-size:${SIZE.meta};color:${C.ink45}">${esc(s.why)}</div>` : ""}
       <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);font-family:${FONT.mono}">${hms(s.start_ms / 1000)}</div>
-      <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px">
+      <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;align-items:center">
+      ${r && r.state === "ready" && r.r2_key ? `<a href="/media/${esc(r.r2_key)}?download=1" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink}">Download</a>` : ""}
+      
         <button class="keep-toggle" data-clip="${esc(s.id)}" data-kept="${kept ? 1 : 0}" style="flex:1;background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}">
           <span style="display:block;text-align:center;font-size:${SIZE.secondary};font-weight:${kept ? 600 : 500};padding:6px 0;border-radius:${RADIUS.button};background:${kept ? accentBg(ACCENT.green) : C.pill};color:${kept ? ACCENT.green : C.ink70};white-space:nowrap">${kept ? "Keeping" : "Keep it"}</span>
         </button>

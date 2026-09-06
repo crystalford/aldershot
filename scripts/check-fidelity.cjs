@@ -203,6 +203,14 @@ async function checkStrings() {
         "right to erasure is not optional for anyone selling into the EU or UK.",
     ],
     [
+      "Make the video",
+      "Clipping's lede promises 'scored vertical shorts, captions burned in' " +
+        "and the prototype shows them as if they already exist — it never had " +
+        "to name the act of producing one, because its data was fixtures. The " +
+        "real product cannot render eight videos nobody asked for, so making " +
+        "one is a deliberate action and needs a label the prototype has none of.",
+    ],
+    [
       "Duplicate",
       "The prototype offers 'Branch a version', which it renders as an inert " +
         "span — the feature was drawn and never built, and 'branching' is not " +

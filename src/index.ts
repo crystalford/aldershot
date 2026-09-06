@@ -29,6 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
+import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
@@ -48,7 +49,7 @@ import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./proj
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
-import { CLIP_LENGTHS, type ClipLength } from "./shorts.ts";
+import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord } from "./cuts.ts";
 import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
@@ -725,6 +726,10 @@ app.get("/clipping", async (c) => {
       ? await listClipsForSource(c.env.DB, source.id, user.id)
       : await listShorts(c.env.DB, user.id)
   ).filter((cl) => cl.origin === "clipping");
+
+  /* Whether each one has actually been made into a video yet. Without this the
+     cards could only ever show a still and a play button that did nothing. */
+  const renders = await shortRendersFor(c.env.DB, user.id, shorts.map((cl) => cl.id));
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
@@ -746,7 +751,7 @@ app.get("/clipping", async (c) => {
           id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
           poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
         })),
-        shorts,
+        shorts: shorts.map((cl) => ({ ...cl, render: renders.get(cl.id) ?? null })),
         job,
         fromEditor: false,
       }),
@@ -1044,7 +1049,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
 app.post("/api/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ projectId: string; format: Format; aspect: Aspect }>(c);
+  const b = await body<{ projectId: string; format: Format; aspect: Aspect; captionStyle?: string }>(c);
   if (!b.projectId) return c.json({ error: "which project?" }, 400);
 
   const project = await getProject(c.env.DB, b.projectId, user.id);
@@ -1065,11 +1070,16 @@ app.post("/api/renders", async (c) => {
     return c.json({ error: "4K renders are on Studio. 1080p is available on Free." }, 402);
   }
 
+  /* Captions are opt-in. An unrecognised value is treated as no captions
+     rather than as a style, so a bad request cannot burn text into a video. */
+  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? b.captionStyle : "None";
+
   const render = await createRender(c.env.DB, {
     user_id: user.id,
     project_id: project.id,
     format,
     aspect,
+    captionStyle,
   });
   const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: project.id });
 
@@ -1384,6 +1394,39 @@ app.get("/api/projects/:id/clips", async (c) => {
       frame_r2_key: cl.frame_r2_key,
     })),
   });
+});
+
+/**
+ * Make the actual video of one short.
+ *
+ * On demand, one at a time. Rendering everything a scoring pass found would
+ * spend real money on videos nobody asked for, and the product's own rule is
+ * that nothing renders until you say so.
+ */
+app.post("/api/clips/:id/render", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const clip = await c.env.DB
+    .prepare(`SELECT id FROM v2_clips WHERE id=? AND user_id=? AND deleted_at IS NULL`)
+    .bind(c.req.param("id"), user.id)
+    .first<{ id: string }>();
+  if (!clip) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ aspect?: string; captionStyle?: string }>(c);
+  /* Unrecognised values fall back rather than reaching ffmpeg: 9:16 because a
+     short is vertical, and no captions because burned-in text cannot be taken
+     back out of a finished file. */
+  const aspect = ASPECTS.includes(b.aspect as never) ? (b.aspect as string) : "9:16";
+  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "None";
+
+  const renderId = await createShortRender(c.env.DB, { userId: user.id, clipId: clip.id, aspect, captionStyle });
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: clip.id });
+
+  await dispatch(c.env, c.executionCtx, {
+    type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
+  });
+  return c.json({ ok: true, renderId, jobId: job.id });
 });
 
 app.post("/api/clips/:id/keep", async (c) => {

@@ -29,6 +29,7 @@ import { failJob, getJobs } from "./jobs.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { runShorts } from "./shorts-job.ts";
+import { runShortRender } from "./short-render.ts";
 import { runRender } from "./render-job.ts";
 import { runScore } from "./begin.ts";
 import { runReactions, runOutline } from "./pass-jobs.ts";
@@ -67,6 +68,8 @@ export type JobMessage =
       query?: string;
     }
   | { type: "render"; jobId: string; userId: string; projectId: string; renderId: string }
+  /* A short is one clip from the library, with no project behind it. */
+  | { type: "short-render"; jobId: string; userId: string; clipId: string; renderId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string };
 
@@ -104,6 +107,13 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         length: msg.length as never,
         count: msg.count,
         query: msg.query,
+      });
+    case "short-render":
+      return await runShortRender(env, {
+        userId: msg.userId,
+        clipId: msg.clipId,
+        renderId: msg.renderId,
+        jobId: msg.jobId,
       });
     case "render":
       return await runRender(env, {

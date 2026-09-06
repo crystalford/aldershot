@@ -12,6 +12,7 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { FORMATS, RENDER_ASPECTS } from "../../render-job.ts";
+import { CAPTION_STYLES } from "../../shorts.ts";
 import { iconArrowDown, iconArrowUp, iconPlay } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { itemMenu } from "../item-menu.ts";
@@ -349,6 +350,14 @@ function exportPanel(projectId: string, plan: string): string {
     <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:14px">Shape</div>
     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${RENDER_ASPECTS.map((a) =>
       chip("aspect", a.id, a.label, a.note, a.id === "16:9", false),
+    ).join("")}</div>
+    <!-- Captions are OFF by default and a deliberate choice — the owner's
+         instruction was that they belong on some videos, not all of them.
+         Burned-in captions cannot be removed from a finished file, so the
+         default has to be the reversible one. -->
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:14px">Captions</div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${CAPTION_STYLES.map((cs) =>
+      chip("captionStyle", cs, cs === "None" ? "Off" : cs, cs === "None" ? "no captions" : "burned in", cs === "None", false),
     ).join("")}</div>
     <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
