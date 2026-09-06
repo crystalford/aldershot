@@ -8,10 +8,9 @@ name: Deploy to Cloudflare
 
 on:
   push:
-    # main is the trunk. claude/aldershot-v2-rebuild stays for now so the
-    # existing session keeps deploying while the default branch is switched
-    # over; drop it once main is the default and nothing pushes here.
-    branches: [main, claude/aldershot-v2-rebuild]
+    # main is the trunk and the default branch. Session branches do not deploy;
+    # work reaches production by reaching main.
+    branches: [main]
   workflow_dispatch: {}
 
 jobs:
