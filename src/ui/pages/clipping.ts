@@ -175,16 +175,36 @@ function shortCard(s: ShortRow): string {
 }
 
 export function renderClipping(d: ClippingData): string {
+  /* The lede follows what is on the page, not which URL you arrived by. With
+     shorts on screen, "Pick a video and it does the rest" describes something
+     that has already happened. */
   const heading = d.fromEditor
     ? ""
     : pageHeading(
         "Clipping",
-        d.source
+        d.source || d.shorts.length
           ? "Scored vertical shorts, captions burned in — no brief needed. Watch them, keep the ones that land."
           : "Scored vertical shorts, captions burned in — no brief needed. Pick a video and it does the rest.",
       );
 
-  if (!d.source) return heading + picker(d);
+  /*
+   * Clipping with no video chosen showed the video list and nothing else — so
+   * the nav item promising "shorts" delivered a third copy of Footage, and the
+   * shorts you had actually made were invisible unless you remembered which
+   * video they came from. Lead with the work; the picker follows it.
+   */
+  if (!d.source) {
+    /* No section label: these are every short in the library, so "Shorts from
+       this footage" — the prototype's phrase for one video's shorts — would be
+       a lie here, and the page's own lede already says what they are. */
+    const made = d.shorts.length
+      ? `<div style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:14px">${d.shorts.map(shortCard).join("")}</div>`
+      : "";
+    /* Shorts first: what you have made is the point of the surface, and the
+       picker is how you make another. Leading with the picker made Clipping a
+       third copy of the video list. */
+    return heading + made + picker(d);
+  }
 
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");
   const body = running

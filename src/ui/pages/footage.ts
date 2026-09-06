@@ -119,16 +119,25 @@ function threadChips(threads: ThreadRow[], total: number, active: string | null)
 /**
  * One video in Footage.
  *
- * A ready source carries its three actions — Edit, Clip it, React to it —
- * because this row is how you get INTO the product. Without them the row
- * linked to a transcript page and stopped there, so uploading a video and then
- * wanting to edit it was a dead end: the design's own acceptance criterion is
- * that Footage "opens straight into the editor", and it did not.
+ * A CARD, not a row.
  *
- * While it is still being read the row shows a real progress bar instead,
- * since none of those actions can work yet.
+ * Footage is a library of videos, and it was rendering as a list of text rows
+ * with three buttons on the end of each — 76px of poster and everything else
+ * words. Seven videos meant twenty-eight click targets, which is what the
+ * owner meant by "it's a nightmare to use". It also made Footage look exactly
+ * like Home, Editor and Clipping, which are also a title over a stack of rows:
+ * four surfaces that hold four different things and looked like one thing.
+ *
+ * A library of video looks like video. The poster is the card, the title sits
+ * under it, and the whole card opens the editor — so the primary action needs
+ * no button at all. "Edit" was dropped for exactly that reason: it duplicated
+ * clicking the card. The two that remain are different jobs, not the same one
+ * again, and they sit quietly beneath.
+ *
+ * While it is still being read the card shows real progress instead, since
+ * none of those actions can work yet.
  */
-function sourceRow(s: SourceRow): string {
+function sourceCard(s: SourceRow): string {
   const meta = [
     s.duration_s ? hms(s.duration_s) : null,
     new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
@@ -139,34 +148,53 @@ function sourceRow(s: SourceRow): string {
   const ready = s.transcript_state === "ready";
   const working = s.transcript_state === "running" || s.transcript_state === "pending";
 
-  const action = (label: string, primary: boolean, brief: string) =>
-    `<button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="${esc(brief)}" style="font-size:12px;font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:${primary ? C.raised : C.pill};color:${primary ? C.ink : C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${label}</button>`;
+  const poster = s.poster_r2_key
+    ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+    : "";
 
-  const tail = ready
-    ? `<div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
-        ${action("Edit", true, "")}
-        <a href="/clipping?source=${esc(s.id)}" style="font-size:12px;font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
-        ${action("React to it", false, "React to it")}
-      </div>`
-    : working && s.pct
-      ? `<div style="flex:none;width:120px;height:3px;border-radius:99px;background:#26262C;overflow:hidden">
-          <div style="width:${Math.max(2, s.pct)}%;height:100%;background:${ACCENT.green};border-radius:99px"></div>
-        </div>`
-      : stateChip(s.transcript_state);
+  /* The duration rides on the poster the way it does on every video service,
+     which is one fewer line of text under the card and reads faster. */
+  const stamp = s.duration_s
+    ? `<span style="position:absolute;right:6px;bottom:6px;font-size:${SIZE.meta};font-family:${FONT.mono};background:rgba(0,0,0,.66);color:${C.ink};border-radius:3px;padding:1px 5px">${hms(s.duration_s)}</span>`
+    : "";
 
-  return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
-    <a href="/sources/${esc(s.id)}" style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
-      <div style="flex:none;width:76px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">${
-        s.poster_r2_key
-          ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
-          : ""
-      }</div>
-      <div style="flex:1;min-width:0">
-        <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-        <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${esc(meta)}</div>
-      </div>
-    </a>
-    ${tail}
+  /* Not ready: the card says so over its own poster rather than beside it, so
+     an unusable card reads as unusable at a glance. */
+  const veil = ready
+    ? ""
+    : `<div style="position:absolute;inset:0;background:rgba(11,11,14,0.72);display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:10px">
+        ${
+          working && s.pct
+            ? `<div style="height:3px;border-radius:99px;background:#26262C;overflow:hidden"><div style="width:${Math.max(2, s.pct)}%;height:100%;background:${ACCENT.green};border-radius:99px"></div></div>`
+            : `<div style="align-self:flex-start">${stateChip(s.transcript_state)}</div>`
+        }
+      </div>`;
+
+  const cardStyle = `display:block;position:relative;width:100%;aspect-ratio:16/9;border-radius:${RADIUS.card};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)`;
+
+  const art = `<div style="${cardStyle}">${poster}${ready ? stamp : ""}${veil}</div>`;
+
+  /* Poster AND title in one link. They were separate, so the title — which is
+     what people actually aim at — was not clickable. */
+  const label = `<div style="min-width:0;margin-top:9px">
+      <div data-content style="font-size:${SIZE.secondary};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:2px;font-family:${FONT.mono}">${esc(meta)}</div>
+    </div>`;
+
+  return `<div style="display:flex;flex-direction:column;gap:9px">
+    ${
+      ready
+        ? `<a href="/sources/${esc(s.id)}" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
+        : art + label
+    }
+    ${
+      ready
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+            <a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
+            <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">React to it</button>
+          </div>`
+        : ""
+    }
   </div>`;
 }
 
@@ -281,7 +309,7 @@ export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
     if (!sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
     return (
       head +
-      `<div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${sources.map(sourceRow).join("")}</div>`
+      `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>`
     );
   }
 
@@ -327,7 +355,7 @@ export function renderFootageFull(d: FootageData): string {
 
   if (d.tab === "sources") {
     if (!d.sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
-    return head + `<div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${d.sources.map(sourceRow).join("")}</div>`;
+    return head + `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>`;
   }
 
   if (d.tab === "threads") {

@@ -251,6 +251,24 @@ export function overlapFraction(
   return smaller > 0 ? overlap / smaller : 0;
 }
 
+/**
+ * Every short this account has made, newest first.
+ *
+ * Clipping's landing state needs the whole library rather than one video's,
+ * because it is a shelf of what you made, not a filter on one source.
+ */
+export async function listShorts(db: D1Database, userId: string, limit = 60): Promise<Clip[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM v2_clips
+        WHERE user_id=? AND origin='clipping' AND deleted_at IS NULL
+        ORDER BY created_at DESC LIMIT ?`,
+    )
+    .bind(userId, limit)
+    .all<Clip>();
+  return results ?? [];
+}
+
 export async function listClipsForSource(db: D1Database, sourceId: string, userId: string): Promise<Clip[]> {
   const { results } = await db
     .prepare(`SELECT * FROM v2_clips WHERE source_id=? AND user_id=? AND deleted_at IS NULL ORDER BY start_ms`)

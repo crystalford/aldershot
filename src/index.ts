@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip }
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
-import { getProject, listClipsForSource, listProjects, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
+import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -681,11 +681,19 @@ app.get("/clipping", async (c) => {
   const sourceId = c.req.query("source");
   const source = sourceId ? (sources.find((s) => s.id === sourceId) ?? null) : null;
 
-  // Only what Clipping produced — the editor's kept clips are a different
-  // thing and belong in Footage, not mixed in here.
-  const shorts = source
-    ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
-    : [];
+  /*
+   * Only what Clipping produced — the editor's kept clips are a different
+   * thing and belong in Footage, not mixed in here.
+   *
+   * With no video chosen this is every short across the library rather than
+   * an empty list, so landing on Clipping shows what you have made rather than
+   * asking you to remember which video you made it from.
+   */
+  const shorts = (
+    source
+      ? await listClipsForSource(c.env.DB, source.id, user.id)
+      : await listShorts(c.env.DB, user.id)
+  ).filter((cl) => cl.origin === "clipping");
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
