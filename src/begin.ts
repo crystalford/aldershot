@@ -32,7 +32,15 @@ export interface BeginResult {
  */
 export async function begin(
   env: Env,
-  opts: { userId: string; sourceId: string; brief: string; upgrade?: boolean; sourceTitle?: string | null },
+  opts: {
+    userId: string;
+    sourceId: string;
+    brief: string;
+    upgrade?: boolean;
+    sourceTitle?: string | null;
+    /** The name worked out from the transcript. See src/naming.ts. */
+    cutTitle?: string | null;
+  },
 ): Promise<BeginResult> {
   const read = readIntent(opts.brief);
   // "unclear" is only ever a UI state — by the time we are here the user has
@@ -88,13 +96,21 @@ export async function begin(
     project = await createProject(env.DB, {
       user_id: opts.userId,
       /*
-       * An edit with no brief is named after its footage, not "Untitled cut".
-       * Four rows all reading "Untitled cut · DJI_2026…MP4 · 11 clips kept"
-       * are indistinguishable, and a list you cannot tell apart is a list you
-       * cannot use. The brief names it when there is one, because then the
-       * name is the request.
+       * Three names, in order of how much they actually tell you.
+       *
+       * A brief wins: if the user said what they wanted, that sentence is what
+       * they will recognise the piece by. Otherwise the name worked out from
+       * the transcript when the footage was read (src/naming.ts) — what the
+       * piece is ABOUT. The filename is last, and only because a source read
+       * before this existed has no stored name yet.
+       *
+       * The filename used to be second, which is what put
+       * "DJI_20260905043337_0026_D" at the top of the editor.
        */
-      title: titleFromBrief(opts.brief, opts.sourceTitle?.trim() || "Untitled cut"),
+      title: titleFromBrief(
+        opts.brief,
+        opts.cutTitle?.trim() || opts.sourceTitle?.trim() || "Untitled cut",
+      ),
       kind,
       source_id: opts.sourceId,
       brief: opts.brief,
@@ -137,7 +153,7 @@ export async function begin(
     jobId: job?.id ?? null,
     // extract and shorts produce no project: the clips land in Footage, and
     // there is nothing to assemble.
-    href: project ? `/p/${project.id}/pick` : intent === "shorts" ? "/clipping" : "/footage?tab=moments",
+    href: project ? `/p/${project.id}/cut` : intent === "shorts" ? "/clipping" : "/footage?tab=moments",
   };
 }
 

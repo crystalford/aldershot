@@ -123,6 +123,24 @@ export async function getProject(db: D1Database, id: string, userId: string): Pr
 }
 
 /**
+ * The titles that mean "nobody named this".
+ *
+ * Three of them, because naming has had three eras and rows from all three are
+ * in the database: the original placeholder, the footage's filename, and now
+ * the name worked out from the transcript (src/naming.ts).
+ *
+ * This has to be ONE definition. When it was written inline, adding the
+ * auto-name would have made `TOUCHED` read every auto-named cut as "the user
+ * renamed it" — so every video you merely opened would reappear in Projects,
+ * which is the exact complaint that made untouched edits stop listing.
+ */
+const UNNAMED = `(
+  title = 'Untitled cut'
+  OR title = (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id)
+  OR title = (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id)
+)`;
+
+/**
  * Collapses duplicate untouched edits of one video.
  *
  * The owner's Editor showed four rows reading "Untitled cut · DJI_2026….MP4"
@@ -144,7 +162,7 @@ export async function reapDuplicateEdits(db: D1Database, userId: string): Promis
         WHERE user_id=? AND deleted_at IS NULL
           AND (brief IS NULL OR TRIM(brief)='')
           AND (cuts IS NULL OR cuts='' OR cuts='[]')
-          AND title='Untitled cut'
+          AND ${UNNAMED}
           AND source_id IS NOT NULL
           AND id NOT IN (SELECT project_id FROM beats WHERE project_id IS NOT NULL)
           AND id NOT IN (SELECT project_id FROM renders WHERE project_id IS NOT NULL)
@@ -176,6 +194,7 @@ export async function nameUntitledEdits(db: D1Database, userId: string): Promise
   await db
     .prepare(
       `UPDATE v2_projects SET title = COALESCE(
+          (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id),
           (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id),
           title)
         WHERE user_id=? AND deleted_at IS NULL AND title='Untitled cut' AND source_id IS NOT NULL`,
@@ -201,12 +220,15 @@ export async function nameUntitledEdits(db: D1Database, userId: string): Promise
  *
  * A project with no source was made deliberately from the composer and is
  * always real.
+ *
+ * "A name you typed" is any title that is not one the product chose — see
+ * UNNAMED. The auto-name is one the product chose.
  */
 const TOUCHED = `(
   v2_projects.source_id IS NULL
   OR (brief IS NOT NULL AND TRIM(brief) <> '')
   OR (cuts IS NOT NULL AND cuts <> '' AND cuts <> '[]')
-  OR title <> COALESCE((SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id), title)
+  OR NOT ${UNNAMED}
   OR EXISTS (SELECT 1 FROM beats b WHERE b.project_id = v2_projects.id)
   OR EXISTS (SELECT 1 FROM renders r WHERE r.project_id = v2_projects.id)
 )`;

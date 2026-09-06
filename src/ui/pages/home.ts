@@ -234,7 +234,7 @@ function feedRow(f: FeedItem): string {
 
 /** In motion — what is part-made, with how far along it is. */
 function motionRow(p: MotionItem): string {
-  return `<a href="/p/${esc(p.id)}/build" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
+  return `<a href="/p/${esc(p.id)}/cut" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
     <div style="flex:none;width:64px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E">${
       p.poster_r2_key
         ? `<img loading="lazy" src="/media/${esc(p.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`

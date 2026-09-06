@@ -274,9 +274,9 @@ async function checkStrings() {
   try {
     const { projects } = await (await fetch(BASE + '/api/projects')).json();
     if (projects?.[0]) {
-      for (const stage of ['pick', 'build', 'script', 'shorts']) {
-        routes.push('/p/' + projects[0].id + '/' + stage);
-      }
+      // One editor, one URL. The four stage paths are aliases of it, so
+      // crawling all four checked the same HTML four times.
+      routes.push('/p/' + projects[0].id + '/cut');
     }
   } catch {}
 

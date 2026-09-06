@@ -24,7 +24,7 @@ import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/foo
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
-import { editorHeader, renderEditor, type Stage, exportPanel, exportsStrip } from "./ui/pages/editor.ts";
+import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
 import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
@@ -34,6 +34,7 @@ import { renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
+import { nameUnnamedSources } from "./naming.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
@@ -56,7 +57,6 @@ import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
 import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord } from "./cuts.ts";
-import type { CleanUp } from "./ui/pages/editor.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -388,7 +388,7 @@ app.get("/", async (c) => {
             state: j.state,
             href: j.ref_id
               ? projects.some((p) => p.id === j.ref_id)
-                ? `/p/${j.ref_id}/build`
+                ? `/p/${j.ref_id}/cut`
                 : `/sources/${j.ref_id}`
               : undefined,
             link: "Open",
@@ -608,6 +608,7 @@ app.get("/sources/:id", async (c) => {
       sourceId: src.id,
       brief: "",
       sourceTitle: src.title,
+      cutTitle: src.cut_title,
     });
     return c.redirect(href, 302);
   }
@@ -837,12 +838,19 @@ app.post("/api/shorts", async (c) => {
  * The old paths still resolve — links, history and anything the owner has
  * open — and land on the one surface rather than 404ing.
  */
-const STAGE_FOR_PATH: Record<string, Stage> = {
-  pick: "cut",
-  build: "cut",
-  script: "cut",
-  shorts: "cut",
-};
+/**
+ * The URLs the editor answers on.
+ *
+ * `cut` is the real one and everything links to it. The other four are the
+ * old stage tabs, kept because they are in people's history and in links
+ * already sent — a bookmark landing on a 404 is a worse outcome than a URL
+ * with a legacy name. They are not redirects: a redirect would rewrite the
+ * address bar under someone mid-edit for no benefit they asked for.
+ *
+ * This list had `cut` MISSING, so the canonical URL 404ed while all four
+ * legacy aliases worked. The walk caught it.
+ */
+const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts"]);
 
 /**
  * The editor. One route, one surface.
@@ -855,7 +863,7 @@ const STAGE_FOR_PATH: Record<string, Stage> = {
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  if (!STAGE_FOR_PATH[c.req.param("stagePath")]) return c.notFound();
+  if (!EDITOR_PATHS.has(c.req.param("stagePath"))) return c.notFound();
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.notFound();
@@ -1642,7 +1650,7 @@ app.post("/api/projects/:id/duplicate", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const copy = await duplicateProject(c.env.DB, c.req.param("id"), user.id);
-  return copy ? c.json({ ok: true, ...copy, href: `/p/${copy.id}/pick` }) : c.json({ error: "not found" }, 404);
+  return copy ? c.json({ ok: true, ...copy, href: `/p/${copy.id}/cut` }) : c.json({ error: "not found" }, 404);
 });
 
 /**
@@ -2300,6 +2308,7 @@ app.post("/api/begin", async (c) => {
     brief: b.brief || "",
     upgrade: b.upgrade,
     sourceTitle: src.title,
+    cutTitle: src.cut_title,
   });
 
   /* No job means this reopened an edit that already has its clips — there is
@@ -2383,6 +2392,15 @@ async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionC
     .all<{ user_id: string }>();
 
   await reapRateLimits(env.DB);
+
+  /* Footage read before naming existed still shows its filename. Bounded, and
+     outside the per-user loop because it is scoped by what is unnamed rather
+     than by who has work in flight. */
+  try {
+    await nameUnnamedSources(env);
+  } catch (err) {
+    console.log(`[sweep] naming: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   for (const { user_id } of results ?? []) {
     /* One user's bad row must not stop the sweep for everyone else. */

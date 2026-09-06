@@ -26,6 +26,12 @@ export interface Source {
   height: number | null;
   transcript_state: TranscriptState;
   poster_r2_key: string | null;
+  /**
+   * What the cut of this footage gets called — worked out from the transcript
+   * when it was read, and null for anything read before that existed.
+   * Deliberately not `title`: see src/naming.ts.
+   */
+  cut_title: string | null;
   created_at: number;
   deleted_at: number | null;
 }
@@ -73,6 +79,7 @@ export async function createSource(
     height: null,
     transcript_state: "pending",
     poster_r2_key: null,
+    cut_title: null,
     created_at: Date.now(),
     deleted_at: null,
   };

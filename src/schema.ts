@@ -281,6 +281,19 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * rearranged", which is the transcript in its own order.
    */
   { table: "v2_projects", column: "block_order", ddl: "ALTER TABLE v2_projects ADD COLUMN block_order TEXT" },
+
+  /*
+   * What the footage is ABOUT, in a few words, written once when it is read.
+   *
+   * Deliberately NOT `sources.title`: a source keeps its filename, because you
+   * find a file again by what you called it. This is the name its CUT takes,
+   * so "DJI_20260905043337_0026_D" stops being what the piece is called.
+   *
+   * Stored rather than generated on demand because the cut is created lazily,
+   * on the first open — asking a model then would put a model call inside a
+   * page load, and would risk two opens producing two different names.
+   */
+  { table: "sources", column: "cut_title", ddl: "ALTER TABLE sources ADD COLUMN cut_title TEXT" },
 ];
 
 let ensured = false;

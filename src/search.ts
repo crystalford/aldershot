@@ -101,7 +101,7 @@ export async function quickSearch(db: D1Database, userId: string, query: string)
   }
 
   for (const p of projects.results ?? []) {
-    out.push({ kind: "project", id: p.id, title: p.title, sub: `edit · ${p.kind}`, href: `/p/${p.id}/pick` });
+    out.push({ kind: "project", id: p.id, title: p.title, sub: `edit · ${p.kind}`, href: `/p/${p.id}/cut` });
   }
 
   for (const c of clips.results ?? []) {

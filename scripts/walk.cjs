@@ -36,10 +36,27 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
 
   const errors = [];
   page.on('pageerror', (e) => errors.push(`${page.url()} :: PAGEERROR ${e.message}`));
+
+  /*
+   * The FAILING REQUEST, not just the page it happened on.
+   *
+   * The console message for a bad fetch is "Failed to load resource: the
+   * server responded with a status of 404" with no URL in it, so a run would
+   * report ten identical lines naming only the page — which says something is
+   * wrong and nothing about what. Listening to responses gives the URL and the
+   * method, which is the difference between a finding and a rumour.
+   */
+  page.on('response', (r) => {
+    if (r.status() < 400) return;
+    const u = r.url().replace(BASE, '');
+    errors.push(`${r.status()} ${r.request().method()} ${u}`);
+  });
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const t = m.text();
     if (/net::ERR_FAILED|ERR_CONNECTION_RESET|favicon|fonts\.(googleapis|gstatic)/.test(t)) return;
+    // The response listener above already reports these, with the URL.
+    if (/Failed to load resource/.test(t)) return;
     errors.push(`${page.url()} :: CONSOLE ${t}`);
   });
 
@@ -130,15 +147,19 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
   const scratch = projects.find((p) => !(p.brief || '').trim());
   const briefed = projects.find((p) => (p.brief || '').trim());
 
-  const stageSurfaces = [];
-  for (const [label, p] of [['scratch', scratch], ['briefed', briefed]]) {
-    if (!p) continue;
-    for (const st of ['pick', 'build', 'script', 'shorts']) {
-      stageSurfaces.push([`${label}/${st}`, `/p/${p.id}/${st}`]);
-    }
+  /*
+   * ONE editor. There used to be four stage URLs and this walk drove all
+   * four, which is how "every page is basically the same" was measured. They
+   * are now aliases of a single surface, so the walk visits it once per
+   * project and separately proves the old paths still resolve — a bookmark
+   * must not 404.
+   */
+  const editorSurfaces = [];
+  for (const [label, p] of [['cut · scratch', scratch], ['cut · briefed', briefed]]) {
+    if (p) editorSurfaces.push([label, `/p/${p.id}/cut`]);
   }
 
-  const surfaces = [...stageSurfaces, 
+  const surfaces = [...editorSurfaces, 
     ['Home', '/'],
     ['Editor', '/editor'],
     ['Clipping', '/clipping'],
@@ -161,30 +182,75 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
     await firstVideo.click();
     await page.waitForLoadState('load');
     await page.waitForTimeout(400);
-    const d = await survey('  → landed on');
-    const hasVideo = await page.locator('video').count();
-    const lines = await page.locator('[data-seg-block]').count();
-    const scored = await page.locator('[data-clip]').count();
-    console.log(`   video element: ${hasVideo ? 'yes' : 'NO'} · transcript blocks: ${lines} · scored blocks: ${scored}`);
+    await survey('  → landed on');
 
-    if (lines) {
-      const before = (await page.locator('#scratch-runtime').textContent()) || '';
-      await page.locator('.seg-keep').first().click();
+    const hasVideo = await page.locator('video').count();
+    const blocks = await page.locator('.blk').count();
+    const scored = await page.locator('.blk [title]').count();
+    console.log(`   video element: ${hasVideo ? 'yes' : 'NO'} · blocks: ${blocks} · scored: ${scored}`);
+
+    /* The cut is named after what it is about, not after the file. The owner:
+       "it should also automatically name it, instead of having the file
+       names". A filename leaking back into the heading is a regression. */
+    const heading = ((await page.locator('h1, [data-content]').first().textContent()) || '').trim();
+    const looksLikeFile = /\.(mp4|mov|mkv|m4v)$|^[A-Z]{2,4}[_ ]?\d{6,}/i.test(heading);
+    console.log(`   named: "${heading}"  ${looksLikeFile ? '⚠ STILL A FILENAME' : 'OK'}`);
+
+    if (blocks) {
+      const runtime = async () => ((await page.locator('#cut-runtime').textContent()) || '').trim();
+
+      const before = await runtime();
+      await page.locator('.blk-strike').first().click();
       await page.waitForTimeout(500);
-      const after = (await page.locator('#scratch-runtime').textContent()) || '';
-      console.log(`   keep/drop: "${before.trim()}" → "${after.trim()}"  ${before !== after ? 'OK' : '⚠ NO CHANGE'}`);
+      const after = await runtime();
+      console.log(`   strike:   "${before}" → "${after}"  ${before !== after ? 'OK' : '⚠ NO CHANGE'}`);
+
       await page.reload({ waitUntil: 'load' });
-      await page.waitForTimeout(300);
-      const persisted = (await page.locator('#scratch-runtime').textContent()) || '';
-      console.log(`   after reload: "${persisted.trim()}"  ${persisted.trim() === after.trim() ? 'PERSISTED' : '⚠ LOST'}`);
-      await page.locator('.seg-keep').first().click();
       await page.waitForTimeout(400);
+      console.log(`   persists: "${await runtime()}"  ${(await runtime()) === after ? 'OK' : '⚠ LOST'}`);
+
+      /* Reorder. The first block's own id is what must move. */
+      const idOf = async (i) => await page.locator('.blk').nth(i).getAttribute('data-block');
+      const wasFirst = await idOf(0);
+      const later = page.locator('.blk').first().locator('.blk-move').last();
+      if (await later.count()) {
+        await later.click();
+        await page.waitForTimeout(600);
+        await page.reload({ waitUntil: 'load' });
+        await page.waitForTimeout(400);
+        const nowFirst = await idOf(0);
+        console.log(`   reorder:  ${wasFirst} → ${nowFirst}  ${wasFirst !== nowFirst ? 'OK' : '⚠ NO CHANGE'}`);
+      }
+
+      /* Insert a seam — the "building blocks" gesture. */
+      const n = await page.locator('.blk').count();
+      const seam = page.locator('.blk-insert').first();
+      if (await seam.count()) {
+        await seam.click();
+        await page.waitForTimeout(700);
+        await page.reload({ waitUntil: 'load' });
+        await page.waitForTimeout(400);
+        const n2 = await page.locator('.blk').count();
+        console.log(`   insert:   ${n} → ${n2} blocks  ${n2 > n ? 'OK' : '⚠ NO CHANGE'}`);
+      }
+    } else {
+      console.log('   ⚠ no blocks — the editor has nothing to edit');
     }
   } else {
     console.log('   no videos to click');
   }
 
-  console.log('\n── how alike are the surfaces?');
+  /* A bookmark to an old stage URL must land on the editor, not a 404. */
+  console.log('\n── old stage URLs still resolve');
+  if (scratch) {
+    for (const st of ['pick', 'build', 'script', 'shorts']) {
+      const res = await page.goto(BASE + `/p/${scratch.id}/${st}`, { waitUntil: 'load' });
+      const blocks = await page.locator('.blk').count();
+      console.log(`   /${st}  ${res.status()}  ${blocks} blocks  ${res.status() < 400 ? 'OK' : '⚠ DEAD'}`);
+    }
+  }
+
+  console.log('\n── control counts per surface');
   for (const [label, d] of seen) {
     console.log(`   ${label.padEnd(16)} ${String(d.controls.length).padStart(3)} controls`);
   }

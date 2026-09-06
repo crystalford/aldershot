@@ -10,6 +10,7 @@
 
 import type { Env } from "./env.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
+import { nameSourceCut } from "./naming.ts";
 import { meter } from "./usage.ts";
 import { checkCap, type Plan } from "./plans.ts";
 import { extractAudio, isAudio } from "./audio.ts";
@@ -100,6 +101,20 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
 
     await advance(env.DB, job.id, 80, "writing down what it heard");
     const count = await saveSegments(env.DB, src.id, result.segments);
+
+    /*
+     * Name the cut now, while the transcript is in hand.
+     *
+     * Here rather than at read time because a name has to be stable: it is the
+     * heading in the editor, the row in Projects, and the line in Home's feed,
+     * and those cannot each generate their own. This is also the only moment
+     * the words exist in memory already.
+     *
+     * The source keeps its filename — see src/naming.ts for why that split is
+     * deliberate and not an oversight.
+     */
+    await advance(env.DB, job.id, 92, "naming it");
+    await nameSourceCut(env, src, result.segments.map((s) => s.text).join(" "), job.id);
 
     await env.DB
       .prepare(`UPDATE sources SET duration_s=?, transcript_state='ready' WHERE id=?`)

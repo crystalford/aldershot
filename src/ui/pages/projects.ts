@@ -83,7 +83,7 @@ function hero(p: ProjectRow): string {
     <div style="font-size:${SIZE.body};font-weight:600;color:rgba(236,236,241,0.5);padding-left:2px">Pick up where you left off</div>
     <div data-item-row style="position:relative">
     <div style="position:absolute;right:10px;top:22px;z-index:5">${itemMenu("projects", p.id, p.title, "edit")}</div>
-    <a href="/p/${esc(p.id)}/build" style="margin-top:16px;display:flex;gap:18px;padding:16px;border-radius:11px;background:${C.surface};box-shadow:inset 0 0 0 1px rgba(217,179,106,0.22);flex-wrap:wrap;align-items:center">
+    <a href="/p/${esc(p.id)}/cut" style="margin-top:16px;display:flex;gap:18px;padding:16px;border-radius:11px;background:${C.surface};box-shadow:inset 0 0 0 1px rgba(217,179,106,0.22);flex-wrap:wrap;align-items:center">
       <div style="flex:none;width:min(220px,100%);aspect-ratio:16/9;border-radius:7px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);background:#0B0B0E;position:relative">
         ${poster(p.poster_r2_key)}${runtimeBadge(p)}
       </div>
@@ -118,7 +118,7 @@ function card(p: ProjectRow): string {
   return `<div data-item-row style="position:relative;display:flex">
   ${selectBox("projects", p.id)}
   <div style="position:absolute;right:6px;top:6px;z-index:5;background:rgba(11,11,14,0.66);border-radius:${RADIUS.button}">${itemMenu("projects", p.id, p.title, "edit")}</div>
-  <a href="/p/${esc(p.id)}/build" style="flex:1;min-width:0;border-radius:11px;background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
+  <a href="/p/${esc(p.id)}/cut" style="flex:1;min-width:0;border-radius:11px;background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
     <div style="width:100%;aspect-ratio:16/9;background:#0B0B0E;position:relative">
       ${poster(p.poster_r2_key)}
       <span data-content style="position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:5px;font-size:${SIZE.pill};font-weight:600;color:${stateColor};background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:4px;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:${stateColor}"></span>${stateLabel}</span>

@@ -158,7 +158,7 @@ export function renderEditorIntake(d: EditorIntakeData): string {
         ? d.edits
             .slice(0, 6)
             .map((e) =>
-              row({ href: `/p/${e.id}/pick`, posterKey: e.poster_r2_key, title: e.title, meta: editMeta(e), action: "Continue", menu: itemMenu("projects", e.id, e.title, "edit") }),
+              row({ href: `/p/${e.id}/cut`, posterKey: e.poster_r2_key, title: e.title, meta: editMeta(e), action: "Continue", menu: itemMenu("projects", e.id, e.title, "edit") }),
             )
             .join("")
         : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing on the go</div>`
