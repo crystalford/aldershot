@@ -43,14 +43,19 @@ You can skip this entirely at first if you set up Google above — but you
 will want it eventually, because not everyone has or wants to use a Google
 account.
 
-1. Sign up at resend.com (free tier is 3,000 emails/month).
-2. Add and verify `aldershot.io` as a sending domain — this is the DNS
-   part, and it's why the domain has to come first.
-3. Create an API key.
-4. Add it as a repo secret named `RESEND_API_KEY`.
+This uses **Cloudflare's own email service** — no third-party account, no
+extra key, no second bill. 3,000 messages a month are included on the Workers
+Paid plan the containers already need, then $0.35 per thousand.
 
-The from-address is `hello@aldershot.io`, hardcoded in `src/auth.ts`. If
-you'd rather it were something else, that's a one-line change.
+1. Cloudflare dashboard → **Email** → onboard your domain as a **sending
+   domain**. This is the DNS part, and it's why the domain has to come first.
+2. Add the SPF/DKIM records it gives you.
+3. Add a repo secret `MAIL_FROM` with the address links come from, e.g.
+   `hello@yourdomain`. It has to be on the onboarded domain.
+
+Until a sending domain is onboarded the binding can only reach addresses you
+have personally verified — fine for alerts to yourself, useless for logging a
+customer in. The `send_email` binding is already in `wrangler.jsonc`.
 
 ## 4. Cloudflare Queues — required for files over ~30 minutes
 
@@ -109,7 +114,7 @@ Repo secrets (Settings → Secrets and variables → Actions):
 | `CLOUDFLARE_ACCOUNT_ID` | any deploy | nothing deploys |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | direct-to-R2 uploads | uploads go through the Worker |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in | the button is hidden; email link only |
-| `RESEND_API_KEY` | email sign-in | nothing is sent, and the page says so |
+| `MAIL_FROM` (+ an onboarded sending domain) | email sign-in | nothing is sent, and the page says so |
 | `APP_ORIGIN` | correct login links | links use the request's host |
 | `ANTHROPIC_API_KEY` | optional upgrade | everything stays on Workers AI |
 

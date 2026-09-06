@@ -35,6 +35,14 @@
    * would have inflated 98KB of woff2 into 130KB of source for nothing. See
    * src/ui/fontfaces.ts.
    */
+  /*
+   * Sending login links. Cloudflare's own service rather than a third party —
+   * 3,000/month included on the Workers Paid plan the containers already
+   * require, then $0.35 per thousand. Needs a sending domain onboarded before
+   * it can reach anyone but a verified address; see docs/LAUNCH.md.
+   */
+  "send_email": [{ "name": "EMAIL" }],
+
   "rules": [{ "type": "Data", "globs": ["**/*.woff2"], "fallthrough": false }],
 
   "d1_databases": [

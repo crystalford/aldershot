@@ -29,7 +29,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           APP_ORIGIN: ${{ secrets.APP_ORIGIN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
@@ -96,7 +96,10 @@ jobs:
           put_secret R2_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
           put_secret R2_ACCESS_KEY_ID "${R2_ACCESS_KEY_ID:-}"
           put_secret R2_SECRET_ACCESS_KEY "${R2_SECRET_ACCESS_KEY:-}"
-          put_secret RESEND_API_KEY "${RESEND_API_KEY:-}"
+          # The address login links come from. Not a secret in any real sense
+          # — it appears in every message — but it is per-deployment, so it
+          # rides with the rest rather than being hardcoded.
+          put_secret MAIL_FROM "${MAIL_FROM:-}"
           put_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
           put_secret APP_ORIGIN "${APP_ORIGIN:-}"
           put_secret GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"

@@ -36,7 +36,16 @@ export interface Env {
   SESSION_SECRET?: string;
 
   /** Sends the one-time login links. Without it, links are logged, not sent. */
-  RESEND_API_KEY?: string;
+  /*
+   * Cloudflare's own email send binding, and the address login links come
+   * from. Not a third party: this was Resend, which meant a separate account,
+   * separate keys and a separate bill for the one email this product sends.
+   *
+   *   MAIL_FROM is a var, not a secret — it is an address that appears in
+   *   every message. The binding is configured in wrangler.jsonc.
+   */
+  EMAIL?: { send(message: { to: string; from: string; subject: string; text?: string; html?: string }): Promise<unknown> };
+  MAIL_FROM?: string;
 
   /**
    * Sign in with Google — the primary path (src/oauth.ts). Needs no domain and

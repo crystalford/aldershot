@@ -27,7 +27,12 @@ const TOKEN_MINUTES = 20;
 export interface AuthEnv {
   DB: D1Database;
   SESSION_SECRET?: string;
-  RESEND_API_KEY?: string;
+  /*
+   * Cloudflare's send binding, and the address it sends as. Both absent until
+   * a domain is onboarded — see docs/LAUNCH.md.
+   */
+  EMAIL?: { send(message: { to: string; from: string; subject: string; text?: string; html?: string }): Promise<unknown> };
+  MAIL_FROM?: string;
   APP_ORIGIN?: string;
   /**
    * Development only. When set, an unauthenticated request is treated as this
@@ -179,40 +184,49 @@ export async function consumeToken(env: AuthEnv, raw: string): Promise<string | 
 }
 
 /**
- * Sends the link, if a provider is configured.
+ * Sends the link.
+ *
+ * CLOUDFLARE'S OWN EMAIL SERVICE, not a third party. This used Resend, which
+ * meant a separate account, separate keys, a separate bill and a separate
+ * thing to be down — for one email in the entire product. Cloudflare sends to
+ * arbitrary recipients once a domain is onboarded, on the same Workers Paid
+ * plan the containers already require, with 3,000 a month included and $0.35
+ * per thousand after. Same free allowance Resend offers, without its 100-a-day
+ * ceiling, and it lands on an invoice that already exists.
+ *
+ * (MailChannels, the other route out of a Worker, ended its free Cloudflare
+ * tier in 2024. Cloudflare's own Email Routing cannot do this either — before
+ * a sending domain is onboarded it only reaches addresses you have verified,
+ * which is fine for alerts to yourself and useless for logging a customer in.)
  *
  * Returns whether it was actually sent. The caller must not claim "check your
- * email" on a false — with no key configured the link is only written to the
- * log, and telling the user to check an inbox nothing was sent to is the kind
+ * email" on a false — with nothing configured the link is only written to the
+ * log, and telling someone to check an inbox nothing was sent to is the kind
  * of quiet lie this codebase avoids elsewhere.
  */
 async function sendLoginEmail(env: AuthEnv, email: string, url: string): Promise<boolean> {
-  if (!env.RESEND_API_KEY) {
-    console.log(`[auth] no RESEND_API_KEY set — login link for ${email}: ${url}`);
+  if (!env.EMAIL || !env.MAIL_FROM) {
+    console.log(`[auth] no email binding or MAIL_FROM — login link for ${email}: ${url}`);
     return false;
   }
 
+  const body =
+    `Open Aldershot:\n\n${url}\n\n` +
+    `The link works once and expires in ${TOKEN_MINUTES} minutes. ` +
+    `If you didn't ask for it, ignore this.`;
+
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Aldershot <hello@aldershot.io>",
-        to: [email],
-        subject: "Your Aldershot link",
-        text: `Open Aldershot:\n\n${url}\n\nThe link works once and expires in ${TOKEN_MINUTES} minutes. If you didn't ask for it, ignore this.`,
-      }),
+    await env.EMAIL.send({
+      to: email,
+      from: env.MAIL_FROM,
+      subject: "Your Aldershot link",
+      text: body,
     });
-    if (!res.ok) {
-      console.log(`[auth] resend rejected the send: ${res.status} ${await res.text()}`);
-      return false;
-    }
     return true;
   } catch (err) {
-    console.log(`[auth] could not reach resend: ${(err as Error).message}`);
+    /* A bounce, an un-onboarded domain, a suppressed address. The caller
+       reports that nothing was sent rather than guessing which. */
+    console.log(`[auth] could not send to ${email}: ${(err as Error).message}`);
     return false;
   }
 }

@@ -25,14 +25,30 @@ Right now a stranger who enters their address gets *"Sign-in isn't switched on
 yet — email delivery isn't configured. Nothing was sent."* That message is
 honest, and it means the product has no way in for anyone but you.
 
-- Create a Resend account, add and verify the sending domain (DNS records —
-  allow time for propagation).
-- Repo secret `RESEND_API_KEY`.
-- Change the `from:` address in `src/auth.ts` (`sendLoginEmail`) if it is not
-  `hello@aldershot.io`. It must be on the verified domain or Resend rejects it.
+**This uses Cloudflare's own email service, not a third party.** No separate
+account, no separate keys, no separate bill — 3,000 messages a month included
+on the Workers Paid plan the containers already require, then $0.35 per
+thousand. The one email this product sends is a login link.
+
+1. Cloudflare dashboard → **Email** → onboard `<yourdomain>` as a **sending
+   domain**. This is the step that matters: until a sending domain is
+   onboarded the binding can only reach addresses you have personally
+   verified, which is fine for alerts to yourself and useless for logging a
+   customer in.
+2. Add the DNS records it gives you (SPF/DKIM). Allow time to propagate.
+3. Repo secret **`MAIL_FROM`** — the address links come from, e.g.
+   `hello@<yourdomain>`. It must be on the onboarded domain.
+
+The `send_email` binding is already in `wrangler.jsonc`; nothing else to wire.
 
 Test it by signing in from a browser with no session, using an address that is
 not the owner's.
+
+> Why not Resend, MailChannels, or Email Routing? Resend works and its free
+> tier is comparable, but it is another account, another key and another bill
+> for one email. MailChannels ended its free Cloudflare tier in 2024.
+> Cloudflare's Email *Routing* cannot do this at all — it only reaches
+> pre-verified addresses.
 
 ## 3. Payments — and a tax decision to make first
 
