@@ -305,3 +305,89 @@ export async function purge(
 
   return { ok: true, freedBytes };
 }
+
+
+/**
+ * Closes an account and takes everything with it.
+ *
+ * The most destructive thing in this codebase, and it has to exist: you
+ * cannot sell a subscription to an account nobody can close, and for anyone
+ * selling into the EU or UK the right to erasure is not optional.
+ *
+ * Everything means everything — the videos, their audio and posters, every
+ * render, the transcripts, the clips, the jobs, the usage history, and the
+ * user row. R2 first, so a database that survives a partial failure still
+ * points at what is left rather than at objects that are already gone.
+ *
+ * The caller must have proved intent by typing the account's own email
+ * address; this re-checks it rather than trusting that the interface did,
+ * because "the UI asked" is not a safeguard an API can rely on.
+ */
+export async function closeAccount(
+  env: Env,
+  userId: string,
+  typedEmail: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const db = env.DB;
+
+  const user = await db
+    .prepare(`SELECT id, email FROM v2_users WHERE id=?`)
+    .bind(userId)
+    .first<{ id: string; email: string }>();
+  if (!user) return { ok: false, error: "not found" };
+
+  if (typedEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+    return { ok: false, error: "That is not the address on this account." };
+  }
+
+  /* Every R2 key this account owns, from the tables that hold them. */
+  const keys = new Set<string>();
+  const { results: sources } = await db
+    .prepare(`SELECT r2_key, poster_r2_key FROM sources WHERE user_id=?`)
+    .bind(userId)
+    .all<{ r2_key: string | null; poster_r2_key: string | null }>();
+  for (const s of sources ?? []) {
+    if (s.r2_key) {
+      keys.add(s.r2_key);
+      keys.add(`${s.r2_key.replace(/\.[a-z0-9]+$/i, "")}.audio.mp3`);
+    }
+    if (s.poster_r2_key) keys.add(s.poster_r2_key);
+  }
+  const { results: renders } = await db
+    .prepare(`SELECT r2_key FROM renders WHERE user_id=? AND r2_key IS NOT NULL`)
+    .bind(userId)
+    .all<{ r2_key: string }>();
+  for (const r of renders ?? []) keys.add(r.r2_key);
+
+  const { results: clips } = await db
+    .prepare(`SELECT frame_r2_key FROM v2_clips WHERE user_id=? AND frame_r2_key IS NOT NULL AND frame_r2_key <> ''`)
+    .bind(userId)
+    .all<{ frame_r2_key: string }>();
+  for (const cl of clips ?? []) keys.add(cl.frame_r2_key);
+
+  for (const key of keys) {
+    /* A key that is already gone is not a reason to leave the account open. */
+    await env.MEDIA.delete(key).catch(() => {});
+  }
+
+  await db.batch([
+    db.prepare(`DELETE FROM beats WHERE project_id IN (SELECT id FROM v2_projects WHERE user_id=?)`).bind(userId),
+    db.prepare(`DELETE FROM segments WHERE source_id IN (SELECT id FROM sources WHERE user_id=?)`).bind(userId),
+    db.prepare(`DELETE FROM v2_clip_threads WHERE clip_id IN (SELECT id FROM v2_clips WHERE user_id=?)`).bind(userId),
+    db.prepare(`DELETE FROM upload_parts WHERE source_id IN (SELECT id FROM sources WHERE user_id=?)`).bind(userId),
+    db.prepare(`DELETE FROM uploads WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM renders WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM passes WHERE project_id IN (SELECT id FROM v2_projects WHERE user_id=?)`).bind(userId),
+    db.prepare(`DELETE FROM v2_projects WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM v2_clips WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM v2_threads WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM sources WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM jobs WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM usage_events WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM trash WHERE user_id=?`).bind(userId),
+    db.prepare(`DELETE FROM auth_tokens WHERE email=?`).bind(user.email),
+    db.prepare(`DELETE FROM v2_users WHERE id=?`).bind(userId),
+  ]);
+
+  return { ok: true };
+}

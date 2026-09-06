@@ -196,6 +196,13 @@ async function checkStrings() {
         "here yet' is its wording on Home.",
     ],
     [
+      "Close account",
+      "The prototype is a permanently-signed-in demo with no account lifecycle " +
+        "at all, so it has no string for this. It cannot be skipped: you " +
+        "cannot sell a subscription to an account nobody can close, and the " +
+        "right to erasure is not optional for anyone selling into the EU or UK.",
+    ],
+    [
       "Duplicate",
       "The prototype offers 'Branch a version', which it renders as an inert " +
         "span — the feature was drawn and never built, and 'branching' is not " +

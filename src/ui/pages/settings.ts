@@ -32,6 +32,8 @@ export interface CostLine {
 
 export interface SettingsData {
   name: string | null;
+  /** Which account this is. It was never shown anywhere. */
+  email: string;
   plan: string;
   isOwner: boolean;
   meters: Meter[];
@@ -54,14 +56,24 @@ function sectionLabel(text: string): string {
   return `<div style="margin-top:40px;font-size:${SIZE.body};font-weight:600;color:${C.ink45}">${text}</div>`;
 }
 
-function account(name: string | null): string {
-  const initial = (name ?? "You").trim().charAt(0).toUpperCase() || "Y";
+function account(name: string | null, email: string): string {
+  const initial = (name ?? email ?? "You").trim().charAt(0).toUpperCase() || "Y";
+  /*
+   * The EMAIL is shown, and the name can be set.
+   *
+   * Neither was true: this displayed a name the account might not have and
+   * never said which account you were signed into. And the greeting on Home
+   * reads "Good morning." with no name precisely because an address with no
+   * separator yields no usable first name — with nowhere to type one, that
+   * was permanent.
+   */
   return `${sectionLabel("Account")}
   <div style="margin-top:16px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};display:flex;align-items:center;gap:14px;flex-wrap:wrap">
     <span style="width:38px;height:38px;border-radius:50%;background:#2A2A31;display:flex;align-items:center;justify-content:center;font-size:${SIZE.body};color:${C.ink70};flex:none">${esc(initial)}</span>
     <div style="flex:1 1 160px;min-width:min(160px,100%)">
-      <div data-content style="font-size:${SIZE.body};font-weight:500">${esc(name ?? "You")}</div>
-      <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">Solo workspace · no one else has access</div>
+      <input id="acctName" value="${esc(name ?? "")}" placeholder="Your name" maxlength="60"
+        style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;font-size:${SIZE.body};font-weight:500;color:${C.ink};padding:0;font-family:${FONT.ui}"/>
+      <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px;font-family:${FONT.mono}">${esc(email)}</div>
     </div>
     <a href="/landing" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};flex:none;white-space:nowrap">Signed-out site</a>
     <!-- There was no way to sign out. Anywhere. A form post rather than a
@@ -70,7 +82,18 @@ function account(name: string | null): string {
     <form method="POST" action="/auth/signout" style="flex:none">
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap;border:none;cursor:pointer;font-family:${FONT.ui}">Sign out</button>
     </form>
-    <span style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none;white-space:nowrap">Manage</span>
+  </div>
+  <!-- Closing an account had to exist: you cannot sell a subscription to one
+       nobody can close, and the right to erasure is not optional for anyone
+       selling into the EU or UK. It asks for the address rather than a click,
+       because unlike every other delete here it takes everything and there is
+       no bin behind it. -->
+  <div style="margin-top:8px;padding:14px 18px;border-radius:${RADIUS.card};background:${C.surface};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="flex:1 1 240px;min-width:min(240px,100%)">
+      <div data-content style="font-size:${SIZE.secondary};color:${C.ink70}">Close this account</div>
+      <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:3px;line-height:1.55">Removes every video, edit and export, and the storage they hold. There is no bin behind this one.</div>
+    </div>
+    <button id="closeAccount" data-email="${esc(email)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:7px 13px;border-radius:${RADIUS.button};background:transparent;color:${ACCENT.red};border:none;cursor:pointer;font-family:${FONT.ui}">Close account</button>
   </div>`;
 }
 
@@ -218,7 +241,7 @@ function trashBlock(rows: TrashRow[]): string {
 export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
 <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
-${account(d.name)}
+${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
 ${trashBlock(d.trash)}
 ${d.cost ? costPanel(d.cost) : ""}`;

@@ -73,6 +73,55 @@ document.querySelectorAll(".trash-restore").forEach((btn) => {
   });
 });
 
+/* Your name, saved on blur. No Save button, same as everything else here. */
+const acctName = document.querySelector("#acctName");
+if (acctName) {
+  let last = acctName.value;
+  const save = async () => {
+    const name = acctName.value.trim();
+    if (name === last.trim()) return;
+    last = name;
+    try {
+      const res = await fetch("/api/account/name", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error("That didn't save");
+      toast(name ? "Saved" : "Name cleared");
+    } catch (err) {
+      toast((err && err.message) || "That didn't save");
+    }
+  };
+  acctName.addEventListener("blur", save);
+  acctName.addEventListener("keydown", (e) => { if (e.key === "Enter") acctName.blur(); });
+}
+
+/* Closing the account. It asks for the address rather than for a click: this
+   takes everything and there is no bin behind it. */
+const closeAccountBtn = document.querySelector("#closeAccount");
+if (closeAccountBtn) {
+  closeAccountBtn.addEventListener("click", async () => {
+    const email = closeAccountBtn.getAttribute("data-email") || "";
+    const typed = prompt("This removes every video, edit and export, permanently.\n\nType " + email + " to confirm.");
+    if (typed === null) return;
+    closeAccountBtn.disabled = true;
+    try {
+      const res = await fetch("/api/account/close", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: typed }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't work");
+      location.href = "/";
+    } catch (err) {
+      closeAccountBtn.disabled = false;
+      toast((err && err.message) || "That didn't work");
+    }
+  });
+}
+
 /* Delete for good. The one irreversible action in the product, so it is the
    one place a confirm is right — everywhere else a dialog would be theatre
    in front of something Undo already covers. */

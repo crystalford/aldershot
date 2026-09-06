@@ -29,7 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
-import { cleanTitle, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
+import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -1527,6 +1527,35 @@ app.post("/api/:kind{projects|sources}/:id/delete", async (c) => {
   return ok ? c.json({ ok: true, label }) : c.json({ error: "not found" }, 404);
 });
 
+/** Set your own name. The greeting has nowhere else to get one. */
+app.post("/api/account/name", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const name = cleanTitle((await body<{ name: string }>(c)).name ?? "").slice(0, 60);
+  await c.env.DB.prepare(`UPDATE v2_users SET name=? WHERE id=?`).bind(name || null, user.id).run();
+  return c.json({ ok: true, name: name || null });
+});
+
+/**
+ * Close the account. Irreversible, and total.
+ *
+ * You cannot sell a subscription to an account nobody can close, and the
+ * right to erasure is not optional for anyone selling into the EU or UK.
+ * The typed email is re-checked server-side — "the interface asked" is not a
+ * safeguard an API can rely on.
+ */
+app.post("/api/account/close", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const { ok, error } = await closeAccount(c.env, user.id, (await body<{ email: string }>(c)).email ?? "");
+  if (!ok) return c.json({ error: error ?? "couldn't close that" }, 400);
+
+  /* Clear the cookie on the way out, or the next request is a session for a
+     user that no longer exists. */
+  return c.json({ ok: true }, 200, { "set-cookie": clearCookie(new URL(c.req.url).protocol === "https:") });
+});
+
 /** Try something else without losing the cut you already have. */
 app.post("/api/projects/:id/duplicate", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -1755,7 +1784,7 @@ app.get("/settings", async (c) => {
       "settings",
       "Settings",
       "Settings — Aldershot",
-      renderSettings({ name: user.name, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
+      renderSettings({ name: user.name, email: user.email, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
     ),
   );
 });
