@@ -34,7 +34,41 @@ honest, and it means the product has no way in for anyone but you.
 Test it by signing in from a browser with no session, using an address that is
 not the owner's.
 
-## 3. Stripe — so money can arrive
+## 3. Payments — and a tax decision to make first
+
+**You are Canadian, and that cuts both ways.**
+
+*Domestically you have room.* Canada's small-supplier threshold is
+**CA$30,000** in worldwide taxable revenue over four consecutive quarters
+(or in a single quarter). Below that you do not have to register for GST/HST
+at all. At USD$29/month that is somewhere around 60–70 paying customers before
+it applies. Selling to Canadians only, Stripe is genuinely fine and you have a
+real runway.
+
+*Internationally you have none.* For digital services sold to EU consumers
+there is **no threshold for a seller established outside the EU** — VAT is due
+on the first euro. The €10,000 cross-border threshold is for EU-based sellers
+only, so being Canadian is worse here, not better. The UK works the same way.
+The compliance route without help is the **Non-Union OSS**: register in one
+member state, charge each customer's local rate, file quarterly for the whole
+EU.
+
+So the question is not "Stripe or not", it is **who is the merchant of record**:
+
+- **Stripe** — you are. Cheapest per transaction (2.9% + 30¢). You handle
+  registration, collection and filing everywhere you sell.
+- **Polar / Lemon Squeezy / Paddle** — they are. They become the legal seller
+  and remit VAT and sales tax worldwide, including Canadian GST/HST. Costs
+  roughly 4–6%, so about **42¢ more per customer per month** on a $29 plan.
+
+The integration shape is the same either way — hosted checkout, then a signed
+webhook that sets the plan — so switching later is about an hour, not a
+rewrite. **None of this is tax advice; confirm it with an accountant before you
+take money.**
+
+### If you stay on Stripe
+
+
 
 - Create the account and complete the business details.
 - Product "Studio", recurring price **$29/month**. This must match `PLANS` in

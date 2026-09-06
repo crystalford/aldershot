@@ -27,6 +27,7 @@ import { renderSource } from "./ui/pages/source.ts";
 import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
+import { mayReadMedia } from "./media-auth.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -614,8 +615,27 @@ app.post("/api/sources/:id/poster", async (c) => {
  * Safari will not begin playback at all without a 206. Serving the whole
  * object every time was fine for posters and quietly broke video.
  */
+/**
+ * Media, for the person it belongs to and nobody else.
+ *
+ * This route used to serve any object to any caller with the URL. See
+ * src/media-auth.ts for why that is worse than it sounds.
+ *
+ * 404 rather than 401 or 403, for both "not signed in" and "not yours": a 403
+ * confirms the object exists, which is a small oracle over unguessable keys,
+ * and there is nothing a caller can usefully do with the distinction. It also
+ * keeps <img> and <video> failing quietly instead of following a redirect to
+ * the landing page and rendering it as a broken image.
+ *
+ * No requireUser() here for the same reason — it redirects, and a redirect is
+ * the wrong answer to a subresource fetch.
+ */
 app.get("/media/*", async (c) => {
   const key = c.req.path.replace(/^\/media\//, "");
+
+  const user = await currentUser(c.env, c.req.header("cookie"));
+  if (!user || !(await mayReadMedia(c.env.DB, user.id, key))) return c.notFound();
+
   const range = c.req.header("range");
 
   if (range) {

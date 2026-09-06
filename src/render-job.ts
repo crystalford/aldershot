@@ -14,6 +14,7 @@
 import type { Env } from "./env.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
+import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
 import { getBeats, getProject, listClipsForSource, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
@@ -159,14 +160,36 @@ export async function runRender(
       return void (await fail("Rendering isn't available yet — the encoder isn't running."));
     }
 
-    // The container reads the source over HTTP, so it needs URLs rather than
-    // R2 keys. `-ss` before `-i` seeks by range request, which is what makes
-    // cutting from a multi-gigabyte source viable without downloading it.
-    const base = env.MEDIA_PUBLIC_BASE ?? "";
+    /*
+     * The container reads the source over HTTP, so it needs URLs rather than
+     * R2 keys. `-ss` before `-i` seeks by range request, which is what makes
+     * cutting from a multi-gigabyte source viable without downloading it.
+     *
+     * PRESIGNED, not /media. This pointed at /media, which was unauthenticated
+     * and therefore worked — and which is precisely why it had to stop being
+     * unauthenticated. src/audio.ts already presigned for this exact reason
+     * ("a presigned URL is used rather than a public one so a private bucket
+     * still works"); the render path was simply never brought in line, and the
+     * inconsistency was invisible while the door was open.
+     *
+     * Two hours is comfortably longer than any render and shorter than a URL
+     * being worth stealing.
+     */
     const plan = buildRenderPlan(built.edl, render.format, render.aspect);
+    const urls = await Promise.all(
+      plan.cuts.map(async (c) => {
+        const signed =
+          (await presignGet(env, c.key, 7200)) ??
+          (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${c.key}` : null);
+        return signed;
+      }),
+    );
+    if (urls.some((u) => !u)) {
+      return void (await fail("Couldn't give the encoder a way to read your footage."));
+    }
     const withUrls = {
       ...plan,
-      cuts: plan.cuts.map((c) => ({ ...c, url: `${base}/media/${c.key}` })),
+      cuts: plan.cuts.map((c, i) => ({ ...c, url: urls[i] as string })),
     };
 
     await advance(env.DB, jobId, 30, "putting it together");
