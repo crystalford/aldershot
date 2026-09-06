@@ -1,5 +1,11 @@
 # dependencies
 /node_modules
+
+# wrangler local dev state
+/.wrangler
+wrangler.local.jsonc
+.dev.vars
+.dev.vars.*
 /.pnp
 .pnp.*
 .yarn/*

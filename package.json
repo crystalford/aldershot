@@ -1,37 +1,26 @@
 {
   "name": "aldershot",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Cloudflare-native cinematic media engine",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types 'test/**/*.test.ts'"
   },
-  "repository": {
-    "type": "git",
-    "url": "http://local_proxy@127.0.0.1:36450/git/crystalford/aldershot"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.42",
-    "@supabase/supabase-js": "^2.95.3",
-    "@tailwindcss/postcss": "^4.1.18",
-    "@trigger.dev/nextjs": "^3.3.12",
-    "@trigger.dev/sdk": "^4.3.3",
-    "@types/node": "^25.2.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "ai": "^6.0.80",
-    "next": "^16.1.6",
-    "postcss": "^8.5.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "tailwindcss": "^4.1.18",
-    "typescript": "^5.9.3",
-    "zod": "^4.3.6"
+    "@cloudflare/containers": "^0.3.7",
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "@types/node": "^26.4.0",
+    "ffmpeg-static": "^5.3.0",
+    "playwright": "^1.62.1",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.0.0"
   }
 }

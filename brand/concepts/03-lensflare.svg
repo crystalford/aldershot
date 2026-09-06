@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 200" width="820" height="200" role="img" aria-label="Aldershot — lens flare">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFF6E6" stop-opacity="1"/>
+      <stop offset="22%" stop-color="#F2A93B" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#F2A93B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#F2A93B" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#F2A93B" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#F2A93B" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glint" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F2A93B" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFE9C2" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#F2A93B" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="820" height="200" fill="#0B0B0C"/>
+  <rect x="0" y="97" width="820" height="6" fill="url(#streak)"/>
+  <rect x="132" y="18" width="8" height="164" fill="url(#glint)"/>
+  <circle cx="136" cy="100" r="72" fill="url(#glow)"/>
+  <circle cx="136" cy="100" r="7" fill="#FFF6E6"/>
+  <text x="252" y="118" font-family="'Times New Roman', Georgia, serif" font-size="58" letter-spacing="12" fill="#EDE8DF">ALDERSHOT</text>
+</svg>

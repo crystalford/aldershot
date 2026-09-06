@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Aldershot — line monogram">
+  <rect width="240" height="240" rx="42" fill="#141416" stroke="#26262A" stroke-width="2"/>
+  <g fill="none" stroke="#EDE8DF" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M66,190 L120,54 L174,190"/>
+    <path d="M83,150 L157,150"/>
+  </g>
+  <circle cx="120" cy="54" r="6" fill="#F2A93B"/>
+</svg>
