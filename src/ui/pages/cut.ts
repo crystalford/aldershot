@@ -60,7 +60,7 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
       ? b.words
           .map((w, wi) => {
             const gone = struck || wordStruck(cuts, b, wi);
-            return `<span class="w" data-block="${esc(b.id)}" data-word="${wi}" style="cursor:pointer;${
+            return `<span class="w" data-content data-block="${esc(b.id)}" data-word="${wi}" style="cursor:pointer;${
               gone ? "color:rgba(236,236,241,0.28);text-decoration:line-through;" : ""
             }">${esc(w.w)}</span>`;
           })
