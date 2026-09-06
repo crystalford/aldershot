@@ -37,6 +37,18 @@ export interface CutData {
   runtimeMs: number;
   keptCount: number;
   plan: string;
+  /**
+   * What each clean-up would do to THIS cut, counted for real.
+   *
+   * The design's rule: "47 found · −0:04", not "several". A chip that cannot
+   * count honestly shows its plain label and is disabled — none of these need
+   * to, because fillerCuts and pauseCuts find real words and real gaps and
+   * timeSaved measures them through the same ranges the render uses.
+   */
+  cleanups: {
+    fillers: { found: number; savedMs: number };
+    pauses: { found: number; savedMs: number };
+  };
   /** The inserted blocks, for the "what still needs you" line in the footer. */
   beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown }>;
   cameFrom: [string, string];
@@ -284,6 +296,67 @@ export function buildSummary(
   return parts.length ? `${parts.join(", ")} to go.` : "every beat is filled.";
 }
 
+/**
+ * Telling it what you want.
+ *
+ * This is the part the owner called the sleeper — "if i can mostly control it
+ * just with things like that, either quick buttons or a chat interface that i
+ * can just tell it what i want, that is pretty good and simple and effective."
+ *
+ * It existed. "Ask for another pass" and the clean-up chips were on the old
+ * editor, and when four surfaces became one I carried the gestures across and
+ * left the power behind: POST /passes, fillerCuts and pauseCuts have all been
+ * sitting here with nothing calling them.
+ *
+ * Every number is real. The chips say what they would find in THIS transcript
+ * and what the video would actually lose, because a count you cannot trust is
+ * worse than no count.
+ */
+function assist(d: CutData): string {
+  /*
+   * `note` is the honest count, and it is also what decides whether the chip
+   * is live: a clean-up with nothing to clean has nothing to do, so it is
+   * disabled and says so by being quiet rather than by lying about a number.
+   *
+   * `always` is for the one chip whose work is a model call — there is no
+   * count to take beforehand, and it is always worth offering.
+   */
+  const chip = (cls: string, label: string, note: string, opts: { gold?: boolean; always?: boolean } = {}) => {
+    const live = opts.always || note !== "";
+    return `<button class="${cls}"${live ? "" : " disabled"} style="flex:1 1 auto;display:flex;align-items:baseline;justify-content:center;gap:6px;font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${
+      opts.gold ? ACCENT.gold : "rgba(236,236,241,0.75)"
+    };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};white-space:nowrap;${live ? "" : "opacity:.4;"}">
+      <span>${label}</span>
+      ${note ? `<span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(note)}</span>` : ""}
+    </button>`;
+  };
+
+  /* "47 · −0:31". Nothing here is shown unless it was counted. */
+  const note = (n: { found: number; savedMs: number }) =>
+    n.found ? `${n.found} · −${hms(n.savedMs / 1000)}` : "";
+
+  return `<div class="assist" data-project="${esc(d.projectId)}" style="margin-top:12px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45};margin-bottom:9px">Ask for another pass</div>
+    <form class="pass-form" style="display:flex;gap:8px;align-items:center;background:#131316;border-radius:7px;padding:4px 4px 4px 12px;flex-wrap:wrap">
+      <input name="instruction" placeholder="“also cut the sponsor read”" style="flex:1 1 140px;min-width:min(130px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:8px 0;font-family:${FONT.ui}"/>
+      <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Run it</button>
+    </form>
+    <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">
+      ${["React to the logical fallacies", "Also cut the sponsor read", "Keep only the ones under 20 seconds"]
+        .map(
+          (t) =>
+            `<button class="pass-eg" style="font-size:12px;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.55);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${t}</button>`,
+        )
+        .join("")}
+    </div>
+    <div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap">
+      ${chip("find-good", "Find the strong bits", "", { gold: true, always: true })}
+      ${chip("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers))}
+      ${chip("clean-pauses", "Tighten silences", note(d.cleanups.pauses))}
+    </div>
+  </div>`;
+}
+
 export function renderCut(d: CutData): string {
   const [backLabel, backHref] = d.cameFrom;
 
@@ -297,24 +370,43 @@ export function renderCut(d: CutData): string {
     <span id="head-kept" style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${d.keptCount} kept</span>
   </div>`;
 
-  if (d.job && (d.job.state === "queued" || d.job.state === "running")) {
-    return `${head}
-    <div id="scoring" data-project="${esc(d.projectId)}" style="margin-top:24px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-      <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-      <span data-content style="flex:1;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job.stage_label ?? "reading it for meaning")}</span>
-    </div>`;
-  }
+  /*
+   * A pass running is a STRIP, not a screen.
+   *
+   * This used to return early: press "Find the strong bits" and the whole
+   * editor was replaced by one line with a blinking dot, so your blocks
+   * vanished and there was nothing to do but wait. Nothing about the pass
+   * stops you cutting in the meantime, and the answer arrives as scores on
+   * blocks that are already there.
+   *
+   * The bar is real. scorePass reads the transcript in windows and reports
+   * windows finished, so the width below is measured work — never elapsed
+   * time, which is the one thing this codebase will not put in a progress bar.
+   */
+  const running = d.job && (d.job.state === "queued" || d.job.state === "running");
+  const strip = running
+    ? `<div id="scoring" data-project="${esc(d.projectId)}" style="margin-top:18px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
+          <span id="scoring-label" data-content style="flex:1 1 200px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job!.stage_label ?? "reading it for meaning")}</span>
+          <span id="scoring-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${d.job!.pct}%</span>
+          <span id="scoring-clock" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums">0:00</span>
+        </div>
+        <div style="margin-top:10px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">
+          <div id="scoring-bar" style="height:100%;width:${d.job!.pct}%;background:${ACCENT.gold};border-radius:99px;transition:width .4s ease"></div>
+        </div>
+      </div>`
+    : "";
 
-  if (d.job?.state === "failed") {
-    return `${head}
-    <div style="margin-top:24px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24)">
-      <div data-content style="font-size:${SIZE.body};color:${ACCENT.red}">${esc(d.job.error ?? "That didn't finish.")}</div>
-    </div>`;
-  }
+  const failed = d.job?.state === "failed"
+    ? `<div style="margin-top:18px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span data-content style="flex:1 1 220px;font-size:${SIZE.body};color:${ACCENT.red}">${esc(d.job!.error ?? "That didn't finish.")}</span>
+      </div>`
+    : "";
 
   if (!d.blocks.length) {
-    return `${head}
-    <div data-content style="margin-top:24px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been read yet — give it a minute.</div>`;
+    return `${head}${strip}${failed}
+    <div data-content style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been read yet — give it a minute.</div>`;
   }
 
   const player = d.sourceKey
@@ -327,12 +419,12 @@ export function renderCut(d: CutData): string {
     list.push(seam(d.projectId, i + 1));
   });
 
-  return `${head}
+  return `${head}${strip}${failed}
   <div style="margin-top:20px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
     <div class="editor-aside">
       ${player}
       <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.55">Strike a line or a word to cut it. Move a block to change the order. The + adds your voice between them.</div>
-      <button class="find-good" data-project="${esc(d.projectId)}" style="margin-top:12px;width:100%;font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Find the strong bits</button>
+      ${assist(d)}
     </div>
     <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:1px">
       ${list.join("")}

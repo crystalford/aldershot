@@ -54,7 +54,7 @@ import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
-import { addCuts, fillerCuts, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord } from "./cuts.ts";
+import { addCuts, fillerCuts, isSegmentCut, isWordCut, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -922,6 +922,36 @@ app.get("/p/:id/:stagePath", async (c) => {
         blocks,
         beats,
         cuts,
+        /*
+         * What the clean-ups would actually do, counted from THIS transcript.
+         *
+         * "A chip whose number cannot be computed honestly yet shows its
+         * descriptive text and is disabled, rather than displaying a plausible
+         * fabricated count" — and these can be computed honestly, so they are.
+         * fillerCuts and pauseCuts find the real words and the real gaps;
+         * timeSaved runs both through the same playableRanges the render is
+         * built from, so "-0:31" is what the video actually loses.
+         */
+        cleanups: (() => {
+          /*
+           * What is LEFT to find, not what exists.
+           *
+           * The filter was only dropping fillers inside fully-cut lines, so a
+           * chip that had just removed two of them still offered to remove the
+           * same two — with "−0:00" next to it, because timeSaved correctly
+           * measured that there was nothing left to save. A count and its own
+           * saving disagreeing is exactly the kind of number that teaches
+           * people to stop reading them.
+           */
+          const left = (found: Cut[]) =>
+            found.filter((x) => !(x.words ? isWordCut(cuts, x.seg, x.words[0]) : isSegmentCut(cuts, x.seg)));
+          const fillers = left(fillerCuts(segments));
+          const pauses = left(pauseCuts(segments));
+          return {
+            fillers: { found: fillers.length, savedMs: timeSaved(segments, cuts, fillers) },
+            pauses: { found: pauses.length, savedMs: timeSaved(segments, cuts, pauses) },
+          };
+        })(),
         runtimeMs: runtimeMs(blocks, cuts),
         keptCount: blocks.filter((b: Block) => !b.struck).length,
         plan: user.plan,

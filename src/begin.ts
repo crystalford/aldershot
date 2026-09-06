@@ -174,9 +174,28 @@ export async function runScore(
 
     await startJob(env.DB, jobId, "reading it for meaning");
 
-    const result = await scorePass(env, segments, opts.brief, { upgrade: opts.upgrade });
+    /*
+     * Real progress, from real work.
+     *
+     * The pass used to be one opaque call: the job sat at 0% for its whole
+     * life and the editor showed a label that never changed. scorePass reads
+     * the transcript in windows now, so this fraction is windows finished —
+     * measured, never a timer. 85% is where the model's part ends; what
+     * follows is saving, which is fast and has its own steps.
+     */
+    const result = await scorePass(env, segments, opts.brief, {
+      upgrade: opts.upgrade,
+      onProgress: (fraction, done, total) => {
+        void advance(
+          env.DB,
+          jobId,
+          Math.round(fraction * 85),
+          total > 1 ? `reading it for meaning — part ${done} of ${total}` : "reading it for meaning",
+        );
+      },
+    });
 
-    await advance(env.DB, jobId, 70, "picking out the moments");
+    await advance(env.DB, jobId, 90, "picking out the moments");
     const clips = await saveClips(
       env.DB,
       { user_id: opts.userId, source_id: opts.sourceId, origin: "editor", posterKey: src.poster_r2_key },

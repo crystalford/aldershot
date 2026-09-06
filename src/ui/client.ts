@@ -668,25 +668,95 @@ if (blocksEl) {
 
 /* Ask the model which blocks are strong. An assist inside the editor rather
    than a separate place, which is what Clipping had become. */
-document.querySelectorAll(".find-good").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    btn.textContent = "Reading it…";
+/*
+ * The assist panel.
+ *
+ * Everything that tells the model what to do lives here, and all of it
+ * already existed on the server with nothing calling it: POST /passes takes
+ * any sentence, and the cuts route has understood "fillers" and "pauses"
+ * since it was written.
+ */
+const assist = document.querySelector(".assist");
+if (assist) {
+  const projectId = assist.getAttribute("data-project");
+  const form = assist.querySelector(".pass-form");
+  const field = form?.querySelector("input[name=instruction]");
+
+  /* A pass is queued work, so the page reloads into the running strip rather
+     than pretending the answer is instant. */
+  const runPass = async (instruction, btn) => {
+    const was = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
     try {
-      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/passes", {
+      const res = await fetch("/api/projects/" + projectId + "/passes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction: "find the strongest moments" }),
+        body: JSON.stringify({ instruction }),
       });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "That didn't start");
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't start");
+      location.reload();
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = was; }
+      toast((err && err.message) || "That didn't start");
+    }
+  };
+
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const instruction = (field?.value || "").trim();
+    /* The server refuses an empty instruction with "say what you want"; say it
+       here too rather than making the user wait for a round trip to hear it. */
+    if (!instruction) { toast("Say what you want."); field?.focus(); return; }
+    void runPass(instruction, form.querySelector("button[type=submit]"));
+  });
+
+  /* The examples fill the field rather than firing, so you can edit one into
+     what you actually meant — which is usually the point of an example. */
+  assist.querySelectorAll(".pass-eg").forEach((eg) => {
+    eg.addEventListener("click", () => {
+      if (!field) return;
+      field.value = eg.textContent.trim();
+      field.focus();
+    });
+  });
+
+  const findGood = assist.querySelector(".find-good");
+  findGood?.addEventListener("click", () => void runPass("find the strongest moments", findGood));
+
+  /*
+   * The clean-ups are NOT model calls — they are the transcript's own filler
+   * words and its own gaps, found in code. So they apply at once and the
+   * runtime updates in place; there is nothing to wait for.
+   */
+  const cleanUp = async (btn, kind) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const label = btn.querySelector("span");
+    const was = label ? label.textContent : "";
+    if (label) label.textContent = "Working…";
+    try {
+      const res = await fetch("/api/projects/" + projectId + "/cuts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind }),
+      });
+      if (!res.ok) throw new Error("That didn't save");
+      /* Reload: this restrikes words all over the transcript, and repainting
+         every one of them by hand is how the page and the server drift. */
       location.reload();
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = "Find the strong bits";
-      toast((err && err.message) || "That didn't start");
+      if (label) label.textContent = was;
+      toast((err && err.message) || "That didn't save");
     }
-  });
-});
+  };
+
+  const fillers = assist.querySelector(".clean-fillers");
+  fillers?.addEventListener("click", () => void cleanUp(fillers, "fillers"));
+  const pauses = assist.querySelector(".clean-pauses");
+  pauses?.addEventListener("click", () => void cleanUp(pauses, "pauses"));
+}
 
 /* ── The nav bar's three controls ──────────────────────────────────────
    "Ask for anything", the "?" and the bell were rendered on every page and
@@ -1699,16 +1769,43 @@ if (passForm) {
 }
 
 /* Waiting on a scoring pass. */
+/*
+ * A pass, while it runs.
+ *
+ * The poll used to rewrite a label and drop job.pct on the floor, which is
+ * why "Find the strong bits" looked like nothing was happening: the label is
+ * set once when the job is created and never changes on its own.
+ *
+ * Everything here is measured. The bar is windows of transcript finished, and
+ * the clock is elapsed time shown AS elapsed time — next to the bar, never
+ * driving it.
+ */
 const scoring = document.querySelector("#scoring");
 if (scoring) {
   const projectId = scoring.getAttribute("data-project");
+  const label = document.querySelector("#scoring-label");
+  const bar = document.querySelector("#scoring-bar");
+  const pctEl = document.querySelector("#scoring-pct");
+  const clockEl = document.querySelector("#scoring-clock");
+  const startedAt = Date.now();
+
+  const tickClock = setInterval(() => {
+    const s2 = Math.round((Date.now() - startedAt) / 1000);
+    if (clockEl) clockEl.textContent = Math.floor(s2 / 60) + ":" + String(s2 % 60).padStart(2, "0");
+  }, 1000);
+
   const tick = async () => {
     try {
       const { jobs } = await (await fetch("/api/jobs")).json();
-      const job = jobs.find((j) => j.ref_id === projectId);
-      if (!job) { location.reload(); return; }
-      const label = scoring.querySelector("span:last-child");
+      const job = (jobs || []).find((j) => j.ref_id === projectId);
+      /* Gone from the active list means finished, one way or the other. The
+         reload is what brings the scores onto the blocks. */
+      if (!job) { clearInterval(tickClock); location.reload(); return; }
       if (label && job.stage_label) label.textContent = job.stage_label;
+      if (typeof job.pct === "number") {
+        if (bar) bar.style.width = job.pct + "%";
+        if (pctEl) pctEl.textContent = job.pct + "%";
+      }
       setTimeout(tick, 2000);
     } catch { setTimeout(tick, 5000); }
   };
