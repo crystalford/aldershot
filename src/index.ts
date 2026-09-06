@@ -469,7 +469,17 @@ app.get("/footage", async (c) => {
    */
   const tab: FootTab =
     t === "threads" ? "threads" : t === "moments" ? "moments" : t === "find" ? "find" : "sources";
-  const mode: SearchMode = c.req.query("mode") === "exact" ? "exact" : "meaning";
+  /*
+   * Default to what actually works.
+   *
+   * "By meaning" was preselected, and meaning search needs a VECTORIZE index
+   * that is deliberately unbound until it is created (wrangler.jsonc). So the
+   * default control was one that could only ever fall back and then apologise
+   * — the apology is honest, but making the broken mode the default is not.
+   */
+  const canMean = Boolean(c.env.VECTORIZE);
+  const asked = c.req.query("mode");
+  const mode: SearchMode = asked === "exact" || (!asked && !canMean) ? "exact" : "meaning";
   const query = (c.req.query("q") || "").trim();
   const thread = c.req.query("thread") || null;
 
@@ -526,7 +536,7 @@ app.get("/footage", async (c) => {
       renderFootageFull({
         tab,
         sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
-        moments, momentCount, threads, mode, q: query, meaningUnavailable, thread, sort,
+        moments, momentCount, threads, mode, q: query, meaningUnavailable, canMean, thread, sort,
       }),
     ),
   );
@@ -1458,10 +1468,20 @@ app.post("/api/beats/:beatId/record", async (c) => {
   const audio = await c.req.arrayBuffer();
   if (!audio.byteLength) return c.json({ error: "empty recording" }, 400);
 
+  /*
+   * Attach FIRST, store second.
+   *
+   * The other order let an unauthorised call write its bytes to R2 before
+   * anything checked whose beat it was — free storage on someone else's
+   * account, even once the attach itself started failing. setBeatMedia only
+   * matches a beat inside one of this user's own projects.
+   */
   const beatId = c.req.param("beatId");
   const key = `u/${user.id}/beats/${beatId}.webm`;
+  const mine = await setBeatMedia(c.env.DB, beatId, user.id, key, Number(c.req.header("x-duration-ms") || 0));
+  if (!mine) return c.json({ error: "not found" }, 404);
+
   await c.env.MEDIA.put(key, audio, { httpMetadata: { contentType: "audio/webm" } });
-  await setBeatMedia(c.env.DB, beatId, key, Number(c.req.header("x-duration-ms") || 0));
   return c.json({ ok: true, key });
 });
 
@@ -1650,7 +1670,10 @@ app.post("/api/beats/:id/tts", async (c) => {
      * read wrong — the same defect that made the whole surface show "0:00"
      * when clip beats were written without it.
      */
-    await setBeatMedia(c.env.DB, beat.id, key, wavDurationMs(bytes));
+    /* The TTS route already fetched this beat through a user join, so this
+       cannot fail — but it takes the user like every other caller, so the
+       check cannot be forgotten if that lookup ever changes. */
+    await setBeatMedia(c.env.DB, beat.id, user.id, key, wavDurationMs(bytes));
     await meter(c.env.DB, { user_id: user.id, job_type: "tts", cpu_ms: 0 });
 
     return c.json({ ok: true, key });
@@ -2589,10 +2612,14 @@ app.get("/api/sources/:id", async (c) => {
  * What the app understood from a sentence, before committing to it. The regex
  * fast path is enough to answer this without an LLM call.
  */
-app.post("/api/intent", async (c) => {
-  const { text } = await body<{ text: string }>(c);
-  return c.json({ kind: readIntent(text || ""), explain: intentLabel(text || "") });
-});
+/*
+ * POST /api/intent was here: it classified a sentence and returned the label.
+ *
+ * Nothing called it, and it was the one route on this worker with no
+ * requireUser — so the only thing it did was offer an unauthenticated model
+ * classifier to anyone who found it. readIntent and intentLabel are still
+ * used, by /api/begin, where the answer is actually needed.
+ */
 
 /** Begin — one sentence becomes the right kind of work. */
 app.post("/api/begin", async (c) => {

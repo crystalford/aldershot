@@ -78,12 +78,29 @@ function stateChip(state: SourceRow["transcript_state"]): string {
  * no number.
  */
 function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string {
-  const items: Array<[FootTab, string]> = [
+  const all: Array<[FootTab, string]> = [
     ["moments", "Clips"],
     ["threads", "Threads"],
     ["sources", "Videos"],
     ["find", "Find"],
   ];
+  const items = all
+    /*
+     * A tab you can never fill is a lie.
+     *
+     * NOTHING in this codebase creates a thread — the tables are read in four
+     * places and written in none — so "Threads · 0" was permanent, and it read
+     * as "you have not made any yet" rather than "this does not exist". It is
+     * blocked on the same thing meaning-search is: threads are clusters of
+     * clip embeddings, and VECTORIZE is deliberately unbound until the index
+     * is created (see wrangler.jsonc).
+     *
+     * The tab is not deleted, it is conditional — the day something writes a
+     * thread, it comes back on its own. Same rule as a clean-up chip that
+     * shows no count when it has nothing to count.
+     */
+    .filter(([id]) => id !== "threads" || (counts.threads ?? 0) > 0 || active === "threads");
+
   return `<div style="margin-top:18px;display:flex;gap:4px;border-bottom:1px solid ${C.hairline}">${items
     .map(([id, label]) => {
       const n = counts[id];
@@ -234,7 +251,7 @@ export type SearchMode = "meaning" | "exact";
  * different questions, so they get different prompts: meaning describes the
  * kind of clip, exact searches the words that were said.
  */
-function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
+function searchBox(tab: FootTab, mode: SearchMode, q: string, canMean: boolean): string {
   /*
    * One placeholder, not two. The prototype asks the same question either way
    * — the mode chips below say how it will be answered — and swapping the
@@ -243,10 +260,10 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
   const placeholder = "Search clips or ask — “every contradiction” · “studio visuals”";
 
   /* Chips, below the field: "By meaning" / "Exact words". */
-  const chip = (m: SearchMode, label: string) =>
+  const chip = (m: SearchMode, label: string, notYet = false) =>
     `<a href="/footage?tab=${tab}&mode=${m}${q ? `&q=${encodeURIComponent(q)}` : ""}" style="font-size:${SIZE.secondary};font-weight:500;padding:5px 11px;border-radius:${RADIUS.button};background:${
       m === mode ? C.active : C.pill
-    };color:${m === mode ? C.ink : "rgba(236,236,241,0.5)"};white-space:nowrap">${label}</a>`;
+    };color:${m === mode ? C.ink : "rgba(236,236,241,0.5)"};white-space:nowrap;${notYet ? "opacity:.45;" : ""}">${label}</a>`;
 
   return `<form method="GET" action="/footage">
     <input type="hidden" name="tab" value="${tab}"/>
@@ -260,7 +277,11 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string): string {
       </div>
       <label style="flex:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap">Upload<input type="file" accept="video/*" multiple id="footageUpload" style="display:none"/></label>
     </div>
-    <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${chip("meaning", "By meaning")}${chip("exact", "Exact words")}</div>
+    <!-- The mode that cannot work is still offered, because it will work once
+         the index exists and hiding it would hide the feature. It is dimmed,
+         so the choice reads as "not yet" rather than "your library is empty".
+         The notice below the field says so in words when a search runs. -->
+    <div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">${chip("meaning", "By meaning", !canMean)}${chip("exact", "Exact words")}</div>
   </form>`;
 }
 
@@ -345,6 +366,8 @@ export interface FootageData {
   q: string;
   /** True when meaning search is asked for but the index is not available. */
   meaningUnavailable: boolean;
+  /** Whether meaning search can work at all — the index has to exist. */
+  canMean: boolean;
   /** The thread being filtered to, or null for "Everything". */
   thread: string | null;
   /** How the video grid is ordered. */
@@ -416,7 +439,7 @@ export function renderFootageFull(d: FootageData): string {
    */
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
-    searchBox(d.tab, d.mode, d.q) +
+    searchBox(d.tab, d.mode, d.q, d.canMean) +
     tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length });
 
   if (d.tab === "find") return head + findPanel();

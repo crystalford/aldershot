@@ -498,11 +498,38 @@ export async function deleteBeat(db: D1Database, projectId: string, beatId: stri
 }
 
 /** Attaches a recorded take to a beat. */
-export async function setBeatMedia(db: D1Database, beatId: string, key: string, durMs: number): Promise<void> {
-  await db
-    .prepare(`UPDATE beats SET media_r2_key=?, recorded_at=?, dur_ms=COALESCE(?, dur_ms) WHERE id=?`)
-    .bind(key, Date.now(), durMs || null, beatId)
+/**
+ * Attach media to a beat — a recording, or a spoken line.
+ *
+ * TAKES A USER, and joins through the project to check it.
+ *
+ * This was `WHERE id=?` with no owner check at all, and the recording route
+ * called it with a beat id straight out of the URL. Any signed-in account
+ * could point ANY beat at an object under its own prefix, and the victim's
+ * next export would presign it server-side and mux a stranger's audio into
+ * their video.
+ *
+ * The check lives here rather than in the route because there are two callers
+ * and the next one will not remember. Returns false when the beat is not
+ * yours, so callers can answer honestly instead of reporting success.
+ */
+export async function setBeatMedia(
+  db: D1Database,
+  beatId: string,
+  userId: string,
+  key: string,
+  durMs: number,
+): Promise<boolean> {
+  const { meta } = await db
+    .prepare(
+      `UPDATE beats SET media_r2_key=?, recorded_at=?, dur_ms=COALESCE(?, dur_ms)
+        WHERE id=? AND project_id IN (
+          SELECT id FROM v2_projects WHERE user_id=? AND deleted_at IS NULL
+        )`,
+    )
+    .bind(key, Date.now(), durMs || null, beatId, userId)
     .run();
+  return (meta?.changes ?? 0) > 0;
 }
 
 /**
