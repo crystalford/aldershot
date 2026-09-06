@@ -19,7 +19,8 @@ import { ulid } from "./id.ts";
 export interface BeginResult {
   intent: Intent;
   projectId: string | null;
-  jobId: string;
+  /** Null when the edit already exists and needs no fresh pass. */
+  jobId: string | null;
   /** Where the user should land, per 01-PRODUCT.md's intent table. */
   href: string;
 }
@@ -39,26 +40,72 @@ export async function begin(
   const intent: Intent = read === "unclear" ? "compose" : read;
   const kind = INTENT_KIND[intent];
 
-  const project = kind
-    ? await createProject(env.DB, {
-        user_id: opts.userId,
-        title: titleFromBrief(opts.brief, "Untitled cut"),
-        kind,
-        source_id: opts.sourceId,
-        brief: opts.brief,
-      })
-    : null;
+  /*
+   * Reopen rather than duplicate.
+   *
+   * This always created a new project, so every press of Edit on a source made
+   * another "Untitled cut" and started another scoring pass over the same
+   * video — four clicks, four identical edits, four passes paid for. That is
+   * not what "open this video" means.
+   *
+   * An empty brief IS "open this video": reuse the existing edit of the same
+   * kind if there is one. A brief that says something is a new request and
+   * gets its own project, because the user is asking for a different thing
+   * from the same footage.
+   */
+  const wantsSomethingNew = opts.brief.trim().length > 0;
 
-  const job = await createJob(env.DB, {
-    user_id: opts.userId,
-    type: "score",
-    ref_id: project?.id ?? opts.sourceId,
-  });
+  let project = null;
+  let reused = false;
+  if (kind && !wantsSomethingNew) {
+    const existing = await env.DB
+      .prepare(
+        `SELECT * FROM v2_projects
+          WHERE user_id=? AND source_id=? AND kind=? AND deleted_at IS NULL AND archived_at IS NULL
+          ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .bind(opts.userId, opts.sourceId, kind)
+      .first<{ id: string }>();
+    if (existing) {
+      project = existing as never;
+      reused = true;
+    }
+  }
+
+  if (kind && !project) {
+    project = await createProject(env.DB, {
+      user_id: opts.userId,
+      title: titleFromBrief(opts.brief, "Untitled cut"),
+      kind,
+      source_id: opts.sourceId,
+      brief: opts.brief,
+    });
+  }
+
+  /*
+   * Reopening an edit that already has clips must not re-score. The pass costs
+   * minutes and money, and the answer is already sitting there.
+   */
+  const already = reused
+    ? await env.DB
+        .prepare(`SELECT COUNT(*) n FROM v2_clips WHERE source_id=? AND deleted_at IS NULL`)
+        .bind(opts.sourceId)
+        .first<{ n: number }>()
+    : null;
+  const skipScore = (already?.n ?? 0) > 0;
+
+  const job = skipScore
+    ? null
+    : await createJob(env.DB, {
+        user_id: opts.userId,
+        type: "score",
+        ref_id: project?.id ?? opts.sourceId,
+      });
 
   return {
     intent,
     projectId: project?.id ?? null,
-    jobId: job.id,
+    jobId: job?.id ?? null,
     // extract and shorts produce no project: the clips land in Footage, and
     // there is nothing to assemble.
     href: project ? `/p/${project.id}/pick` : intent === "shorts" ? "/clipping" : "/footage?tab=moments",

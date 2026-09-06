@@ -115,3 +115,73 @@ test("parseClips unwraps the chat-completion shape end to end", () => {
   const res = { choices: [{ message: { content: '{"clips":[{"start_ms":0,"end_ms":5000}]}' } }] };
   assert.deepEqual(parseClips(res), [{ start_ms: 0, end_ms: 5000 }]);
 });
+
+/* ── Clips must be a sequence, not a pile ──────────────────────────────
+ *
+ * Reported from real footage: consecutive blocks repeated the same dialogue
+ * and began mid-sentence. Both came from trusting the model's raw milliseconds.
+ */
+
+const seg = (idx: number, start: number, end: number, text: string) =>
+  ({ id: String(idx), source_id: "s", idx, start_ms: start, end_ms: end, speaker: null, text, words: null });
+
+const TRANSCRIPT = [
+  seg(0, 0, 5000, "one."),
+  seg(1, 5000, 10000, "two."),
+  seg(2, 10000, 15000, "three."),
+  seg(3, 15000, 20000, "four."),
+  seg(4, 20000, 25000, "five."),
+];
+
+test("a clip snaps to segment edges rather than cutting mid-sentence", () => {
+  // The model guessed 2.3s -> 12.7s; the real boundaries are 0 -> 15000.
+  const [c] = groundClips([{ start_ms: 2300, end_ms: 12700, why: "w", score: 80, heat: 1 }], TRANSCRIPT);
+  assert.equal(c.start_ms, 0);
+  assert.equal(c.end_ms, 15000);
+  // The range and the words are now the same thing.
+  assert.equal(c.quote, "one. two. three.");
+});
+
+test("overlapping clips are trimmed so nothing plays twice", () => {
+  const out = groundClips(
+    [
+      { start_ms: 0, end_ms: 15000, why: "a", score: 90, heat: 1 },
+      { start_ms: 10000, end_ms: 25000, why: "b", score: 80, heat: 1 },
+    ],
+    TRANSCRIPT,
+  );
+  assert.equal(out.length, 2);
+  assert.equal(out[0].end_ms, 15000);
+  assert.equal(out[1].start_ms, 15000, "the second must start where the first ended");
+  assert.equal(out[1].quote, "four. five.", "and must not repeat the first block's words");
+});
+
+test("a clip wholly inside another is dropped, not duplicated", () => {
+  const out = groundClips(
+    [
+      { start_ms: 0, end_ms: 20000, why: "a", score: 90, heat: 1 },
+      { start_ms: 5000, end_ms: 10000, why: "b", score: 80, heat: 1 },
+    ],
+    TRANSCRIPT,
+  );
+  assert.equal(out.length, 1);
+  assert.equal(out[0].end_ms, 20000);
+});
+
+test("the kept blocks never overlap, whatever the model returns", () => {
+  const out = groundClips(
+    [
+      { start_ms: 1000, end_ms: 12000, why: "a", score: 90, heat: 1 },
+      { start_ms: 8000, end_ms: 18000, why: "b", score: 80, heat: 1 },
+      { start_ms: 14000, end_ms: 24000, why: "c", score: 70, heat: 1 },
+      { start_ms: 2000, end_ms: 7000, why: "d", score: 60, heat: 1 },
+    ],
+    TRANSCRIPT,
+  );
+  for (let i = 1; i < out.length; i++) {
+    assert.ok(
+      out[i].start_ms >= out[i - 1].end_ms,
+      `block ${i} starts at ${out[i].start_ms} but the one before ends at ${out[i - 1].end_ms}`,
+    );
+  }
+});

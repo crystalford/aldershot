@@ -117,16 +117,71 @@ export function groundClips(raw: Partial<ScoredClip>[], segments: Segment[]): Sc
     const covered = segments.filter((s) => s.end_ms > start && s.start_ms < end);
     if (!covered.length) continue;
 
+    /*
+     * SNAP TO THE TRANSCRIPT, do not trust the model's milliseconds.
+     *
+     * The range used to be whatever the model said, while the quote was built
+     * from every segment that range touched. So the text read as whole
+     * sentences and the cut began mid-word — a block would end "...so like I
+     * have six" and the video would start halfway through a word. Taking the
+     * covered segments' own edges makes the range and the words the same
+     * thing, which is the entire premise of editing by reading.
+     */
     out.push({
-      start_ms: Math.max(firstMs, Math.round(start)),
-      end_ms: Math.min(lastMs, Math.round(end)),
+      start_ms: Math.max(firstMs, covered[0].start_ms),
+      end_ms: Math.min(lastMs, covered[covered.length - 1].end_ms),
       quote: covered.map((s) => s.text).join(" ").trim(),
       why: String(c.why ?? "").trim(),
       score: clamp(Number(c.score), 0, 100, 0),
       heat: clamp(Number(c.heat), 0, 2, 0),
     });
   }
-  return out.sort((a, b) => a.start_ms - b.start_ms);
+
+  return dedupeOverlaps(out.sort((a, b) => a.start_ms - b.start_ms), segments);
+}
+
+/**
+ * Makes the kept blocks a sequence rather than a pile.
+ *
+ * The model returns ranges that overlap — one block ending at 3:33 and the
+ * next starting at 3:18 — and nothing was resolving them, so the same dialogue
+ * appeared in two consecutive blocks and would have played twice in the cut.
+ * The owner spotted it immediately, which is the right reaction: a cut is an
+ * ordered sequence, and the same words cannot be in it twice.
+ *
+ * A clip that starts before the previous one ends is trimmed forward to the
+ * next segment boundary at or after that end. If trimming leaves nothing, the
+ * clip was wholly contained in its predecessor and is dropped — its content is
+ * already in the cut.
+ */
+function dedupeOverlaps(clips: ScoredClip[], segments: Segment[]): ScoredClip[] {
+  const out: ScoredClip[] = [];
+  let lastEnd = -1;
+
+  for (const c of clips) {
+    if (c.start_ms >= lastEnd) {
+      out.push(c);
+      lastEnd = c.end_ms;
+      continue;
+    }
+
+    // First segment that begins at or after the previous block ended.
+    const from = segments.find((s) => s.start_ms >= lastEnd && s.start_ms < c.end_ms);
+    if (!from) continue;
+
+    const kept = segments.filter((s) => s.start_ms >= from.start_ms && s.end_ms <= c.end_ms);
+    if (!kept.length) continue;
+
+    out.push({
+      ...c,
+      start_ms: kept[0].start_ms,
+      end_ms: kept[kept.length - 1].end_ms,
+      quote: kept.map((s) => s.text).join(" ").trim(),
+    });
+    lastEnd = kept[kept.length - 1].end_ms;
+  }
+
+  return out;
 }
 
 function clamp(n: number, lo: number, hi: number, fallback: number): number {

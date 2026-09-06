@@ -749,8 +749,16 @@ app.get("/p/:id/:stagePath", async (c) => {
     const pauses = pauseCuts(segs);
     const pausesLeft = pauses.filter((p2) => !cuts.some((x) => x.seg === p2.seg && x.words?.[0] === p2.words?.[0]));
 
+    /*
+     * Only clean-ups that can actually run.
+     *
+     * "Studio sound" and "Cut everything it flagged" were rendered permanently
+     * greyed, because neither is built — the enhance pass is not wired up and
+     * nothing flags weak stretches yet. A button that is disabled forever and
+     * never says why reads as a broken product, which is exactly how the owner
+     * read it. Same rule as "Queue it" on Build: it appears when it works.
+     */
     cleanUps = [
-      { id: "sound", name: "Studio sound", sub: "noise, echo, levels — regenerated", ready: false, done: false },
       {
         id: "fillers",
         name: "Remove the ums and uhs",
@@ -773,11 +781,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         ready: pausesLeft.length > 0,
         done: pauses.length > 0 && pausesLeft.length === 0,
       },
-      // "Flagged" needs the model to mark weak stretches, which no pass does
-      // yet. Shown with its real description and disabled, rather than with an
-      // invented count.
-      { id: "flagged", name: "Cut everything it flagged", sub: "dead air, false starts", ready: false, done: false },
-    ];
+    ].filter((chip) => chip.ready || chip.done);
   }
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = jobs.find((j) => j.ref_id === project.id) ?? null;
@@ -1790,15 +1794,20 @@ app.post("/api/begin", async (c) => {
     upgrade: b.upgrade,
   });
 
-  await dispatch(c.env, c.executionCtx, {
-    type: "score",
-    jobId: result.jobId,
-    userId: user.id,
-    sourceId: src.id,
-    projectId: result.projectId,
-    brief: b.brief || "",
-    upgrade: b.upgrade,
-  });
+  /* No job means this reopened an edit that already has its clips — there is
+     nothing to run, and re-running would cost minutes and money for an answer
+     already on screen. */
+  if (result.jobId) {
+    await dispatch(c.env, c.executionCtx, {
+      type: "score",
+      jobId: result.jobId,
+      userId: user.id,
+      sourceId: src.id,
+      projectId: result.projectId,
+      brief: b.brief || "",
+      upgrade: b.upgrade,
+    });
+  }
   return c.json(result);
 });
 
