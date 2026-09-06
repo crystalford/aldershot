@@ -78,5 +78,13 @@ front of something Undo already covers.
 - Nothing reclaims storage automatically. Purging is manual and per-item;
   there is no "empty the bin" and no retention policy.
 - No rate limiting on signup, upload or any API route.
-- `ensureV2Schema` runs 27 `CREATE TABLE IF NOT EXISTS` statements on every
-  cold isolate. Small, but it is per-isolate rather than per-deploy.
+- `ensureV2Schema` runs its `CREATE TABLE IF NOT EXISTS` batch once per cold
+  isolate. **Deliberately left alone.**
+
+  The obvious fix is a schema-version row: read it, and skip the batch when it
+  matches. That trades a few D1 reads per cold isolate — against an included
+  allowance of billions of rows a month — for a mechanism that silently skips a
+  migration the day somebody adds a table and forgets to bump the number. This
+  codebase creates its schema lazily *by design*, with no migration runner, so
+  that check is the only thing standing between a deploy and a missing column.
+  The saving is not worth a way to lose it.

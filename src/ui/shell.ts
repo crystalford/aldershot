@@ -9,6 +9,7 @@
 
 import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, RADIUS, SIZE, accentBg } from "./tokens.ts";
 import { iconBell, iconSearch } from "./icons.ts";
+import { FONT_CSS } from "./fontfaces.ts";
 
 /** The prototype's `view` strings. Routing maps URLs onto these (10-ROUTES-AND-KEYS.md). */
 export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
@@ -277,10 +278,8 @@ export function page(opts: PageOpts, body: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>${GLOBAL_CSS}</style>
+<style>${FONT_CSS}
+${GLOBAL_CSS}</style>
 </head>
 <body>
 <div style="min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT.ui}">

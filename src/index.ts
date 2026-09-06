@@ -29,6 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
+import { FONT_FILES } from "./ui/fontfaces.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
@@ -134,6 +135,26 @@ app.get("/sw.js", (c) =>
 );
 
 /** The client runtime: keyboard map, composer, toasts. Served as a module. */
+/**
+ * The typefaces.
+ *
+ * Served by us instead of fetched from fonts.googleapis.com on every page
+ * load. Immutable and a year long because a font file for a given weight and
+ * subset never changes — and unlike /media this is public by necessity: the
+ * landing page has to render in the right type before anyone has signed in.
+ */
+app.get("/fonts/:name", (c) => {
+  const bytes = FONT_FILES[c.req.param("name")];
+  if (!bytes) return c.notFound();
+  return new Response(bytes, {
+    headers: {
+      "content-type": "font/woff2",
+      "cache-control": "public, max-age=31536000, immutable",
+      "access-control-allow-origin": "*",
+    },
+  });
+});
+
 app.get("/app.js", (c) =>
   c.body(CLIENT_JS, 200, {
     "content-type": "text/javascript; charset=utf-8",

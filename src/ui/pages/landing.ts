@@ -13,6 +13,7 @@
  */
 
 import { esc } from "../shell.ts";
+import { FONT_CSS } from "../fontfaces.ts";
 
 const GOLD = "#D9B36A";
 const GREEN = "#5EC98F";
@@ -184,7 +185,7 @@ export function renderConfirm(token: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Sign in to Aldershot</title>
 <meta name="robots" content="noindex"/>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>${FONT_CSS}</style>
 <style>*{box-sizing:border-box}body{margin:0}</style>
 </head>
 <body>
@@ -273,9 +274,7 @@ export function renderLanding(d: LandingData): string {
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Aldershot — editing is reading now.</title>
 <meta name="description" content="Drop an hour of video and say what you want out of it. Aldershot reads the whole thing and makes the first cut."/>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>${FONT_CSS}</style>
 <style>
   *,*::before,*::after{box-sizing:border-box}
   /* The background belongs on body, not only on the page wrapper. Without it

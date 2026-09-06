@@ -30,6 +30,13 @@
    */
   "triggers": { "crons": ["17 * * * *"] },
 
+  /*
+   * Fonts are imported as binary modules rather than base64 strings, which
+   * would have inflated 98KB of woff2 into 130KB of source for nothing. See
+   * src/ui/fontfaces.ts.
+   */
+  "rules": [{ "type": "Data", "globs": ["**/*.woff2"], "fallthrough": false }],
+
   "d1_databases": [
     { "binding": "DB", "database_name": "aldershot", "database_id": "TODO" }
   ],
