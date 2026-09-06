@@ -192,27 +192,57 @@ export function moveBlock(blocks: Block[], id: string, dir: -1 | 1): string[] {
   return ids;
 }
 
+/**
+ * What ONE block actually plays, as ranges of the source in milliseconds.
+ *
+ * The single definition of that question, because there were two and they
+ * disagreed: the editor's footer summed surviving words while the renderer
+ * built from clip beats, so the number under your cut was not the length of
+ * the file you got. Both go through here now.
+ *
+ * A struck block plays nothing. A block with no word timings plays whole —
+ * there is nothing finer to go on. Otherwise the surviving words are merged
+ * into runs, so the render does not cut and rejoin at every word boundary and
+ * the kept speech keeps its natural gaps.
+ *
+ * A recording has no range in the source at all; it carries its own media, so
+ * it is not answerable here. Callers handle it by origin.
+ */
+export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number; end_ms: number }> {
+  if (block.struck) return [];
+  if (block.origin !== "footage") return [];
+  if (!block.words.length) return [{ start_ms: block.start_ms, end_ms: block.end_ms }];
+
+  /* Word timings are SECONDS while the segment's are milliseconds — see
+     StoredWord. Subtracting the raw fields reported 59 minutes for a
+     two-minute video the first time this ran. */
+  const out: Array<{ start_ms: number; end_ms: number }> = [];
+  let run: { start_ms: number; end_ms: number } | null = null;
+  for (let i = 0; i < block.words.length; i++) {
+    if (wordStruck(cuts, block, i)) {
+      if (run) out.push(run);
+      run = null;
+      continue;
+    }
+    const start = wordStartMs(block.words[i]);
+    const end = wordEndMs(block.words[i]);
+    if (run) run.end_ms = Math.max(run.end_ms, end);
+    else run = { start_ms: start, end_ms: end };
+  }
+  if (run) out.push(run);
+  return out;
+}
+
 /** What the cut actually runs to, with struck lines and words removed. */
 export function runtimeMs(blocks: Block[], cuts: Cut[]): number {
   let total = 0;
   for (const block of blocks) {
     if (block.struck) continue;
     if (block.origin !== "footage") {
-      total += block.end_ms - block.start_ms;
+      total += Math.max(0, block.end_ms - block.start_ms);
       continue;
     }
-    if (!block.words.length) {
-      total += block.end_ms - block.start_ms;
-      continue;
-    }
-    /* Word timings are SECONDS while the segment's are milliseconds — see
-       StoredWord. Subtracting the raw fields reported 59 minutes for a
-       two-minute video the first time this ran. */
-    for (let i = 0; i < block.words.length; i++) {
-      if (!wordStruck(cuts, block, i)) {
-        total += Math.max(0, wordEndMs(block.words[i]) - wordStartMs(block.words[i]));
-      }
-    }
+    for (const r of blockRanges(block, cuts)) total += Math.max(0, r.end_ms - r.start_ms);
   }
   return total;
 }

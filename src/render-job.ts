@@ -14,9 +14,10 @@
 import type { Env } from "./env.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
+import { buildBlocks, parseOrder } from "./blocks.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
-import { getBeats, getProject, listClipsForSource, type Project } from "./projects.ts";
+import { getBeats, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { ulid } from "./id.ts";
@@ -127,32 +128,32 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
   const source = await getSource(env.DB, project.source_id, userId);
   if (!source) return null;
 
-  const [segments, beats, clips] = await Promise.all([
+  const [segments, beats] = await Promise.all([
     getSegments(env.DB, source.id),
     getBeats(env.DB, project.id),
-    listClipsForSource(env.DB, source.id, userId),
   ]);
 
-  // A clip beat's range lives on the CLIP, not the beat — `dur_ms` says how
-  // long it is but not where it starts, and rendering from a duration alone
-  // would silently cut from the top of the source every time.
-  const byId = new Map(clips.map((c) => [c.id, c]));
-
-  const edl = buildEdl(
-    source.r2_key,
-    beats.map((b) => {
-      const clip = b.clip_id ? byId.get(b.clip_id) : undefined;
-      return {
-        kind: b.kind as "clip" | "vo" | "react" | "generated" | "stock",
-        start_ms: clip?.start_ms,
-        end_ms: clip ? clip.end_ms : (b.dur_ms ?? undefined),
-        text: b.text,
-        media_r2_key: b.media_r2_key,
-      };
-    }),
+  /*
+   * The render is built from the SAME blocks the editor shows.
+   *
+   * It used to build from clip beats, which only exist after a scoring pass —
+   * so a cut made by striking text produced an empty EDL and failed with
+   * "There's nothing kept to render yet". It also never read `block_order`, so
+   * rearranging blocks could not change the file, and it had no notion of a
+   * struck beat, so a voiceover you cut was exported anyway.
+   *
+   * buildBlocks is the one place that says what a cut IS. Reading it here is
+   * what makes the editor's runtime and the exported file the same thing.
+   */
+  const cuts = parseCuts(project.cuts);
+  const blocks = buildBlocks({
     segments,
-    parseCuts(project.cuts),
-  );
+    beats,
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+  });
+
+  const edl = buildEdl(source.r2_key, blocks, cuts);
   return { edl, source, segments };
 }
 

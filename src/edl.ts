@@ -11,7 +11,8 @@
  * export is testable without a container, an encoder, or a video file.
  */
 
-import { playableRanges, type Cut, type Segmentish } from "./cuts.ts";
+import { playableRanges, type Cut, type Segmentish, wordStartMs, wordEndMs } from "./cuts.ts";
+import { blockRanges, type Block } from "./blocks.ts";
 
 export interface EdlCut {
   /** R2 key of the source to cut from. */
@@ -38,74 +39,83 @@ export interface Edl {
   durationMs: number;
 }
 
-export interface BeatInput {
-  kind: "clip" | "vo" | "react" | "generated" | "stock";
-  /** For kind=clip: the range in the source. */
-  start_ms?: number;
-  end_ms?: number;
-  text?: string | null;
-  /** Recorded voice or generated visual, when the beat carries its own media. */
-  media_r2_key?: string | null;
-}
-
 /**
- * Builds the EDL for a project.
+ * Builds the EDL from the BLOCK SEQUENCE.
  *
- * Two things combine, and the order matters: the beats decide WHICH stretches
- * are in and in what order, and the transcript cuts then remove struck words
- * from within them. A word struck in Script must not survive because Pick
- * happened to keep the block it was in.
+ * This used to walk `beats`, and emit nothing when there were none. Clip beats
+ * only exist after a scoring pass, so a cut made by striking text — the main
+ * way this product is used — produced an empty EDL and failed with "There's
+ * nothing kept to render yet", while the editor showed a full runtime and an
+ * enabled Export button. It also never read `block_order`, so rearranging
+ * blocks could not affect the file, and it had no notion of a struck beat, so
+ * a voiceover you cut was still in your export.
+ *
+ * Blocks fix all of that at once, because a block sequence already IS the
+ * finished piece: `buildBlocks` excludes clip beats on the grounds that "a
+ * clip beat is a pointer at footage the segments already cover", so what is
+ * left is every footage segment with its cuts applied plus every inserted beat
+ * carrying its own media, in the order the user arranged. A scored cut and an
+ * unassisted one now render through one path.
+ *
+ * One cut per block, not per merged range across the whole transcript, which
+ * also fixes captions: `captionCues` gets one cue per line instead of one cue
+ * holding minutes of joined text.
  */
-export function buildEdl(
-  sourceKey: string,
-  beats: BeatInput[],
-  segments: Segmentish[],
-  cuts: Cut[],
-): Edl {
-  // What survives the transcript cuts, as absolute source ranges.
-  const surviving = playableRanges(segments, cuts);
+export function buildEdl(sourceKey: string, blocks: Block[], cuts: Cut[]): Edl {
   const out: EdlCut[] = [];
 
-  for (const beat of beats) {
-    if (beat.kind !== "clip") {
-      // vo/react/generated/stock carry their own media rather than a range of
-      // the source. They are passed through so the renderer can place them,
-      // and are deliberately NOT affected by transcript cuts — striking a word
-      // in the source transcript should not silently shorten a voiceover.
-      if (beat.media_r2_key) {
-        /* vo and react are recordings of a voice: audio, no picture.
-           `generated` and `stock` are visuals and carry their own video. */
-        const audioOnly = beat.kind === "vo" || beat.kind === "react";
-        out.push({
-          sourceKey: beat.media_r2_key,
-          start_ms: 0,
-          end_ms: beat.end_ms ?? 0,
-          text: beat.text ?? "",
-          ...(audioOnly ? { audioOnly: true } : {}),
-        });
-      }
+  for (const block of blocks) {
+    if (block.struck) continue;
+
+    if (block.origin !== "footage") {
+      /*
+       * A recording or a generated visual carries its own media rather than a
+       * range of the source, and is deliberately NOT affected by transcript
+       * cuts — striking a word in the source should not shorten a voiceover.
+       */
+      if (!block.mediaKey) continue;
+      const audioOnly = block.origin === "voice";
+      out.push({
+        sourceKey: block.mediaKey,
+        start_ms: 0,
+        end_ms: Math.max(0, block.end_ms - block.start_ms),
+        text: block.text ?? "",
+        ...(audioOnly ? { audioOnly: true } : {}),
+      });
       continue;
     }
 
-    if (beat.start_ms == null || beat.end_ms == null) continue;
-
-    // Intersect the beat's range with what survived the cuts.
-    for (const range of surviving) {
-      const start = Math.max(beat.start_ms, range.start_ms);
-      const end = Math.min(beat.end_ms, range.end_ms);
-      if (end <= start) continue;
-      out.push({ sourceKey, start_ms: start, end_ms: end, text: textForRange(segments, start, end) });
+    /* blockRanges is the one definition of what a block plays — the same one
+       the runtime under the editor is summed from, so the number you were
+       shown is the length of the file you get. */
+    for (const range of blockRanges(block, cuts)) {
+      if (range.end_ms <= range.start_ms) continue;
+      out.push({
+        sourceKey,
+        start_ms: range.start_ms,
+        end_ms: range.end_ms,
+        text: textForRange(block, range.start_ms, range.end_ms),
+      });
     }
   }
 
   return { cuts: out, durationMs: out.reduce((n, c) => n + (c.end_ms - c.start_ms), 0) };
 }
 
-/** What is said across a range, rebuilt from the transcript we already have. */
-function textForRange(segments: Segmentish[], startMs: number, endMs: number): string {
-  return segments
-    .filter((s) => s.end_ms > startMs && s.start_ms < endMs)
-    .map((s) => (s as Segmentish & { text?: string }).text ?? "")
+/**
+ * What is said across one range of one block.
+ *
+ * From the block's OWN words, not by re-scanning every segment: a line with a
+ * word struck out of the middle plays as two ranges, and scanning segments
+ * would give both of them the whole line's text — so a caption would show
+ * words the video no longer contains. Falls back to the line when there are no
+ * word timings to go on.
+ */
+function textForRange(block: Block, startMs: number, endMs: number): string {
+  if (!block.words.length) return (block.text ?? "").trim();
+  return block.words
+    .filter((w) => wordEndMs(w) > startMs && wordStartMs(w) < endMs)
+    .map((w) => w.w)
     .join(" ")
     .trim();
 }
