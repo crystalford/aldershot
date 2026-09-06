@@ -161,14 +161,23 @@ function render(plan, res) {
           // edit containing any recorded voiceover simply could not be
           // exported, which is the one thing Build exists to produce.
           //
-          // It gets a picture: a flat card in the app's own canvas colour, for
-          // exactly as long as the recording. Encoded to match every other
-          // part — same size, same codec, same audio format — because the
-          // concat below is a stream copy and will not join parts that differ.
-          const dur = Math.max(0.05, Number(cut.end_s) - Number(cut.start_s));
+          // It gets a picture: a flat card in the app's own canvas colour,
+          // encoded to match every other part — same size, same codec, same
+          // audio format — because the concat below is a stream copy and will
+          // not join parts that differ.
+          //
+          // The RECORDING decides the length, not the metadata.
+          //
+          // dur_ms is whatever the browser reported when the take was saved,
+          // and a cut built from it would be wrong the moment that number is
+          // missing or stale — with -shortest, a zero would truncate a real
+          // take to nothing. So the background is an endless colour source and
+          // -shortest ends the part when the audio ends. The number in the
+          // database is then only ever an estimate for the interface, and can
+          // never damage the video.
           await runFfmpeg([
             "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", `color=c=0x0B0B0E:s=${w}x${h}:r=30:d=${dur}`,
+            "-f", "lavfi", "-i", `color=c=0x0B0B0E:s=${w}x${h}:r=30`,
             "-i", cut.url,
             "-map", "0:v", "-map", "1:a",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
