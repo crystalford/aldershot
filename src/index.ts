@@ -28,6 +28,7 @@ import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
+import { quickSearch } from "./search.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -672,6 +673,12 @@ app.get("/media/*", async (c) => {
     headers: {
       "content-type": object.httpMetadata?.contentType || "application/octet-stream",
       "content-length": String(object.size),
+      /* ?download=1 saves the file instead of playing it in the tab. The name
+         is the last path segment, which for a render is its id plus extension
+         — not pretty, but it is the file you asked for and it is honest. */
+      ...(c.req.query("download")
+        ? { "content-disposition": `attachment; filename="${(key.split("/").pop() || "video.mp4").replace(/[^\w.\-]/g, "_")}"` }
+        : {}),
       // Advertised even on a full response: without it a browser will not
       // attempt a range request, so seeking never starts.
       "accept-ranges": "bytes",
@@ -813,6 +820,10 @@ app.get("/p/:id/:stagePath", async (c) => {
    */
   const isScratch = !project.brief?.trim();
   const clips = source && !isScratch ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
+
+  /* This edit's exports. Loaded for every stage, because "where did my video
+     go" is a question you can ask from any of them. */
+  const renders = await listRenders(c.env.DB, project.id);
 
   /*
    * The Clean up chips' sublabels carry live numbers, so they are computed
@@ -966,6 +977,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         cuts: parseCuts(project.cuts),
         sourcePoster: source?.poster_r2_key ?? null,
         sourceKey: source?.r2_key ?? null,
+        renders,
         cameFrom: cameFrom(c.req.header("referer")),
         projectId: project.id,
         title: project.title,
@@ -1453,6 +1465,30 @@ app.get("/editor", async (c) => {
       }),
     ),
   );
+});
+
+/**
+ * What the nav's "Ask for anything" asks.
+ *
+ * Deliberately not the meaning search: that embeds the query and costs a
+ * Workers AI call, which is fine once and wrong on every keystroke. See
+ * src/search.ts.
+ */
+app.get("/api/search", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ hits: await quickSearch(c.env.DB, user.id, c.req.query("q") || "") });
+});
+
+/** What the bell knows: what is running, and what finished while you were away. */
+app.get("/api/notifications", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const [running, done] = await Promise.all([
+    activeJobs(c.env.DB, user.id),
+    recentlyFinished(c.env.DB, user.id),
+  ]);
+  return c.json({ running, done });
 });
 
 /*

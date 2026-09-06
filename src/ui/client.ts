@@ -58,16 +58,206 @@ window.doUndoable = function (label, apply, revert) {
   toast(label, () => { const r = undoStack.pop(); if (r) r(); });
 };
 
+/* ── The nav bar's three controls ──────────────────────────────────────
+   "Ask for anything", the "?" and the bell were rendered on every page and
+   bound to nothing, while this very file caught Cmd-K and "?" and discarded
+   them. The app had shortcuts and hid them behind a dead button. */
+
+const palette = document.querySelector("#palette");
+const paletteInput = document.querySelector("#paletteInput");
+const paletteResults = document.querySelector("#paletteResults");
+const keysheet = document.querySelector("#keysheet");
+const notifpanel = document.querySelector("#notifpanel");
+
+function toggle(el, on) {
+  if (!el) return false;
+  const next = on === undefined ? el.hidden : !on;
+  el.hidden = !next ? true : false;
+  el.hidden = on === undefined ? !el.hidden : !on;
+  return true;
+}
+
+/** Closes anything open. Returns whether there was something to close. */
+function closeOverlays() {
+  let closed = false;
+  for (const el of [palette, keysheet, notifpanel]) {
+    if (el && !el.hidden) { el.hidden = true; closed = true; }
+  }
+  return closed;
+}
+
+function openPalette() {
+  if (!palette) return;
+  closeOverlays();
+  palette.hidden = false;
+  if (paletteInput) { paletteInput.value = ""; paletteInput.focus(); }
+  if (paletteResults) paletteResults.innerHTML = "";
+  renderHits(null);
+}
+
+function renderHits(hits) {
+  if (!paletteResults) return;
+  if (hits === null) {
+    paletteResults.innerHTML =
+      '<div class="pal-note">Videos, edits and clips. Try a word someone said.</div>';
+    return;
+  }
+  if (!hits.length) {
+    /* Not a dead end: the words did not match, but the meaning search might,
+       and that is one click away rather than a thing you have to know about. */
+    const q = encodeURIComponent(paletteInput ? paletteInput.value : "");
+    paletteResults.innerHTML =
+      '<div class="pal-note">Nothing with those words. ' +
+      '<a href="/footage?tab=moments&mode=meaning&q=' + q + '">Search by meaning →</a></div>';
+    return;
+  }
+  paletteResults.innerHTML = hits
+    .map(
+      (h, i) =>
+        '<a class="pal-row" data-hit="' + i + '" href="' + h.href + '">' +
+        '<span class="pal-title">' + escapeHtml(h.title) + "</span>" +
+        '<span class="pal-sub">' + escapeHtml(h.sub) + "</span></a>",
+    )
+    .join("");
+  markActive(0);
+}
+
+function escapeHtml(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+let active = 0;
+function rows() {
+  return paletteResults ? [...paletteResults.querySelectorAll("[data-hit]")] : [];
+}
+function markActive(i) {
+  const all = rows();
+  if (!all.length) return;
+  active = (i + all.length) % all.length;
+  all.forEach((el, n) => {
+    el.setAttribute("data-active", n === active ? "1" : "0");
+    if (n === active) el.scrollIntoView({ block: "nearest" });
+  });
+}
+
+if (paletteInput) {
+  /* Debounced: a query per keystroke would be a query per keystroke. */
+  let timer = null;
+  let seq = 0;
+  paletteInput.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = paletteInput.value.trim();
+    if (!q) { renderHits(null); return; }
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      try {
+        const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+        const data = await res.json();
+        /* Ignore a slow answer to an old query — otherwise the results you
+           see are whichever request happened to finish last. */
+        if (mine === seq) renderHits(data.hits || []);
+      } catch (err) {
+        if (mine === seq) renderHits([]);
+      }
+    }, 140);
+  });
+
+  paletteInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); markActive(active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); markActive(active - 1); }
+    else if (e.key === "Enter") {
+      const el = rows()[active];
+      if (el) { e.preventDefault(); location.href = el.getAttribute("href"); }
+    }
+  });
+}
+
+/* Clicking the scrim closes; clicking the panel must not. */
+for (const el of [palette, keysheet]) {
+  if (el) el.addEventListener("click", (e) => { if (e.target === el) closeOverlays(); });
+}
+if (notifpanel) {
+  const back = notifpanel.querySelector("[data-close]");
+  if (back) back.addEventListener("click", closeOverlays);
+}
+
+const navSearch = document.querySelector("#navSearch");
+if (navSearch) navSearch.addEventListener("click", openPalette);
+
+const navKeys = document.querySelector("#navKeys");
+if (navKeys) navKeys.addEventListener("click", () => {
+  const open = keysheet && keysheet.hidden;
+  closeOverlays();
+  if (keysheet && open) keysheet.hidden = false;
+});
+
+/* The bell. Its gold dot claimed news for months with nothing behind it. */
+const navNotif = document.querySelector("#navNotif");
+const notifDot = navNotif ? navNotif.querySelector("span") : null;
+const notifBody = document.querySelector("#notifBody");
+
+function notifRow(label, sub, tone, href) {
+  const inner =
+    '<span class="notif-dot" data-tone="' + tone + '"></span>' +
+    '<span class="pal-title">' + escapeHtml(label) + "</span>" +
+    '<span class="pal-sub">' + escapeHtml(sub) + "</span>";
+  return href
+    ? '<a class="notif-row" href="' + href + '">' + inner + "</a>"
+    : '<div class="notif-row">' + inner + "</div>";
+}
+
+async function loadNotifications() {
+  if (!notifBody) return;
+  try {
+    const res = await fetch("/api/notifications");
+    if (!res.ok) throw new Error("no");
+    const { running, done } = await res.json();
+    const rowsHtml = []
+      .concat((running || []).map((j) => notifRow(j.stage_label || j.type, "running", "run", null)))
+      .concat(
+        (done || []).map((j) =>
+          notifRow(
+            j.state === "failed" ? (j.error || "Something failed") : (j.stage_label || j.type),
+            j.state === "failed" ? "failed" : "done",
+            j.state === "failed" ? "fail" : "done",
+            null,
+          ),
+        ),
+      );
+    notifBody.innerHTML = rowsHtml.length ? rowsHtml.join("") : '<div class="pal-note">Nothing running.</div>';
+    /* The dot means something now: it is only there when work is. */
+    if (notifDot) notifDot.hidden = !(running || []).length;
+  } catch (err) {
+    notifBody.innerHTML = '<div class="pal-note">Couldn\'t load that.</div>';
+  }
+}
+
+if (navNotif) {
+  navNotif.addEventListener("click", () => {
+    const open = notifpanel && notifpanel.hidden;
+    closeOverlays();
+    if (notifpanel && open) { notifpanel.hidden = false; loadNotifications(); }
+  });
+  /* Settle the dot on load rather than leaving it permanently lit. */
+  loadNotifications();
+}
+
 /* ── Keyboard map (10-ROUTES-AND-KEYS.md) ─────────────────────────────── */
 let goArmed = false;
 const GO = { h: "/", p: "/projects", c: "/clipping", f: "/footage", s: "/settings" };
 
 document.addEventListener("keydown", (e) => {
+  /* Escape closes whatever is open, from anywhere — including the palette's
+     own input, which is a field, so this is checked before inField(). */
+  if (e.key === "Escape" && closeOverlays()) { e.preventDefault(); return; }
+
   if (inField(e.target)) return;
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
-    return; /* search overlay lands with the Ask surface */
+    openPalette();
+    return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
     e.preventDefault();
@@ -75,7 +265,7 @@ document.addEventListener("keydown", (e) => {
     if (r) r();
     return;
   }
-  if (e.key === "?") { e.preventDefault(); return; }
+  if (e.key === "?") { e.preventDefault(); toggle(keysheet); return; }
   if (e.key === "Escape") { goArmed = false; return; }
 
   /* G then a letter navigates. */
@@ -885,9 +1075,12 @@ document.querySelectorAll(".render-cut").forEach((btn) => {
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || "That didn't render");
-      toast("Rendering — it'll appear in Exports when it's done");
-      btn.textContent = original;
-      btn.disabled = false;
+      /* Reload rather than toast about somewhere else.
+         This used to say "it'll appear in Exports when it's done" and there
+         WAS NO EXPORTS — the render finished, landed in R2, and nothing in
+         the product ever showed it to anyone. The list is on this page now,
+         so the honest thing is to show it appearing. */
+      location.reload();
     } catch (err) {
       btn.textContent = original;
       btn.disabled = false;
@@ -895,6 +1088,25 @@ document.querySelectorAll(".render-cut").forEach((btn) => {
     }
   });
 });
+
+/* An export in flight. Polls only while something is actually working —
+   data-working is 0 once every render has finished, and then this does
+   nothing at all rather than talking to the server for ever. */
+const exportsEl = document.querySelector("#exports");
+if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
+  const project = exportsEl.getAttribute("data-project");
+  const tick = setInterval(async () => {
+    try {
+      const res = await fetch("/api/projects/" + project + "/renders");
+      if (!res.ok) return;
+      const { renders } = await res.json();
+      const busy = (renders || []).some((r) => r.state === "queued" || r.state === "running");
+      if (!busy) { clearInterval(tick); location.reload(); }
+    } catch (err) {
+      /* A blip is not a reason to stop watching; the next tick tries again. */
+    }
+  }, 4000);
+}
 
 /* Subscribe, or manage an existing subscription. Both are a redirect to
    Stripe's own hosted page — no card fields ever live on this origin. */

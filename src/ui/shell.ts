@@ -140,6 +140,20 @@ p,div{text-wrap:pretty}
    client is a String.raw template with no access to the tokens — so JS setting
    colours meant hardcoded hexes, which check-fidelity rightly rejected. JS
    flips one attribute; the colours stay tokens. */
+/* Palette and notification rows. Same reason as .seg-pill: the client is a
+   String.raw template with no access to the tokens, so anything it colours has
+   to be a class here or it becomes an invented hex. */
+.pal-row{display:flex;align-items:baseline;gap:10px;padding:10px 18px;cursor:pointer;text-decoration:none}
+.pal-row[data-active="1"]{background:${C.pill}}
+.pal-title{flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pal-sub{flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}}
+.pal-note{padding:14px 18px;font-size:${SIZE.meta};color:${C.ink32}}
+.pal-note a{color:${ACCENT.cyan}}
+.notif-row{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:7px;text-decoration:none}
+.notif-dot{flex:none;width:6px;height:6px;border-radius:50%}
+.notif-dot[data-tone="run"]{background:${ACCENT.gold}}
+.notif-dot[data-tone="done"]{background:${ACCENT.green}}
+.notif-dot[data-tone="fail"]{background:${ACCENT.red}}
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};padding:5px 11px;border-radius:${RADIUS.button};white-space:nowrap}
 .seg-pill[data-kept="1"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
 .seg-pill[data-kept="0"]{background:${C.pill};color:${C.ink70};font-weight:500}
@@ -159,6 +173,72 @@ html{scrollbar-gutter:stable}
 ::-webkit-scrollbar-thumb{background:#2A2A31;border-radius:99px;border:2px solid ${C.canvas}}
 ::-webkit-scrollbar-track{background:transparent}
 `.trim();
+
+
+/**
+ * The three things the nav bar promised and did not do.
+ *
+ * "Ask for anything", the "?" and the bell were rendered on every page and
+ * bound to nothing — and worse, the keyboard handler already caught Cmd-K and
+ * "?" and threw them away, so the app had shortcuts and hid them behind a
+ * button that did nothing. Four working links and three ornaments is most of
+ * why this felt like "a nightmare to use".
+ *
+ * They live in the shell rather than on a page because their triggers do: the
+ * nav is on every surface, so these have to be too.
+ *
+ * Markup only. The client wires them, and everything starts hidden.
+ */
+function overlays(): string {
+  const scrim = `position:fixed;inset:0;z-index:70;background:rgba(6,6,8,0.62);backdrop-filter:blur(3px)`;
+  const panel = `background:#141418;border-radius:${RADIUS.card};box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,0.07)`;
+
+  /* The palette. Results are rendered by the client; this is the frame. */
+  const palette = `<div id="palette" hidden style="${scrim};display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px">
+    <div style="${panel};width:min(560px,100%);overflow:hidden">
+      <input id="paletteInput" placeholder="Ask for anything" autocomplete="off" spellcheck="false"
+        style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:16px 18px;font-family:${FONT.ui}"/>
+      <div id="paletteResults" style="max-height:min(52vh,420px);overflow-y:auto;border-top:1px solid ${C.hairline}"></div>
+    </div>
+  </div>`;
+
+  /* The shortcut sheet. These keys ALREADY WORK — G-then-letter and Cmd-Z are
+     bound in the client — so this documents behaviour rather than promising
+     it. That is the only reason it is allowed to exist. */
+  const key = (k: string, what: string) =>
+    `<div style="display:flex;align-items:baseline;gap:12px;padding:7px 0">
+      <span style="flex:none;min-width:64px;font-family:${FONT.mono};font-size:${SIZE.meta};color:${C.ink}">${k}</span>
+      <span data-content style="flex:1;font-size:${SIZE.secondary};color:${C.ink70}">${what}</span>
+    </div>`;
+
+  const keys = `<div id="keysheet" hidden style="${scrim};display:flex;align-items:center;justify-content:center;padding:16px">
+    <div style="${panel};width:min(420px,100%);padding:20px 22px">
+      <div style="font-size:${SIZE.body};font-weight:600">Keyboard</div>
+      <div style="margin-top:12px">
+        ${key("⌘K", "Ask for anything")}
+        ${key("G then H", "Home")}
+        ${key("G then P", "Projects")}
+        ${key("G then C", "Clipping")}
+        ${key("G then F", "Footage")}
+        ${key("G then S", "Settings")}
+        ${key("⌘Z", "Undo the last change")}
+        ${key("?", "This list")}
+        ${key("Esc", "Close")}
+      </div>
+    </div>
+  </div>`;
+
+  /* The bell. Its gold dot claimed unread news for months with nothing behind
+     it; the client now hides the dot when there is nothing to report. */
+  const notif = `<div id="notifpanel" hidden style="position:fixed;inset:0;z-index:70">
+    <div data-close style="position:absolute;inset:0"></div>
+    <div style="${panel};position:absolute;top:52px;right:max(16px,calc((100vw - ${LAYOUT.width}) / 2));width:min(340px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;padding:6px">
+      <div id="notifBody"></div>
+    </div>
+  </div>`;
+
+  return palette + keys + notif;
+}
 
 export interface PageOpts {
   title: string;
@@ -195,6 +275,7 @@ ${body}
 </div>
 </div>
 <div id="toasts" style="position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center"></div>
+${overlays()}
 <script src="/app.js" type="module"></script>
 </body>
 </html>`;
