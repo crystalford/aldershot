@@ -26,10 +26,11 @@ function world() {
   return { sqlite, db: fakeD1(sqlite) };
 }
 
-const meter = (sqlite: DatabaseSync, id: string, user: string, bytes: number, createdAt: number) =>
+/** A stored video of a given size. This is what storage now counts. */
+const video = (sqlite: DatabaseSync, id: string, user: string, bytes: number, deletedAt: number | null = null) =>
   sqlite.exec(
-    `INSERT INTO usage_events (id,user_id,job_type,bytes_stored,unit_prices,cost_usd,created_at)
-     VALUES ('${id}','${user}','transcribe',${bytes},'{}',0,${createdAt})`,
+    `INSERT INTO sources (id,user_id,title,r2_key,bytes,created_at,deleted_at)
+     VALUES ('${id}','${user}','v','k/${id}',${bytes},1,${deletedAt ?? "NULL"})`,
   );
 
 test("an empty account may upload", async () => {
@@ -38,21 +39,54 @@ test("an empty account may upload", async () => {
   assert.equal(out.ok, true);
 });
 
-test("storage is counted for all time, not this month", async () => {
-  /* Settings summed the current month, which is right for processing minutes
-     and wrong for bytes: a video uploaded in March still occupies a disk in
-     April. That meter reset an account near its limit to nearly empty every
-     1st, and a cap built on it would have done the same. */
+test("storage counts the videos that exist, whenever they arrived", async () => {
+  /* This summed usage_events for the current month, which is right for
+     processing minutes and wrong for bytes: a video uploaded in March still
+     occupies a disk in April. */
   const w = world();
-  meter(w.sqlite, "OLD", ME, 20 * GB, 1);
-  meter(w.sqlite, "NEW", ME, 1 * GB, Date.now());
+  video(w.sqlite, "OLD", ME, 20 * GB);
+  video(w.sqlite, "NEW", ME, 1 * GB);
 
   assert.equal(await storedBytes(w.db as never, ME), 21 * GB);
 });
 
+test("a video that was never read still counts", async () => {
+  /* The old measure came from ingest, which runs AFTER a read. So an upload
+     that finished but had not been read counted as nothing — and one whose
+     read failed counted as nothing for ever, while its bytes sat in R2. */
+  const w = world();
+  w.sqlite.exec(
+    `INSERT INTO sources (id,user_id,title,r2_key,bytes,transcript_state,created_at)
+     VALUES ('S1','${ME}','unread','k',${9 * GB},'failed',1)`,
+  );
+  assert.equal(await storedBytes(w.db as never, ME), 9 * GB);
+});
+
+test("a soft-deleted video still counts, a purged one does not", async () => {
+  /* Deleting is reversible and leaves the object in R2, so it is still taking
+     up room. Only purging removes the row and the bytes together — which is
+     what makes "Delete for good" the button that moves this number. */
+  const w = world();
+  video(w.sqlite, "SOFT", ME, 4 * GB, 99);
+  assert.equal(await storedBytes(w.db as never, ME), 4 * GB);
+
+  w.sqlite.exec("DELETE FROM sources WHERE id='SOFT'");
+  assert.equal(await storedBytes(w.db as never, ME), 0);
+});
+
+test("a finished render counts too", async () => {
+  const w = world();
+  w.sqlite.exec(
+    `INSERT INTO renders (id,user_id,kind,format,aspect,bytes,state,created_at)
+     VALUES ('R1','${ME}','cut','mp4_1080','16:9',${2 * GB},'ready',1),
+            ('R2','${ME}','cut','mp4_1080','16:9',${5 * GB},'failed',1)`,
+  );
+  assert.equal(await storedBytes(w.db as never, ME), 2 * GB, "a failed render produced no file");
+});
+
 test("an upload that would cross the cap is refused, and says the number", async () => {
   const w = world();
-  meter(w.sqlite, "A", ME, 24 * GB, 1);
+  video(w.sqlite, "A", ME, 24 * GB);
 
   const out = await checkStorage(w.db as never, ME, "free", 5 * GB);
   assert.equal(out.ok, false);
@@ -62,7 +96,7 @@ test("an upload that would cross the cap is refused, and says the number", async
 
 test("an upload that exactly fits is allowed", async () => {
   const w = world();
-  meter(w.sqlite, "A", ME, 20 * GB, 1);
+  video(w.sqlite, "A", ME, 20 * GB);
   const out = await checkStorage(w.db as never, ME, "free", 5 * GB);
   assert.equal(out.ok, true, "25GB into a 25GB cap is inside it, not over");
 });
@@ -94,7 +128,7 @@ test("a deleted source's in-flight bytes stop counting", async () => {
 
 test("Studio has more room than Free, from PLANS rather than a number here", async () => {
   const w = world();
-  meter(w.sqlite, "A", ME, 30 * GB, 1);
+  video(w.sqlite, "A", ME, 30 * GB);
 
   assert.equal((await checkStorage(w.db as never, ME, "free", 1 * GB)).ok, false);
   assert.equal((await checkStorage(w.db as never, ME, "studio", 1 * GB)).ok, true);
@@ -103,6 +137,6 @@ test("Studio has more room than Free, from PLANS rather than a number here", asy
 
 test("another account's storage is not counted against yours", async () => {
   const w = world();
-  meter(w.sqlite, "THEIRS", "USER_THEM", 100 * GB, 1);
+  video(w.sqlite, "THEIRS", "USER_THEM", 100 * GB);
   assert.equal(await storedBytes(w.db as never, ME), 0);
 });

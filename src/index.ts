@@ -2269,10 +2269,15 @@ app.post("/api/uploads/:sourceId/complete", async (c) => {
     }
   }
 
+  /* The real size, from R2 rather than from what the client claimed. It is
+     what the storage meter counts, so it has to be the object's own. */
+  const object = await c.env.MEDIA.head(src.r2_key);
+
   // The upload is done; its bookkeeping is no longer resumable state.
   await c.env.DB.batch([
     c.env.DB.prepare(`DELETE FROM upload_parts WHERE source_id=?`).bind(src.id),
     c.env.DB.prepare(`DELETE FROM uploads WHERE source_id=?`).bind(src.id),
+    c.env.DB.prepare(`UPDATE sources SET bytes=? WHERE id=?`).bind(object?.size ?? null, src.id),
   ]);
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });

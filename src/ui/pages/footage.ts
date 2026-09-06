@@ -325,30 +325,19 @@ function sortBar(current: string, q: string, mode: string): string {
 }
 
 
-export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
-  const head =
-    pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
-    searchBox(tab, "meaning", "") +
-    tabs(tab, { sources: sources.length });
+/*
+ * renderFootage — the simple variant — WAS HERE, and nothing called it.
+ *
+ * It was a near-copy of renderFootageFull's branches, and being a copy it
+ * caught two of my fixes that were meant for the real one: the sort bar, and
+ * the empty state that told someone with no videos to add back a clip they
+ * never had. The sort bar failed to compile, which is how I noticed; the
+ * string did not, and shipped.
+ *
+ * A dead near-copy of a live function is worse than no function: it looks
+ * like the thing you are editing.
+ */
 
-  if (tab === "sources") {
-    /* "Nothing kept yet — add a clip back" is the prototype's line for an
-       empty CLIPS list, and it was being shown on the Videos tab — telling
-       someone with no videos at all to add back a clip they never had. The
-       Videos tab is a departure from the prototype (which opens on Clips), so
-       its empty state is a string the prototype does not have. Signed off in
-       scripts/check-fidelity.cjs. */
-    if (!sources.length) return head + emptyState("Nothing here yet — upload a video and it starts reading.");
-    return (
-      head +
-      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>${selectBar("video")}`
-    );
-  }
-
-  // Moments and Threads are Phase 2/5. Their real empty state is the honest
-  // thing to show — not a preview of data that does not exist.
-  return head + emptyState("Nothing kept yet — add a clip back.");
-}
 
 /** The full surface, with Moments and Threads filled from the library. */
 /**
@@ -386,7 +375,10 @@ export function renderFootageFull(d: FootageData): string {
   if (d.tab === "find") return head + findPanel();
 
   if (d.tab === "sources") {
-    if (!d.sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
+    /* The prototype's "Nothing kept yet — add a clip back" is its line for an
+       empty CLIPS list. On the Videos tab it told someone with no videos at
+       all to restore a clip they never had. Signed off in check-fidelity. */
+    if (!d.sources.length) return head + emptyState("Nothing here yet — upload a video and it starts reading.");
     return (
       head +
       sortBar(d.sort ?? "newest", d.q, d.mode) +

@@ -35,14 +35,34 @@ const GB = 1e9;
  * near its limit as nearly empty every 1st of the month.
  */
 export async function storedBytes(db: D1Database, userId: string): Promise<number> {
-  const row = await db
-    .prepare(`SELECT COALESCE(SUM(bytes_stored),0) AS b FROM usage_events WHERE user_id=?`)
+  /*
+   * Measured from the things that EXIST, not from an event log.
+   *
+   * This summed usage_events.bytes_stored, which ingest writes after reading a
+   * video. Three holes: an upload that finished but had not been read counted
+   * as nothing; one whose read FAILED counted as nothing for ever while its
+   * bytes sat in R2 being billed; and nothing ever came off the total, so
+   * deleting for good — the only thing that frees bytes — did not move the
+   * meter it was supposed to.
+   *
+   * Soft-deleted sources are DELIBERATELY still counted. A delete is
+   * reversible and leaves the object in R2, so it is still occupying storage;
+   * only purging removes the row and the bytes together. That also makes the
+   * "Delete for good" button mean something — it is the one that moves this
+   * number.
+   */
+  const sources = await db
+    .prepare(`SELECT COALESCE(SUM(bytes),0) AS b FROM sources WHERE user_id=?`)
     .bind(userId)
     .first<{ b: number | null }>();
 
-  /* Uploads that have not been read yet are metered by ingest, not by the
-     upload — so an in-flight or unread video would be invisible to the cap and
-     you could sit under it forever by never letting anything be transcribed. */
+  const renders = await db
+    .prepare(`SELECT COALESCE(SUM(bytes),0) AS b FROM renders WHERE user_id=? AND state='ready'`)
+    .bind(userId)
+    .first<{ b: number | null }>();
+
+  /* An upload still in flight has no size on its source yet, and reserving it
+     is the point of checking before the bytes land. */
   const pending = await db
     .prepare(
       `SELECT COALESCE(SUM(u.total_bytes),0) AS b FROM uploads u
@@ -52,7 +72,7 @@ export async function storedBytes(db: D1Database, userId: string): Promise<numbe
     .bind(userId)
     .first<{ b: number | null }>();
 
-  return (row?.b ?? 0) + (pending?.b ?? 0);
+  return (sources?.b ?? 0) + (renders?.b ?? 0) + (pending?.b ?? 0);
 }
 
 const gb = (bytes: number) => Math.round((bytes / GB) * 10) / 10;

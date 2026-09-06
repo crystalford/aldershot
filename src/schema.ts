@@ -260,6 +260,17 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * has never rendered anything.
    */
   { table: "renders", column: "clip_id", ddl: "ALTER TABLE renders ADD COLUMN clip_id TEXT" },
+
+  /*
+   * How big a source's file is.
+   *
+   * Storage was counted from usage_events, which ingest writes AFTER reading a
+   * video. So an upload that finished but had not been read yet counted as
+   * nothing — and one whose read FAILED counted as nothing for ever, while its
+   * bytes sat in R2 being billed. Recorded at upload completion, where the size
+   * is known and final.
+   */
+  { table: "sources", column: "bytes", ddl: "ALTER TABLE sources ADD COLUMN bytes INTEGER" },
 ];
 
 let ensured = false;
