@@ -1441,6 +1441,34 @@ app.post("/api/projects/:id/outline", async (c) => {
  * first: recording reads it back to you, and TTS refuses without it
  * ("there's nothing written on this beat yet").
  */
+/**
+ * Throw a take away.
+ *
+ * A recording you are not happy with has to be removable, or "Another take"
+ * is the only way out and the block can never go back to empty. The R2 object
+ * goes too — an abandoned take is not something to keep paying to store.
+ */
+app.post("/api/beats/:id/unrecord", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const beat = await c.env.DB
+    .prepare(
+      `SELECT b.id, b.media_r2_key FROM beats b JOIN v2_projects p ON p.id = b.project_id
+        WHERE b.id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{ id: string; media_r2_key: string | null }>();
+  if (!beat) return c.json({ error: "not found" }, 404);
+
+  if (beat.media_r2_key) await c.env.MEDIA.delete(beat.media_r2_key);
+  await c.env.DB
+    .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL WHERE id=?`)
+    .bind(beat.id)
+    .run();
+  return c.json({ ok: true });
+});
+
 app.post("/api/beats/:id/text", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

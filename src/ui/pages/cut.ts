@@ -153,26 +153,62 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
   /* What this block is, under its words: how long it runs, and why the model
      liked it when it had an opinion. */
   /*
-   * Record it, or have it spoken.
+   * The recorder.
    *
-   * Both existed already and neither could be reached: the recorder was bound
-   * to #build, a surface that no longer exists, so recording a voiceover has
-   * been impossible since the editor was rebuilt. A block that says it wants
-   * your voice has to offer a way to give it.
+   * This was a button that said "Record it" and nothing else — no waveform,
+   * no elapsed time, no way to stop except pressing the same button again, no
+   * way to cancel, and no way to hear or remove a take. The owner:
+   *
+   *   "it seems like the way you work is like, you just 'get it done' ... it's
+   *    just like a blank sorta 'get it done' approach"
+   *
+   * Fair, and worse than it looks: the design was already in the prototype I
+   * had open — a blinking dot, 24 live bars, Stop & keep, Cancel, a take
+   * duration in green mono. Every value below is copied from it.
+   *
+   * All three states are rendered and toggled with `hidden`, rather than
+   * built in JS, so the markup is one thing to read and the client only
+   * decides which is showing.
    */
-  const fill =
-    b.origin === "voice" && !struck
-      ? `<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap">
-          <button class="blk-record" data-beat="${esc(b.id.slice(2))}"
-            style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${
-              b.mediaKey ? C.pill : ACCENT.gold
-            };color:${b.mediaKey ? C.ink70 : "#131316"};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${
-              b.mediaKey ? "Another take" : "Record it"
-            }</button>
-          <button class="blk-tts" data-beat="${esc(b.id.slice(2))}"
-            style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
-        </div>`
-      : "";
+  const beatId = esc(b.id.slice(2));
+  const took = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
+
+  const bar = (h: number) =>
+    `<div class="rec-bar" style="width:3px;height:${h}px;border-radius:99px;background:rgba(236,236,241,0.5);flex:none"></div>`;
+
+  const recorder = `<div class="blk-rec" data-beat="${beatId}" style="margin-top:12px">
+
+    <!-- Idle. Recording is the real answer, so it is the gold one. -->
+    <div class="rec-idle" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${b.mediaKey ? "Another take" : "Record it"}</button>
+      <button class="blk-tts" style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
+      ${
+        b.mediaKey
+          ? `<button class="blk-unrecord" style="margin-left:auto;font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;padding:0 4px;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Remove</button>`
+          : ""
+      }
+    </div>
+
+    <!-- Recording. The bars are driven from the microphone itself. -->
+    <div class="rec-live" hidden style="padding:11px 13px;border-radius:8px;background:#0E0E11;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="width:8px;height:8px;border-radius:50%;background:${ACCENT.red};animation:blip 1.1s ease-in-out infinite;flex:none"></span>
+      <div class="rec-wave" style="flex:1 1 120px;min-width:min(110px,100%);display:flex;gap:3px;align-items:center;height:18px;overflow:hidden">${Array.from({ length: 24 }, () => bar(3)).join("")}</div>
+      <span class="rec-clock" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink70};font-variant-numeric:tabular-nums">0:00</span>
+      <button class="rec-stop" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:6px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Stop &amp; keep</button>
+      <button class="rec-cancel" style="flex:none;font-size:${SIZE.secondary};color:${C.ink45};background:none;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Cancel</button>
+    </div>
+  </div>`;
+
+  /* The take you already have, playable. A recording you cannot hear back is
+     one you have to re-record to check. */
+  const take = b.mediaKey
+    ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <audio controls preload="none" src="/media/${esc(b.mediaKey)}" style="flex:1 1 220px;min-width:min(200px,100%);height:32px"></audio>
+        ${took ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${ACCENT.green};white-space:nowrap">${took}</span>` : ""}
+      </div>`
+    : "";
+
+  const fill = b.origin === "voice" && !struck ? take + recorder : "";
 
   const meta = [
     b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",

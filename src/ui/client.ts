@@ -500,13 +500,15 @@ if (blocksEl) {
   );
 
   blocksEl.addEventListener("click", async (e) => {
-    /* Typing in a block is not clicking it. Without this the delegation below
-       reads a click in the text field as a click on the row. */
-    if (e.target.closest(".blk-text")) return;
+    /* Typing in a block, scrubbing its take, or using the live recorder is not
+       clicking the row. Without this the delegation below treats all three as
+       a press on the block itself. */
+    if (e.target.closest(".blk-text, .rec-live, audio")) return;
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");
     const short = e.target.closest(".blk-short");
     const rec = e.target.closest(".blk-record");
+    const unrec = e.target.closest(".blk-unrecord");
     const tts = e.target.closest(".blk-tts");
     const move = e.target.closest(".blk-move");
     const play = e.target.closest(".blk-play");
@@ -517,6 +519,21 @@ if (blocksEl) {
        touches the server once you stop, so an abandoned one costs nothing. */
     if (rec) { void record(rec); return; }
 
+    /* Throw a take away, so a block can go back to empty rather than only
+       ever being recorded over. */
+    if (unrec) {
+      unrec.disabled = true;
+      try {
+        const res = await fetch("/api/beats/" + unrec.closest(".blk-rec").getAttribute("data-beat") + "/unrecord", { method: "POST" });
+        if (!res.ok) throw new Error("Couldn't remove that");
+        location.reload();
+      } catch (err) {
+        unrec.disabled = false;
+        toast((err && err.message) || "Couldn't remove that");
+      }
+      return;
+    }
+
     /* Or have it spoken, so the cut can be watched end to end before you
        commit to recording anything. */
     if (tts) {
@@ -525,7 +542,7 @@ if (blocksEl) {
       const was = tts.textContent;
       tts.textContent = "Speaking it…";
       try {
-        const res = await fetch("/api/beats/" + tts.getAttribute("data-beat") + "/tts", { method: "POST" });
+        const res = await fetch("/api/beats/" + tts.closest(".blk-rec").getAttribute("data-beat") + "/tts", { method: "POST" });
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || "That didn't work");
         location.reload();
@@ -2348,52 +2365,131 @@ if (build) {
    delegated router above now, which also reaches "Generate" — the same job
    under a shorter label, which was dead because only the longer one was bound. */
 
-/* In-browser recording for a vo or react beat.
-   Recording never touches the server until the user stops — a take they
-   abandon should cost nothing and leave nothing behind. */
+/*
+ * In-browser recording for an inserted block.
+ *
+ * Nothing reaches the server until you press Stop & keep, so a take you
+ * abandon costs nothing and leaves nothing behind — and Cancel is a real way
+ * out rather than "record over it".
+ *
+ * The bars are the microphone, not decoration. An AnalyserNode over the live
+ * stream drives 24 heights per frame, which is the difference between knowing
+ * the mic is working and hoping it is. This was a button with no waveform, no
+ * clock and no cancel; the design was in the prototype the whole time.
+ */
 async function record(button) {
-  if (button.dataset.recording === "1") return;
+  const panel = button.closest(".blk-rec");
+  if (!panel || panel.dataset.recording === "1") return;
+
+  const idle = panel.querySelector(".rec-idle");
+  const live = panel.querySelector(".rec-live");
+  const clock = panel.querySelector(".rec-clock");
+  const bars = [...panel.querySelectorAll(".rec-bar")];
+  const beatId = panel.getAttribute("data-beat");
 
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
-    toast("Couldn't reach your microphone");
+    /* Denied, or no microphone at all. Both are the user's to fix and neither
+       is an error in the page, so say what happened and stay put. */
+    toast("Couldn't reach your microphone — check the browser's permission for this site.");
     return;
   }
 
-  const beatId = button.getAttribute("data-beat");
+  panel.dataset.recording = "1";
+  idle.hidden = true;
+  live.hidden = false;
+
   const chunks = [];
   const started = Date.now();
   const recorder = new MediaRecorder(stream);
   recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
 
-  const original = button.textContent;
-  button.dataset.recording = "1";
-  button.textContent = "Stop & keep";
+  /* The meter. A separate AudioContext from anything else on the page, closed
+     with the take so the microphone light goes out when recording stops. */
+  let audio = null;
+  let frame = 0;
+  try {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audio.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.6;
+    audio.createMediaStreamSource(stream).connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    const draw = () => {
+      analyser.getByteFrequencyData(data);
+      for (let i = 0; i < bars.length; i++) {
+        /* 3px is the resting height in the prototype, 18px the row's own
+           height, so a bar never pushes the panel taller than it starts. */
+        const v = data[Math.floor((i / bars.length) * data.length)] / 255;
+        bars[i].style.height = (3 + Math.round(v * 15)) + "px";
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+  } catch {
+    /* No Web Audio: the bars simply do not move. Everything else still works,
+       which is better than refusing to record. */
+  }
+
+  const tick = setInterval(() => {
+    const s2 = Math.round((Date.now() - started) / 1000);
+    clock.textContent = Math.floor(s2 / 60) + ":" + String(s2 % 60).padStart(2, "0");
+  }, 250);
+
+  const teardown = () => {
+    clearInterval(tick);
+    if (frame) cancelAnimationFrame(frame);
+    if (audio) audio.close().catch(() => {});
+    stream.getTracks().forEach((t) => t.stop());
+    panel.dataset.recording = "0";
+    live.hidden = true;
+    idle.hidden = false;
+    bars.forEach((b) => { b.style.height = "3px"; });
+    clock.textContent = "0:00";
+  };
+
+  let keeping = true;
 
   recorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    button.dataset.recording = "0";
-    button.textContent = "Saving…";
+    const ms = Date.now() - started;
+    teardown();
+    if (!keeping) return;
+
+    /* A tap on Stop is not a take. Saving a 200ms blip would leave a beat
+       looking filled with nothing in it. */
+    if (ms < 400 || !chunks.length) {
+      toast("That was too short to keep.");
+      return;
+    }
+
+    const stopBtn = panel.querySelector(".rec-stop");
+    if (stopBtn) stopBtn.textContent = "Saving…";
     try {
-      const blob = new Blob(chunks, { type: "audio/webm" });
       const res = await fetch("/api/beats/" + beatId + "/record", {
         method: "POST",
-        headers: { "content-type": "audio/webm", "x-duration-ms": String(Date.now() - started) },
-        body: blob,
+        headers: { "content-type": "audio/webm", "x-duration-ms": String(ms) },
+        body: new Blob(chunks, { type: "audio/webm" }),
       });
       if (!res.ok) throw new Error("That take didn't save");
       location.reload();
     } catch (err) {
-      button.textContent = original;
-      toast(err.message);
+      if (stopBtn) stopBtn.textContent = "Stop & keep";
+      toast((err && err.message) || "That take didn't save");
     }
   };
 
+  const stop = (keep) => {
+    keeping = keep;
+    if (recorder.state !== "inactive") recorder.stop();
+    else teardown();
+  };
+
+  live.querySelector(".rec-stop").addEventListener("click", () => stop(true), { once: true });
+  live.querySelector(".rec-cancel").addEventListener("click", () => stop(false), { once: true });
   recorder.start();
-  const stop = () => { if (recorder.state !== "inactive") recorder.stop(); };
-  button.addEventListener("click", stop, { once: true });
 }
 
 /* Clipping's drop zone. The video lands in Footage like any other source —
