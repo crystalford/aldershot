@@ -229,6 +229,42 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
         console.log(`   reorder:  ${wasFirst} → ${nowFirst}  ${wasFirst !== nowFirst ? 'OK' : '⚠ NO CHANGE'}`);
       }
 
+      /* Select a phrase and cut it — the reason to edit video by text. */
+      const sel = await page.evaluate(() => {
+        /* A block with enough words STILL IN IT — the walk strikes a block a
+           moment earlier, and picking that one meant the selection step
+           silently skipped itself on every run. */
+        const blk = [...document.querySelectorAll('.blk')].find(
+          (b) => [...b.querySelectorAll('.w')].filter((w) => w.dataset.cut !== '1').length >= 4,
+        );
+        if (!blk) return false;
+        const ws = [...blk.querySelectorAll('.w')].filter((w) => w.dataset.cut !== '1');
+        const r = document.createRange();
+        r.setStart(ws[0].firstChild, 0);
+        r.setEnd(ws[3].firstChild, ws[3].firstChild.length);
+        const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        return true;
+      });
+      if (sel) {
+        await page.waitForTimeout(400);
+        const action = page.locator('body > button').last();
+        if (await action.isVisible().catch(() => false)) {
+          const label = ((await action.textContent()) || '').trim();
+          const was = await runtime();
+          await action.click();
+          await page.waitForTimeout(800);
+          console.log(`   select:   "${label}"  ${was} -> ${await runtime()}  OK`);
+        } else {
+          console.log('   select:   ⚠ no cut action appeared for a selection');
+        }
+      }
+
+      /* Every word carries its timings, which is what makes the transcript a
+         scrub bar and the playing word light up. */
+      const timed = await page.locator('.w[data-s]').count();
+      const allWords = await page.locator('.w').count();
+      console.log(`   timings:  ${timed}/${allWords} words  ${timed === allWords ? 'OK' : '⚠ MISSING'}`);
+
       /* Make a short of one block — the OpusClip gesture, in the editor. */
       const shortBtn = page.locator('.blk-short').first();
       if (await shortBtn.count()) {

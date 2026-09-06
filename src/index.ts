@@ -1153,7 +1153,15 @@ app.post("/api/projects/:id/cuts", async (c) => {
     block?: string;
     seg?: number;
     word?: number | null;
-    kind: "word" | "segment" | "fillers" | "pauses";
+    /**
+     * A selection, as [segment, firstWord, lastWord] runs.
+     *
+     * Selecting a phrase and cutting it is THE text-editing gesture — the
+     * reason to edit video by text at all — and a selection does not respect
+     * line boundaries, so it arrives as one run per line it touches.
+     */
+    ranges?: Array<{ seg: number; from: number; to: number }>;
+    kind: "word" | "segment" | "fillers" | "pauses" | "range";
   }>(c);
   const segments = await getSegments(c.env.DB, project.source_id);
   let cuts = parseCuts(project.cuts);
@@ -1172,6 +1180,17 @@ app.post("/api/projects/:id/cuts", async (c) => {
   if (b.kind === "segment" && b.block?.startsWith("b:")) {
     const found = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
     if (!found) return c.json({ error: "that block is gone" }, 404);
+  } else if (b.kind === "range" && Array.isArray(b.ranges) && b.ranges.length) {
+    /* Added, never toggled. A drag across ten words means "cut these", and
+       toggling would put back any word inside the selection that happened to
+       be struck already — which is the opposite of what the gesture says. */
+    cuts = addCuts(
+      cuts,
+      b.ranges
+        .filter((r) => Number.isInteger(r.seg) && Number.isInteger(r.from) && Number.isInteger(r.to))
+        .map((r) => ({ seg: r.seg, words: [Math.min(r.from, r.to), Math.max(r.from, r.to)] as [number, number] })),
+    );
+    await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));
   } else if (b.kind === "fillers") {
     cuts = addCuts(cuts, fillerCuts(segments));
     await saveCuts(c.env.DB, project.id, user.id, serialiseCuts(cuts));

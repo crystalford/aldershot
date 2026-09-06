@@ -423,6 +423,140 @@ if (blocksEl) {
   };
   paintFrames();
 
+  /*
+   * The word being spoken lights up, and a selection can be cut.
+   *
+   * These are the two gestures that make editing by text worth doing, and the
+   * reason the owner wants this at all: "i like editing via text". Neither
+   * existed — you could click one word at a time and nothing on the page ever
+   * told you where the video was in the transcript.
+   */
+  const words = [...blocksEl.querySelectorAll(".w")];
+  if (words.length && video) {
+    /* Sorted once. A pointer walks it rather than searching every frame,
+       because timeupdate fires several times a second and a 4,000-word
+       transcript scanned each time is a page that stutters while it plays. */
+    const timed = words
+      .map((el) => ({ el, s: Number(el.getAttribute("data-s")), e: Number(el.getAttribute("data-e")) }))
+      .filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e))
+      .sort((a, b) => a.s - b.s);
+
+    let lit = null;
+    let cursor = 0;
+
+    const light = () => {
+      const ms = video.currentTime * 1000;
+      /* Walk from where we were: forward while behind, back if the user
+         seeked. Both directions, or scrubbing backwards leaves it stuck. */
+      while (cursor > 0 && timed[cursor].s > ms) cursor--;
+      while (cursor < timed.length - 1 && timed[cursor + 1].s <= ms) cursor++;
+
+      const w = timed[cursor];
+      const on = w && ms >= w.s - 60 && ms <= w.e + 120 ? w.el : null;
+      if (on === lit) return;
+      if (lit) { lit.style.background = ""; lit.style.color = lit.dataset.cut === "1" ? "rgba(236,236,241,0.28)" : ""; }
+      if (on && on.dataset.cut !== "1") {
+        on.style.background = "rgba(94,201,143,0.16)";
+        on.style.color = "#5EC98F";
+      }
+      lit = on;
+    };
+    video.addEventListener("timeupdate", light);
+    video.addEventListener("seeked", light);
+
+    /*
+     * Select words, cut them.
+     *
+     * A native selection is used rather than a custom one, so double-click to
+     * take a word and drag to take a phrase both come for free, on touch as
+     * well as with a mouse. The action floats at the selection instead of
+     * living on a keyboard shortcut, which is the only way it is findable.
+     */
+    const action = document.createElement("button");
+    action.type = "button";
+    action.hidden = true;
+    action.style.cssText =
+      "position:absolute;z-index:20;font-size:12px;font-weight:600;padding:6px 12px;border-radius:5px;" +
+      "background:#ECECF1;color:#131316;border:none;cursor:pointer;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.45)";
+    document.body.appendChild(action);
+
+    /* Which words the selection actually covers, grouped into one run per
+       line — the server takes runs, because cuts are per-segment ranges. */
+    const selected = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+      const range = sel.getRangeAt(0);
+      const hit = timed.filter((w) => w.el.dataset.cut !== "1" && range.intersectsNode(w.el));
+      if (!hit.length) return null;
+
+      const byBlock = new Map();
+      for (const w of hit) {
+        const block = w.el.getAttribute("data-block");
+        /* Only footage blocks carry segment indices; an inserted block has a
+           ULID and no words, so it can never be in here. */
+        if (!block.startsWith("s:")) continue;
+        const seg = Number(block.slice(2));
+        const idx = Number(w.el.getAttribute("data-word"));
+        const run = byBlock.get(seg);
+        if (run) { run.from = Math.min(run.from, idx); run.to = Math.max(run.to, idx); }
+        else byBlock.set(seg, { seg, from: idx, to: idx });
+      }
+      const ranges = [...byBlock.values()];
+      if (!ranges.length) return null;
+
+      const ms = hit.reduce((n, w) => n + Math.max(0, w.e - w.s), 0);
+      return { ranges, count: hit.length, ms, rect: range.getBoundingClientRect() };
+    };
+
+    let pending = null;
+
+    const place = () => {
+      pending = selected();
+      if (!pending) { action.hidden = true; return; }
+      /* The count and the saving are both real — the same rule the clean-up
+         chips follow. */
+      action.textContent =
+        "Cut " + pending.count + " word" + (pending.count === 1 ? "" : "s") + " · −" + clock(pending.ms);
+      action.hidden = false;
+      const r = pending.rect;
+      action.style.top = window.scrollY + r.top - 38 + "px";
+      action.style.left = Math.max(8, window.scrollX + r.left + r.width / 2 - action.offsetWidth / 2) + "px";
+    };
+
+    document.addEventListener("selectionchange", () => {
+      /* Debounced to the next frame: selectionchange fires per character as
+         you drag, and measuring the selection each time is wasted work. */
+      requestAnimationFrame(place);
+    });
+
+    action.addEventListener("mousedown", (e) => e.preventDefault());
+    action.addEventListener("click", async () => {
+      if (!pending) return;
+      const { ranges } = pending;
+      action.hidden = true;
+      try {
+        const out = await sendCut({ kind: "range", ranges });
+        /* Repaint exactly the words that were cut, rather than reloading and
+           throwing away the scroll position mid-edit. */
+        for (const r of ranges) {
+          for (const w of timed) {
+            if (w.el.getAttribute("data-block") !== "s:" + r.seg) continue;
+            const i = Number(w.el.getAttribute("data-word"));
+            if (i < r.from || i > r.to) continue;
+            w.el.dataset.cut = "1";
+            w.el.style.textDecoration = "line-through";
+            w.el.style.color = "rgba(236,236,241,0.28)";
+            w.el.style.background = "";
+          }
+        }
+        window.getSelection()?.removeAllRanges();
+        retotal(out.afterS);
+      } catch (err) {
+        toast((err && err.message) || "That didn't save");
+      }
+    });
+  }
+
   const clock = (ms) => {
     const s2 = Math.max(0, Math.round(ms / 1000));
     const h = Math.floor(s2 / 3600), m = Math.floor((s2 % 3600) / 60), sec = s2 % 60;
@@ -562,20 +696,20 @@ if (blocksEl) {
       return;
     }
 
-    if (word && row && row.dataset.struck !== "1") {
-      const seg = Number(word.getAttribute("data-block").slice(2));
-      const idx = Number(word.getAttribute("data-word"));
-      const gone = word.dataset.cut === "1";
-      word.dataset.cut = gone ? "0" : "1";
-      word.style.textDecoration = gone ? "" : "line-through";
-      word.style.color = gone ? "" : "rgba(236,236,241,0.28)";
-      try {
-        const out = await sendCut({ kind: "word", block: word.getAttribute("data-block"), seg, word: idx });
-        retotal(out.afterS);
-      } catch (err) {
-        word.dataset.cut = gone ? "1" : "0";
-        word.style.textDecoration = gone ? "line-through" : "";
-        toast((err && err.message) || "That didn't save");
+    /*
+     * Clicking a word SEEKS to it. It used to strike it.
+     *
+     * That is Descript's model and it is the right one: a transcript you can
+     * click into is a scrub bar made of words, and deleting has to be a
+     * deliberate gesture rather than something a stray click does to your
+     * video. Cutting is now select-then-cut, which is also how you take out a
+     * phrase rather than a word at a time.
+     */
+    if (word && video) {
+      const at = Number(word.getAttribute("data-s") || 0);
+      if (at || word.getAttribute("data-s")) {
+        video.currentTime = at / 1000;
+        video.play().catch(() => {});
       }
       return;
     }

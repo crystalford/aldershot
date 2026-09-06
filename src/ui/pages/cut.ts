@@ -24,7 +24,7 @@ import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
 import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
-import type { Cut } from "../../cuts.ts";
+import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 
 export interface CutData {
   projectId: string;
@@ -74,7 +74,16 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
       ? b.words
           .map((w, wi) => {
             const gone = struck || wordStruck(cuts, b, wi);
-            return `<span class="w" data-content data-block="${esc(b.id)}" data-word="${wi}" style="cursor:pointer;${
+            /* The word's own timings, in milliseconds, on the word.
+               This is what makes the transcript a scrub bar: clicking a word
+               seeks to it, and the word being spoken lights up as it plays.
+               Both need to know where a word IS, and the DOM is the only place
+               the client can ask. */
+            /* data-cut is the client's own record of a struck word, and it
+               has to be right on FIRST paint: the selection counter excludes
+               already-struck words, and without this it would count them again
+               and quote a saving the video cannot give. */
+            return `<span class="w" data-content data-block="${esc(b.id)}" data-word="${wi}"${gone ? ' data-cut="1"' : ""} data-s="${wordStartMs(w)}" data-e="${wordEndMs(w)}" style="cursor:pointer;${
               gone ? "color:rgba(236,236,241,0.28);text-decoration:line-through;" : ""
             }">${esc(w.w)}</span>`;
           })
