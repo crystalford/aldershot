@@ -120,7 +120,39 @@ export async function getJobs(db: D1Database, ids: string[]): Promise<Job[]> {
 }
 
 /** Everything still in flight for this user — drives Home's working row. */
+/**
+ * How long a job may sit in "running" before we stop believing it.
+ *
+ * Generous: a six-hour source legitimately takes a long time to read. But a
+ * job that will never finish has to stop claiming it might — a drone clip was
+ * killed mid-extraction by waitUntil's lifetime and left its row on "running"
+ * with no error, so the surface promised progress that was never coming. That
+ * is worse than a failure, because a failure has a Retry next to it.
+ */
+const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Closes out jobs that stopped without saying so.
+ *
+ * Called whenever active jobs are read, so the reaping happens on the surface
+ * that would otherwise display the lie, and needs no scheduled trigger.
+ */
+export async function reapStaleJobs(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE jobs
+          SET state='failed',
+              finished_at=?,
+              error='That stopped partway and didn''t report why. Try it again.'
+        WHERE user_id=? AND state IN ('queued','running')
+          AND COALESCE(started_at, created_at) < ?`,
+    )
+    .bind(Date.now(), userId, Date.now() - STALE_AFTER_MS)
+    .run();
+}
+
 export async function activeJobs(db: D1Database, userId: string): Promise<Job[]> {
+  await reapStaleJobs(db, userId);
   const { results } = await db
     .prepare(`SELECT * FROM jobs WHERE user_id=? AND state IN ('queued','running') ORDER BY created_at`)
     .bind(userId)

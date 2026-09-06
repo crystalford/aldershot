@@ -40,7 +40,7 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
-  ]
+  ],
 
   // NOTE: there is deliberately no "vars" block here.
   //
@@ -74,19 +74,22 @@
   // request's waitUntil, which is bounded by the request's own lifetime and
   // cannot carry a six-hour transcribe.
   //
-  // Commented out until the queue exists, for the same reason as Vectorize
-  // below: a declared-but-missing binding fails the deploy. src/queue.ts
-  // already falls back to waitUntil when env.JOBS is undefined, so the product
-  // works either way and turning this on is a config change, not a code one.
-  // One-time setup, in order:
-  //   1. npx wrangler queues create aldershot-jobs
-  //   2. THEN uncomment both blocks below and deploy.
-  // "queues": {
-  //   "producers": [{ "binding": "JOBS", "queue": "aldershot-jobs" }],
-  //   "consumers": [
-  //     { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 5 }
-  //   ]
-  // },
+  // The queue exists now (created 2026-09-06), so this is live.
+  //
+  // It matters more than "long jobs run somewhere nicer": waitUntil is bounded
+  // by the request that started it, so extracting the audio from a large drone
+  // clip was being killed mid-flight and leaving the job row stuck on
+  // "running" with no error. A queue consumer has its own lifetime and its own
+  // retries, which is the only way a multi-gigabyte read finishes at all.
+  //
+  // max_batch_size 1 because these are minutes-long jobs, not messages to
+  // amortise; max_concurrency 5 to bound how much work runs at once.
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "aldershot-jobs" }],
+    "consumers": [
+      { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 5 }
+    ]
+  }
 
   // Later phases: Cron Triggers (Radar), AI Gateway.
 }
