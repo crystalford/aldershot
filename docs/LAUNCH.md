@@ -9,40 +9,58 @@ DNS.
 
 ---
 
-## 1. The domain  ← do this first, everything else waits on it
+## 1. Google sign-in — the way in that needs NO domain
+
+**Do this first.** It is the fastest route to a product a stranger can
+actually use, and unlike email it needs nothing you do not already have.
+
+- Google Cloud console → **OAuth client (Web)**.
+- Authorised redirect URI:
+  `https://aldershot.attenuate.workers.dev/auth/google/callback`
+  — the workers.dev URL is fine. Google accepts any https redirect URI, and
+  the session cookie is host-scoped (no `Domain` attribute), so workers.dev
+  being on the Public Suffix List does not affect it.
+- Repo secrets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+
+That is sign-up working, today. Swap the redirect URI for a real domain when
+you have one — the code builds it from `APP_ORIGIN`, falling back to whatever
+host the request arrived on, so nothing is hardcoded.
+
+Without these the Google button says so rather than failing.
+
+## 2. The domain — needed for email, not for sign-up
 
 Buy it and add it to Cloudflare. Then:
 
 - Workers → aldershot → Settings → Domains & Routes → add `app.<yourdomain>`.
 - Repo secret `APP_ORIGIN` = `https://app.<yourdomain>` (no trailing slash).
 
-`APP_ORIGIN` is what login links and Stripe return URLs are built from. Wrong
-and every email link points at the old workers.dev host.
+`APP_ORIGIN` is what login links and OAuth redirects are built from. Set it
+and the Google redirect URI has to be updated to match.
 
-## 2. Email — WITHOUT THIS NOBODY CAN SIGN UP
+## 2b. Email sign-in — WAITS FOR THE DOMAIN
 
-Right now a stranger who enters their address gets *"Sign-in isn't switched on
-yet — email delivery isn't configured. Nothing was sent."* That message is
-honest, and it means the product has no way in for anyone but you.
+A stranger who enters their address today gets *"Sign-in isn't switched on
+yet — email delivery isn't configured. Nothing was sent."* That is honest,
+and with Google configured above it is not the only way in.
 
 **This uses Cloudflare's own email service, not a third party.** No separate
-account, no separate keys, no separate bill — 3,000 messages a month included
+account, no separate key, no separate bill — 3,000 messages a month included
 on the Workers Paid plan the containers already require, then $0.35 per
-thousand. The one email this product sends is a login link.
+thousand.
+
+It needs a domain because **you cannot send from a domain you do not own**.
+That is the whole dependency:
 
 1. Cloudflare dashboard → **Email** → onboard `<yourdomain>` as a **sending
-   domain**. This is the step that matters: until a sending domain is
-   onboarded the binding can only reach addresses you have personally
-   verified, which is fine for alerts to yourself and useless for logging a
-   customer in.
-2. Add the DNS records it gives you (SPF/DKIM). Allow time to propagate.
-3. Repo secret **`MAIL_FROM`** — the address links come from, e.g.
-   `hello@<yourdomain>`. It must be on the onboarded domain.
+   domain**. Until a sending domain is onboarded, the binding can only reach
+   addresses you have personally verified — fine for alerts to yourself,
+   useless for logging a customer in.
+2. Add the SPF/DKIM records it gives you. Allow time to propagate.
+3. Repo secret **`MAIL_FROM`**, e.g. `hello@<yourdomain>`. It must be on the
+   onboarded domain.
 
 The `send_email` binding is already in `wrangler.jsonc`; nothing else to wire.
-
-Test it by signing in from a browser with no session, using an address that is
-not the owner's.
 
 > Why not Resend, MailChannels, or Email Routing? Resend works and its free
 > tier is comparable, but it is another account, another key and another bill
@@ -104,16 +122,6 @@ take money.**
 
 Until all three are set, Settings shows no upgrade button at all — deliberately.
 An unbuyable plan should not offer to sell.
-
-## 4. Google sign-in (optional, but it is the button people click)
-
-- Google Cloud console → OAuth client (Web).
-- Authorised redirect URI: `https://app.<yourdomain>/auth/google/callback`.
-- Repo secrets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
-
-Without them the Google button says so rather than failing.
-
----
 
 ## Verifying the whole thing before you tell anyone
 
