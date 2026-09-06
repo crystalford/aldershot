@@ -271,6 +271,16 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * is known and final.
    */
   { table: "sources", column: "bytes", ddl: "ALTER TABLE sources ADD COLUMN bytes INTEGER" },
+
+  /*
+   * The arrangement: block ids in sequence.
+   *
+   * Separate from `cuts` on purpose. Cuts say what is struck, order says where
+   * things are — so rearranging never deletes and striking never reorders, and
+   * either can be undone without touching the other. Null means "never
+   * rearranged", which is the transcript in its own order.
+   */
+  { table: "v2_projects", column: "block_order", ddl: "ALTER TABLE v2_projects ADD COLUMN block_order TEXT" },
 ];
 
 let ensured = false;
