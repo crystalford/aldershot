@@ -151,6 +151,27 @@ export async function reapStaleJobs(db: D1Database, userId: string): Promise<voi
     .run();
 }
 
+/**
+ * The newest job for one thing, whatever state it is in.
+ *
+ * activeJobs is `state IN ('queued','running')` — correct for "what is
+ * happening now", and wrong for every surface that also has to explain what
+ * WENT WRONG. Those looked their job up through activeJobs, which by
+ * definition can never return a failed one, so the reason a failure was
+ * recorded with was fetched, discarded, and replaced by the word "Failed".
+ *
+ * The reasons are good ones. A real upload failure here recorded "Couldn't
+ * read that video: couldn't give the extractor a way to read the file" and
+ * the user was shown "Failed" and a Retry button. That is the difference
+ * between knowing what to do next and concluding the product is broken.
+ */
+export async function latestJobFor(db: D1Database, refId: string, userId: string): Promise<Job | null> {
+  return await db
+    .prepare(`SELECT * FROM jobs WHERE ref_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1`)
+    .bind(refId, userId)
+    .first<Job>();
+}
+
 export async function activeJobs(db: D1Database, userId: string): Promise<Job[]> {
   await reapStaleJobs(db, userId);
   const { results } = await db

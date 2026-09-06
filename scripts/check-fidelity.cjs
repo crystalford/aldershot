@@ -186,6 +186,16 @@ async function checkStrings() {
         "prototype's 'four' would be a lie about the user's own library.",
     ],
     [
+      "Nothing here yet — upload a video and it starts reading.",
+      "The Videos tab is a deliberate departure from the prototype, which " +
+        "opens Footage on Clips; the owner's actual use is 'find the video I " +
+        "uploaded'. So the prototype has no empty state for a video library, " +
+        "and the one being used was its CLIPS line — 'Nothing kept yet, add a " +
+        "clip back' — which tells someone with no videos at all to restore a " +
+        "clip they never had. Phrased in the prototype's own voice: 'Nothing " +
+        "here yet' is its wording on Home.",
+    ],
+    [
       "drafting the acts",
       "A job stage label. The prototype names a few stages ('reading it for " +
         "meaning', 'picking out the moments') but never enumerates them, and " +

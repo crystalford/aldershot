@@ -303,7 +303,13 @@ export function renderFootage(tab: FootTab, sources: SourceRow[]): string {
     tabs(tab, { sources: sources.length });
 
   if (tab === "sources") {
-    if (!sources.length) return head + emptyState("Nothing kept yet — add a clip back.");
+    /* "Nothing kept yet — add a clip back" is the prototype's line for an
+       empty CLIPS list, and it was being shown on the Videos tab — telling
+       someone with no videos at all to add back a clip they never had. The
+       Videos tab is a departure from the prototype (which opens on Clips), so
+       its empty state is a string the prototype does not have. Signed off in
+       scripts/check-fidelity.cjs. */
+    if (!sources.length) return head + emptyState("Nothing here yet — upload a video and it starts reading.");
     return (
       head +
       `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${sources.map(sourceCard).join("")}</div>`

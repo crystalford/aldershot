@@ -60,7 +60,7 @@ import { consume, dispatch } from "./queue.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, failJob, finishJob, getJobs, recentlyFinished, startJob } from "./jobs.ts";
+import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
@@ -573,11 +573,13 @@ app.get("/sources/:id", async (c) => {
     return c.redirect(href, 302);
   }
 
-  const [segments, jobs] = await Promise.all([
+  /* The LATEST job, not the active one: this page renders the failed state and
+     needs the reason that failure recorded, which activeJobs can never
+     return. */
+  const [segments, job] = await Promise.all([
     getSegments(c.env.DB, src.id),
-    getJobs(c.env.DB, []).then(() => activeJobs(c.env.DB, user.id)),
+    latestJobFor(c.env.DB, src.id, user.id),
   ]);
-  const job = jobs.find((j) => j.ref_id === src.id) ?? null;
 
   return c.html(
     surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job })),
@@ -884,8 +886,10 @@ app.get("/p/:id/:stagePath", async (c) => {
       },
     ].filter((chip) => chip.ready || chip.done);
   }
-  const jobs = await activeJobs(c.env.DB, user.id);
-  const job = jobs.find((j) => j.ref_id === project.id) ?? null;
+  /* Same as the source page: renderEditor has a failed branch, and looking the
+     job up through activeJobs meant that branch could never fire — a scoring
+     pass that died showed an empty cut with no explanation. */
+  const job = await latestJobFor(c.env.DB, project.id, user.id);
 
   if (stage === "essay") {
     const beats = await getBeats(c.env.DB, project.id);
