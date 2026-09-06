@@ -466,6 +466,37 @@ if (composer) {
   });
 }
 
+/* Edit / React to it, wherever a source is listed.
+   These are how you get from "I uploaded a video" to "I am editing it", which
+   previously had no route at all: a source row linked to a transcript page and
+   stopped there. */
+document.querySelectorAll(".source-go").forEach((btn) => {
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Opening…";
+    try {
+      const res = await fetch("/api/begin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceId: btn.getAttribute("data-source"),
+          brief: btn.getAttribute("data-brief") || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Couldn't open that");
+      location.href = data.href;
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = original;
+      toast(err.message || "Couldn't open that");
+    }
+  });
+});
+
 /* "Open" on a source in the editor intake: start a cut from footage that is
    already here, then follow the editor where the server says it lives. */
 document.querySelectorAll(".open-source").forEach((btn) => {

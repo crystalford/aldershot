@@ -65,9 +65,27 @@ export function renderSource(d: SourceViewData): string {
     .filter(Boolean)
     .join(" · ");
 
+  /*
+   * The actions belong up here, not nowhere.
+   *
+   * This page was a dead end: you clicked a video in Footage, read its
+   * transcript, and had no way to do anything with it. Getting to the editor
+   * meant knowing to go somewhere else entirely. Same three the design puts on
+   * every source — Edit, Clip it, React to it.
+   */
+  const actions =
+    s.transcript_state === "ready"
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">
+          <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;border:none;font-family:${FONT.ui}">Edit</button>
+          <a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70}">Clip it</a>
+          <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;border:none;font-family:${FONT.ui}">React to it</button>
+        </div>`
+      : "";
+
   const head = `<a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:${C.ink45}">← Footage</a>
   <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em;line-height:1.2;margin-top:14px" data-content>${esc(s.title)}</div>
-  <div style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}" data-content>${esc(meta || s.filename || "")}</div>`;
+  <div style="font-size:${SIZE.meta};color:${C.ink45};margin-top:6px;font-family:${FONT.mono}" data-content>${esc(meta || s.filename || "")}</div>
+  ${actions}`;
 
   // Still reading: name the stage. No percentage during transcription — it is
   // a single atomic call, and a bar moving on a timer would be a lie.

@@ -428,6 +428,12 @@ app.get("/footage", async (c) => {
   const sources = await listSources(c.env.DB, user.id);
   const threads = await listThreads(c.env.DB, user.id);
 
+  /* Live read progress per source, so a row that is being read shows a moving
+     bar instead of a static word. The jobs are already being loaded for the
+     nav; this just joins them up. */
+  const reading = await activeJobs(c.env.DB, user.id);
+  const pctFor = new Map(reading.filter((j) => j.type === "transcribe").map((j) => [j.ref_id, j.pct]));
+
   let moments: Awaited<ReturnType<typeof listMoments>> = [];
   let meaningUnavailable = false;
 
@@ -458,7 +464,11 @@ app.get("/footage", async (c) => {
       "archive",
       "Footage",
       "Footage — Aldershot",
-      renderFootageFull({ tab, sources, moments, threads, mode, q: query, meaningUnavailable, thread }),
+      renderFootageFull({
+        tab,
+        sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
+        moments, threads, mode, q: query, meaningUnavailable, thread,
+      }),
     ),
   );
 });

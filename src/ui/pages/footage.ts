@@ -22,6 +22,8 @@ export interface SourceRow {
   transcript_state: "pending" | "running" | "ready" | "failed";
   poster_r2_key: string | null;
   created_at: number;
+  /** Live read progress, so the row shows a bar rather than a bare label. */
+  pct?: number;
 }
 
 /**
@@ -114,6 +116,18 @@ function threadChips(threads: ThreadRow[], total: number, active: string | null)
   </div>`;
 }
 
+/**
+ * One video in Footage.
+ *
+ * A ready source carries its three actions — Edit, Clip it, React to it —
+ * because this row is how you get INTO the product. Without them the row
+ * linked to a transcript page and stopped there, so uploading a video and then
+ * wanting to edit it was a dead end: the design's own acceptance criterion is
+ * that Footage "opens straight into the editor", and it did not.
+ *
+ * While it is still being read the row shows a real progress bar instead,
+ * since none of those actions can work yet.
+ */
 function sourceRow(s: SourceRow): string {
   const meta = [
     s.duration_s ? hms(s.duration_s) : null,
@@ -122,18 +136,38 @@ function sourceRow(s: SourceRow): string {
     .filter(Boolean)
     .join(" · ");
 
-  return `<a href="/sources/${esc(s.id)}" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
-    <div style="flex:none;width:76px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">${
-      s.poster_r2_key
-        ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
-        : ""
-    }</div>
-    <div style="flex:1;min-width:0">
-      <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-      <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${esc(meta)}</div>
-    </div>
-    ${stateChip(s.transcript_state)}
-  </a>`;
+  const ready = s.transcript_state === "ready";
+  const working = s.transcript_state === "running" || s.transcript_state === "pending";
+
+  const action = (label: string, primary: boolean, brief: string) =>
+    `<button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="${esc(brief)}" style="font-size:12px;font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:${primary ? C.raised : C.pill};color:${primary ? C.ink : C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${label}</button>`;
+
+  const tail = ready
+    ? `<div style="display:flex;gap:6px;flex:none;flex-wrap:wrap">
+        ${action("Edit", true, "")}
+        <a href="/clipping?source=${esc(s.id)}" style="font-size:12px;font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
+        ${action("React to it", false, "React to it")}
+      </div>`
+    : working && s.pct
+      ? `<div style="flex:none;width:120px;height:3px;border-radius:99px;background:#26262C;overflow:hidden">
+          <div style="width:${Math.max(2, s.pct)}%;height:100%;background:${ACCENT.green};border-radius:99px"></div>
+        </div>`
+      : stateChip(s.transcript_state);
+
+  return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
+    <a href="/sources/${esc(s.id)}" style="display:flex;align-items:center;gap:14px;flex:1;min-width:0">
+      <div style="flex:none;width:76px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">${
+        s.poster_r2_key
+          ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+          : ""
+      }</div>
+      <div style="flex:1;min-width:0">
+        <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+        <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:3px;font-family:${FONT.mono}">${esc(meta)}</div>
+      </div>
+    </a>
+    ${tail}
+  </div>`;
 }
 
 export interface MomentRow {

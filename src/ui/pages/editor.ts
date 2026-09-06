@@ -318,7 +318,19 @@ export function renderEditor(d: EditorData): string {
     <div id="scoring" data-project="${esc(d.projectId)}" style="margin-top:24px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
       <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
       <span style="flex:1;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job.stage_label ?? "reading it for meaning")}</span>
-    </div>`;
+      ${
+        d.job.pct > 0
+          ? `<span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${d.job.pct}%</span>`
+          : ""
+      }
+    </div>
+    ${
+      d.job.pct > 0
+        ? `<div style="margin-top:8px;height:3px;border-radius:99px;background:#26262C;overflow:hidden">
+            <div style="width:${Math.max(2, d.job.pct)}%;height:100%;background:${ACCENT.gold};border-radius:99px"></div>
+          </div>`
+        : ""
+    }`;
   }
 
   if (d.job?.state === "failed") {
