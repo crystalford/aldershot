@@ -12,6 +12,7 @@ import type { Env } from "./env.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
 import { meter } from "./usage.ts";
 import { checkCap, type Plan } from "./plans.ts";
+import { extractAudio, isAudio } from "./audio.ts";
 import { transcribeObject } from "./transcribe.ts";
 import { saveSegments, setTranscriptState, type Source } from "./sources.ts";
 
@@ -68,9 +69,27 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
   await setTranscriptState(env.DB, src.id, "running");
 
   try {
+    /*
+     * Read the AUDIO, not the video.
+     *
+     * This was transcribing src.r2_key directly, which meant handing a 4K
+     * drone clip to a speech model and asking the Worker to hold it in memory
+     * — the "Memory limit would be exceeded before EOF" that killed this
+     * upload. An hour of that footage is gigabytes; the same hour of speech is
+     * about 14MB. It also makes the MP3 chunk splitter correct, since it is
+     * now given actual MP3.
+     */
+    let readKey = src.r2_key;
+    if (!isAudio(src.filename)) {
+      const audio = await extractAudio(env, src.r2_key, (label: string) => {
+        void advance(env.DB, job.id, 8, label);
+      });
+      readKey = audio.key;
+    }
+
     // One call under ~4 hours; chunked from R2 above that. See
     // docs/decisions/transcription.md for where the ceiling actually is.
-    const result = await transcribeObject(env, env.MEDIA, src.r2_key, {
+    const result = await transcribeObject(env, env.MEDIA, readKey, {
       diarize: opts.diarize,
       // Long sources report real progress per chunk rather than sitting on one
       // stage for half an hour.

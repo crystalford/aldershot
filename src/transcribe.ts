@@ -193,11 +193,23 @@ export async function transcribeObject(
 /**
  * The largest audio that goes to Whisper in a single call.
  *
- * Measured: 55 MB (4 hours) succeeds; 69 MB fails after four minutes; 82 MB is
- * rejected outright. 50 MB keeps a real margin below the point where failures
- * start costing time as well as money.
+ * Measured against the API: 55 MB (4 hours) succeeds; 69 MB fails after four
+ * minutes; 82 MB is rejected outright. But the API's ceiling was never the
+ * binding one — the WORKER's memory is, and that was missed.
+ *
+ * Whisper takes base64, so a call costs roughly:
+ *
+ *     the buffer (N)  +  the base64 string (1.33N chars)
+ *
+ * and a JS string is UTF-16, so those chars can cost two bytes each — about
+ * 3.7N all in. At the old 50 MB that is ~180 MB against a 128 MB limit, which
+ * is exactly the "Memory limit would be exceeded before EOF" a drone clip hit.
+ *
+ * 20 MB costs ~74 MB and leaves real headroom. It is not a small limit in
+ * practice: we now transcribe extracted 32kbps mono audio, so 20 MB is about
+ * 83 minutes of speech in a single call, and anything longer is chunked.
  */
-export const SINGLE_CALL_MAX_BYTES = 50 * 1024 * 1024;
+export const SINGLE_CALL_MAX_BYTES = 20 * 1024 * 1024;
 
 /**
  * The largest file accepted without extracting its audio first.

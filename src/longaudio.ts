@@ -20,7 +20,16 @@ import type { WhisperSegment, WhisperWord } from "./transcribe.ts";
  * (~80 MB of base64), and 5 hours failed only AFTER burning four minutes — so
  * the margin here is deliberate. A 10-hour stream becomes five calls.
  */
-export const CHUNK_MS = 2 * 60 * 60 * 1000;
+/*
+ * One hour per chunk, not two.
+ *
+ * Each chunk is buffered and base64'd inside the Worker, which costs about
+ * 3.7x its size (see SINGLE_CALL_MAX_BYTES). At 32kbps mono an hour is ~14 MB,
+ * so a chunk peaks around 53 MB — comfortably inside the 128 MB limit. Two
+ * hours doubled that for no benefit: more chunks simply means more progress
+ * updates, and the seam handling is the same either way.
+ */
+export const CHUNK_MS = 60 * 60 * 1000;
 
 /**
  * Forty-five seconds of overlap between chunks.
