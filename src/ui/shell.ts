@@ -154,6 +154,15 @@ p,div{text-wrap:pretty}
 .notif-dot[data-tone="run"]{background:${ACCENT.gold}}
 .notif-dot[data-tone="done"]{background:${ACCENT.green}}
 .notif-dot[data-tone="fail"]{background:${ACCENT.red}}
+/* The editor's left column.
+   Sticky is right on a desktop, where the player sits BESIDE the blocks and
+   should stay with whatever you are reading. On a phone the columns stack, so
+   sticky pins a full-width video across the top of the screen and leaves a
+   sliver of transcript scrolling underneath — the same full-screen editor
+   problem, arrived at from a different direction. It scrolls away on narrow
+   screens. */
+.editor-aside{flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px}
+@media (max-width: 760px){ .editor-aside{position:static;max-width:100%} }
 /* Keeping is the default and stays silent; the control offers the action.
    Green-badging all 38 lines shouted the state nobody needed told. */
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:4px 10px;border-radius:${RADIUS.button};white-space:nowrap;transition:background-color .12s ease,color .12s ease}

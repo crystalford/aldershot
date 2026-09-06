@@ -1309,15 +1309,8 @@ if (scratch) {
 
   /* Kept count and runtime, recomputed from the DOM — the blocks carry their
      own duration, so the total never drifts from what is on screen. */
-  const retotal = () => {
+  const setTotals = (n, ms) => {
     if (!runtimeEl) return;
-    let ms = 0;
-    let n = 0;
-    scratch.querySelectorAll("[data-seg-block]").forEach((el) => {
-      if (el.getAttribute("data-kept") !== "1") return;
-      n += 1;
-      ms += Number(el.getAttribute("data-ms") || 0);
-    });
     const secs = Math.max(0, Math.round(ms / 1000));
     const h = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60), ss = secs % 60;
     const clock = h > 0
@@ -1331,6 +1324,19 @@ if (scratch) {
     const hk = document.querySelector("#head-kept");
     if (hr) hr.textContent = clock;
     if (hk) hk.textContent = n + " kept";
+  };
+
+  /* The optimistic figure, from the blocks themselves — instant, and
+     corrected by the server's answer a moment later. */
+  const retotal = () => {
+    let ms = 0;
+    let n = 0;
+    scratch.querySelectorAll("[data-seg-block]").forEach((el) => {
+      if (el.getAttribute("data-kept") !== "1") return;
+      n += 1;
+      ms += Number(el.getAttribute("data-ms") || 0);
+    });
+    setTotals(n, ms);
   };
 
   const paint = (block, kept) => {
@@ -1383,6 +1389,15 @@ if (scratch) {
           body: JSON.stringify({ kind: "segment", seg: Number(btn.getAttribute("data-seg")), word: null }),
         });
         if (!res.ok) throw new Error("That didn't save");
+        /* Correct to the server's own figure. The optimistic total above adds
+           and subtracts whole segments, but a line can carry word-level trims
+           made in Script, so the local guess drifts. afterS comes from the
+           same function the render uses. */
+        const out = await res.json().catch(() => null);
+        if (out && typeof out.afterS === "number" && runtimeEl) {
+          const n = scratch.querySelectorAll('[data-seg-block][data-kept="1"]').length;
+          setTotals(n, out.afterS * 1000);
+        }
       } catch (err) {
         paint(block, !next);
         retotal();

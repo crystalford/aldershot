@@ -979,6 +979,9 @@ app.get("/p/:id/:stagePath", async (c) => {
           idx: sg.idx, start_ms: sg.start_ms, end_ms: sg.end_ms, text: sg.text,
         })),
         cuts: parseCuts(project.cuts),
+        runtimeAfterCutsMs: pickSegments.length
+          ? runtimeAfterCuts(pickSegments, parseCuts(project.cuts)) * 1000
+          : undefined,
         sourcePoster: source?.poster_r2_key ?? null,
         sourceKey: source?.r2_key ?? null,
         sourceId: source?.id ?? null,

@@ -16,10 +16,14 @@
 const { chromium } = require('playwright');
 
 const BASE = process.env.BASE || 'http://localhost:8787';
+/* WIDTH=390 walks it as a phone. The owner has reported mobile layout bugs
+   before and every check since has run at 1280, where they cannot happen. */
+const WIDTH = Number(process.env.WIDTH || 1280);
+const HEIGHT = Number(process.env.HEIGHT || 900);
 
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
 
   /* The sandbox cannot reach Google Fonts, and each attempt costs ~20s of
      tunnel timeout — enough to make the whole walk look hung. Nothing here
@@ -65,11 +69,41 @@ const BASE = process.env.BASE || 'http://localhost:8787';
           disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
         });
       });
+      /* WHICH element overflows, not merely that something does. The guard
+         html{overflow-x:clip} hides the symptom, so measure against the
+         viewport width directly. */
+      const vw = document.documentElement.clientWidth;
+      const spills = [];
+      /* Ignore anything inside a container that is MEANT to scroll sideways —
+         the stage tab strip, a wide table. Flagging those means every run
+         reports a problem that is not one, and a check that cries wolf gets
+         ignored exactly when it is right. */
+      const inScroller = (el) => {
+        for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+          const ov = getComputedStyle(n).overflowX;
+          if (ov === 'auto' || ov === 'scroll') return true;
+        }
+        return false;
+      };
+      document.querySelectorAll('body *').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return;
+        if (inScroller(el)) return;
+        if (r.right > vw + 1 || r.left < -1) {
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 34);
+          spills.push(el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+            ' [' + Math.round(r.left) + '..' + Math.round(r.right) + '] ' + t);
+        }
+      });
+      /* Only the outermost offender of each nest is interesting. */
+      const trimmed = spills.filter((s, i) => !spills.some((o, j) => j < i && s.startsWith(o.split(' [')[0])));
+
       return {
         heading,
         url: location.pathname + location.search,
         controls,
-        wide: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        wide: document.documentElement.scrollWidth > vw,
+        spills: trimmed.slice(0, 5),
       };
     });
 
@@ -81,6 +115,7 @@ const BASE = process.env.BASE || 'http://localhost:8787';
     console.log(`   controls: ${d.controls.length}` + (d.wide ? '   ⚠ SCROLLS SIDEWAYS' : ''));
     console.log(`   ${d.controls.map((c) => c.name + (c.disabled ? ' [disabled]' : '')).join(' · ')}`);
     if (dead.length) console.log(`   ⚠ links with no destination: ${dead.map((c) => c.name).join(', ')}`);
+    if (d.spills.length) console.log('   ⚠ spills past the viewport:\n     ' + d.spills.join('\n     '));
     const off = d.controls.filter((c) => c.disabled);
     if (off.length) console.log(`   ⚠ disabled: ${off.map((c) => c.name).join(', ')}`);
     return d;

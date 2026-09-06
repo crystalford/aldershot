@@ -51,6 +51,8 @@ export interface EditorData {
   /** The video itself, so the workspace has the footage in it and not just words. */
   sourceKey?: string | null;
   sourceId?: string | null;
+  /** What the cut actually plays, word-level trims included. */
+  runtimeAfterCutsMs?: number;
   /** Finished (and in-flight) exports of THIS edit. */
   renders?: RenderRow[];
   /** Live scoring job, when the pass is still running. */
@@ -503,7 +505,11 @@ export function renderEditor(d: EditorData): string {
        A word-range cut trims within a line and leaves the block in. */
     const cutSet = new Set((d.cuts ?? []).filter((x) => x.words === null).map((x) => x.seg));
     const keptSegs = d.segments.filter((sg) => !cutSet.has(sg.idx));
-    const runtime = keptSegs.reduce((n, sg) => n + (sg.end_ms - sg.start_ms), 0);
+    /* Not a sum of whole kept segments: Script can trim WORDS out of a line
+       that Pick still counts as kept, and summing segments ignored those — so
+       Pick read "0:02" for a cut Script called 1.66s. One edit, one runtime,
+       computed by the same function the render uses. */
+    const runtime = d.runtimeAfterCutsMs ?? keptSegs.reduce((n, sg) => n + (sg.end_ms - sg.start_ms), 0);
 
     /* A real player rather than the scored surface's still frame, because
        there is no scored clip to show a frame OF — but the same size and the
@@ -520,7 +526,7 @@ export function renderEditor(d: EditorData): string {
     return `${head}
     ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
     <div style="margin-top:24px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-      <div style="flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px">
+      <div class="editor-aside">
         ${player}
       </div>
       <div id="pick-scratch" data-project="${esc(d.projectId)}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:2px">
@@ -563,7 +569,7 @@ export function renderEditor(d: EditorData): string {
   return `${head}
   ${d.cleanUps?.length ? cleanUpRow(d.projectId, d.cleanUps) : ""}
   <div style="margin-top:24px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-    <div style="flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px">
+    <div class="editor-aside">
       ${preview(d)}
       ${askAnotherPass(d)}
     </div>
