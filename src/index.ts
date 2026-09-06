@@ -29,6 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
+import { checkStorage, storedBytes } from "./storage.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
@@ -1815,10 +1816,10 @@ app.get("/settings", async (c) => {
    * storage is what R2 is actually holding. Both come from usage_events rather
    * than a counter kept alongside, so the meters cannot drift from the bill.
    */
-  const stored = await c.env.DB
-    .prepare(`SELECT SUM(bytes_stored) AS b FROM usage_events WHERE user_id=? AND created_at>=?`)
-    .bind(user.id, since)
-    .first<{ b: number | null }>();
+  /* Storage is what is held, not what was added this month — a video uploaded
+     in March still occupies a disk in April. This summed the month, so an
+     account near its limit read as nearly empty every 1st. */
+  const storedNow = await storedBytes(c.env.DB, user.id);
 
   /*
    * The caps come from PLANS, which is also what checkCap refuses on. They
@@ -1838,7 +1839,7 @@ app.get("/settings", async (c) => {
     },
     {
       label: "Storage",
-      used: Math.round(((stored?.b ?? 0) / 1e9) * 10) / 10,
+      used: Math.round((storedNow / 1e9) * 10) / 10,
       cap: limits.storageGb,
       unit: "GB",
       color: ACCENT_GREEN,
@@ -1954,6 +1955,18 @@ app.post("/api/uploads", async (c) => {
   const user = await requireUser(c);
   const b = await body<{ filename: string; contentType: string; bytes: number }>(c);
   const filename = b.filename || "upload.mp4";
+
+  /*
+   * THE CAP, BEFORE THE BYTES.
+   *
+   * There was no check here at all: this created the source, opened the
+   * multipart upload and returned. The only refusal in the product is
+   * checkCap, which counts processing MINUTES and runs at transcribe time —
+   * after the file has landed. So it refused the cheap thing and permitted the
+   * expensive one, and a refused upload was still billed storage for ever.
+   */
+  const room = await checkStorage(c.env.DB, user.id, user.plan, Number(b.bytes) || 0);
+  if (!room.ok) return c.json({ error: room.message }, 413);
 
   const src = await createSource(c.env.DB, { user_id: user.id, filename, origin: "upload" });
   const partSize = partSizeFor(b.bytes);
