@@ -11,6 +11,7 @@ import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
 import { iconSearch } from "../icons.ts";
+import { itemMenu } from "../item-menu.ts";
 
 export type FootTab = "moments" | "threads" | "sources" | "find";
 
@@ -178,20 +179,23 @@ function sourceCard(s: SourceRow): string {
       <div data-content style="font-size:${SIZE.meta};color:${C.ink45};margin-top:2px;font-family:${FONT.mono}">${esc(meta)}</div>
     </div>`;
 
-  return `<div style="display:flex;flex-direction:column;gap:9px">
+  return `<div data-item-row style="display:flex;flex-direction:column;gap:9px">
     ${
       ready
         ? `<a href="/sources/${esc(s.id)}" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
         : art + label
     }
-    ${
-      ready
-        ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
-            <a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
-            <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">React to it</button>
-          </div>`
-        : ""
-    }
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      ${
+        ready
+          ? `<a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
+             <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">React to it</button>`
+          : ""
+      }
+      <!-- Rename and delete belong on a video too, and a video that failed to
+           read needs them MOST — it is otherwise a permanent broken row. -->
+      <div style="margin-left:auto">${itemMenu("sources", s.id, s.title, "video")}</div>
+    </div>
   </div>`;
 }
 

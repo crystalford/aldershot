@@ -18,6 +18,7 @@ import { C, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
 import { touched } from "./projects.ts";
+import { itemMenu } from "../item-menu.ts";
 
 export interface IntakeSource {
   id: string;
@@ -53,7 +54,7 @@ function poster(key: string | null): string {
   }</div>`;
 }
 
-function row(opts: { href?: string; posterKey: string | null; title: string; meta: string; action: string; sourceId?: string }): string {
+function row(opts: { href?: string; posterKey: string | null; title: string; meta: string; action: string; sourceId?: string; menu?: string }): string {
   const inner = `${poster(opts.posterKey)}
     <div style="flex:1;min-width:0">
       <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(opts.title)}</div>
@@ -74,9 +75,17 @@ function row(opts: { href?: string; posterKey: string | null; title: string; met
    * body() parses JSON only, and the reply is JSON rather than a redirect, so
    * the user would have landed on a page of raw API output.
    */
-  return opts.href
-    ? `<a href="${esc(opts.href)}" style="${style}">${inner}</a>`
-    : `<button type="button" class="open-source" data-source="${esc(opts.sourceId ?? "")}" style="${style}">${inner}</button>`;
+  /* The menu is a sibling of the link, not a child: a button inside an anchor
+     is invalid and swallows its own clicks. This list is exactly where the
+     owner was looking at four accidental edits of one video with no way to
+     remove any of them. */
+  const menu = opts.menu ? `<div style="flex:none;margin-left:-6px">${opts.menu}</div>` : "";
+
+  return `<div data-item-row style="display:flex;align-items:center;gap:2px">${
+    opts.href
+      ? `<a href="${esc(opts.href)}" style="flex:1;min-width:0;${style}">${inner}</a>`
+      : `<button type="button" class="open-source" data-source="${esc(opts.sourceId ?? "")}" style="flex:1;min-width:0;${style}">${inner}</button>`
+  }${menu}</div>`;
 }
 
 export function renderEditorIntake(d: EditorIntakeData): string {
@@ -135,7 +144,7 @@ export function renderEditorIntake(d: EditorIntakeData): string {
         ? ready
             .slice(0, 6)
             .map((s) =>
-              row({ posterKey: s.poster_r2_key, title: s.title, meta: sourceMeta(s), action: "Open", sourceId: s.id }),
+              row({ posterKey: s.poster_r2_key, title: s.title, meta: sourceMeta(s), action: "Open", sourceId: s.id, menu: itemMenu("sources", s.id, s.title, "video") }),
             )
             .join("")
         : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing kept yet — add a clip back.</div>`
@@ -149,7 +158,7 @@ export function renderEditorIntake(d: EditorIntakeData): string {
         ? d.edits
             .slice(0, 6)
             .map((e) =>
-              row({ href: `/p/${e.id}/pick`, posterKey: e.poster_r2_key, title: e.title, meta: editMeta(e), action: "Continue" }),
+              row({ href: `/p/${e.id}/pick`, posterKey: e.poster_r2_key, title: e.title, meta: editMeta(e), action: "Continue", menu: itemMenu("projects", e.id, e.title, "edit") }),
             )
             .join("")
         : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing on the go</div>`

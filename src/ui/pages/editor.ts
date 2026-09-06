@@ -13,6 +13,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { iconArrowDown, iconArrowUp, iconPlay } from "../icons.ts";
 import { esc } from "../shell.ts";
+import { itemMenu } from "../item-menu.ts";
 import { hms, tc } from "./footage.ts";
 
 export type Stage = "cut" | "essay" | "transcript" | "shorts";
@@ -176,9 +177,11 @@ export function editorHeader(d: EditorData): string {
 
   const [backLabel, backHref] = d.cameFrom ?? ["Home", "/"];
 
+  /* Rename and delete the edit you are IN, not only from a list of them. */
   const backAndPill = `<div style="display:flex;align-items:center;gap:10px">
     <a href="${backHref}" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← ${backLabel}</a>
     ${pill ? `<span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(pill.accent)};color:${pill.accent};white-space:nowrap">${pill.text}</span>` : ""}
+    <span style="margin-left:auto">${itemMenu("projects", d.projectId, d.title, "edit")}</span>
   </div>`;
 
   /*
@@ -482,7 +485,11 @@ export function renderEditor(d: EditorData): string {
   if (d.job?.state === "failed") {
     return `${head}
     <div style="margin-top:24px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24)">
-      <div style="font-size:${SIZE.body};color:${ACCENT.red}">${esc(d.job.error ?? "Couldn't work out what to keep.")}</div>
+      <!-- data-content: a job's recorded reason is the user's data, not this
+           product's copy, and it can never appear in the prototype. The source
+           page already marked its version; this one did not, which only became
+           visible once failures started rendering their reason at all. -->
+      <div data-content style="font-size:${SIZE.body};color:${ACCENT.red}">${esc(d.job.error ?? "Couldn't work out what to keep.")}</div>
     </div>
     ${askAnotherPass(d)}`;
   }

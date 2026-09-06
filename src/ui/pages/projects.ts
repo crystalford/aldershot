@@ -12,6 +12,7 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
+import { itemMenu } from "../item-menu.ts";
 import { hms } from "./footage.ts";
 
 export interface ProjectRow {
@@ -79,6 +80,8 @@ function hero(p: ProjectRow): string {
 
   return `<div style="margin-top:32px">
     <div style="font-size:${SIZE.body};font-weight:600;color:rgba(236,236,241,0.5);padding-left:2px">Pick up where you left off</div>
+    <div data-item-row style="position:relative">
+    <div style="position:absolute;right:10px;top:22px;z-index:5">${itemMenu("projects", p.id, p.title, "edit")}</div>
     <a href="/p/${esc(p.id)}/build" style="margin-top:16px;display:flex;gap:18px;padding:16px;border-radius:11px;background:${C.surface};box-shadow:inset 0 0 0 1px rgba(217,179,106,0.22);flex-wrap:wrap;align-items:center">
       <div style="flex:none;width:min(220px,100%);aspect-ratio:16/9;border-radius:7px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);background:#0B0B0E;position:relative">
         ${poster(p.poster_r2_key)}${runtimeBadge(p)}
@@ -92,11 +95,14 @@ function hero(p: ProjectRow): string {
         <div data-content style="font-size:14px;font-weight:500;color:${C.ink};margin-top:8px">${esc(p.next_action ?? "")}</div>
         <div style="display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap">
           <span style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;white-space:nowrap">${cta}</span>
-          <span style="font-size:11.5px;color:${C.ink32};white-space:nowrap">Branch a version</span>
-          <span style="font-size:11.5px;color:${C.ink32};white-space:nowrap">Archive</span>
+          <!-- "Branch a version" and "Archive" were <span> elements here:
+               not buttons, not wired, decoration in the shape of controls.
+               Branching is not built, so it is gone rather than faked; the
+               two verbs that ARE built live in the menu on the row. -->
         </div>
       </div>
     </a>
+    </div>
   </div>`;
 }
 
@@ -104,7 +110,13 @@ function card(p: ProjectRow): string {
   const [kindBg, kindColor] = KIND[p.kind] ?? KIND.cut;
   const [stateLabel, stateColor] = STATE[stateOf(p)];
 
-  return `<a href="/p/${esc(p.id)}/build" style="border-radius:11px;background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
+  /* The menu sits OUTSIDE the anchor, floated over the poster. Nesting a
+     button inside a link is invalid and makes the whole card behave oddly on
+     a click. data-item-row lets the client take this card off the page when
+     it is deleted, rather than reloading and throwing away the Undo. */
+  return `<div data-item-row style="position:relative;display:flex">
+  <div style="position:absolute;right:6px;top:6px;z-index:5;background:rgba(11,11,14,0.66);border-radius:${RADIUS.button}">${itemMenu("projects", p.id, p.title, "edit")}</div>
+  <a href="/p/${esc(p.id)}/build" style="flex:1;min-width:0;border-radius:11px;background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
     <div style="width:100%;aspect-ratio:16/9;background:#0B0B0E;position:relative">
       ${poster(p.poster_r2_key)}
       <span data-content style="position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:5px;font-size:${SIZE.pill};font-weight:600;color:${stateColor};background:rgba(0,0,0,0.6);padding:3px 8px;border-radius:4px;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:${stateColor}"></span>${stateLabel}</span>
@@ -118,7 +130,8 @@ function card(p: ProjectRow): string {
       <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.55);line-height:1.5">${esc(p.next_action ?? "")}</div>
       <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.28);margin-top:auto">${touched(p.updated_at)}</div>
     </div>
-  </a>`;
+  </a>
+  </div>`;
 }
 
 export function renderProjects(projects: ProjectRow[]): string {

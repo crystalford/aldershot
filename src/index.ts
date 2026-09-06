@@ -29,6 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
+import { cleanTitle, listTrash, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -1477,6 +1478,46 @@ app.get("/editor", async (c) => {
       }),
     ),
   );
+});
+
+/*
+ * Rename, delete, restore — for an edit and for a video.
+ *
+ * One shape for both, because they are the same three verbs and a user who
+ * learns them on one should not have to learn them again on the other.
+ */
+const ENTITY_PATH = { projects: "project", sources: "source" } as const;
+
+app.post("/api/:kind{projects|sources}/:id/rename", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const entity = ENTITY_PATH[c.req.param("kind") as keyof typeof ENTITY_PATH];
+
+  const title = cleanTitle((await body<{ title: string }>(c)).title ?? "");
+  /* An empty name is not a name. Refusing beats silently storing "" and
+     rendering a row nobody can identify. */
+  if (!title) return c.json({ error: "give it a name" }, 400);
+
+  const ok = await rename(c.env.DB, entity, c.req.param("id"), user.id, title);
+  return ok ? c.json({ ok: true, title }) : c.json({ error: "not found" }, 404);
+});
+
+app.post("/api/:kind{projects|sources}/:id/delete", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const entity = ENTITY_PATH[c.req.param("kind") as keyof typeof ENTITY_PATH];
+
+  const { ok, label } = await softDelete(c.env.DB, entity, c.req.param("id"), user.id);
+  return ok ? c.json({ ok: true, label }) : c.json({ error: "not found" }, 404);
+});
+
+app.post("/api/:kind{projects|sources}/:id/restore", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const entity = ENTITY_PATH[c.req.param("kind") as keyof typeof ENTITY_PATH];
+
+  await restore(c.env.DB, entity, c.req.param("id"), user.id);
+  return c.json({ ok: true });
 });
 
 /**

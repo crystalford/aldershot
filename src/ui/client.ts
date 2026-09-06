@@ -58,6 +58,85 @@ window.doUndoable = function (label, apply, revert) {
   toast(label, () => { const r = undoStack.pop(); if (r) r(); });
 };
 
+/* ── Rename and delete ─────────────────────────────────────────────────
+   The verbs every platform has and this one had none of. Projects rendered
+   "Branch a version" and "Archive" as <span> elements — decoration shaped
+   like controls — and nothing anywhere could rename or remove an edit, so
+   four accidental edits of one video were permanent. */
+
+/** Close every open item menu. One at a time, like every menu anywhere. */
+function closeItemMenus(except) {
+  document.querySelectorAll(".item-menu-pop").forEach((el) => {
+    if (el !== except) el.hidden = true;
+  });
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".item-menu")) closeItemMenus(null);
+});
+
+document.querySelectorAll(".item-menu").forEach((menu) => {
+  const pop = menu.querySelector(".item-menu-pop");
+  const kind = menu.getAttribute("data-kind");
+  const id = menu.getAttribute("data-id");
+  const noun = menu.getAttribute("data-noun") || "item";
+
+  menu.querySelector(".item-menu-open").addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const opening = pop.hidden;
+    closeItemMenus(pop);
+    pop.hidden = !opening;
+  });
+
+  menu.querySelector(".item-rename").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    pop.hidden = true;
+    const current = menu.getAttribute("data-title") || "";
+    const next = prompt("Name this " + noun, current);
+    /* null is cancel; an unchanged name is not a change worth a request. */
+    if (next === null || next.trim() === current.trim()) return;
+    if (!next.trim()) { toast("Give it a name"); return; }
+    try {
+      const res = await fetch("/api/" + kind + "/" + id + "/rename", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "That didn't save");
+      location.reload();
+    } catch (err) {
+      toast((err && err.message) || "That didn't save");
+    }
+  });
+
+  menu.querySelector(".item-delete").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    pop.hidden = true;
+    try {
+      const res = await fetch("/api/" + kind + "/" + id + "/delete", { method: "POST" });
+      if (!res.ok) throw new Error("That didn't delete");
+      const { label } = await res.json();
+
+      /* Undo instead of a confirm dialog. The delete is reversible, so asking
+         "are you sure" first would train people to click through dialogs; the
+         honest thing is to do it and offer the way back. */
+      toast((label || "That " + noun) + " deleted", async () => {
+        await fetch("/api/" + kind + "/" + id + "/restore", { method: "POST" });
+        location.reload();
+      });
+
+      /* Take the row off the page rather than reloading — the reload would
+         throw away the toast that undoes it. */
+      const row = menu.closest("[data-item-row]") || menu.parentElement;
+      if (row) row.remove();
+    } catch (err) {
+      toast((err && err.message) || "That didn't delete");
+    }
+  });
+});
+
 /* ── The nav bar's three controls ──────────────────────────────────────
    "Ask for anything", the "?" and the bell were rendered on every page and
    bound to nothing, while this very file caught Cmd-K and "?" and discarded
