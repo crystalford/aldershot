@@ -20,6 +20,16 @@ export interface EdlCut {
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
   text: string;
+  /**
+   * This cut has SOUND BUT NO PICTURE — a voiceover the user recorded.
+   *
+   * It has to be flagged, because the renderer treats every cut as video: it
+   * runs a scale filter and an h264 encode over it, and a .webm of somebody
+   * talking has no video stream to filter. ffmpeg fails, and the whole export
+   * fails with it — so an edit containing any recorded voiceover could not be
+   * exported at all, which is the one thing Build exists to produce.
+   */
+  audioOnly?: boolean;
 }
 
 export interface Edl {
@@ -63,7 +73,16 @@ export function buildEdl(
       // and are deliberately NOT affected by transcript cuts — striking a word
       // in the source transcript should not silently shorten a voiceover.
       if (beat.media_r2_key) {
-        out.push({ sourceKey: beat.media_r2_key, start_ms: 0, end_ms: beat.end_ms ?? 0, text: beat.text ?? "" });
+        /* vo and react are recordings of a voice: audio, no picture.
+           `generated` and `stock` are visuals and carry their own video. */
+        const audioOnly = beat.kind === "vo" || beat.kind === "react";
+        out.push({
+          sourceKey: beat.media_r2_key,
+          start_ms: 0,
+          end_ms: beat.end_ms ?? 0,
+          text: beat.text ?? "",
+          ...(audioOnly ? { audioOnly: true } : {}),
+        });
       }
       continue;
     }
@@ -133,7 +152,7 @@ export function buildSrt(edl: Edl): string {
  * be logged, diffed, and re-run.
  */
 export interface RenderPlan {
-  cuts: Array<{ key: string; start_s: number; end_s: number }>;
+  cuts: Array<{ key: string; start_s: number; end_s: number; audioOnly?: boolean }>;
   format: string;
   aspect: string;
   durationS: number;
@@ -141,7 +160,12 @@ export interface RenderPlan {
 
 export function buildRenderPlan(edl: Edl, format: string, aspect: string): RenderPlan {
   return {
-    cuts: edl.cuts.map((c) => ({ key: c.sourceKey, start_s: c.start_ms / 1000, end_s: c.end_ms / 1000 })),
+    cuts: edl.cuts.map((c) => ({
+      key: c.sourceKey,
+      start_s: c.start_ms / 1000,
+      end_s: c.end_ms / 1000,
+      ...(c.audioOnly ? { audioOnly: true } : {}),
+    })),
     format,
     aspect,
     durationS: edl.durationMs / 1000,

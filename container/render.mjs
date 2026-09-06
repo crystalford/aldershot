@@ -152,6 +152,29 @@ function render(plan, res) {
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-avoid_negative_ts", "make_zero", "-y", out,
           ]);
+        } else if (cut.audioOnly) {
+          // A VOICEOVER: sound, no picture.
+          //
+          // Every other branch runs a scale filter and an h264 encode, which
+          // needs a video stream to work on — a .webm of somebody talking has
+          // none, so ffmpeg failed and took the whole export down with it. An
+          // edit containing any recorded voiceover simply could not be
+          // exported, which is the one thing Build exists to produce.
+          //
+          // It gets a picture: a flat card in the app's own canvas colour, for
+          // exactly as long as the recording. Encoded to match every other
+          // part — same size, same codec, same audio format — because the
+          // concat below is a stream copy and will not join parts that differ.
+          const dur = Math.max(0.05, Number(cut.end_s) - Number(cut.start_s));
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", `color=c=0x0B0B0E:s=${w}x${h}:r=30:d=${dur}`,
+            "-i", cut.url,
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-shortest", "-avoid_negative_ts", "make_zero", "-y", out,
+          ]);
         } else {
           await runFfmpeg([
             "-hide_banner", "-loglevel", "error",

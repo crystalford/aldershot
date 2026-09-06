@@ -124,3 +124,59 @@ test("overlap is judged against the SMALLER range", async () => {
   assert.equal(overlapFraction({ start_ms: 0, end_ms: 1000 }, { start_ms: 5000, end_ms: 6000 }), 0);
   assert.ok(overlapFraction({ start_ms: 0, end_ms: 10000 }, { start_ms: 9000, end_ms: 19000 }) < 0.2);
 });
+
+/**
+ * A voiceover has sound and no picture.
+ *
+ * The renderer runs a scale filter and an h264 encode over every cut, which
+ * needs a video stream to work on. A recorded voiceover is an audio-only
+ * .webm, so it has none — ffmpeg failed and took the whole export with it,
+ * meaning an edit containing any voiceover could not be exported at all.
+ *
+ * The flag is what tells the renderer to give that cut a picture. These tests
+ * pin it, because the container half cannot be run here and a silent
+ * regression would look exactly like this bug did: fine until you record.
+ */
+test("a recorded voiceover is flagged as having no picture", () => {
+  const edl = buildEdl(
+    "u/x/sources/s/original.mp4",
+    [{ kind: "vo", end_ms: 4000, media_r2_key: "u/x/beats/b1.webm", text: "my bit" }],
+    [],
+    [],
+  );
+  assert.equal(edl.cuts.length, 1);
+  assert.equal(edl.cuts[0].audioOnly, true);
+  assert.equal(edl.cuts[0].sourceKey, "u/x/beats/b1.webm");
+});
+
+test("a reaction is a recording too", () => {
+  const edl = buildEdl("src.mp4", [{ kind: "react", end_ms: 2000, media_r2_key: "r.webm" }], [], []);
+  assert.equal(edl.cuts[0].audioOnly, true);
+});
+
+test("a visual carries its own video and is NOT flagged", () => {
+  /* generated and stock are pictures, not recordings — flagging them would
+     replace a real visual with a blank card. */
+  for (const kind of ["generated", "stock"] as const) {
+    const edl = buildEdl("src.mp4", [{ kind, end_ms: 2000, media_r2_key: "v.mp4" }], [], []);
+    assert.equal(edl.cuts[0].audioOnly, undefined, `${kind} must not be treated as audio-only`);
+  }
+});
+
+test("footage cuts are never flagged", () => {
+  const segments = [{ idx: 0, start_ms: 0, end_ms: 5000, words: null }];
+  const edl = buildEdl("src.mp4", [{ kind: "clip", start_ms: 0, end_ms: 5000 }], segments, []);
+  assert.ok(edl.cuts.length > 0);
+  for (const c of edl.cuts) assert.equal(c.audioOnly, undefined);
+});
+
+test("the flag survives into the plan the container runs", () => {
+  const edl = buildEdl("src.mp4", [
+    { kind: "clip", start_ms: 0, end_ms: 3000 },
+    { kind: "vo", end_ms: 2000, media_r2_key: "v.webm" },
+  ], [{ idx: 0, start_ms: 0, end_ms: 3000, words: null }], []);
+
+  const plan = buildRenderPlan(edl, "mp4_1080", "16:9");
+  const flags = plan.cuts.map((c) => Boolean(c.audioOnly));
+  assert.deepEqual(flags, [false, true], "only the voiceover is audio-only");
+});
