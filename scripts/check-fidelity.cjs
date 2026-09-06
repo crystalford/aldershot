@@ -203,6 +203,14 @@ async function checkStrings() {
         "right to erasure is not optional for anyone selling into the EU or UK.",
     ],
     [
+      "Find the strong bits",
+      "The prototype has no word for this because its scoring lived on a " +
+        "separate surface — Clipping — rather than being something you ask for " +
+        "while editing. Making it an assist INSIDE the editor is the point of " +
+        "docs/decisions/blocks.md: the model marking what is strong is a " +
+        "property of the blocks you are already reading, not a destination.",
+    ],
+    [
       "Make the video",
       "Clipping's lede promises 'scored vertical shorts, captions burned in' " +
         "and the prototype shows them as if they already exist — it never had " +

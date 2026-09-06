@@ -12,8 +12,12 @@ import assert from "node:assert/strict";
 import { buildBlocks, moveBlock, parseOrder, runtimeMs, wordStruck } from "../src/blocks.ts";
 import { toggleSegment, toggleWord } from "../src/cuts.ts";
 
+/* Word timings are stored in SECONDS while the segment's own start_ms/end_ms
+   are milliseconds — see StoredWord in src/cuts.ts. Writing this fixture in
+   milliseconds is what produced a 59-minute runtime for a 2-minute video the
+   first time the editor ran, so it is spelled out here. */
 const words = (...ws: string[]) =>
-  JSON.stringify(ws.map((w, i) => ({ w, s: i * 1000, e: i * 1000 + 1000 })));
+  JSON.stringify(ws.map((w, i) => ({ w, s: i, e: i + 1 })));
 
 const SEGMENTS = [
   { idx: 0, start_ms: 0, end_ms: 3000, text: "one two three", words: words("one", "two", "three") },
@@ -83,6 +87,13 @@ test("the model's opinion attaches to the line it is most about", () => {
   const blocks = buildBlocks({ segments: SEGMENTS, cuts: [], scores });
   assert.equal(blocks[1].score, 88);
   assert.equal(blocks[0].score, null, "unjudged is null, not zero");
+});
+
+test("word timings are read as seconds, not milliseconds", () => {
+  /* The two units live in adjacent columns of the same row. Reading them as
+     milliseconds reported 59 minutes for a 2-minute video. */
+  const blocks = buildBlocks({ segments: SEGMENTS, cuts: [] });
+  assert.equal(runtimeMs(blocks, []), 9000, "three lines of three one-second words");
 });
 
 test("runtime counts surviving words, not whole lines", () => {

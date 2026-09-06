@@ -332,7 +332,7 @@ function block(c: EditorClip, i: number, total: number): string {
  * the same FORMATS/RENDER_ASPECTS the server validates against and the two
  * cannot drift apart.
  */
-function exportPanel(projectId: string, plan: string): string {
+export function exportPanel(projectId: string, plan: string): string {
   const free = plan === "free";
 
   const chip = (name: string, id: string, label: string, note: string, on: boolean, locked: boolean) =>
@@ -391,7 +391,7 @@ export interface RenderRow {
  * where you pressed the button. You export, and the file appears under the
  * thing you exported.
  */
-function exportsStrip(d: EditorData): string {
+export function exportsStrip(d: { projectId: string; renders?: RenderRow[] }): string {
   const rows = d.renders ?? [];
   const working = rows.some((r) => r.state === "queued" || r.state === "running");
 

@@ -336,6 +336,178 @@ document.querySelectorAll(".item-menu").forEach((menu) => {
   });
 });
 
+/* ── The editor ────────────────────────────────────────────────────────
+   One surface, five gestures: strike a line, strike a word inside it, move a
+   block, insert one, export. They were spread across four stages that felt
+   like the same stage — see docs/decisions/blocks.md. */
+const blocksEl = document.querySelector("#blocks");
+if (blocksEl) {
+  const projectId = blocksEl.getAttribute("data-project");
+  const video = document.querySelector("#cut-video");
+  const footRuntime = document.querySelector("#cut-runtime");
+  const headRuntime = document.querySelector("#head-runtime");
+  const headKept = document.querySelector("#head-kept");
+
+  const clock = (ms) => {
+    const s2 = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(s2 / 3600), m = Math.floor((s2 % 3600) / 60), sec = s2 % 60;
+    return h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+      : m + ":" + String(sec).padStart(2, "0");
+  };
+
+  /* Optimistic, from the blocks on screen; corrected by the server's own
+     figure when a cut comes back, because a line can carry word-level strikes
+     this sum does not know about. */
+  const retotal = (afterS) => {
+    const kept = [...blocksEl.querySelectorAll(".blk")].filter((el) => el.dataset.struck !== "1");
+    const ms = typeof afterS === "number"
+      ? afterS * 1000
+      : kept.reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
+    if (footRuntime) footRuntime.textContent = kept.length + " kept · " + clock(ms);
+    if (headRuntime) headRuntime.textContent = clock(ms);
+    if (headKept) headKept.textContent = kept.length + " kept";
+  };
+
+  const paintBlock = (el, struck) => {
+    el.dataset.struck = struck ? "1" : "0";
+    el.style.opacity = struck ? ".5" : "";
+    el.querySelectorAll(".w").forEach((w) => {
+      /* A struck LINE strikes every word visually, but must not overwrite a
+         word's own state — putting the line back has to restore exactly what
+         was struck inside it. */
+      if (struck) { w.style.textDecoration = "line-through"; w.style.color = "rgba(236,236,241,0.28)"; }
+      else if (w.dataset.cut !== "1") { w.style.textDecoration = ""; w.style.color = ""; }
+    });
+    const text = el.querySelector("[data-content]");
+    if (text) text.style.textDecoration = struck ? "line-through" : "";
+    const pill = el.querySelector(".seg-pill");
+    if (pill) {
+      pill.textContent = struck ? "Add back" : "Cut";
+      pill.setAttribute("data-kept", struck ? "0" : "1");
+    }
+  };
+
+  const sendCut = async (payload) => {
+    const res = await fetch("/api/projects/" + projectId + "/cuts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("That didn't save");
+    return await res.json().catch(() => ({}));
+  };
+
+  blocksEl.addEventListener("click", async (e) => {
+    const word = e.target.closest(".w");
+    const strike = e.target.closest(".blk-strike");
+    const move = e.target.closest(".blk-move");
+    const play = e.target.closest(".blk-play");
+    const insert = e.target.closest(".blk-insert");
+    const row = e.target.closest(".blk");
+
+    /* Play from here. Reading and watching are the same gesture, which is the
+       whole claim — so the timecode is the control. */
+    if (play && video) {
+      video.currentTime = Number(play.getAttribute("data-start") || 0) / 1000;
+      video.play().catch(() => {});
+      return;
+    }
+
+    if (word && row && row.dataset.struck !== "1") {
+      const seg = Number(word.getAttribute("data-block").slice(2));
+      const idx = Number(word.getAttribute("data-word"));
+      const gone = word.dataset.cut === "1";
+      word.dataset.cut = gone ? "0" : "1";
+      word.style.textDecoration = gone ? "" : "line-through";
+      word.style.color = gone ? "" : "rgba(236,236,241,0.28)";
+      try {
+        const out = await sendCut({ kind: "word", seg, word: idx });
+        retotal(out.afterS);
+      } catch (err) {
+        word.dataset.cut = gone ? "1" : "0";
+        word.style.textDecoration = gone ? "line-through" : "";
+        toast((err && err.message) || "That didn't save");
+      }
+      return;
+    }
+
+    if (strike && row) {
+      if (row.dataset.busy === "1") return;
+      const next = row.dataset.struck !== "1";
+      row.dataset.busy = "1";
+      paintBlock(row, next);
+      retotal();
+      try {
+        const out = await sendCut({ kind: "segment", seg: Number(row.getAttribute("data-block").slice(2)), word: null });
+        retotal(out.afterS);
+      } catch (err) {
+        paintBlock(row, !next);
+        retotal();
+        toast((err && err.message) || "That didn't save");
+      } finally {
+        row.dataset.busy = "0";
+      }
+      return;
+    }
+
+    if (move) {
+      move.disabled = true;
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/blocks/move", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ block: move.getAttribute("data-block"), dir: Number(move.getAttribute("data-dir")) }),
+        });
+        if (!res.ok) throw new Error("Couldn't move that");
+        location.reload();
+      } catch (err) {
+        move.disabled = false;
+        toast((err && err.message) || "Couldn't move that");
+      }
+      return;
+    }
+
+    if (insert) {
+      insert.disabled = true;
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/blocks/insert", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ at: Number(insert.getAttribute("data-at")), kind: "vo" }),
+        });
+        if (!res.ok) throw new Error("Couldn't add that");
+        location.reload();
+      } catch (err) {
+        insert.disabled = false;
+        toast((err && err.message) || "Couldn't add that");
+      }
+    }
+  });
+}
+
+/* Ask the model which blocks are strong. An assist inside the editor rather
+   than a separate place, which is what Clipping had become. */
+document.querySelectorAll(".find-good").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Reading it…";
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/passes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ instruction: "find the strongest moments" }),
+      });
+      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "That didn't start");
+      location.reload();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "Find the strong bits";
+      toast((err && err.message) || "That didn't start");
+    }
+  });
+});
+
 /* ── The nav bar's three controls ──────────────────────────────────────
    "Ask for anything", the "?" and the bell were rendered on every page and
    bound to nothing, while this very file caught Cmd-K and "?" and discarded

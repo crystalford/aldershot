@@ -91,11 +91,36 @@ export interface Segmentish {
   words: string | null;
 }
 
+/**
+ * One word, as stored.
+ *
+ * `s` and `e` ARE IN SECONDS, not milliseconds — they are Whisper's own
+ * numbers, written through unchanged (src/sources.ts), while the segment's
+ * own start_ms and end_ms in the very same row are milliseconds. Two units,
+ * adjacent columns.
+ *
+ * That is a landmine and it has already gone off once: a runtime built from
+ * these as if they were milliseconds reported 59 minutes for a 2-minute video.
+ * Use wordStartMs / wordEndMs rather than touching the fields.
+ *
+ * Not migrated, deliberately — playableRanges has always converted correctly,
+ * so every stored transcript is consistent with the code that renders it. A
+ * migration would put every existing source at risk to tidy a naming problem
+ * that two helpers solve.
+ */
 export interface StoredWord {
   w: string;
+  /** SECONDS. See above. */
   s: number;
+  /** SECONDS. See above. */
   e: number;
 }
+
+/** A word's start, in the milliseconds everything else in this codebase uses. */
+export const wordStartMs = (w: StoredWord): number => Math.round(w.s * 1000);
+
+/** A word's end, in milliseconds. */
+export const wordEndMs = (w: StoredWord): number => Math.round(w.e * 1000);
 
 export function parseWords(json: string | null): StoredWord[] {
   if (!json) return [];
@@ -136,8 +161,8 @@ export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ sta
         run = null;
         continue;
       }
-      const start = Math.round(words[i].s * 1000);
-      const end = Math.round(words[i].e * 1000);
+      const start = wordStartMs(words[i]);
+      const end = wordEndMs(words[i]);
       if (run) run.end_ms = end;
       else run = { start_ms: start, end_ms: end };
     }

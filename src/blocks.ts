@@ -16,7 +16,7 @@
  * safe rather than destructive.
  */
 
-import { isSegmentCut, isWordCut, parseWords, type Cut, type StoredWord } from "./cuts.ts";
+import { isSegmentCut, isWordCut, parseWords, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
 
 export type BlockOrigin = "footage" | "voice" | "generated";
 
@@ -197,8 +197,13 @@ export function runtimeMs(blocks: Block[], cuts: Cut[]): number {
       total += block.end_ms - block.start_ms;
       continue;
     }
+    /* Word timings are SECONDS while the segment's are milliseconds — see
+       StoredWord. Subtracting the raw fields reported 59 minutes for a
+       two-minute video the first time this ran. */
     for (let i = 0; i < block.words.length; i++) {
-      if (!wordStruck(cuts, block, i)) total += Math.max(0, block.words[i].e - block.words[i].s);
+      if (!wordStruck(cuts, block, i)) {
+        total += Math.max(0, wordEndMs(block.words[i]) - wordStartMs(block.words[i]));
+      }
     }
   }
   return total;

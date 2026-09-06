@@ -31,6 +31,8 @@ export interface Project {
   deleted_at: number | null;
   /** Script mode's transcript cuts, as JSON. See src/cuts.ts. */
   cuts: string | null;
+  /** The arrangement: block ids in sequence. Null means never rearranged. */
+  block_order: string | null;
 }
 
 export interface Beat {
@@ -98,6 +100,7 @@ export async function createProject(
     updated_at: now,
     deleted_at: null,
     cuts: null,
+    block_order: null,
   };
   await db
     .prepare(

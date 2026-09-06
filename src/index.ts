@@ -24,11 +24,13 @@ import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/foo
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
-import { editorHeader, renderEditor, type Stage } from "./ui/pages/editor.ts";
+import { editorHeader, renderEditor, type Stage, exportPanel, exportsStrip } from "./ui/pages/editor.ts";
 import { getProject, listClipsForSource, listProjects, listShorts, putBeats, saveClips, saveCuts, setKept } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
+import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
+import { renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -824,227 +826,164 @@ app.post("/api/shorts", async (c) => {
 /* ── The editor ────────────────────────────────────────────────────────
  * One surface, four stages, real URLs per 10-ROUTES-AND-KEYS.md.
  */
+/*
+ * ONE EDITOR.
+ *
+ * There were four stages and they were the same thing badly divided: Pick and
+ * Script both strike the same cuts, one by line and one by word, and Build
+ * held the reorder and insert gestures behind a screen that is empty until a
+ * scoring pass runs. See docs/decisions/blocks.md.
+ *
+ * The old paths still resolve — links, history and anything the owner has
+ * open — and land on the one surface rather than 404ing.
+ */
 const STAGE_FOR_PATH: Record<string, Stage> = {
   pick: "cut",
-  build: "essay",
-  script: "transcript",
-  shorts: "shorts",
+  build: "cut",
+  script: "cut",
+  shorts: "cut",
 };
 
+/**
+ * The editor. One route, one surface.
+ *
+ * Everything the old four stages did happens here: strike a line or a word,
+ * move a block, insert one, judge, export. The sequence comes from
+ * src/blocks.ts, which is the single place that says what a cut IS — so this
+ * and the renderer cannot disagree about it.
+ */
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const stage = STAGE_FOR_PATH[c.req.param("stagePath")];
-  if (!stage) return c.notFound();
+  if (!STAGE_FOR_PATH[c.req.param("stagePath")]) return c.notFound();
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.notFound();
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
 
-  /*
-   * WHOSE CLIPS ARE THESE?
-   *
-   * v2_clips hangs off the SOURCE, not the project — it is the moment library
-   * behind Footage's Clips tab, which is the right shape for a library and
-   * the wrong shape for an edit. The consequence was visible and baffling:
-   * open a video you never asked anything of and it showed you eleven scored
-   * clips with a model's reasons attached, because some earlier briefed edit
-   * of the same footage had left them there. Four edits of one video all read
-   * "11 clips kept · 5:00" because they were all counting one shared set.
-   *
-   * An edit with no brief asked for no pass, so it has no clips of its own and
-   * must not borrow anyone else's. It renders the transcript instead. A briefed
-   * edit is the one that ran a pass and the one that gets the scored blocks.
-   *
-   * This is a scope fix, not the cure: two BRIEFED edits of the same source
-   * still share one `kept` flag, because clip ownership is genuinely wrong in
-   * the schema. See docs/decisions/clip-ownership.md.
-   */
-  const isScratch = !project.brief?.trim();
-  const clips = source && !isScratch ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
+  const [segments, beats, clips, job] = await Promise.all([
+    source ? getSegments(c.env.DB, source.id) : Promise.resolve([]),
+    getBeats(c.env.DB, project.id),
+    /* The model's opinion of this footage, attached to the blocks it covers
+       rather than rendered as a separate list of "clips". */
+    source ? listClipsForSource(c.env.DB, source.id, user.id) : Promise.resolve([]),
+    latestJobFor(c.env.DB, project.id, user.id, ["score", "pass"]),
+  ]);
 
-  /* This edit's exports. Loaded for every stage, because "where did my video
-     go" is a question you can ask from any of them. */
+  const cuts = parseCuts(project.cuts);
+  const blocks = buildBlocks({
+    segments,
+    beats,
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+    scores: clips.map((cl) => ({ start_ms: cl.start_ms, end_ms: cl.end_ms, score: cl.score, why: cl.why })),
+    posterKey: source?.poster_r2_key ?? null,
+  });
+
   const renders = await listRenders(c.env.DB, project.id);
 
-  /*
-   * The Clean up chips' sublabels carry live numbers, so they are computed
-   * from the real transcript. A chip whose number cannot be computed honestly
-   * shows its descriptive text and stays disabled rather than displaying a
-   * fabricated count.
-   */
-  let cleanUps: CleanUp[] = [];
-  /* Pick renders these directly when no pass has run — an unassisted cut's
-     blocks are the transcript itself. */
-  let pickSegments: Awaited<ReturnType<typeof getSegments>> = [];
-  if (source && stage === "cut") {
-    const segs = await getSegments(c.env.DB, source.id);
-    pickSegments = segs;
-    const cuts = parseCuts(project.cuts);
-    /* Only quote a saving that is worth quoting. Under a second this printed
-       "11 found · −0:00", which reads as a broken number rather than as "not
-       much" — and the count on its own is the honest thing to say. */
-    const minus = (ms: number) =>
-      ms >= 1000 ? `−${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}` : "";
-
-    const fillers = fillerCuts(segs);
-    const fillersLeft = fillers.filter((f) => !cuts.some((x) => x.seg === f.seg && x.words?.[0] === f.words?.[0]));
-    const pauses = pauseCuts(segs);
-    const pausesLeft = pauses.filter((p2) => !cuts.some((x) => x.seg === p2.seg && x.words?.[0] === p2.words?.[0]));
-
-    /*
-     * Only clean-ups that can actually run.
-     *
-     * "Studio sound" and "Cut everything it flagged" were rendered permanently
-     * greyed, because neither is built — the enhance pass is not wired up and
-     * nothing flags weak stretches yet. A button that is disabled forever and
-     * never says why reads as a broken product, which is exactly how the owner
-     * read it. Same rule as "Queue it" on Build: it appears when it works.
-     */
-    cleanUps = [
-      {
-        id: "fillers",
-        name: "Remove the ums and uhs",
-        sub: fillersLeft.length
-          ? [`${fillersLeft.length} found`, minus(timeSaved(segs, cuts, fillersLeft))].filter(Boolean).join(" · ")
-          : fillers.length
-            ? `${fillers.length} gone`
-            : "none found",
-        ready: fillersLeft.length > 0,
-        done: fillers.length > 0 && fillersLeft.length === 0,
-      },
-      {
-        id: "pauses",
-        name: "Tighten long pauses",
-        sub: pausesLeft.length
-          ? ["anything over 2s", minus(timeSaved(segs, cuts, pausesLeft))].filter(Boolean).join(" · ")
-          : pauses.length
-            ? "tightened"
-            : "none over 2s",
-        ready: pausesLeft.length > 0,
-        done: pauses.length > 0 && pausesLeft.length === 0,
-      },
-    ].filter((chip) => chip.ready || chip.done);
-  }
-  /* Same as the source page: renderEditor has a failed branch, and looking the
-     job up through activeJobs meant that branch could never fire — a scoring
-     pass that died showed an empty cut with no explanation. */
-  const job = await latestJobFor(c.env.DB, project.id, user.id, ["score", "pass"]);
-
-  if (stage === "essay") {
-    const beats = await getBeats(c.env.DB, project.id);
-    const byClip = new Map(clips.map((cl) => [cl.id, cl]));
-    return c.html(
-      page(
-        { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Essay", shortsCtx: "editor" },
-        editorHeader({
-          projectId: project.id, title: project.title, brief: project.brief,
-          sourceTitle: source?.title ?? "", sourceFilename: source?.filename ?? null,
-          hasSource: Boolean(source), stage, clips, job, kind: project.kind,
-          cameFrom: cameFrom(c.req.header("referer")),
-          beatCount: beats.length,
-          beatRuntimeMs: beats.reduce((n, b) => n + (b.dur_ms ?? 0), 0),
-          summary: buildSummary(beats, project.kind),
-        }) +
-          renderBuild({
-            projectId: project.id,
-            sourceKey: source?.r2_key ?? null,
-            hasActs: Boolean(project.has_acts),
-            playIdx: 0,
-            beats: beats.map((b) => {
-              const clip = b.clip_id ? byClip.get(b.clip_id) : undefined;
-              return {
-                id: b.id, idx: b.idx, kind: b.kind as never, act: b.act, text: b.text,
-                dur_ms: b.dur_ms, media_r2_key: b.media_r2_key,
-                clip_id: b.clip_id,
-                quote: clip?.quote ?? null,
-                sourceFilename: source?.filename ?? null,
-                start_ms: clip?.start_ms ?? null,
-                frame_r2_key: clip?.frame_r2_key ?? null,
-              };
-            }),
-          }),
-      ),
-    );
-  }
-
-  // Script edits the source transcript directly, so it needs the segments
-  // rather than the scored clips.
-  if (stage === "transcript" && source) {
-    const segments = await getSegments(c.env.DB, source.id);
-    const cuts = parseCuts(project.cuts);
-    return c.html(
-      page(
-        { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Transcript editor", shortsCtx: "editor" },
-        editorHeader({
-          projectId: project.id,
-          kind: project.kind,
-          cameFrom: cameFrom(c.req.header("referer")),
-          title: project.title,
-          brief: project.brief,
-          sourceTitle: source.title,
-          sourceFilename: source.filename,
-          hasSource: true,
-          stage,
-          clips,
-          job,
-        }) +
-          renderScript({
-            projectId: project.id,
-            segments,
-            cuts,
-            // Precedence matters here: `a ?? b ?? 0 / 1000` divides only the
-            // zero, so the fallback silently read milliseconds as seconds and
-            // a 70-second transcript displayed as 19 hours.
-            originalS: source.duration_s ?? (segments.at(-1)?.end_ms ?? 0) / 1000,
-            afterS: runtimeAfterCuts(segments, cuts),
-            posterKey: source.poster_r2_key,
-            fillersRemoved:
-              fillerCuts(segments).length > 0 &&
-              fillerCuts(segments).every((f) => cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0])),
-            pausesTightened:
-              pauseCuts(segments).length > 0 &&
-              pauseCuts(segments).every((f) => cuts.some((c) => c.seg === f.seg && c.words?.[0] === f.words?.[0])),
-          }),
-      ),
-    );
-  }
-
-  // The nav keeps Editor lit on the shorts stage — that context is why the
-  // editor feels like one place (10-ROUTES-AND-KEYS.md).
   return c.html(
     page(
-      { title: `${project.title} — Aldershot`, view: stage, screenLabel: "Cutting room", shortsCtx: "editor" },
-      renderEditor({
-        cleanUps,
-        kind: project.kind,
-        /* The transcript, for a cut that never had a pass run over it. */
-        segments: pickSegments.map((sg) => ({
-          idx: sg.idx, start_ms: sg.start_ms, end_ms: sg.end_ms, text: sg.text,
-        })),
-        cuts: parseCuts(project.cuts),
-        runtimeAfterCutsMs: pickSegments.length
-          ? runtimeAfterCuts(pickSegments, parseCuts(project.cuts)) * 1000
-          : undefined,
-        sourcePoster: source?.poster_r2_key ?? null,
-        sourceKey: source?.r2_key ?? null,
-        sourceId: source?.id ?? null,
-        plan: user.plan,
-        renders,
-        cameFrom: cameFrom(c.req.header("referer")),
+      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", shortsCtx: "editor" },
+      renderCut({
         projectId: project.id,
         title: project.title,
-        brief: project.brief,
-        sourceTitle: source?.title ?? "",
-        sourceFilename: source?.filename ?? null,
-        hasSource: Boolean(source),
-        stage,
-        clips,
+        sourceId: source?.id ?? null,
+        sourceKey: source?.r2_key ?? null,
+        posterKey: source?.poster_r2_key ?? null,
+        blocks,
+        cuts,
+        runtimeMs: runtimeMs(blocks, cuts),
+        keptCount: blocks.filter((b: Block) => !b.struck).length,
+        plan: user.plan,
+        cameFrom: cameFrom(c.req.header("referer")),
         job,
-      }),
+      }) +
+        exportPanel(project.id, user.plan) +
+        exportsStrip({ projectId: project.id, renders }),
     ),
   );
+});
+
+/**
+ * Move a block, or insert one.
+ *
+ * The order is stored as block ids so rearranging never deletes anything and
+ * never touches the cuts — the two are independent, which is what makes both
+ * undoable on their own. See docs/decisions/blocks.md.
+ */
+app.post("/api/projects/:id/blocks/move", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ block?: string; dir?: number }>(c);
+  if (!b.block) return c.json({ error: "which block?" }, 400);
+  const dir = (b.dir ?? 1) < 0 ? -1 : 1;
+
+  const [segments, beats] = await Promise.all([
+    getSegments(c.env.DB, project.source_id),
+    getBeats(c.env.DB, project.id),
+  ]);
+  const blocks = buildBlocks({
+    segments,
+    beats,
+    cuts: parseCuts(project.cuts),
+    order: parseOrder(project.block_order ?? null),
+  });
+
+  const order = moveBlock(blocks, b.block, dir);
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(serialiseOrder(order), Date.now(), project.id, user.id)
+    .run();
+
+  return c.json({ ok: true, order });
+});
+
+/**
+ * Put something of your own between two blocks.
+ *
+ * The gesture was stranded inside Build, on a screen that showed nothing until
+ * a scoring pass had run. A new beat lands at the seam you clicked, and the
+ * order records where — so the insert survives even if the transcript later
+ * changes underneath it.
+ */
+app.post("/api/projects/:id/blocks/insert", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ at: number; kind?: string }>(c);
+  const kind = (["vo", "react"] as const).find((k) => k === b.kind) ?? "vo";
+
+  const existing = await getBeats(c.env.DB, project.id);
+  const beats = await insertBeat(c.env.DB, project.id, existing.length, { kind, act: null, text: null, clip_id: null });
+  const made = beats[beats.length - 1];
+
+  const segments = await getSegments(c.env.DB, project.source_id);
+  const before = buildBlocks({
+    segments,
+    beats: existing,
+    cuts: parseCuts(project.cuts),
+    order: parseOrder(project.block_order ?? null),
+  });
+
+  /* Insert at the seam, not at the end — the position is the whole point of
+     clicking a particular one. */
+  const at = Math.max(0, Math.min(Number(b.at) || 0, before.length));
+  const order = before.map((x) => x.id);
+  order.splice(at, 0, `b:${made.id}`);
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(serialiseOrder(order), Date.now(), project.id, user.id)
+    .run();
+
+  return c.json({ ok: true, beatId: made.id });
 });
 
 /**
