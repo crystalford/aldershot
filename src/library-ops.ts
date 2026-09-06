@@ -16,6 +16,7 @@
  */
 
 import { ulid } from "./id.ts";
+import type { Env } from "./env.ts";
 
 export type Entity = "project" | "source";
 
@@ -160,4 +161,147 @@ export async function listTrash(db: D1Database, userId: string, limit = 40): Pro
     .bind(userId, limit)
     .all<TrashRow>();
   return results ?? [];
+}
+
+
+/**
+ * Copies an edit so a different idea can be tried without losing this one.
+ *
+ * Projects rendered "Branch a version" as a <span> that did nothing, and the
+ * need behind it is real: an edit IS the cuts and the beats, and there was no
+ * way to try a shorter version, or a vertical one, without destroying the cut
+ * you already liked. Every other editing tool has this and calling it
+ * "branching" was the only invented part.
+ *
+ * The COPY carries the cuts and the beats. It does not carry the renders —
+ * those belong to the export that produced them, and a copy has produced
+ * nothing yet. Clips are not copied either because they hang off the source
+ * rather than the project (docs/decisions/clip-ownership.md); both edits read
+ * the same library, which is the existing behaviour and not made worse here.
+ */
+export async function duplicateProject(
+  db: D1Database,
+  id: string,
+  userId: string,
+): Promise<{ id: string; title: string } | null> {
+  const src = await db
+    .prepare(`SELECT * FROM v2_projects WHERE id=? AND user_id=? AND deleted_at IS NULL`)
+    .bind(id, userId)
+    .first<Record<string, unknown>>();
+  if (!src) return null;
+
+  const newId = ulid();
+  const now = Date.now();
+  /* "a supercut" becomes "a supercut (copy)", and a copy of a copy does not
+     become "(copy) (copy)" — it counts, which is what people expect. */
+  const base = String(src.title ?? "Untitled");
+  const m = /^(.*?) \(copy(?: (\d+))?\)$/.exec(base);
+  const title = m ? `${m[1]} (copy ${m[2] ? Number(m[2]) + 1 : 2})` : `${base} (copy)`;
+
+  await db
+    .prepare(
+      `INSERT INTO v2_projects
+         (id,user_id,title,kind,source_id,brief,has_acts,runtime_s,pct,next_action,poster_r2_key,cuts,archived_at,created_at,updated_at,deleted_at)
+       SELECT ?,user_id,?,kind,source_id,brief,has_acts,runtime_s,pct,next_action,poster_r2_key,cuts,NULL,?,?,NULL
+         FROM v2_projects WHERE id=? AND user_id=?`,
+    )
+    .bind(newId, title, now, now, id, userId)
+    .run();
+
+  /* Beats too, or a copy of an assembled piece arrives empty. New ids, same
+     order and content. */
+  const { results } = await db
+    .prepare(`SELECT * FROM beats WHERE project_id=? ORDER BY idx`)
+    .bind(id)
+    .all<Record<string, unknown>>();
+
+  const beats = results ?? [];
+  if (beats.length) {
+    await db.batch(
+      beats.map((b) =>
+        db
+          .prepare(
+            `INSERT INTO beats (id,project_id,idx,kind,act,clip_id,text,struck,dur_ms,media_r2_key,recorded_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          )
+          .bind(
+            ulid(), newId, b.idx, b.kind, b.act, b.clip_id, b.text, b.struck,
+            b.dur_ms, b.media_r2_key, b.recorded_at,
+          ),
+      ),
+    );
+  }
+
+  return { id: newId, title };
+}
+
+/**
+ * Empties one thing out of the bin for good, and frees what it was holding.
+ *
+ * A soft delete deliberately leaves the R2 bytes alone so undo is instant.
+ * That is right for a delete and wrong forever: nothing in this product has
+ * ever removed a byte from R2, so storage only ever grew, which is the
+ * biggest open cost hole (docs/decisions/cost-and-scale.md). This is where
+ * that gets closed — from the deleted pile, on purpose, by someone who has
+ * already deleted the thing once.
+ *
+ * The R2 deletes come FIRST and their failures are swallowed. A missing
+ * object must not block emptying the bin, or a half-uploaded source becomes
+ * permanently unremovable — and the row is the thing that makes it visible.
+ */
+export async function purge(
+  env: Env,
+  entity: Entity,
+  id: string,
+  userId: string,
+): Promise<{ ok: boolean; freedBytes: number }> {
+  const db = env.DB;
+
+  const row = await db
+    .prepare(`SELECT id FROM ${TABLE[entity]} WHERE id=? AND user_id=? AND deleted_at IS NOT NULL`)
+    .bind(id, userId)
+    .first<{ id: string }>();
+  /* Only something already in the bin can be purged. Purging a live row would
+     turn a stray request into data loss with no undo behind it. */
+  if (!row) return { ok: false, freedBytes: 0 };
+
+  const keys: string[] = [];
+  if (entity === "source") {
+    const src = await db
+      .prepare(`SELECT r2_key, poster_r2_key FROM sources WHERE id=?`)
+      .bind(id)
+      .first<{ r2_key: string | null; poster_r2_key: string | null }>();
+    if (src?.r2_key) keys.push(src.r2_key, `${src.r2_key.replace(/\.[a-z0-9]+$/i, "")}.audio.mp3`);
+    if (src?.poster_r2_key) keys.push(src.poster_r2_key);
+  }
+
+  const { results: renders } = await db
+    .prepare(
+      entity === "source"
+        ? `SELECT r.r2_key FROM renders r JOIN v2_projects p ON p.id=r.project_id
+            WHERE p.source_id=? AND r.r2_key IS NOT NULL`
+        : `SELECT r2_key FROM renders WHERE project_id=? AND r2_key IS NOT NULL`,
+    )
+    .bind(id)
+    .all<{ r2_key: string }>();
+  for (const r of renders ?? []) keys.push(r.r2_key);
+
+  let freedBytes = 0;
+  for (const key of keys) {
+    try {
+      const head = await env.MEDIA.head(key);
+      if (head) freedBytes += head.size;
+      await env.MEDIA.delete(key);
+    } catch {
+      /* Already gone, or never landed. Either way it is not holding storage
+         and it must not stop the row being removed. */
+    }
+  }
+
+  await db.batch([
+    db.prepare(`DELETE FROM ${TABLE[entity]} WHERE id=? AND user_id=?`).bind(id, userId),
+    db.prepare(`DELETE FROM trash WHERE user_id=? AND entity=? AND entity_id=?`).bind(userId, entity, id),
+  ]);
+
+  return { ok: true, freedBytes };
 }

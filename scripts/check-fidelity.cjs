@@ -196,6 +196,15 @@ async function checkStrings() {
         "here yet' is its wording on Home.",
     ],
     [
+      "Duplicate",
+      "The prototype offers 'Branch a version', which it renders as an inert " +
+        "span — the feature was drawn and never built, and 'branching' is not " +
+        "what anyone calls this outside version control. The need is real: an " +
+        "edit is its cuts and beats, and there was no way to try a shorter or " +
+        "vertical one without destroying the cut you liked. Named the word " +
+        "every other editing tool uses for it.",
+    ],
+    [
       "Sign out",
       "The prototype is a demo that is always signed in, so it has no sign-out " +
         "anywhere and no string for one. Real accounts need to be able to leave; " +

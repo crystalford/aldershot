@@ -199,6 +199,11 @@ function trashBlock(rows: TrashRow[]): string {
     <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.label)}</span>
     <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(t.entity === "source" ? "video" : "edit")} · ${esc(when(t.deleted_at))}</span>
     <button class="trash-restore" data-kind="${t.entity === "source" ? "sources" : "projects"}" data-id="${esc(t.entity_id)}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Put it back</button>
+    <!-- The only control in this product that removes a byte from R2. It asks
+         first, because unlike every other delete here this one cannot be
+         undone — and it is only reachable for something already deleted, so
+         it takes two decisions rather than one. -->
+    <button class="trash-purge" data-kind="${t.entity === "source" ? "sources" : "projects"}" data-id="${esc(t.entity_id)}" data-label="${esc(t.label)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:6px 12px;border-radius:${RADIUS.button};background:transparent;color:${C.ink45};border:none;cursor:pointer;font-family:${FONT.ui}">Delete for good</button>
   </div>`;
 
   return `${sectionLabel("Deleted")}
@@ -207,7 +212,7 @@ function trashBlock(rows: TrashRow[]): string {
       ? rows.map(row).join("")
       : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing deleted</div>`
   }</div>
-  <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Nothing is ever deleted. Sources can live here against your storage, move to cold storage, or be pointed at your own bucket.</div>`;
+  <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.</div>`;
 }
 
 export function renderSettings(d: SettingsData): string {

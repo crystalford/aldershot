@@ -29,7 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
-import { cleanTitle, listTrash, rename, restore, softDelete } from "./library-ops.ts";
+import { cleanTitle, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
 import { renderScript } from "./ui/pages/script.ts";
 import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderBuild, buildSummary } from "./ui/pages/build.ts";
@@ -1525,6 +1525,30 @@ app.post("/api/:kind{projects|sources}/:id/delete", async (c) => {
 
   const { ok, label } = await softDelete(c.env.DB, entity, c.req.param("id"), user.id);
   return ok ? c.json({ ok: true, label }) : c.json({ error: "not found" }, 404);
+});
+
+/** Try something else without losing the cut you already have. */
+app.post("/api/projects/:id/duplicate", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const copy = await duplicateProject(c.env.DB, c.req.param("id"), user.id);
+  return copy ? c.json({ ok: true, ...copy, href: `/p/${copy.id}/pick` }) : c.json({ error: "not found" }, 404);
+});
+
+/**
+ * Empty one thing out of the bin for good, and free what it was holding.
+ *
+ * The ONLY path in this product that removes a byte from R2. Deliberately
+ * reachable from one place — the deleted pile — and only for something
+ * already deleted, so it takes two decisions rather than one.
+ */
+app.post("/api/:kind{projects|sources}/:id/purge", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const entity = ENTITY_PATH[c.req.param("kind") as keyof typeof ENTITY_PATH];
+
+  const { ok, freedBytes } = await purge(c.env, entity, c.req.param("id"), user.id);
+  return ok ? c.json({ ok: true, freedBytes }) : c.json({ error: "not in the deleted pile" }, 404);
 });
 
 app.post("/api/:kind{projects|sources}/:id/restore", async (c) => {

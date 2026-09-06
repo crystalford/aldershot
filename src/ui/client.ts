@@ -73,6 +73,29 @@ document.querySelectorAll(".trash-restore").forEach((btn) => {
   });
 });
 
+/* Delete for good. The one irreversible action in the product, so it is the
+   one place a confirm is right — everywhere else a dialog would be theatre
+   in front of something Undo already covers. */
+document.querySelectorAll(".trash-purge").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const label = btn.getAttribute("data-label") || "this";
+    if (!confirm("Delete " + label + " for good? This frees the storage and cannot be undone.")) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/" + btn.getAttribute("data-kind") + "/" + btn.getAttribute("data-id") + "/purge", { method: "POST" });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't delete");
+      const mb = Math.round((out.freedBytes || 0) / 1e6);
+      toast(mb > 0 ? label + " deleted — " + mb + " MB freed" : label + " deleted");
+      const row = btn.closest("[data-item-row]");
+      if (row) row.remove();
+    } catch (err) {
+      btn.disabled = false;
+      toast((err && err.message) || "That didn't delete");
+    }
+  });
+});
+
 /* ── Rename and delete ─────────────────────────────────────────────────
    The verbs every platform has and this one had none of. Projects rendered
    "Branch a version" and "Archive" as <span> elements — decoration shaped
@@ -124,6 +147,25 @@ document.querySelectorAll(".item-menu").forEach((menu) => {
       toast((err && err.message) || "That didn't save");
     }
   });
+
+  /* Duplicate. Only edits have one, so the button may not be there. */
+  const dupBtn = menu.querySelector(".item-duplicate");
+  if (dupBtn) {
+    dupBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pop.hidden = true;
+      try {
+        const res = await fetch("/api/projects/" + id + "/duplicate", { method: "POST" });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok || !out.href) throw new Error(out.error || "That didn't copy");
+        /* Straight into the copy: the reason you duplicated is to work on it. */
+        location.href = out.href;
+      } catch (err) {
+        toast((err && err.message) || "That didn't copy");
+      }
+    });
+  }
 
   menu.querySelector(".item-delete").addEventListener("click", async (e) => {
     e.preventDefault();

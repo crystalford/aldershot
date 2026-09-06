@@ -58,11 +58,25 @@ Locking it exposed a second thing: the **render path read source video through
 `src/audio.ts` had already presigned for exactly this reason; render had never
 been brought in line. Both presign now.
 
+## Also fixed
+
+**Deleting now frees R2 bytes** — from Settings' deleted pile, via "Delete for
+good". Before this, NOTHING in the product had ever removed a byte from R2, so
+storage only ever grew. The soft delete still leaves the bytes alone on
+purpose, because undo has to be instant; reclaiming is a second, deliberate
+decision made about something already deleted. Verified against a real upload:
+187,221 bytes in, 187,221 reported freed, object 404s afterwards.
+
+It is the only irreversible action in the product, which is why it is the only
+one that asks first — everywhere else a confirm dialog would be theatre in
+front of something Undo already covers.
+
 ## Open
 
 - Storage cap not enforced, and enforced after the bytes land rather than
   before.
-- Deleting a video does not free the R2 bytes.
+- Nothing reclaims storage automatically. Purging is manual and per-item;
+  there is no "empty the bin" and no retention policy.
 - No rate limiting on signup, upload or any API route.
 - `ensureV2Schema` runs 27 `CREATE TABLE IF NOT EXISTS` statements on every
   cold isolate. Small, but it is per-isolate rather than per-deploy.
