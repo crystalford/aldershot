@@ -29,7 +29,7 @@ import { getProject, listClipsForSource, listProjects, listShorts, putBeats, sav
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
-import { FONT_FILES } from "./ui/fontfaces.ts";
+import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { createShortRender, shortRendersFor } from "./short-render.ts";

@@ -24,26 +24,13 @@
  * here, the browser synthesises it — there is no fallback to the network.
  */
 
-import ibm_plex_mono_400_latin_ext from "./fonts/ibm-plex-mono-400-latin-ext.woff2";
-import ibm_plex_mono_400_latin from "./fonts/ibm-plex-mono-400-latin.woff2";
-import ibm_plex_mono_500_latin_ext from "./fonts/ibm-plex-mono-500-latin-ext.woff2";
-import ibm_plex_mono_500_latin from "./fonts/ibm-plex-mono-500-latin.woff2";
-import ibm_plex_mono_600_latin_ext from "./fonts/ibm-plex-mono-600-latin-ext.woff2";
-import ibm_plex_mono_600_latin from "./fonts/ibm-plex-mono-600-latin.woff2";
-import instrument_sans_400_700_latin_ext from "./fonts/instrument-sans-400-700-latin-ext.woff2";
-import instrument_sans_400_700_latin from "./fonts/instrument-sans-400-700-latin.woff2";
-
-/** name -> bytes, for the /fonts route. */
-export const FONT_FILES: Record<string, ArrayBuffer> = {
-  "ibm-plex-mono-400-latin-ext.woff2": ibm_plex_mono_400_latin_ext,
-  "ibm-plex-mono-400-latin.woff2": ibm_plex_mono_400_latin,
-  "ibm-plex-mono-500-latin-ext.woff2": ibm_plex_mono_500_latin_ext,
-  "ibm-plex-mono-500-latin.woff2": ibm_plex_mono_500_latin,
-  "ibm-plex-mono-600-latin-ext.woff2": ibm_plex_mono_600_latin_ext,
-  "ibm-plex-mono-600-latin.woff2": ibm_plex_mono_600_latin,
-  "instrument-sans-400-700-latin-ext.woff2": instrument_sans_400_700_latin_ext,
-  "instrument-sans-400-700-latin.woff2": instrument_sans_400_700_latin,
-};
+/*
+ * SPLIT DELIBERATELY. This half is a string; src/ui/fontbytes.ts holds the
+ * binary imports. The shell inlines the CSS into every page, and the shell is
+ * reached by tests — which run under Node, where a .woff2 import is an
+ * unknown file extension rather than a Data module. Only the /fonts route
+ * needs the bytes, so only it pays for them.
+ */
 
 /** The @font-face block, inlined into every page's <style>. */
 export const FONT_CSS = `@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/ibm-plex-mono-400-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
