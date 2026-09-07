@@ -10,6 +10,15 @@ export interface Env {
   // question in 04-API-AND-JOBS.md) possibly Whisper itself. Optional so the
   // Worker still deploys before Containers are enabled.
   RENDER?: DurableObjectNamespace<RenderContainer>;
+  /**
+   * A local encoder, for development only.
+   *
+   * Cloudflare Containers need a Docker daemon; `node container/render.mjs` is
+   * the same server without one. Set this in .dev.vars to run the render for
+   * real locally. Never set in wrangler.jsonc — env.RENDER is the binding and
+   * takes precedence wherever it exists.
+   */
+  RENDER_URL?: string;
 
   // Clip embeddings — meaning search and thread formation (05-INFRA §Stack).
   // Optional: `wrangler deploy` hard-fails on a declared-but-missing Vectorize

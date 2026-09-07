@@ -179,7 +179,23 @@ export async function runRender(
       return void (await fail("There's nothing kept to render yet."));
     }
 
-    if (!env.RENDER) {
+    /*
+     * The encoder, or a local one.
+     *
+     * RENDER_URL exists so the render can be exercised in development, where
+     * Cloudflare Containers need a Docker daemon that a sandbox usually does
+     * not have. `node container/render.mjs` is a plain HTTP server — point
+     * this at it and the whole path runs for real, which is how the concat,
+     * the burned-in captions, the aspect sizing and the voiceover card were
+     * finally verified instead of reasoned about.
+     *
+     * RENDER_URL WINS when it is set, because the binding can exist and still
+     * not work — wrangler dev declares it whether or not containers are
+     * enabled, and calling it then fails with "Containers have not been
+     * enabled for this Durable Object class". Setting the variable is a
+     * deliberate act; production never does, so the binding is used there.
+     */
+    if (!env.RENDER && !env.RENDER_URL) {
       // Honest rather than cryptic: the encoder genuinely is not available.
       return void (await fail("Rendering isn't available yet — the encoder isn't running."));
     }
@@ -218,8 +234,10 @@ export async function runRender(
 
     await advance(env.DB, jobId, 30, "putting it together");
 
-    const container = env.RENDER.get(env.RENDER.idFromName(`render-${opts.projectId}`));
-    const res = await container.fetch("http://container/render", {
+    const encoder = env.RENDER_URL
+      ? { fetch: (_u: string, init: RequestInit) => fetch(`${env.RENDER_URL}/render`, init) }
+      : env.RENDER!.get(env.RENDER!.idFromName(`render-${opts.projectId}`));
+    const res = await encoder.fetch("http://container/render", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(withUrls),
@@ -249,6 +267,7 @@ export async function runRender(
       httpMetadata: { contentType: "video/mp4" },
     });
     const size = stored?.size ?? Number(res.headers.get("content-length")) ?? 0;
+    const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
 
     // Subtitles alongside the render, in output time (Phase 3).
     const srt = buildSrt(built.edl);
@@ -260,7 +279,10 @@ export async function runRender(
 
     await env.DB
       .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
-      .bind(key, size, Math.round(built.edl.durationMs / 1000), renderId)
+      /* The encoder measures the finished file; the EDL only says what the cut
+         was meant to add up to. They differ when a source is shorter than its
+         transcript claims, and the row should describe the video that exists. */
+      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), renderId)
       .run();
 
     await meter(env.DB, {

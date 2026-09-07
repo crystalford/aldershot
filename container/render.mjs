@@ -247,8 +247,33 @@ function render(plan, res) {
       }
 
       const st = await stat(outPath);
-      console.log(`render: ${cuts.length} cuts, ${st.size} bytes, ${Date.now() - t0}ms`);
-      res.writeHead(200, { "content-type": "video/mp4", "content-length": String(st.size) });
+
+      /*
+       * How long the file ACTUALLY is, measured from the file.
+       *
+       * The Worker was recording the EDL's intended duration, which is what
+       * the cut adds up to — not what came out. They differ whenever a source
+       * is shorter than its transcript claims (a truncated upload, a file that
+       * failed to finish copying), and the row would then advertise a runtime
+       * the video does not have. ffprobe already knows; nobody was asking it.
+       */
+      const measured = await new Promise((resolve) => {
+        const pr = spawn("ffprobe", [
+          "-v", "error", "-show_entries", "format=duration",
+          "-of", "default=noprint_wrappers=1:nokey=1", outPath,
+        ]);
+        let out = "";
+        pr.stdout.on("data", (d) => { out += d; });
+        pr.on("close", () => resolve(Number(out.trim()) || 0));
+        pr.on("error", () => resolve(0));
+      });
+
+      console.log(`render: ${cuts.length} cuts, ${st.size} bytes, ${measured}s, ${Date.now() - t0}ms`);
+      res.writeHead(200, {
+        "content-type": "video/mp4",
+        "content-length": String(st.size),
+        "x-duration-s": String(measured),
+      });
       createReadStream(outPath).pipe(res).on("close", () => rm(dir, { recursive: true, force: true }));
     } catch (e) {
       console.error("render failed:", e);
