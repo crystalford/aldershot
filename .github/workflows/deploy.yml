@@ -40,8 +40,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "==> R2 bucket (ok if it already exists)"
-          npx wrangler r2 bucket create aldershot-media || true
+          # The bucket is created once and exists for ever after, so every
+          # deploy since the first has printed a red API ERROR for the normal
+          # case. `|| true` kept the run going but not the noise, and a log
+          # that cries wolf on every green run is a log nobody reads — which
+          # is exactly how a real failure two steps down goes unnoticed.
+          #
+          # Ask first. Anything other than "it is already there" is still a
+          # genuine failure and still stops the deploy.
+          echo "==> R2 bucket"
+          if npx wrangler r2 bucket info aldershot-media >/dev/null 2>&1; then
+            echo "  aldershot-media is there"
+          else
+            echo "  creating aldershot-media"
+            npx wrangler r2 bucket create aldershot-media
+          fi
 
           echo "==> D1 database (look up by name; create if missing)"
           find_id() {
