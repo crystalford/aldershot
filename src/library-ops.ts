@@ -17,6 +17,7 @@
 
 import { ulid } from "./id.ts";
 import type { Env } from "./env.ts";
+import { audioKeyFor } from "./audio.ts";
 
 export type Entity = "project" | "source";
 
@@ -271,7 +272,10 @@ export async function purge(
       .prepare(`SELECT r2_key, poster_r2_key FROM sources WHERE id=?`)
       .bind(id)
       .first<{ r2_key: string | null; poster_r2_key: string | null }>();
-    if (src?.r2_key) keys.push(src.r2_key, `${src.r2_key.replace(/\.[a-z0-9]+$/i, "")}.audio.mp3`);
+    /* audioKeyFor rather than the same expression written out again: a second
+       copy of the scheme is a copy that stops matching the day the scheme
+       changes, and then every extracted audio file leaks silently. */
+    if (src?.r2_key) keys.push(src.r2_key, audioKeyFor(src.r2_key));
     if (src?.poster_r2_key) keys.push(src.poster_r2_key);
   }
 

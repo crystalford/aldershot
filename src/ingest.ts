@@ -113,6 +113,26 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
     const count = await saveSegments(env.DB, src.id, result.segments);
 
     /*
+     * THE EXTRACTED AUDIO IS RUBBISH NOW. Throw it away.
+     *
+     * It exists for one reason — handing the speech model 14MB instead of a
+     * multi-gigabyte 4K file — and once the transcript is written it has no
+     * further use. Nothing deleted it: every video ever read left an MP3 in
+     * R2 for the life of the source, roughly 14MB per hour of footage, and
+     * storedBytes does not count it, so the storage the product reports was
+     * short by exactly that much on every account.
+     *
+     * Purely derived: a re-read re-extracts it, at the cost of one container
+     * pass, which is the right trade against keeping it for ever.
+     *
+     * Failure here must not fail the read. The transcript is saved; a stray
+     * object is tidied up again when the source is deleted.
+     */
+    if (readKey !== src.r2_key) {
+      await env.MEDIA.delete(readKey).catch(() => {});
+    }
+
+    /*
      * Name the cut now, while the transcript is in hand.
      *
      * Here rather than at read time because a name has to be stable: it is the

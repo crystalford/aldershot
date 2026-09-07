@@ -85,8 +85,19 @@ export async function checkStorage(
   incomingBytes: number,
 ): Promise<StorageCheck> {
   const capBytes = (PLANS[plan]?.storageGb ?? PLANS.free.storageGb) * GB;
-  const usedBytes = await storedBytes(db, userId);
 
+  /* The owner is metered and never blocked, the same rule checkCap follows —
+     a 4 GB upload must not be refused on the account the product is built on.
+     Checked before the tally rather than after: there is nothing to weigh
+     against, so the three queries behind storedBytes are wasted work. What is
+     stored is still counted everywhere it is reported. */
+  const owner = await db
+    .prepare(`SELECT is_owner FROM v2_users WHERE id=?`)
+    .bind(userId)
+    .first<{ is_owner: number }>();
+  if (owner?.is_owner) return { ok: true, usedBytes: 0, capBytes };
+
+  const usedBytes = await storedBytes(db, userId);
   if (usedBytes + incomingBytes <= capBytes) return { ok: true, usedBytes, capBytes };
 
   const free = Math.max(0, capBytes - usedBytes);

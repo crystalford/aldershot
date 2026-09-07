@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -58,10 +58,11 @@ import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pa
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
-import { currentUser, userForEmail, repairName } from "./user.ts";
+import { currentUser, userForEmail, reconcileUser } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
+import { reapUsedAudio } from "./audio.ts";
 import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -352,9 +353,9 @@ app.get("/", async (c) => {
     );
   }
 
-  /* A stored name today's rule would refuse is cleared on the way past — see
-     repairName. Home is where it shows, so Home is where it is fixed. */
-  const user = await repairName(c.env.DB, visitor);
+  /* A stored row today's rules would not produce is corrected on the way past
+     — see reconcileUser. Home is the page everybody lands on. */
+  const user = await reconcileUser(c.env.DB, visitor);
 
   /* Signed in, and they asked for Studio on the way. Clear it first, so a
      checkout that fails does not trap them in a redirect loop. */
@@ -989,9 +990,12 @@ app.get("/clipping", async (c) => {
    * the other half of Footage saying thirteen and Clipping saying two about
    * the same table.
    */
+  /* Only this video's. Clipping is a verb now — with nothing picked the page
+     is the picker, so loading every short in the library was work for a list
+     that is no longer rendered. Footage is where everything you have lives. */
   const shorts = source
     ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
-    : await listShorts(c.env.DB, user.id);
+    : [];
 
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */
@@ -2534,6 +2538,23 @@ app.post("/webhooks/stripe", async (c) => {
   return c.text("ok");
 });
 
+/**
+ * The signed-out site, while signed in.
+ *
+ * Settings has linked to /landing since it was built and nothing has ever
+ * served it — the marketing page renders at / when there is no session, so
+ * the only way to see it was to sign out. A dead link on a shipped page, and
+ * found by pressing it rather than by reading it.
+ *
+ * No account state reaches it: it renders exactly what a stranger sees, which
+ * is the whole reason to look at it.
+ */
+app.get("/landing", async (c) => {
+  return c.html(
+    renderLanding({ sentTo: null, devLink: null, error: null, google: googleConfigured(c.env) }),
+  );
+});
+
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -3157,6 +3178,16 @@ async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionC
     await nameUnnamedSources(env);
   } catch (err) {
     console.log(`[sweep] naming: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /* Extracted audio from before it was deleted at the end of a read. Bounded
+     per sweep and idempotent, so it works through the backlog an hour at a
+     time and costs nothing once there is none left. */
+  try {
+    const freed = await reapUsedAudio(env.DB, env.MEDIA);
+    if (freed) console.log(`[sweep] freed ${Math.round(freed / 1e6)}MB of used audio`);
+  } catch (err) {
+    console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   for (const { user_id } of results ?? []) {

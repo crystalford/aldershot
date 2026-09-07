@@ -424,9 +424,25 @@ function wirePlayer(root, video) {
     paintBar();
   };
 
-  playBtn?.addEventListener("click", () => {
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
+  playBtn?.addEventListener("click", async () => {
+    if (!video.paused) return void video.pause();
+    try {
+      await video.play();
+    } catch (err) {
+      /* Autoplay policy, usually. A press is a gesture, so this is rare. */
+      return void toast("That won't play here.");
+    }
+    /*
+     * A clip can point past the end of its own file — a source replaced, or
+     * bounds written before trimming clamped them — and then play() resolves,
+     * nothing happens, and the button looks broken. Say so rather than sit
+     * there: silence is the thing this codebase keeps getting wrong.
+     */
+    setTimeout(() => {
+      if (video.paused && !video.ended) {
+        toast(video.error ? "That video wouldn't load." : "There's nothing at that point in the video.");
+      }
+    }, 700);
   });
 
   video.addEventListener("play", paintFace);
@@ -553,7 +569,7 @@ function paintMoments(canvases, defaultSrc) {
           shot.addEventListener("error", fail, { once: true });
           shot.currentTime = at;
         });
-        canvas.getContext("2d").drawImage(shot, 0, 0, canvas.width, canvas.height);
+        drawCover(canvas, shot);
         canvas.dataset.painted = "1";
       } catch (err) {
         /* No frame for this one. Every card is still complete without it. */
@@ -620,11 +636,6 @@ if (blocksEl) {
   /* The editor's blocks all come out of one file, so its canvases carry only
      a time and the source is passed in. */
   observeFrames = paintMoments(blocksEl.querySelectorAll(".blk-frame"), video?.getAttribute("src") || "");
-
-  /* One bar, one video. Clipping puts one on every card, so the wiring takes
-     a root rather than reaching for the page's only player. */
-  const playerEl = document.querySelector(".player");
-  if (playerEl && video) wirePlayer(playerEl, video);
 
   /*
    * The word being spoken lights up, and a selection can be cut.
@@ -2351,9 +2362,95 @@ if (composer) {
   /* Begin: upload the video, then follow it to where it is being read.
      The brief is carried along and stays with the source, so a failed read
      offers a retry that does not make the user retype it. */
+  /*
+   * A BRIEF WITH NO FILE is not nothing — it is a brief about footage you
+   * already have.
+   *
+   * This offers your videos and runs the brief against the one you pick.
+   * /api/begin has taken {sourceId, brief} and read the intent since it was
+   * written; the front door was simply the one place that could not reach it.
+   */
+  const pickSource = async () => {
+    let box = document.querySelector("#pick-source");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "pick-source";
+      box.style.cssText =
+        "position:fixed;inset:0;z-index:70;background:rgba(8,8,10,.72);display:flex;" +
+        "align-items:flex-start;justify-content:center;padding:8vh 20px";
+      box.addEventListener("click", (e) => { if (e.target === box) box.hidden = true; });
+      document.body.appendChild(box);
+    }
+    box.hidden = false;
+    box.innerHTML =
+      '<div style="width:min(520px,100%);max-height:76vh;overflow:auto;border-radius:11px;background:#141418;' +
+      'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.5);padding:16px 18px">' +
+      '<div style="font-size:12.5px;font-weight:600;color:rgba(236,236,241,.45);margin-bottom:10px">Which video?</div>' +
+      '<div id="pick-source-list" style="display:flex;flex-direction:column;gap:6px">Looking…</div></div>';
+
+    const list = box.querySelector("#pick-source-list");
+    try {
+      const out = await (await fetch("/api/sources")).json();
+      /* Only what can actually be worked on: a brief against a video that has
+         not been read yet has nothing to read. */
+      const ready = (out.sources || []).filter((sv) => sv.transcript_state === "ready");
+      if (!ready.length) {
+        list.textContent = "Nothing read yet — add a video and it starts reading.";
+        return;
+      }
+      list.innerHTML = ready
+        .map(
+          (sv) =>
+            '<button data-source="' + escapeHtml(sv.id) + '" style="display:flex;gap:12px;align-items:center;text-align:left;' +
+            'padding:11px 12px;border-radius:8px;background:#17171B;border:none;cursor:pointer;color:#ECECF1;font-family:inherit">' +
+            '<span style="flex:none;width:54px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#0B0B0E">' +
+            (sv.poster_r2_key ? '<img loading="lazy" src="/media/' + escapeHtml(sv.poster_r2_key) + '" style="width:100%;height:100%;object-fit:cover"/>' : "") +
+            "</span>" +
+            '<span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            escapeHtml(sv.title) + "</span></button>",
+        )
+        .join("");
+
+      list.addEventListener("click", async (e) => {
+        const row = e.target.closest("[data-source]");
+        if (!row) return;
+        row.disabled = true;
+        try {
+          const res = await fetch("/api/begin", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sourceId: row.getAttribute("data-source"), brief: brief.value.trim() }),
+          });
+          const done = await res.json();
+          if (!res.ok) throw new Error(done.error || "That didn't start");
+          location.href = done.href || "/";
+        } catch (err) {
+          row.disabled = false;
+          toast((err && err.message) || "That didn't start");
+        }
+      });
+    } catch (err) {
+      list.textContent = "Couldn't reach your footage.";
+    }
+  };
+
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!picked) { brief.focus(); return; }
+
+    /*
+     * NEVER SILENTLY NOTHING.
+     *
+     * This was if (!picked) { brief.focus(); return; } — type a sentence,
+     * press the front page's only button, and it moved the cursor. No message,
+     * no explanation, nothing to do next. The placeholder even reads "or drop
+     * a video in first", which says the file is optional.
+     */
+    if (!picked) {
+      if (brief.value.trim()) return void pickSource();
+      toast("Add a video, or say what you want.");
+      brief.focus();
+      return;
+    }
 
     const button = composer.querySelector('button[type="submit"]');
     const original = button.textContent;
@@ -2603,6 +2700,36 @@ async function uploadResumable(file, durationS, onProgress, started) {
 }
 
 /*
+ * Draw a video into a canvas WITHOUT stretching it.
+ *
+ * drawImage(video, 0, 0, w, h) scales the source to fill, so a 9:16 phone
+ * video drawn into a 16:9 thumbnail comes out squashed — every clip card of
+ * vertical footage showed a face half its real width. The frames these
+ * canvases hold are the only picture of a moment anywhere in the product, so
+ * they have to be the shape the camera saw.
+ *
+ * Cover, not contain: the canvas is filled and the overflow is cropped
+ * evenly, which is what object-fit:cover does for the <img> and <video>
+ * elements beside them. Letterboxing instead would put black bars inside a
+ * card that is already a rectangle on a dark page.
+ */
+function drawCover(canvas, video) {
+  const ctx = canvas.getContext("2d");
+  const sw = video.videoWidth;
+  const sh = video.videoHeight;
+  if (!sw || !sh) return;
+
+  const want = canvas.width / canvas.height;
+  const have = sw / sh;
+  let cw = sw;
+  let ch = sh;
+  if (have > want) cw = sh * want;       /* too wide: take a centre column */
+  else ch = sw / want;                   /* too tall: take a centre band */
+
+  ctx.drawImage(video, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
+}
+
+/*
  * How much is going on in a frame — brightness, and how varied it is.
  *
  * A frame can be bright and empty (a white flash) or dark and interesting, so
@@ -2655,7 +2782,7 @@ function grabPoster(file, atSeconds) {
     el.playsInline = true;
 
     const canvas = document.createElement("canvas");
-    const draw = () => canvas.getContext("2d").drawImage(el, 0, 0, canvas.width, canvas.height);
+    const draw = () => drawCover(canvas, el);
 
     let points = [];
     let at = 0;
@@ -3444,14 +3571,29 @@ if (clipDrop) {
  * the same block rather than a second copy of it.
  */
 const shortCards = document.querySelectorAll("[data-short], [data-moment]");
-if (shortCards.length) {
-  paintMoments(document.querySelectorAll(".short-frame"), "");
-  shortCards.forEach((card) => {
-    const v = card.querySelector(".short-video");
-    const bar = card.querySelector(".player");
-    if (v && bar) wirePlayer(bar, v);
-  });
-}
+if (shortCards.length) paintMoments(document.querySelectorAll(".short-frame"), "");
+
+/*
+ * EVERY player bar on the page, wired to the video it belongs to.
+ *
+ * There were three call sites — the editor reached for the page's only
+ * .player, the cards looped their own, and the source page had a bar that
+ * nothing wired at all, so /sources/:id shipped with a player made of dead
+ * buttons. Nobody had opened that page; the conventions check found it.
+ *
+ * A bar belongs to the video nearest it: inside the same wrapper if there is
+ * one, otherwise the page's own. One rule, so a fourth surface that renders
+ * the markup works without anybody remembering to add a fourth case.
+ */
+const allVideos = document.querySelectorAll("video");
+document.querySelectorAll(".player").forEach((bar) => {
+  const own = (bar.parentElement || document).querySelector("video");
+  /* Falling back to the page's first video is only safe when there IS only
+     one. On a grid of cards it would wire one card's bar to another card's
+     video, and pressing play would start something else entirely. */
+  const video = own || (allVideos.length === 1 ? allVideos[0] : null);
+  if (video) wirePlayer(bar, video);
+});
 
 /*
  * ADJUST — the verb the clipper never had.
@@ -3512,7 +3654,7 @@ if (adjust) {
     if (!clip || !frame || !decoder) return;
     const done = () => {
       try {
-        frame.getContext("2d").drawImage(decoder, 0, 0, frame.width, frame.height);
+        drawCover(frame, decoder);
       } catch (err) {
         /* No frame. The sheet is complete without one. */
       }
@@ -3616,8 +3758,16 @@ if (adjust) {
           span.style.color = "#ECECF1";
           span.style.fontWeight = "600";
         }
-        const aspect = form ? new FormData(form).get("aspect") : "9:16";
-        if (well && aspect) well.style.aspectRatio = String(aspect).replace(":", "/");
+        const aspect = String((form ? new FormData(form).get("aspect") : "9:16") || "9:16");
+        if (well) well.style.aspectRatio = aspect.replace(":", "/");
+        /* The canvas has to be the chosen shape too, or drawCover crops to
+           9:16 and the browser then stretches that into a 1:1 well — the
+           preview would be lying about the thing it exists to show. */
+        const [aw, ah] = aspect.split(":").map(Number);
+        if (frame && aw && ah) {
+          frame.width = 270;
+          frame.height = Math.round((270 * ah) / aw);
+        }
       }
 
       if (decoder) decoder.remove();
