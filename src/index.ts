@@ -537,7 +537,7 @@ app.get("/", async (c) => {
                 return { text: j.error ?? `Couldn't finish ${what}`, at: j.finished_at ?? j.created_at, state: j.state, href, link: "Retry" };
               }
               const done: Record<string, [string, string]> = {
-                transcribe: [`Finished reading ${what}`, "Start cutting"],
+                transcribe: [`Finished transcribing ${what}`, "Start cutting"],
                 score: [`Found the moments in ${what}`, "Review the cut"],
                 shorts: [`Cut shorts from ${what}`, "Open"],
                 render: [`Rendered ${what}`, "Download"],
@@ -2870,7 +2870,7 @@ app.get("/settings", async (c) => {
       uncapped,
       unit: "",
       color: ACCENT_CYAN,
-      note: "Spent reading footage, rendering cuts, and burning captions. Resets on the 1st.",
+      note: "Spent transcribing footage, rendering cuts, and burning captions. Resets on the 1st.",
     },
     {
       label: "Storage",

@@ -340,7 +340,7 @@ async function checkStrings() {
     ...[
       "VERTICAL, WITHOUT ASKING",
       "One long video in. Eight shorts out.",
-      "It reads the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
+      "It goes through the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
       "THAT'S THE WHOLE",
       "POINT THOUGH",
       "ISN'T IT",
@@ -351,6 +351,46 @@ async function checkStrings() {
         "nav item inside. The pitch is Descript AND OpusClip and only one half " +
         "was on the way in.",
     ]),
+    /*
+     * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
+     *
+     * The prototype's pitch is "editing is reading now" and "EDIT BY READING",
+     * and every session since has ALSO used "read" for what the machine does —
+     * "reading it", "reading it for meaning", "it starts reading". Same verb,
+     * two subjects: you read, and it reads. The owner: "this whole reading, I
+     * remember I told the last one to change it — editing is reading now does
+     * not make sense."
+     *
+     * He is right twice. Reading is passive and what you actually do is edit
+     * text, and the machine's half of the word is not in the prototype at all
+     * — earlier sessions invented it and it collided with the design's own.
+     *
+     * So the machine transcribes, and the pitch is his: "The timeline is gone.
+     * Good." A deliberate departure from design/Landing.dc.html, made by the
+     * person whose product it is.
+     */
+    ...[
+      "The timeline is gone.",
+      "Good.",
+      "CUT BY DELETING WORDS",
+      "Delete a sentence, and the shot goes with it.",
+      "You edit the words instead.",
+      "Go cut it into a video.",
+      "It takes the sentence and works out the job.",
+      "Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut \u2014 you strike what's weak, keep what's good, and it's done.",
+      "A file or a link, plus one sentence about what you want. It transcribes the whole thing \u2014 every word, timestamped.",
+      "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
+      "It shows you what it found and why. You keep, cut, and reorder in the transcript \u2014 Space plays, arrows step through.",
+      "If you can edit a sentence, you can cut a video. The editor is the transcript \u2014 strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
+      "A minute of work: transcribing footage, rendering a cut, burning captions. A one-hour video costs roughly its length to transcribe once \u2014 after that, cutting and re-cutting from it is nearly free.",
+      "A processing minute is a minute spent transcribing footage, rendering cuts, or burning captions. Storage is permanent on every plan.",
+    ].map((t) => [
+      t,
+      "The reading pass. The machine transcribes; you edit. One verb each, so " +
+        "the product stops using the same word for both, and the hero says " +
+        "something rather than asking to be decoded.",
+    ]),
+
     ...[
       "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
       "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",

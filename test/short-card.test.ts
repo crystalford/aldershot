@@ -145,7 +145,7 @@ test("with nothing readable it offers a way in, not a list", () => {
      with fewer features, and Footage already has a Clip it button per card. */
   const html = renderClipping({ source: null, shorts: [], job: null, fromEditor: false, made: [], videos: [] });
   assert.match(html, /Pick a video and it does the rest/);
-  assert.match(html, /Nothing read yet/);
+  assert.match(html, /Nothing transcribed yet/);
   assert.match(html, /id="clipDrop"/);
   assert.doesNotMatch(html, /data-short=/);
   assert.doesNotMatch(html, /id="adjust"/);

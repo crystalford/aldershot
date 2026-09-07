@@ -216,7 +216,7 @@ export async function runScore(
 
     const segments = await getSegments(env.DB, opts.sourceId);
     if (!segments.length) {
-      return void (await failJob(env.DB, jobId, "That video hasn't been read yet — give it a minute and try again."));
+      return void (await failJob(env.DB, jobId, "That video hasn't been transcribed yet — give it a minute and try again."));
     }
 
     await startJob(env.DB, jobId, "reading it for meaning");

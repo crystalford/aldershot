@@ -575,7 +575,7 @@ export function renderFootageFull(d: FootageData): string {
     /* The prototype's "Nothing kept yet — add a clip back" is its line for an
        empty CLIPS list. On the Videos tab it told someone with no videos at
        all to restore a clip they never had. Signed off in check-fidelity. */
-    if (!d.sources.length) return head + emptyState("Nothing here yet — upload a video and it starts reading.");
+    if (!d.sources.length) return head + emptyState("Nothing here yet — upload a video and it starts transcribing.");
     return (
       head +
       sortBar(d.sort ?? "newest", d.q, d.mode) +

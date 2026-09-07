@@ -35,9 +35,9 @@ export interface Job {
 export const STAGES: Record<string, string> = {
   probe: "looking at the file",
   frames: "pulling frames",
-  transcribe: "reading it",
+  transcribe: "transcribing it",
   embed: "filing what it found",
-  score: "reading it for meaning",
+  score: "working out what matters",
   render: "putting it together",
   proxy: "making an editing copy",
   shorts: "burning captions",

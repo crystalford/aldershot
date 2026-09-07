@@ -584,7 +584,7 @@ export function renderCut(d: CutData): string {
 
   if (!d.blocks.length) {
     return `${head}${strip}${failed}
-    <div data-content style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been read yet — give it a minute.</div>`;
+    <div data-content style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been transcribed yet — give it a minute.</div>`;
   }
 
   /*

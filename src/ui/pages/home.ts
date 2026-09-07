@@ -32,7 +32,7 @@ const TRY_CHIPS = [
 const HOW_THIS_GOES: Array<[string, string]> = [
   [
     "Add a video",
-    "Drop a file or paste a link above. An hour of footage takes a few minutes to read.",
+    "Drop a file or paste a link above. An hour of footage takes a few minutes to transcribe.",
   ],
   [
     "Say what you want out of it",
@@ -166,9 +166,9 @@ export interface WorkingJob {
  * "reading jones_quartering_full (62%)", so the verb has to be a verb.
  */
 const WORKING_VERB: Record<string, string> = {
-  transcribe: "reading",
-  score: "reading",
-  pass: "reading",
+  transcribe: "transcribing",
+  score: "working through",
+  pass: "working through",
   shorts: "burning captions on",
   render: "rendering",
   tts: "generating voice for",

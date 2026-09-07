@@ -135,7 +135,7 @@ function picker(hasVideos = false): string {
     ${
       hasVideos
         ? ""
-        : `<div data-content style="padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45};line-height:1.6">Nothing read yet — add a video and it starts reading.</div>`
+        : `<div data-content style="padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45};line-height:1.6">Nothing transcribed yet — add a video and it starts.</div>`
     }
     <div style="${hasVideos ? "" : "margin-top:12px"}">${drop}</div>
   </div>`;
@@ -616,7 +616,7 @@ export function renderClipping(d: ClippingData): string {
    */
   const nothingYet =
     !running && d.job?.state !== "failed" && !d.shorts.length
-      ? `<div data-content style="margin-top:20px;padding:26px 20px;border-radius:${RADIUS.card};background:${C.surface};text-align:center;font-size:${SIZE.body};color:${C.ink45};line-height:1.6">No moments in this one yet — Find clips reads it through and scores what would stand alone.</div>`
+      ? `<div data-content style="margin-top:20px;padding:26px 20px;border-radius:${RADIUS.card};background:${C.surface};text-align:center;font-size:${SIZE.body};color:${C.ink45};line-height:1.6">No moments in this one yet — Find clips goes through it and scores what would stand alone.</div>`
       : "";
 
   /* The moments lead. The controls make more of them, which is the second
