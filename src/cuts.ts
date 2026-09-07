@@ -22,7 +22,24 @@ export interface Cut {
    * striking a sentence is the primary gesture.
    */
   words: [number, number] | null;
+  /**
+   * Take the long silences OUT of this line, keeping every word.
+   *
+   * A pause has no word index to strike, and the first version struck the word
+   * before it — so asking to tighten a silence deleted a word somebody said.
+   * This marks the LINE instead: the ranges are then built word by word, which
+   * naturally leaves out the gaps between them.
+   *
+   * It rides on words:null so nothing has to migrate, and everything that asks
+   * "is this line struck?" checks for its absence.
+   */
+  tighten?: true;
 }
+
+/** A silence longer than this is worth taking out. */
+export const PAUSE_OVER_MS = 2000;
+/** And this much of it is left behind. Cutting a pause to nothing sounds spliced. */
+export const PAUSE_BEAT_MS = 260;
 
 /** Parses the stored JSON, treating anything malformed as "no cuts". */
 export function parseCuts(json: string | null): Cut[] {
@@ -40,15 +57,24 @@ export function serialiseCuts(cuts: Cut[]): string {
   return JSON.stringify(cuts);
 }
 
-/** Is this whole segment cut? */
+/** Is this whole segment cut? A tighten marker also carries words:null and is
+    the opposite of a cut line — it keeps every word in it. */
 export function isSegmentCut(cuts: Cut[], seg: number): boolean {
-  return cuts.some((c) => c.seg === seg && c.words === null);
+  return cuts.some((c) => c.seg === seg && c.words === null && !c.tighten);
+}
+
+/** Is this line having its silences taken out? */
+export function isTightened(cuts: Cut[], seg: number): boolean {
+  return cuts.some((c) => c.seg === seg && c.tighten === true);
 }
 
 /** Is this individual word cut, either on its own or by its line being cut? */
 export function isWordCut(cuts: Cut[], seg: number, word: number): boolean {
   return cuts.some(
-    (c) => c.seg === seg && (c.words === null || (word >= c.words[0] && word <= c.words[1])),
+    (c) =>
+      c.seg === seg &&
+      !c.tighten &&
+      (c.words === null || (word >= c.words[0] && word <= c.words[1])),
   );
 }
 
@@ -148,8 +174,10 @@ export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ sta
     const words = parseWords(seg.words);
     const wordCuts = cuts.filter((c) => c.seg === seg.idx && c.words);
 
-    // No word-level cuts, or no word timings to act on: the line plays whole.
-    if (!wordCuts.length || !words.length) {
+    const tightening = isTightened(cuts, seg.idx);
+
+    // Nothing to act on, and no silence to take out: the line plays whole.
+    if ((!wordCuts.length && !tightening) || !words.length) {
       out.push({ start_ms: seg.start_ms, end_ms: seg.end_ms });
       continue;
     }
@@ -163,6 +191,20 @@ export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ sta
       }
       const start = wordStartMs(words[i]);
       const end = wordEndMs(words[i]);
+
+      /*
+       * A long silence ends the run, and a beat of it is kept.
+       *
+       * This is what "tighten" has to mean: the words either side both stay,
+       * and only the gap between them goes. Striking the preceding word — the
+       * first attempt — removed something that was said.
+       */
+      if (run && tightening && start - run.end_ms > PAUSE_OVER_MS) {
+        out.push({ start_ms: run.start_ms, end_ms: run.end_ms + PAUSE_BEAT_MS });
+        run = { start_ms: start, end_ms: end };
+        continue;
+      }
+
       if (run) run.end_ms = end;
       else run = { start_ms: start, end_ms: end };
     }
@@ -184,15 +226,31 @@ export function runtimeAfterCuts(segments: Segmentish[], cuts: Cut[]): number {
   return playableRanges(segments, cuts).reduce((n, r) => n + (r.end_ms - r.start_ms), 0) / 1000;
 }
 
-/** Words the design's clean-up chip removes. */
-const FILLERS = /^(um|uh|erm|uhh|umm|ah|er)[,.]?$/i;
+/**
+ * Words the design's clean-up chip removes.
+ *
+ * The rule was /^(um|uh|…)[,.]?$/ — the word, with at most one comma or full
+ * stop after it. Whisper does not write hesitations that way. It writes
+ * "Um..." and "Uh..." far more often than "um", and also "um?", "uh!" and
+ * quoted forms, none of which matched. The chip greyed itself out on
+ * transcripts full of them and said, correctly by its own count, that there
+ * was nothing to remove.
+ *
+ * The punctuation is stripped from both ends before the word is compared, so
+ * the list is a list of WORDS and any punctuation around them is somebody
+ * else's problem. "uhm" and "hmm" are here too, which the original missed.
+ */
+const FILLERS = /^(um|uhm|umm|uh|uhh|erm|er|ah|hm|hmm|mm|mhm)$/i;
+
+/** A spoken word, without whatever the transcriber put around it. */
+const bareWord = (w: string) => w.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 
 /** Every filler word in the transcript, as cuts. Real words, real timings. */
 export function fillerCuts(segments: Segmentish[]): Cut[] {
   const cuts: Cut[] = [];
   for (const seg of segments) {
     parseWords(seg.words).forEach((w, i) => {
-      if (FILLERS.test(w.w.trim())) cuts.push({ seg: seg.idx, words: [i, i] });
+      if (FILLERS.test(bareWord(w.w))) cuts.push({ seg: seg.idx, words: [i, i] });
     });
   }
   return cuts;
@@ -282,17 +340,22 @@ export function phraseCuts(matches: PhraseMatch[]): Cut[] {
  * is removed — tightening a pause to nothing makes speech sound spliced, so a
  * beat is left behind.
  */
-export function pauseCuts(segments: Segmentish[], overMs = 2000): Cut[] {
+export function pauseCuts(segments: Segmentish[], overMs = PAUSE_OVER_MS): Cut[] {
   const cuts: Cut[] = [];
   for (const seg of segments) {
     const words = parseWords(seg.words);
     for (let i = 1; i < words.length; i++) {
-      const gapMs = (words[i].s - words[i - 1].e) * 1000;
-      if (gapMs > overMs) {
-        // The silence lives between two words, so there is no word index to
-        // strike. Represent it as the trailing part of the preceding word's
-        // slot — the render works from time ranges, not word indices.
-        cuts.push({ seg: seg.idx, words: [i - 1, i - 1] });
+      if ((words[i].s - words[i - 1].e) * 1000 > overMs) {
+        /*
+         * One marker for the LINE, not one per gap.
+         *
+         * This used to push {words: [i-1, i-1]} — striking the word before the
+         * silence, because a gap has no word index of its own. That deleted
+         * something the person said: ask to tighten a pause, lose a word. The
+         * marker leaves every word in place and playableRanges drops the gaps.
+         */
+        cuts.push({ seg: seg.idx, words: null, tighten: true });
+        break;
       }
     }
   }

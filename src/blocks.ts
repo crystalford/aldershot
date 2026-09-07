@@ -16,7 +16,7 @@
  * safe rather than destructive.
  */
 
-import { isSegmentCut, isWordCut, parseWords, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
+import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
 
 export type BlockOrigin = "footage" | "voice" | "generated";
 
@@ -257,6 +257,11 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
   /* Word timings are SECONDS while the segment's are milliseconds — see
      StoredWord. Subtracting the raw fields reported 59 minutes for a
      two-minute video the first time this ran. */
+  /* Whether this line is having its silences taken out. The same rule
+     playableRanges follows, because the footer's runtime and the rendered file
+     are built from these two functions and must not disagree. */
+  const tightening = block.origin === "footage" && isTightened(cuts, Number(block.id.slice(2)));
+
   const out: Array<{ start_ms: number; end_ms: number }> = [];
   let run: { start_ms: number; end_ms: number } | null = null;
   for (let i = 0; i < block.words.length; i++) {
@@ -267,6 +272,15 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
     }
     const start = wordStartMs(block.words[i]);
     const end = wordEndMs(block.words[i]);
+
+    /* A long silence ends the run and a beat of it is kept — every word on
+       both sides stays. */
+    if (run && tightening && start - run.end_ms > PAUSE_OVER_MS) {
+      out.push({ start_ms: run.start_ms, end_ms: run.end_ms + PAUSE_BEAT_MS });
+      run = { start_ms: start, end_ms: end };
+      continue;
+    }
+
     if (run) run.end_ms = Math.max(run.end_ms, end);
     else run = { start_ms: start, end_ms: end };
   }
