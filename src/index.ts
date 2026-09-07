@@ -54,7 +54,7 @@ import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
-import { addCuts, fillerCuts, isSegmentCut, isWordCut, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
+import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -70,6 +70,7 @@ import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
+import { passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
 export { RenderContainer } from "./render.ts";
@@ -1085,13 +1086,16 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
 
-  const [segments, beats, clips, job] = await Promise.all([
+  const [segments, beats, clips, job, passes] = await Promise.all([
     source ? getSegments(c.env.DB, source.id) : Promise.resolve([]),
     getBeats(c.env.DB, project.id),
     /* The model's opinion of this footage, attached to the blocks it covers
        rather than rendered as a separate list of "clips". */
     source ? listClipsForSource(c.env.DB, source.id, user.id) : Promise.resolve([]),
     latestJobFor(c.env.DB, project.id, user.id, ["score", "pass"]),
+    /* What has been asked of this cut and what came of it. Written since the
+       first pass ever ran; read here for the first time. */
+    passLog(c.env.DB, project.id),
   ]);
 
   const cuts = parseCuts(project.cuts);
@@ -1154,6 +1158,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         plan: user.plan,
         cameFrom: cameFrom(c.req.header("referer")),
         job,
+        passes,
       }) +
         exportPanel(project.id, user.plan) +
         exportsStrip({ projectId: project.id, renders }),
@@ -1263,6 +1268,8 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
  * screen with room to scroll before the next slice is asked for.
  */
 const BLOCK_WINDOW = 120;
+/* The most a single request will send, for a jump into a long transcript. */
+const BLOCK_SPAN = 600;
 
 /**
  * The next slice of the block list.
@@ -1285,13 +1292,70 @@ app.get("/api/projects/:id/blocks", async (c) => {
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const from = Math.max(0, Number(c.req.query("from")) || 0);
-  const to = from + BLOCK_WINDOW;
+  /*
+   * Normally one window. `to` is for a jump: find a word 2,000 blocks in and
+   * loading 120 at a time is seventeen round trips before you can read the
+   * line. The span is capped because the reason windowing exists is that the
+   * whole transcript in one response was 13.2 MB.
+   */
+  const asked = Number(c.req.query("to")) || 0;
+  const to = Math.min(Math.max(asked, from + BLOCK_WINDOW), from + BLOCK_SPAN);
   return c.json({
     html: renderBlockSlice(project.id, blocks, cuts, from, to),
     from,
     to: Math.min(to, blocks.length),
     total: blocks.length,
     more: to < blocks.length,
+  });
+});
+
+/**
+ * Every place a phrase is said in this cut.
+ *
+ * The palette (⌘K) searches the whole library and NAVIGATES — which is the
+ * opposite of what you want mid-edit. Inside a 48-minute transcript there was
+ * no way to reach "sponsor" but scrolling, and no way to act on all of them.
+ *
+ * Server-side because the editor holds a window of a long transcript and the
+ * interesting matches are usually past it. Each match carries the index of the
+ * block it is in, so clicking a result can load exactly that far and no
+ * further, and the milliseconds, so the video can seek before it arrives.
+ */
+app.get("/api/projects/:id/find", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const q = (c.req.query("q") ?? "").trim();
+  const segments = await getSegments(c.env.DB, project.source_id);
+  const matches = findPhrase(segments, q);
+  if (!matches.length) return c.json({ q, matches: [], savedMs: 0 });
+
+  /* Where each match sits in the block list, which is what the reader
+     scrolls through — segment order and block order are not the same thing
+     once anything has been moved or inserted. */
+  const cuts = parseCuts(project.cuts);
+  const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
+  const at = new Map(blocks.map((b, i) => [b.id, i]));
+
+  return c.json({
+    q,
+    /* What cutting every one of them would really take off, by the same rule
+       the clean-up chips follow: counted, or not offered. */
+    savedMs: timeSaved(segments, cuts, phraseCuts(matches)),
+    matches: matches.map((m) => ({
+      seg: m.seg,
+      from: m.from,
+      to: m.to,
+      start_ms: m.start_ms,
+      block: "s:" + m.seg,
+      /* -1 when the line has been struck whole and is not in the list. */
+      index: at.get("s:" + m.seg) ?? -1,
+      before: m.before,
+      hit: m.hit,
+      after: m.after,
+    })),
   });
 });
 
@@ -2074,64 +2138,21 @@ app.get("/editor", async (c) => {
     clipCountsBySource(c.env.DB, user.id),
   ]);
 
-  const byId = new Map(sources.map((s) => [s.id, s]));
-  const live = projects.filter((p) => !p.archived_at).sort((a, b) => b.updated_at - a.updated_at);
-
   /*
-   * An edit's own numbers, not its source's.
+   * Editor means the EDITOR.
    *
-   * Every row read "11 clips kept · 5:00 so far" because every row counted the
-   * clips on the SOURCE — so four different edits of one video reported four
-   * identical figures and the list was impossible to tell apart. A scratch
-   * edit has no clips at all; what it has is its own cuts, and its runtime is
-   * the transcript minus them.
+   * This page was Home again: a composer, then the same footage under "Or open
+   * something already here", then the same edits under "Pick up an edit" —
+   * three lists in different words, with half the screen empty below them.
+   * Home answers "what needs you" and owns picking one up; a nav item called
+   * Editor that shows a list of things is the same failure as Clipping and
+   * Footage both showing clips.
    *
-   * Segments are fetched once per source rather than once per edit, since
-   * several edits of the same video are the normal case here.
+   * So it opens what you were last in. listProjects is already ordered by
+   * updated_at, so the first row is that. With nothing made yet it falls
+   * through to intake, which is what the route was always for.
    */
-  const shown = live.slice(0, 6);
-
-  /* Segments once per SOURCE, not once per edit — several edits of one video
-     is the normal case here. */
-  const editSources = [...new Set(shown.map((p) => p.source_id).filter((x): x is string => !!x))];
-  const segsBySource = new Map(
-    await Promise.all(editSources.map(async (id) => [id, await getSegments(c.env.DB, id)] as const)),
-  );
-
-  const edits = await Promise.all(
-    shown.map(async (p) => {
-      /*
-       * An edit's numbers come from its BLOCKS, which is what a cut is.
-       *
-       * There were two branches here: a scratch edit counted its transcript
-       * minus its cuts, and a briefed one summed the clips whose `kept` was
-       * set. The second was left from before blocks existed, and it made
-       * `kept` decide two unrelated things — so keeping a Clipping short
-       * changed an edit's runtime. It also disagreed with the editor, which
-       * has always computed the runtime from the cut itself.
-       *
-       * One definition now, the same one src/blocks.ts gives the editor and
-       * the renderer. `kept` is left to mean one thing: a moment you want,
-       * which is what Footage's Clips shelf and Clipping both read it as.
-       */
-      const segs = p.source_id ? (segsBySource.get(p.source_id) ?? []) : [];
-      const cuts = parseCuts(p.cuts);
-      const blocks = (await blocksForProject(c.env.DB, p, user.id, { segments: segs })).blocks;
-
-      return {
-        id: p.id,
-        title: p.title,
-        poster_r2_key: p.poster_r2_key ?? (p.source_id ? (byId.get(p.source_id)?.poster_r2_key ?? null) : null),
-        sourceFilename: p.source_id ? (byId.get(p.source_id)?.filename ?? null) : null,
-        kept: blocks.filter((b) => !b.struck).length,
-        runtime_s: blocks.length ? Math.round(runtimeMs(blocks, cuts) / 1000) : null,
-        updated_at: p.updated_at,
-        /* Still reported, because the intake words an unbriefed edit's count
-           as "lines" and a briefed one's as "clips kept". */
-        scratch: !p.brief?.trim(),
-      };
-    }),
-  );
+  if (projects.length) return c.redirect(`/p/${projects[0].id}/cut`);
 
   return c.html(
     surface(
@@ -2144,7 +2165,6 @@ app.get("/editor", async (c) => {
           poster_r2_key: s.poster_r2_key, transcript_state: s.transcript_state,
           clip_count: clipCounts.get(s.id) ?? 0,
         })),
-        edits,
       }),
       "nav",
       user.email,

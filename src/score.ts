@@ -123,6 +123,16 @@ export function windowSegments(segments: Segment[], max = WINDOW_CHARS): Segment
  * `onProgress` is called with a real fraction of the windows completed, so
  * the bar the user watches is measured work rather than elapsed time.
  */
+/**
+ * What the model is actually asked, when nothing was typed.
+ *
+ * Exported because the pass log shows the instruction, and an edit begun with
+ * "Skip the brief" recorded an empty one — a row saying nothing was asked,
+ * about a pass that plainly asked something. One definition, so the log and
+ * the prompt cannot disagree.
+ */
+export const asked = (brief: string) => brief.trim() || "the moments worth keeping";
+
 export async function scorePass(
   env: Env,
   segments: Segment[],
@@ -144,7 +154,7 @@ export async function scorePass(
 
   for (let i = 0; i < windows.length; i++) {
     const window = windows[i];
-    const prompt = `What the user asked for: ${brief.trim() || "the moments worth keeping"}\n\nTranscript:\n${transcriptForPrompt(window)}`;
+    const prompt = `What the user asked for: ${asked(brief)}\n\nTranscript:\n${transcriptForPrompt(window)}`;
 
     const res = await run(model.id, {
       messages: [

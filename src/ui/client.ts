@@ -438,6 +438,133 @@ if (blocksEl) {
   paintFrames();
 
   /*
+   * The player, driven from the video rather than by it.
+   *
+   * Everything here reads video.currentTime and writes to it; nothing keeps a
+   * second idea of where the video is. That is what lets the transcript, the
+   * per-block play buttons and this bar all agree without knowing about each
+   * other — and it is why replacing the browser's controls changed nothing
+   * about the editing gestures.
+   */
+  const playerEl = document.querySelector(".player");
+  if (playerEl && video) {
+    const playBtn = playerEl.querySelector(".pl-play");
+    const iPlay = playerEl.querySelector(".pl-i-play");
+    const iPause = playerEl.querySelector(".pl-i-pause");
+    const track = playerEl.querySelector(".pl-track");
+    const played = playerEl.querySelector(".pl-played");
+    const buffered = playerEl.querySelector(".pl-buffer");
+    const knob = playerEl.querySelector(".pl-knob");
+    const nowEl = playerEl.querySelector(".pl-now");
+    const durEl = playerEl.querySelector(".pl-dur");
+    const rateBtn = playerEl.querySelector(".pl-rate");
+    const fullBtn = playerEl.querySelector(".pl-full");
+
+    const secs = (n) => {
+      const t = Math.max(0, Math.floor(n || 0));
+      const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+      return h > 0
+        ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+        : m + ":" + String(sec).padStart(2, "0");
+    };
+
+    const paintFace = () => {
+      const playing = !video.paused && !video.ended;
+      iPlay.hidden = playing;
+      iPause.hidden = !playing;
+      playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+    };
+
+    const paintBar = () => {
+      const dur = video.duration;
+      if (!Number.isFinite(dur) || dur <= 0) return;
+      const pct = Math.min(100, Math.max(0, (video.currentTime / dur) * 100));
+      played.style.width = pct + "%";
+      knob.style.left = pct + "%";
+      track.setAttribute("aria-valuenow", String(Math.round(pct)));
+      nowEl.textContent = secs(video.currentTime);
+
+      /* The buffered range that covers the playhead — not range zero, which on
+         a seeked file is whatever was loaded first and usually somewhere
+         else entirely. */
+      let end = 0;
+      for (let i = 0; i < video.buffered.length; i++) {
+        if (video.buffered.start(i) <= video.currentTime && video.buffered.end(i) >= video.currentTime) {
+          end = video.buffered.end(i);
+        }
+      }
+      buffered.style.width = Math.min(100, (end / dur) * 100) + "%";
+    };
+
+    const paintDuration = () => {
+      if (Number.isFinite(video.duration)) durEl.textContent = secs(video.duration);
+      paintBar();
+    };
+
+    playBtn.addEventListener("click", () => {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    });
+
+    video.addEventListener("play", paintFace);
+    video.addEventListener("pause", paintFace);
+    video.addEventListener("ended", paintFace);
+    video.addEventListener("timeupdate", paintBar);
+    video.addEventListener("progress", paintBar);
+    video.addEventListener("loadedmetadata", paintDuration);
+    if (Number.isFinite(video.duration)) paintDuration();
+    paintFace();
+
+    /*
+     * Scrubbing, with a pointer capture.
+     *
+     * Without the capture, dragging past the edge of the bar drops the drag
+     * where it landed and leaves the playhead wherever it happened to be —
+     * which on a narrow bar is most drags.
+     */
+    const seekTo = (clientX) => {
+      const dur = video.duration;
+      if (!Number.isFinite(dur) || dur <= 0) return;
+      const r = track.getBoundingClientRect();
+      const at = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+      video.currentTime = at * dur;
+      paintBar();
+    };
+
+    let dragging = false;
+    track.addEventListener("pointerdown", (e) => {
+      dragging = true;
+      track.setPointerCapture(e.pointerId);
+      seekTo(e.clientX);
+    });
+    track.addEventListener("pointermove", (e) => { if (dragging) seekTo(e.clientX); });
+    track.addEventListener("pointerup", (e) => {
+      dragging = false;
+      try { track.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+    });
+    track.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); video.currentTime = video.currentTime + 5; }
+    });
+
+    /* Speed, because reviewing an hour of footage at 1x is most of the hour.
+       A cycle rather than a menu: four values is not a list worth opening. */
+    const RATES = [1, 1.25, 1.5, 2, 0.5];
+    let rateAt = 0;
+    rateBtn.addEventListener("click", () => {
+      rateAt = (rateAt + 1) % RATES.length;
+      video.playbackRate = RATES[rateAt];
+      const span = rateBtn.querySelector("span");
+      if (span) span.textContent = RATES[rateAt] + "\u00D7";
+    });
+
+    fullBtn.addEventListener("click", () => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else if (video.requestFullscreen) void video.requestFullscreen().catch(() => {});
+    });
+  }
+
+  /*
    * The word being spoken lights up, and a selection can be cut.
    *
    * These are the two gestures that make editing by text worth doing, and the
@@ -466,6 +593,52 @@ if (blocksEl) {
     indexWords();
     reindexWords = indexWords;
 
+    /*
+     * The transcript FOLLOWS the video.
+     *
+     * The highlight was painted and never scrolled to, so fifteen seconds into
+     * playback the lit word was off screen and stayed there for the rest of
+     * the video. This is the difference between an editor and a document with
+     * a video stuck to it.
+     *
+     * With the rule every follow-along needs: the moment you scroll yourself,
+     * following stops, because a page that scrolls back while you are reading
+     * somewhere else is a page you are fighting. The control says which it is
+     * doing and puts it back.
+     */
+    let following = true;
+    let selfScrolled = 0;
+
+    const followBtn = document.createElement("button");
+    followBtn.type = "button";
+    followBtn.hidden = true;
+    followBtn.textContent = "Follow along";
+    followBtn.style.cssText =
+      "position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:76px;font-size:12px;font-weight:600;" +
+      "padding:7px 14px;border-radius:5px;background:#ECECF1;color:#131316;border:none;cursor:pointer;" +
+      "white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.45)";
+    followBtn.addEventListener("click", () => {
+      following = true;
+      followBtn.hidden = true;
+      lit = null;
+      light();
+    });
+    document.body.appendChild(followBtn);
+
+    window.addEventListener(
+      "scroll",
+      () => {
+        /* Our own scrollIntoView fires this event too. Anything within a beat
+           of a scroll we asked for is ours, not the reader's. */
+        if (Date.now() - selfScrolled < 700) return;
+        if (!following) return;
+        following = false;
+        followBtn.hidden = false;
+      },
+      { passive: true },
+    );
+
+
     const light = () => {
       const ms = video.currentTime * 1000;
       /* Walk from where we were: forward while behind, back if the user
@@ -482,9 +655,25 @@ if (blocksEl) {
         on.style.color = "#5EC98F";
       }
       lit = on;
+
+      /* Only while it is actually playing. Scrubbing to look at something is
+         not a request to be moved somewhere else, and neither is a paused
+         video sitting on a word. */
+      if (on && following && !video.paused) {
+        selfScrolled = Date.now();
+        on.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
     };
     video.addEventListener("timeupdate", light);
     video.addEventListener("seeked", light);
+
+    /* A seek you asked for is a place you want to be, so following resumes —
+       clicking a word to jump there and then not being taken there is the
+       gesture failing. */
+    video.addEventListener("seeking", () => {
+      following = true;
+      followBtn.hidden = true;
+    });
 
     /*
      * Select words, cut them.
@@ -552,6 +741,14 @@ if (blocksEl) {
     });
 
     action.addEventListener("mousedown", (e) => e.preventDefault());
+
+    /* Backspace does what the floating button does. Published rather than
+       duplicated, so the key and the button can never cut differently. */
+    window.cutSelection = () => {
+      place();
+      if (pending) action.click();
+    };
+
     action.addEventListener("click", async () => {
       if (!pending) return;
       const { ranges } = pending;
@@ -735,13 +932,17 @@ if (blocksEl) {
    * with nothing to re-bind — only the two things that keep their own index of
    * the words and canvases need telling.
    */
-  const loadMore = async () => {
+  const loadMore = async (until) => {
     const sentinel = blocksEl.querySelector("#more-blocks");
     if (!sentinel || sentinel.dataset.busy === "1") return;
     sentinel.dataset.busy = "1";
     try {
+      /* until is a jump: find a word two thousand blocks in and asking for
+         120 at a time is seventeen round trips before the line is readable.
+         The server caps the span, so this is a hint and not a demand. */
       const res = await fetch(
-        "/api/projects/" + projectId + "/blocks?from=" + sentinel.getAttribute("data-from"),
+        "/api/projects/" + projectId + "/blocks?from=" + sentinel.getAttribute("data-from") +
+          (until ? "&to=" + until : ""),
       );
       if (!res.ok) throw new Error("Couldn't load the rest");
       const out = await res.json();
@@ -1054,6 +1255,154 @@ if (blocksEl) {
       }
     }
   });
+
+  /*
+   * Find a word in this cut, and cut every place it is said.
+   *
+   * The palette searches the whole library and navigates away, which is the
+   * opposite of what you want mid-edit: inside a 48-minute transcript there
+   * was no way to reach "sponsor" but scrolling, and no way to act on all of
+   * them. This is most of what editing by text means in practice.
+   *
+   * Server-side, because the editor holds a WINDOW of a long transcript and
+   * the interesting matches are usually past it. A hit carries the index of
+   * its block, so jumping loads exactly that far and no further.
+   */
+  const findEl = document.querySelector(".find");
+  if (findEl) {
+    const q = findEl.querySelector(".find-q");
+    const countEl = findEl.querySelector(".find-count");
+    const cutAll = findEl.querySelector(".find-cut");
+    const hitsEl = findEl.querySelector(".find-hits");
+
+    let hits = [];
+    let atHit = -1;
+    let timer = null;
+    let seq = 0;
+
+    const rowStyle =
+      "display:block;width:100%;text-align:left;border:none;background:transparent;cursor:pointer;" +
+      "padding:7px 9px;border-radius:5px;font-family:inherit;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.55)";
+
+    const paint = (savedMs) => {
+      countEl.textContent = hits.length ? hits.length + " found" : "";
+      hitsEl.innerHTML = hits
+        .map(
+          (h, i) =>
+            '<button class="find-hit" data-hit="' + i + '" style="' + rowStyle + '">' +
+            '<span style="font-family:ui-monospace,monospace;color:rgba(236,236,241,0.32);margin-right:8px">' +
+            clock(h.start_ms) + "</span>" +
+            escapeHtml(h.before) + ' <span style="color:#ECECF1;background:rgba(217,179,106,0.22)">' +
+            escapeHtml(h.hit) + "</span> " + escapeHtml(h.after) + "</button>",
+        )
+        .join("");
+
+      /* The count and the saving are real or the button is not offered — the
+         same rule the clean-up chips follow. */
+      if (hits.length) {
+        cutAll.hidden = false;
+        cutAll.textContent =
+          "Cut all " + hits.length + " \u00B7 \u2212" + clock(savedMs || 0);
+      } else {
+        cutAll.hidden = true;
+      }
+    };
+
+    const clear = () => {
+      hits = [];
+      atHit = -1;
+      paint(0);
+    };
+
+    const search = async () => {
+      const text = q.value.trim();
+      if (text.length < 2) { clear(); return; }
+      const mine = ++seq;
+      try {
+        const res = await fetch(
+          "/api/projects/" + projectId + "/find?q=" + encodeURIComponent(text),
+        );
+        const out = await res.json().catch(() => ({}));
+        /* Ignore a slow answer to an old query, or the results you see are
+           whichever request happened to finish last. */
+        if (mine !== seq) return;
+        hits = out.matches || [];
+        atHit = -1;
+        paint(out.savedMs);
+      } catch (err) {
+        if (mine === seq) clear();
+      }
+    };
+
+    q.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(search, 160);
+    });
+
+    /* Go to one, loading as far as it if the reader has not scrolled there.
+       The video seeks first: it can go anywhere immediately, and it is the
+       thing that tells you whether this is the right one. */
+    const goTo = async (i) => {
+      const h = hits[i];
+      if (!h) return;
+      atHit = i;
+      if (video) video.currentTime = h.start_ms / 1000;
+
+      let el = blocksEl.querySelector('[data-block="' + h.block + '"]');
+      if (!el && h.index >= 0) {
+        /* Load until it is on the page. The server caps how much one request
+           will send, so a very long jump takes a few — bounded, not a walk. */
+        let guard = 0;
+        while (!el && blocksEl.querySelector("#more-blocks") && guard++ < 12) {
+          await loadMore(h.index + 1);
+          el = blocksEl.querySelector('[data-block="' + h.block + '"]');
+        }
+        /* The highlight and the selection counter keep their own index of the
+           words; blocks that arrive this way have to be in it too. */
+        reindexWords();
+        observeFrames();
+      }
+      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+
+    hitsEl.addEventListener("click", (e) => {
+      const row = e.target.closest(".find-hit");
+      if (row) void goTo(Number(row.getAttribute("data-hit")));
+    });
+
+    q.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !hits.length) return;
+      e.preventDefault();
+      /* Enter walks them, wrapping — the same as every find field. */
+      void goTo((atHit + 1) % hits.length);
+    });
+
+    cutAll.addEventListener("click", async () => {
+      if (!hits.length) return;
+      const n = hits.length;
+      cutAll.disabled = true;
+      try {
+        const out = await sendCut({
+          kind: "range",
+          ranges: hits.map((h) => ({ seg: h.seg, from: h.from, to: h.to })),
+        });
+        /* A cut this wide restrikes words all over the transcript, so the page
+           is rebuilt rather than repainted by hand — the same call the move
+           and the clean-ups make, and the snapshot is parked so Undo outlives
+           the reload. */
+        if (out.before) {
+          sessionStorage.setItem(
+            "undo:" + projectId,
+            JSON.stringify({ label: "Cut " + n + " match" + (n === 1 ? "" : "es"), before: out.before }),
+          );
+        }
+        location.reload();
+      } catch (err) {
+        cutAll.disabled = false;
+        toast((err && err.message) || "That didn't save");
+      }
+    });
+  }
 }
 
 /* Ask the model which blocks are strong. An assist inside the editor rather
@@ -1344,12 +1693,70 @@ if (navNotif) {
 let goArmed = false;
 const GO = { h: "/", p: "/projects", c: "/clipping", f: "/footage", s: "/settings" };
 
+/*
+ * The editor's own keys.
+ *
+ * There was a key map — g h, g p, ⌘K, ⌘Z, ? — and the one surface where you
+ * repeat a gesture a thousand times had none of it. Space did not play.
+ *
+ * These are live only when the editor is on the page, and the ? sheet lists
+ * them only then, because a sheet promising keys you do not have is the same
+ * bug as a button that does nothing.
+ */
+const cutVideo = document.querySelector("#cut-video");
+
 document.addEventListener("keydown", (e) => {
   /* Escape closes whatever is open, from anywhere — including the palette's
      own input, which is a field, so this is checked before inField(). */
   if (e.key === "Escape" && closeOverlays()) { e.preventDefault(); return; }
 
+  /* ⌘F is the browser's find, and inside a transcript loaded a window at a
+     time it searches the part you can already see. This one searches the
+     whole cut, so it takes the key — and only where it exists. */
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+    const q = document.querySelector(".find-q");
+    if (q) { e.preventDefault(); q.focus(); q.select(); return; }
+  }
+
   if (inField(e.target)) return;
+
+  if (cutVideo && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    /* Space is the one key everyone tries first. */
+    if (e.key === " ") {
+      e.preventDefault();
+      if (cutVideo.paused) cutVideo.play().catch(() => {});
+      else cutVideo.pause();
+      return;
+    }
+    if (e.key === "ArrowLeft") { e.preventDefault(); cutVideo.currentTime = Math.max(0, cutVideo.currentTime - 5); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); cutVideo.currentTime = cutVideo.currentTime + 5; return; }
+
+    /* J K L, from every editor since tape. K stops rather than toggling,
+       because that is what it does everywhere else. */
+    const k = e.key.toLowerCase();
+    if (k === "k") { e.preventDefault(); cutVideo.pause(); return; }
+    if (k === "l") {
+      e.preventDefault();
+      cutVideo.playbackRate = cutVideo.paused || cutVideo.playbackRate >= 2 ? 1 : Math.min(2, cutVideo.playbackRate * 2);
+      cutVideo.play().catch(() => {});
+      return;
+    }
+    if (k === "j") {
+      e.preventDefault();
+      cutVideo.pause();
+      cutVideo.currentTime = Math.max(0, cutVideo.currentTime - 2);
+      return;
+    }
+
+    /* Cut what you have selected, without reaching for the floating button.
+       It only fires when there IS a selection, so Backspace on a page with
+       nothing chosen does nothing rather than something surprising. */
+    if (e.key === "Backspace" || e.key === "Delete") {
+      const sel = window.getSelection();
+      const btn = window.cutSelection;
+      if (btn && sel && !sel.isCollapsed) { e.preventDefault(); btn(); return; }
+    }
+  }
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();

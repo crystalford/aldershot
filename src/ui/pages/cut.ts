@@ -20,7 +20,7 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
-import { iconArrowDown, iconArrowUp, iconPlay, iconPlus } from "../icons.ts";
+import { iconArrowDown, iconArrowUp, iconPause, iconPlay, iconPlus } from "../icons.ts";
 import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
@@ -63,6 +63,8 @@ export interface CutData {
   cameFrom: [string, string];
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
+  /** Every instruction given to the model on this cut, and what came of it. */
+  passes: Array<{ id: string; n: number; instruction: string; result: string }>;
 }
 
 /**
@@ -354,6 +356,67 @@ export function buildSummary(
  * and what the video would actually lose, because a count you cannot trust is
  * worse than no count.
  */
+/**
+ * What you have asked the model, and what it said back.
+ *
+ * The `passes` table has carried this since the first pass ever ran — its own
+ * comment reads "every LLM instruction the user gave, and what it did. Shown
+ * as the Passes log" — and nothing in the codebase read it. So an instruction
+ * that matched nothing was indistinguishable from one that worked: the page
+ * reloaded, a bar filled, it finished, and that was all you ever learned.
+ *
+ * runScore already writes the honest sentence, "no matches — try different
+ * words", so the only thing this had to do was show it. Green when the pass
+ * found something, gold when it did not — the same two colours the rest of
+ * the editor uses for "done" and "still wants you".
+ */
+function passLogPanel(passes: CutData["passes"]): string {
+  if (!passes.length) return "";
+
+  const rows = passes
+    .map((p) => {
+      /* The result sentence says which it was. Nothing here re-judges the
+         pass; it colours what the job already recorded. */
+      const empty = /^no matches/.test(p.result);
+      return `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span data-content style="flex:none;width:14px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${p.n}</span>
+        <span data-content style="flex:1 1 160px;min-width:min(150px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.8);line-height:1.5">${esc(p.instruction)}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</span>
+      </div>`;
+    })
+    .join("");
+
+  return `<div style="margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,0.05)">
+    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">What you've asked for so far</div>
+    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows}</div>
+  </div>`;
+}
+
+/**
+ * Find a word in this cut, and cut every place it is said.
+ *
+ * The palette searches the whole library and navigates away, which is the
+ * opposite of what you want mid-edit — so inside a 48-minute transcript there
+ * was no way to reach "sponsor" except scrolling, and no way to act on all of
+ * them at once. This is most of what "editing via text" means in practice.
+ *
+ * The count and the saving are the same rule as the clean-up chips: real, or
+ * not shown. Neither exists until a search comes back, so the button is here
+ * and empty rather than promising a number it has not measured.
+ */
+function findPanel(projectId: string): string {
+  /* A field, not a card. Boxed like the panel below it, with no heading of its
+     own, it read as an empty container waiting for something. */
+  return `<div class="find" data-project="${esc(projectId)}" style="margin-top:12px">
+    <div style="display:flex;gap:8px;align-items:center;background:${C.surface};border-radius:7px;padding:4px 4px 4px 12px;flex-wrap:wrap">
+      <input class="find-q" placeholder="Find a word in this cut" style="flex:1 1 120px;min-width:min(110px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};padding:7px 0;font-family:${FONT.ui}"/>
+      <span class="find-count" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums"></span>
+    </div>
+    <button class="find-cut" hidden style="margin-top:8px;width:100%;display:flex;align-items:baseline;justify-content:center;gap:6px;font-size:${SIZE.secondary};font-weight:600;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.75);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"></button>
+    <div class="find-hits" style="margin-top:8px;display:flex;flex-direction:column;gap:1px;max-height:230px;overflow-y:auto"></div>
+  </div>`;
+}
+
 function assist(d: CutData): string {
   /*
    * `note` is the honest count, and it is also what decides whether the chip
@@ -396,6 +459,7 @@ function assist(d: CutData): string {
       ${chip("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers))}
       ${chip("clean-pauses", "Tighten silences", note(d.cleanups.pauses))}
     </div>
+    ${passLogPanel(d.passes)}
   </div>`;
 }
 
@@ -473,8 +537,43 @@ export function renderCut(d: CutData): string {
     <div data-content style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been read yet — give it a minute.</div>`;
   }
 
+  /*
+   * The player, ours rather than the browser's.
+   *
+   * `controls` put Chrome's grey scrubber, its own timecode in its own font
+   * and its ⋮ menu in the middle of a designed dark page — the most visually
+   * wrong thing on the screen. It also could not do the one thing an editor
+   * needs of a player: change speed, which is how anybody gets through an
+   * hour of footage.
+   *
+   * Both icon states are rendered and toggled with `hidden`, the same way the
+   * recorder does it, so the markup is one thing to read and the client only
+   * decides which is showing. `video.currentTime` stays the single source of
+   * position, so the follow-along highlight and every block's play button go
+   * on working untouched.
+   */
+  const ctl = `flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:${RADIUS.button};background:transparent;border:none;color:${C.ink70};cursor:pointer;font-family:${FONT.ui};font-size:${SIZE.meta};font-weight:600`;
+  const clockStyle = `flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums`;
+
   const player = d.sourceKey
-    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>`
+    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+      <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
+        <button class="pl-play" aria-label="Play" style="${ctl}">
+          <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
+          <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
+        </button>
+        <span class="pl-now" data-content style="${clockStyle}">0:00</span>
+        <div class="pl-track" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+          style="position:relative;flex:1 1 60px;min-width:min(50px,100%);height:16px;cursor:pointer;touch-action:none">
+          <div style="position:absolute;left:0;right:0;top:7px;height:2px;background:rgba(255,255,255,0.10)"></div>
+          <div class="pl-buffer" style="position:absolute;left:0;top:7px;width:0;height:2px;background:rgba(255,255,255,0.18)"></div>
+          <div class="pl-played" style="position:absolute;left:0;top:7px;width:0;height:2px;background:${C.ink}"></div>
+          <div class="pl-knob" style="position:absolute;left:0;top:4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:${C.ink}"></div>
+        </div>
+        <span class="pl-dur" data-content style="${clockStyle}">${hms(0)}</span>
+        <button class="pl-rate" aria-label="Speed" style="${ctl};width:auto;padding:0 6px"><span data-content>1×</span></button>
+        <button class="pl-full" aria-label="Fullscreen" style="${ctl};width:auto;padding:0 6px">Full</button>
+      </div>`
     : "";
 
   /*
@@ -522,6 +621,7 @@ export function renderCut(d: CutData): string {
           : ""
       }
       <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.55">Strike a line or a word to cut it. Move a block to change the order. The + adds your voice between them.</div>
+      ${findPanel(d.projectId)}
       ${assist(d)}
     </div>
     <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:1px">

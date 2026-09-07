@@ -8,8 +8,12 @@
  *
  * It matters because Editor is a nav destination: someone clicks it before
  * they have uploaded anything, and a blank screen tells them the product is
- * unfinished. This gives them the three real ways in — start something new,
- * open footage already here, or pick up an edit in progress.
+ * unfinished.
+ *
+ * It is now only reached when there is NOTHING to open — /editor redirects
+ * into the edit you were last in — so it shows the two ways to start one:
+ * a new video, or footage already here. "Pick up an edit" used to live here
+ * too, which made this page Home with different words; Home answers that now.
  *
  * Every string is the prototype's own.
  */
@@ -29,21 +33,8 @@ export interface IntakeSource {
   transcript_state: string;
 }
 
-export interface IntakeEdit {
-  id: string;
-  title: string;
-  poster_r2_key: string | null;
-  sourceFilename: string | null;
-  kept: number;
-  runtime_s: number | null;
-  updated_at: number;
-  /** An edit opened without a brief: its blocks are lines, not scored clips. */
-  scratch?: boolean;
-}
-
 export interface EditorIntakeData {
   sources: IntakeSource[];
-  edits: IntakeEdit[];
 }
 
 const SECTION = `font-size:${SIZE.body};font-weight:600;color:${C.ink45}`;
@@ -98,22 +89,6 @@ export function renderEditorIntake(d: EditorIntakeData): string {
     return parts.join(" · ");
   };
 
-  const editMeta = (e: IntakeEdit) => {
-    const parts: string[] = [];
-    if (e.sourceFilename) parts.push(e.sourceFilename);
-    /* "clips" is the scored vocabulary and means nothing on an edit that was
-       never scored — there, the unit is lines of transcript. */
-    if (e.kept) {
-      parts.push(
-        e.scratch
-          ? `${e.kept} line${e.kept === 1 ? "" : "s"}`
-          : `${e.kept} clip${e.kept === 1 ? "" : "s"} kept`,
-      );
-    }
-    if (e.runtime_s) parts.push(`${hms(e.runtime_s)} so far`);
-    return parts.length ? parts.join(" · ") : touched(e.updated_at);
-  };
-
   /*
    * The composer carries the ids the client already binds for upload and
    * "Begin" (#composer, #brief, #filePick, #attached…), so a video dropped
@@ -157,42 +132,10 @@ export function renderEditorIntake(d: EditorIntakeData): string {
     }</div>
   </div>`;
 
-  const right = `<div>
-    <div style="display:flex;align-items:baseline;gap:12px">
-      <span style="${SECTION}">Pick up an edit</span>
-      ${
-        /*
-         * The way into Projects.
-         *
-         * /projects renders, and NOTHING in the UI linked to it — the only
-         * route in was the "g p" shortcut, which the owner has said plainly
-         * they do not use. This list shows six; Projects shows the rest, which
-         * is the only thing it has that this does not.
-         */
-        d.edits.length > 6
-          ? `<a href="/projects" style="margin-left:auto;font-size:${SIZE.secondary};color:${C.ink45};white-space:nowrap">All ${d.edits.length} →</a>`
-          : ""
-      }
-    </div>
-    <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
-      d.edits.length
-        ? d.edits
-            .slice(0, 6)
-            .map((e) =>
-              row({ href: `/p/${e.id}/cut`, posterKey: e.poster_r2_key, title: e.title, meta: editMeta(e), action: "Continue", menu: itemMenu("projects", e.id, e.title, "edit") }),
-            )
-            .join("")
-        : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing on the go</div>`
-    }</div>
-  </div>`;
-
   return `<div>
     <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.02em">Editor</div>
     <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px;max-width:520px">Give it a video and say what you want out of it — it cuts, you adjust, nothing renders until you say so.</div>
     ${composer}
-    <div style="margin-top:32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:26px;align-items:start">
-      ${left}
-      ${right}
-    </div>
+    <div style="margin-top:32px">${left}</div>
   </div>`;
 }

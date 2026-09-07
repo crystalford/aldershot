@@ -248,7 +248,7 @@ html{scrollbar-gutter:stable}
  *
  * Markup only. The client wires them, and everything starts hidden.
  */
-function overlays(): string {
+function overlays(editing: boolean): string {
   const scrim = `position:fixed;inset:0;z-index:70;background:rgba(6,6,8,0.62);backdrop-filter:blur(3px)`;
   const panel = `background:#141418;border-radius:${RADIUS.card};box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,0.07)`;
 
@@ -284,6 +284,29 @@ function overlays(): string {
         ${key("?", "This list")}
         ${key("Esc", "Close")}
       </div>
+      ${
+        /*
+         * The editor's keys, only where the editor is.
+         *
+         * Whether they work is decided by one thing in the client — whether
+         * #cut-video is on the page — so that is what decides whether they
+         * are listed, rather than a flag each new route has to remember to
+         * set. A sheet promising keys you do not have is the same bug as a
+         * button that does nothing.
+         */
+        editing
+          ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid ${C.hairline}">
+              <div data-content style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">In the editor</div>
+              <div style="margin-top:6px">
+                ${key("Space", "Play or pause")}
+                ${key("← →", "Five seconds")}
+                ${key("J K L", "Back, stop, faster")}
+                ${key("⌫", "Cut what you've selected")}
+                ${key("⌘F", "Find a word in this cut")}
+              </div>
+            </div>`
+          : ""
+      }
     </div>
   </div>`;
 
@@ -337,7 +360,7 @@ ${body}
 </div>
 </div>
 <div id="toasts" style="position:fixed;left:50%;transform:translateX(-50%);bottom:22px;z-index:60;display:flex;flex-direction:column;gap:8px;align-items:center"></div>
-${overlays()}
+${overlays(body.includes('id="cut-video"'))}
 <script src="/app.js" type="module"></script>
 </body>
 </html>`;
