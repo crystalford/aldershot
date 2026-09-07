@@ -168,8 +168,21 @@ app.get("/app.js", (c) =>
  * state for all of them — these are the prototype's own empty states, not
  * placeholders, and they ship as-is.
  */
-function surface(view: View, screenLabel: string, title: string, body: string, shortsCtx: ShortsCtx = "nav") {
-  return page({ title, view, screenLabel, shortsCtx }, body);
+/*
+ * `email` rather than a whole user: the shell only needs an initial for the
+ * avatar, which was a hardcoded "C" — the owner's — on every account. Every
+ * authenticated route has the user in hand; a signed-out page passes nothing
+ * and gets the neutral mark.
+ */
+function surface(
+  view: View,
+  screenLabel: string,
+  title: string,
+  body: string,
+  shortsCtx: ShortsCtx = "nav",
+  email?: string | null,
+) {
+  return page({ title, view, screenLabel, shortsCtx, email }, body);
 }
 
 /* ── Auth ──────────────────────────────────────────────────────────────
@@ -310,6 +323,24 @@ app.get("/", async (c) => {
    */
   const visitor = await currentUser(c.env, c.req.header("cookie"));
   if (!visitor) {
+    /*
+     * "Start with Studio" has to end at Studio.
+     *
+     * The paid CTA pointed at the same free form as the free one, so the plan
+     * this page sells could not be bought from it. Checkout needs an account
+     * to attach a subscription to, so signing in comes first — the choice is
+     * parked in a short-lived cookie and picked up below once there is a user.
+     * Both ways in (Google and the email link) land back here, which is why
+     * the cookie is read here rather than inside either of them.
+     */
+    const wants = c.req.query("plan") === "studio";
+    if (wants) {
+      c.header(
+        "set-cookie",
+        "want_plan=studio; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax; Secure",
+        { append: true },
+      );
+    }
     return c.html(
       renderLanding({
         sentTo: c.req.query("sent") ?? null,
@@ -321,6 +352,13 @@ app.get("/", async (c) => {
   }
 
   const user = visitor;
+
+  /* Signed in, and they asked for Studio on the way. Clear it first, so a
+     checkout that fails does not trap them in a redirect loop. */
+  if (/(^|;\s*)want_plan=studio/.test(c.req.header("cookie") ?? "")) {
+    c.header("set-cookie", "want_plan=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure", { append: true });
+    if (user.plan !== "studio" && user.plan !== "pro") return c.redirect("/settings?checkout=studio", 302);
+  }
   const [sources, jobs, finished, projects] = await Promise.all([
     listSources(c.env.DB, user.id),
     activeJobs(c.env.DB, user.id),
@@ -328,9 +366,18 @@ app.get("/", async (c) => {
     listProjects(c.env.DB, user.id),
   ]);
 
-  // "Fresh" means the account genuinely has nothing — that is what earns the
-  // demo card and the "How this goes" walkthrough. One upload and they go.
-  const isFresh = sources.length === 0;
+  /*
+   * "Fresh" means the account genuinely has nothing to work with — that is
+   * what earns the "How this goes" walkthrough.
+   *
+   * It was `sources.length === 0`, and a source row is created the instant an
+   * upload STARTS, before a single byte lands. So the walkthrough vanished
+   * mid-onboarding: the user clicked Begin, the page reloaded, and the
+   * instructions they were following disappeared while their file was still
+   * going up. Somebody whose only video is still uploading has nothing to work
+   * with yet.
+   */
+  const isFresh = !sources.some((s) => s.transcript_state !== "pending");
   const byId = new Map(sources.map((s) => [s.id, s]));
 
   return c.html(
@@ -341,9 +388,20 @@ app.get("/", async (c) => {
       renderHome({
         name: user.name,
         isFresh,
-        // "Overnight" is the last 12 hours — real arrivals only, never a
-        // number invented to make the greeting feel alive.
-        landedOvernight: sources.filter((s) => Date.now() - s.created_at < 12 * 3600 * 1000).length,
+        /*
+         * "Overnight" means while you were away, and it has to be at least
+         * plausibly true: this counted anything from the last 12 hours, so a
+         * file uploaded sixty seconds ago was announced as having landed
+         * overnight. It now needs the video to be READ — a still-uploading one
+         * has not landed — and the greeting only claims "overnight" when the
+         * arrival really was hours ago and you were not here for it.
+         */
+        landedOvernight: sources.filter(
+          (s) =>
+            s.transcript_state === "ready" &&
+            Date.now() - s.created_at < 12 * 3600 * 1000 &&
+            Date.now() - s.created_at > 60 * 60 * 1000,
+        ).length,
         /* A job whose source has been deleted is not work in progress — it is
            a leftover. Showing it produced "reading a video and a video". */
         working: jobs
@@ -400,6 +458,8 @@ app.get("/", async (c) => {
             next_action: p.next_action, poster_r2_key: p.poster_r2_key,
           })),
       }),
+      "nav",
+      user.email,
     ),
   );
 });
@@ -538,6 +598,8 @@ app.get("/footage", async (c) => {
         sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
         moments, momentCount, threads, mode, q: query, meaningUnavailable, canMean, thread, sort,
       }),
+      "nav",
+      user.email,
     ),
   );
 });
@@ -865,6 +927,7 @@ app.get("/clipping", async (c) => {
         fromEditor: false,
       }),
       "nav",
+      user.email,
     ),
   );
 });
@@ -1963,6 +2026,8 @@ app.get("/editor", async (c) => {
         })),
         edits,
       }),
+      "nav",
+      user.email,
     ),
   );
 });

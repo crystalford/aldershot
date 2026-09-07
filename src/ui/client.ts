@@ -2384,6 +2384,13 @@ if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
    Stripe's own hosted page — no card fields ever live on this origin. */
 const planAction = document.querySelector("#planAction");
 if (planAction) {
+  /* Arriving from the landing page's "Start with Studio": the plan was chosen
+     before there was an account to attach it to, so checkout opens itself
+     here rather than asking again for something already asked. */
+  if (new URLSearchParams(location.search).get("checkout") === "studio" &&
+      planAction.getAttribute("data-mode") === "checkout") {
+    setTimeout(() => planAction.click(), 0);
+  }
   planAction.addEventListener("click", async () => {
     planAction.disabled = true;
     const was = planAction.textContent;

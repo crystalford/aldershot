@@ -61,7 +61,19 @@ function wordmark(markLead: string): string {
   return `<a href="/" data-mark="true" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:${SIZE.wordmark};letter-spacing:-0.01em;cursor:pointer;color:${C.ink}">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)">${bar("")}${bar("opacity:.5;")}${bar("opacity:.22;")}</span></a>`;
 }
 
-function nav(view: View, shortsCtx: ShortsCtx): string {
+/**
+ * The signed-in initial.
+ *
+ * From the address, because that is the only name this product actually has —
+ * it never asks for one. An address with no letter at all falls back to the
+ * bullet rather than to somebody else's initial.
+ */
+function initialFor(email: string | null | undefined): string {
+  const c = String(email || "").trim().replace(/[^a-z]/gi, "").charAt(0);
+  return c ? c.toUpperCase() : "\u2022";
+}
+
+function nav(view: View, shortsCtx: ShortsCtx, email?: string | null): string {
   const lit = navItemFor(view, shortsCtx);
   const markLead = MARK_LEAD[view] || MARK_LEAD_DEFAULT;
   const link = (href: string, label: string, item: NavItem) =>
@@ -81,9 +93,12 @@ function nav(view: View, shortsCtx: ShortsCtx): string {
       <span tabindex="0" role="button" id="navKeys" style="font-size:11.5px;font-family:${FONT.mono};color:rgba(236,236,241,0.28);cursor:pointer">?</span>
       <div tabindex="0" role="button" id="navNotif" style="position:relative;cursor:pointer">
         ${iconBell({ size: 15, stroke: "rgba(236,236,241,0.5)" })}
-        <span style="position:absolute;top:-2px;right:-3px;width:6px;height:6px;border-radius:50%;background:${ACCENT.gold}"></span>
+        <!-- Hidden until the client finds something unread. It rendered lit
+             unconditionally, so every page flashed an alert badge on load —
+             including a brand-new account with nothing running. -->
+        <span id="navNotifDot" hidden style="position:absolute;top:-2px;right:-3px;width:6px;height:6px;border-radius:50%;background:${ACCENT.gold}"></span>
       </div>
-      <a href="/settings" style="width:28px;height:28px;border-radius:50%;background:${C.pill};display:flex;align-items:center;justify-content:center;font-size:${SIZE.secondary};color:${C.ink70};cursor:pointer">C</a>
+      <a href="/settings" title="${esc(email ?? "")}" style="width:28px;height:28px;border-radius:50%;background:${C.pill};display:flex;align-items:center;justify-content:center;font-size:${SIZE.secondary};color:${C.ink70};cursor:pointer">${initialFor(email)}</a>
     </div>
   </div>
   </div>`;
@@ -279,6 +294,11 @@ export interface PageOpts {
   shortsCtx?: ShortsCtx;
   /** Screen label, used by the reference screenshots and the fidelity diff. */
   screenLabel: string;
+  /**
+   * Who is signed in. The avatar was a hardcoded "C" — the owner's initial, on
+   * every account, from the first second of the first page.
+   */
+  email?: string | null;
 }
 
 /**
@@ -298,7 +318,7 @@ ${GLOBAL_CSS}</style>
 </head>
 <body>
 <div style="min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT.ui}">
-${nav(view, shortsCtx)}
+${nav(view, shortsCtx, opts.email)}
 <div data-screen-label="${esc(screenLabel)}" style="display:flex;justify-content:center;padding:0 ${LAYOUT.gutter}">
   <div style="width:${LAYOUT.width};padding:${LAYOUT.pagePad}">
 ${body}

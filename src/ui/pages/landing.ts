@@ -86,10 +86,20 @@ const TRANSCRIPT = [
   { ts: "41:39", text: "That's the whole trick. Start smaller than feels serious.", cut: false },
 ];
 
+/*
+ * The lines are an illustration; the NUMBERS were not.
+ *
+ * 94% / 91% / 86% were invented and shown as product output — the same class
+ * of claim as the fake demo card already removed from Home for exactly this
+ * reason. Nothing in the product computes a "match %" at all, so there is no
+ * honest number to put here and the column is gone. What the example is
+ * actually showing — that a search returns real quotes with timecodes — it
+ * still shows.
+ */
 const HITS = [
-  { text: "“Fine — yes, we moved the launch before the review came in.”", match: "94%", color: GREEN },
-  { text: "“The roadmap slide was aspirational. Very aspirational.”", match: "91%", color: GREEN },
-  { text: "“We script the ‘unscripted’ Q&A. Everyone does.”", match: "86%", color: GOLD },
+  { text: "“Fine — yes, we moved the launch before the review came in.”", at: "12:04", color: GREEN },
+  { text: "“The roadmap slide was aspirational. Very aspirational.”", at: "27:41", color: GREEN },
+  { text: "“We script the ‘unscripted’ Q&A. Everyone does.”", at: "38:16", color: GOLD },
 ];
 
 const FREE_FEATS = [
@@ -327,7 +337,10 @@ export function renderLanding(d: LandingData): string {
             <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)"><img src="/assets/frame-2.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
             <span style="font-size:12px;color:rgba(236,236,241,0.6);font-family:${MONO};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">podcast_ep_141_full.mp4 · 1.2 GB</span>
           </div>
-          <div style="flex:none;font-size:13.5px;font-weight:600;padding:9px 22px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</div>
+          <!-- A real link. This was a <div> styled to look exactly like the
+               button below it, so the most prominent thing in the hero did
+               nothing at all when clicked. -->
+          <a href="#start" style="flex:none;font-size:13.5px;font-weight:600;padding:9px 22px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</a>
         </div>
       </div>
       <!-- inline-flex, so the row shrink-wraps its two children and stays
@@ -423,7 +436,7 @@ export function renderLanding(d: LandingData): string {
               (h) => `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#101014">
                 <span style="flex:none;width:6px;height:6px;border-radius:50%;background:${h.color}"></span>
                 <span style="font-size:12.5px;color:rgba(236,236,241,0.8);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.text}</span>
-                <span style="flex:none;font-size:10.5px;font-family:${MONO};color:${h.color}">${h.match}</span>
+                <span style="flex:none;font-size:10.5px;font-family:${MONO};color:${h.color}">${h.at}</span>
               </div>`,
             ).join("")}
           </div>
@@ -478,7 +491,12 @@ export function renderLanding(d: LandingData): string {
           <div style="margin-top:10px;font-size:32px;font-weight:700;letter-spacing:-0.03em">$29</div>
           <div style="font-size:12.5px;color:rgba(236,236,241,0.4);margin-top:3px">a month</div>
           <div style="margin-top:18px;display:flex;flex-direction:column;gap:9px">${PRO_FEATS.map((t) => feat(t, GOLD)).join("")}</div>
-          <a href="#start" style="display:block;text-align:center;margin-top:22px;font-size:13.5px;font-weight:600;padding:11px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start with Studio</a>
+          <!-- Signing in first is the honest order: checkout needs an account
+               to attach the subscription to. This pointed at the same free
+               form as the Free tier's button, so the paid plan could not be
+               bought from the page selling it. The plan is carried as a query
+               param so the new account lands on checkout, not on Home. -->
+          <a href="/?plan=studio#start" style="display:block;text-align:center;margin-top:22px;font-size:13.5px;font-weight:600;padding:11px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start with Studio</a>
         </div>
       </div>
       <div style="margin-top:16px;text-align:center;font-size:12px;color:rgba(236,236,241,0.3)">Need more room? Storage add-ons, or point sources at a bucket you own.</div>
