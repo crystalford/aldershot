@@ -336,6 +336,250 @@ document.querySelectorAll(".item-menu").forEach((menu) => {
   });
 });
 
+/*
+ * Draw a moment of a video onto a canvas.
+ *
+ * Per-moment stills are not extracted anywhere on the server — a clip's
+ * frame_r2_key is the SOURCE's poster — so every clip from one video wore the
+ * same image, and when that video opens on black (both of the owner's do)
+ * every card was a black rectangle. A hidden video is seeked to each moment in
+ * turn and drawn to its canvas.
+ *
+ * This was the editor's, for block rows. Clipping needed exactly the same
+ * thing for short cards, and the subtle parts — one decode at a time, only for
+ * what is on screen, a timeout so one unseekable moment cannot wedge the
+ * queue, silence on failure — are not worth having two of.
+ *
+ * Each canvas carries data-at (milliseconds). data-media names its own file;
+ * without one it uses defaultSrc, which is how the editor works since all its
+ * blocks come from the same source. Returns a function that takes on canvases
+ * that arrive later.
+ */
+/*
+ * The player, driven from the video rather than by it.
+ *
+ * Everything here reads video.currentTime and writes to it; nothing keeps a
+ * second idea of where the video is. That is what lets the transcript, the
+ * per-block play buttons and this bar all agree without knowing about each
+ * other — and it is why replacing the browser's controls changed nothing
+ * about the editing gestures.
+ *
+ * A ROOT rather than the page's only player: Clipping puts one of these on
+ * every card. Every part is optional, so a card can carry a compact bar —
+ * play, scrub, position, fullscreen — without a duration or a speed control it
+ * has no room for.
+ */
+function wirePlayer(root, video) {
+  const playBtn = root.querySelector(".pl-play");
+  const iPlay = root.querySelector(".pl-i-play");
+  const iPause = root.querySelector(".pl-i-pause");
+  const track = root.querySelector(".pl-track");
+  const played = root.querySelector(".pl-played");
+  const buffered = root.querySelector(".pl-buffer");
+  const knob = root.querySelector(".pl-knob");
+  const nowEl = root.querySelector(".pl-now");
+  const durEl = root.querySelector(".pl-dur");
+  const rateBtn = root.querySelector(".pl-rate");
+  const fullBtn = root.querySelector(".pl-full");
+
+  const secs = (n) => {
+    const t = Math.max(0, Math.floor(n || 0));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+      : m + ":" + String(sec).padStart(2, "0");
+  };
+
+  const paintFace = () => {
+    const playing = !video.paused && !video.ended;
+    if (iPlay) iPlay.hidden = playing;
+    if (iPause) iPause.hidden = !playing;
+    if (playBtn) playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+  };
+
+  const paintBar = () => {
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    const pct = Math.min(100, Math.max(0, (video.currentTime / dur) * 100));
+    if (played) played.style.width = pct + "%";
+    if (knob) knob.style.left = pct + "%";
+    if (track) track.setAttribute("aria-valuenow", String(Math.round(pct)));
+    if (nowEl) nowEl.textContent = secs(video.currentTime);
+
+    /* The buffered range that covers the playhead — not range zero, which on
+       a seeked file is whatever was loaded first and usually somewhere
+       else entirely. */
+    if (!buffered) return;
+    let end = 0;
+    for (let i = 0; i < video.buffered.length; i++) {
+      if (video.buffered.start(i) <= video.currentTime && video.buffered.end(i) >= video.currentTime) {
+        end = video.buffered.end(i);
+      }
+    }
+    buffered.style.width = Math.min(100, (end / dur) * 100) + "%";
+  };
+
+  const paintDuration = () => {
+    if (durEl && Number.isFinite(video.duration)) durEl.textContent = secs(video.duration);
+    paintBar();
+  };
+
+  playBtn?.addEventListener("click", () => {
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  });
+
+  video.addEventListener("play", paintFace);
+  video.addEventListener("pause", paintFace);
+  video.addEventListener("ended", paintFace);
+  video.addEventListener("timeupdate", paintBar);
+  video.addEventListener("progress", paintBar);
+  video.addEventListener("loadedmetadata", paintDuration);
+  if (Number.isFinite(video.duration)) paintDuration();
+  paintFace();
+
+  /*
+   * Scrubbing, with a pointer capture.
+   *
+   * Without the capture, dragging past the edge of the bar drops the drag
+   * where it landed and leaves the playhead wherever it happened to be —
+   * which on a narrow bar is most drags.
+   */
+  const seekTo = (clientX) => {
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    const r = track.getBoundingClientRect();
+    const at = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    video.currentTime = at * dur;
+    paintBar();
+  };
+
+  let dragging = false;
+  track?.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    track.setPointerCapture(e.pointerId);
+    seekTo(e.clientX);
+  });
+  track?.addEventListener("pointermove", (e) => { if (dragging) seekTo(e.clientX); });
+  track?.addEventListener("pointerup", (e) => {
+    dragging = false;
+    try { track.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+  });
+  track?.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); video.currentTime = video.currentTime + 5; }
+  });
+
+  /* Speed, because reviewing an hour of footage at 1x is most of the hour.
+     A cycle rather than a menu: four values is not a list worth opening. */
+  const RATES = [1, 1.25, 1.5, 2, 0.5];
+  let rateAt = 0;
+  rateBtn?.addEventListener("click", () => {
+    rateAt = (rateAt + 1) % RATES.length;
+    video.playbackRate = RATES[rateAt];
+    const span = rateBtn.querySelector("span");
+    if (span) span.textContent = RATES[rateAt] + "\u00D7";
+  });
+
+  fullBtn?.addEventListener("click", () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else if (video.requestFullscreen) void video.requestFullscreen().catch(() => {});
+  });
+}
+
+function paintMoments(canvases, defaultSrc) {
+  const list = [...canvases];
+  if (!list.length) return () => {};
+
+  /* Same origin, so the canvas is never tainted. Setting crossOrigin would
+     force a CORS preflight that can only turn a working load into a failure. */
+  const decoders = new Map();
+  const decoderFor = (src) => {
+    let d = decoders.get(src);
+    if (d) return d;
+    const v = document.createElement("video");
+    v.src = src;
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    /* Seeking a video that has no metadata yet does nothing, so every frame
+       would sit out its four-second timeout and give up. The editor's version
+       waited for loadedmetadata before it started observing at all; here each
+       decoder carries its own wait, because a page can be drawing moments out
+       of several different files. */
+    d = {
+      video: v,
+      ready: new Promise((resolve) => {
+        if (v.readyState >= 1) return resolve();
+        v.addEventListener("loadedmetadata", () => resolve(), { once: true });
+        v.addEventListener("error", () => resolve(), { once: true });
+        setTimeout(resolve, 8000);
+      }),
+    };
+    v.load();
+    decoders.set(src, d);
+    return d;
+  };
+
+  const queue = [];
+  let running = false;
+
+  const drain = async () => {
+    if (running || !queue.length) return;
+    running = true;
+    while (queue.length) {
+      const canvas = queue.shift();
+      const src = canvas.getAttribute("data-media")
+        ? "/media/" + canvas.getAttribute("data-media")
+        : defaultSrc;
+      if (!src) continue;
+      const at = Number(canvas.getAttribute("data-at") || 0) / 1000;
+      const decoder = decoderFor(src);
+      await decoder.ready;
+      const shot = decoder.video;
+      try {
+        await new Promise((resolve, reject) => {
+          const done = () => { cleanup(); resolve(); };
+          const fail = () => { cleanup(); reject(new Error("seek")); };
+          const cleanup = () => {
+            shot.removeEventListener("seeked", done);
+            shot.removeEventListener("error", fail);
+            clearTimeout(timer);
+          };
+          /* A moment that will not seek must not stall the queue behind it for
+             ever; the rest of the rows still deserve their frames. */
+          const timer = setTimeout(fail, 4000);
+          shot.addEventListener("seeked", done, { once: true });
+          shot.addEventListener("error", fail, { once: true });
+          shot.currentTime = at;
+        });
+        canvas.getContext("2d").drawImage(shot, 0, 0, canvas.width, canvas.height);
+        canvas.dataset.painted = "1";
+      } catch (err) {
+        /* No frame for this one. Every card is still complete without it. */
+      }
+    }
+    running = false;
+  };
+
+  const watch = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting || e.target.dataset.painted === "1" || e.target.dataset.queued === "1") continue;
+      e.target.dataset.queued = "1";
+      queue.push(e.target);
+    }
+    void drain();
+  }, { rootMargin: "300px" });
+
+  /* More rows arrive as you scroll a long transcript; they have to be taken on
+     by the same observer and the same one-at-a-time queue, or a long source
+     would either paint nothing after the first window or start a second video
+     decoding in parallel with this one. */
+  const observe = (els) => [...els].forEach((c) => watch.observe(c));
+  observe(list);
+  return observe;
+}
+
 /* ── The editor ────────────────────────────────────────────────────────
    One surface, five gestures: strike a line, strike a word inside it, move a
    block, insert one, export. They were spread across four stages that felt
@@ -368,201 +612,19 @@ if (blocksEl) {
   /* Assigned by paintFrames and by the word indexer, and called whenever a new
      window of blocks is appended. Empty until then, so the loader can call
      them unconditionally. */
+  /* Takes on canvases that arrive with a later window of blocks. Empty until
+     paintMoments has run, so the loader can call it unconditionally. */
   let observeFrames = () => {};
   let reindexWords = () => {};
 
-  const paintFrames = () => {
-    const canvases = [...blocksEl.querySelectorAll(".blk-frame")];
-    if (!canvases.length || !video || !video.getAttribute("src")) return;
+  /* The editor's blocks all come out of one file, so its canvases carry only
+     a time and the source is passed in. */
+  observeFrames = paintMoments(blocksEl.querySelectorAll(".blk-frame"), video?.getAttribute("src") || "");
 
-    const shot = document.createElement("video");
-    shot.src = video.getAttribute("src");
-    shot.muted = true;
-    shot.playsInline = true;
-    shot.preload = "metadata";
-    /* No crossOrigin: the source is same-origin, so the canvas is never
-       tainted, and setting it forces a CORS preflight that can only turn a
-       working load into a failed one. */
-
-    const queue = [];
-    let running = false;
-
-    const drain = async () => {
-      if (running || !queue.length) return;
-      running = true;
-      while (queue.length) {
-        const canvas = queue.shift();
-        const at = Number(canvas.closest(".blk-play")?.getAttribute("data-start") || 0) / 1000;
-        try {
-          await new Promise((resolve, reject) => {
-            const done = () => { cleanup(); resolve(); };
-            const fail = () => { cleanup(); reject(new Error("seek")); };
-            const cleanup = () => {
-              shot.removeEventListener("seeked", done);
-              shot.removeEventListener("error", fail);
-              clearTimeout(timer);
-            };
-            /* A source that will not seek must not stall the queue behind it
-               forever; the rest of the rows still deserve their frames. */
-            const timer = setTimeout(fail, 4000);
-            shot.addEventListener("seeked", done, { once: true });
-            shot.addEventListener("error", fail, { once: true });
-            shot.currentTime = at;
-          });
-          canvas.getContext("2d").drawImage(shot, 0, 0, canvas.width, canvas.height);
-          canvas.dataset.painted = "1";
-        } catch (err) {
-          /* No frame for this one. The button is still complete without it. */
-        }
-      }
-      running = false;
-    };
-
-    const watch = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting || e.target.dataset.painted === "1" || e.target.dataset.queued === "1") continue;
-        e.target.dataset.queued = "1";
-        queue.push(e.target);
-      }
-      void drain();
-    }, { rootMargin: "300px" });
-
-    /* More blocks arrive as you scroll; their canvases have to be taken on by
-       the same observer and the same one-at-a-time queue, or a long transcript
-       would either paint nothing after the first window or start a second
-       video decoding in parallel with this one. */
-    observeFrames = () => blocksEl.querySelectorAll(".blk-frame").forEach((c) => watch.observe(c));
-    shot.addEventListener("loadedmetadata", observeFrames, { once: true });
-    shot.load();
-  };
-  paintFrames();
-
-  /*
-   * The player, driven from the video rather than by it.
-   *
-   * Everything here reads video.currentTime and writes to it; nothing keeps a
-   * second idea of where the video is. That is what lets the transcript, the
-   * per-block play buttons and this bar all agree without knowing about each
-   * other — and it is why replacing the browser's controls changed nothing
-   * about the editing gestures.
-   */
+  /* One bar, one video. Clipping puts one on every card, so the wiring takes
+     a root rather than reaching for the page's only player. */
   const playerEl = document.querySelector(".player");
-  if (playerEl && video) {
-    const playBtn = playerEl.querySelector(".pl-play");
-    const iPlay = playerEl.querySelector(".pl-i-play");
-    const iPause = playerEl.querySelector(".pl-i-pause");
-    const track = playerEl.querySelector(".pl-track");
-    const played = playerEl.querySelector(".pl-played");
-    const buffered = playerEl.querySelector(".pl-buffer");
-    const knob = playerEl.querySelector(".pl-knob");
-    const nowEl = playerEl.querySelector(".pl-now");
-    const durEl = playerEl.querySelector(".pl-dur");
-    const rateBtn = playerEl.querySelector(".pl-rate");
-    const fullBtn = playerEl.querySelector(".pl-full");
-
-    const secs = (n) => {
-      const t = Math.max(0, Math.floor(n || 0));
-      const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
-      return h > 0
-        ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
-        : m + ":" + String(sec).padStart(2, "0");
-    };
-
-    const paintFace = () => {
-      const playing = !video.paused && !video.ended;
-      iPlay.hidden = playing;
-      iPause.hidden = !playing;
-      playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
-    };
-
-    const paintBar = () => {
-      const dur = video.duration;
-      if (!Number.isFinite(dur) || dur <= 0) return;
-      const pct = Math.min(100, Math.max(0, (video.currentTime / dur) * 100));
-      played.style.width = pct + "%";
-      knob.style.left = pct + "%";
-      track.setAttribute("aria-valuenow", String(Math.round(pct)));
-      nowEl.textContent = secs(video.currentTime);
-
-      /* The buffered range that covers the playhead — not range zero, which on
-         a seeked file is whatever was loaded first and usually somewhere
-         else entirely. */
-      let end = 0;
-      for (let i = 0; i < video.buffered.length; i++) {
-        if (video.buffered.start(i) <= video.currentTime && video.buffered.end(i) >= video.currentTime) {
-          end = video.buffered.end(i);
-        }
-      }
-      buffered.style.width = Math.min(100, (end / dur) * 100) + "%";
-    };
-
-    const paintDuration = () => {
-      if (Number.isFinite(video.duration)) durEl.textContent = secs(video.duration);
-      paintBar();
-    };
-
-    playBtn.addEventListener("click", () => {
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
-    });
-
-    video.addEventListener("play", paintFace);
-    video.addEventListener("pause", paintFace);
-    video.addEventListener("ended", paintFace);
-    video.addEventListener("timeupdate", paintBar);
-    video.addEventListener("progress", paintBar);
-    video.addEventListener("loadedmetadata", paintDuration);
-    if (Number.isFinite(video.duration)) paintDuration();
-    paintFace();
-
-    /*
-     * Scrubbing, with a pointer capture.
-     *
-     * Without the capture, dragging past the edge of the bar drops the drag
-     * where it landed and leaves the playhead wherever it happened to be —
-     * which on a narrow bar is most drags.
-     */
-    const seekTo = (clientX) => {
-      const dur = video.duration;
-      if (!Number.isFinite(dur) || dur <= 0) return;
-      const r = track.getBoundingClientRect();
-      const at = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-      video.currentTime = at * dur;
-      paintBar();
-    };
-
-    let dragging = false;
-    track.addEventListener("pointerdown", (e) => {
-      dragging = true;
-      track.setPointerCapture(e.pointerId);
-      seekTo(e.clientX);
-    });
-    track.addEventListener("pointermove", (e) => { if (dragging) seekTo(e.clientX); });
-    track.addEventListener("pointerup", (e) => {
-      dragging = false;
-      try { track.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
-    });
-    track.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft") { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); }
-      else if (e.key === "ArrowRight") { e.preventDefault(); video.currentTime = video.currentTime + 5; }
-    });
-
-    /* Speed, because reviewing an hour of footage at 1x is most of the hour.
-       A cycle rather than a menu: four values is not a list worth opening. */
-    const RATES = [1, 1.25, 1.5, 2, 0.5];
-    let rateAt = 0;
-    rateBtn.addEventListener("click", () => {
-      rateAt = (rateAt + 1) % RATES.length;
-      video.playbackRate = RATES[rateAt];
-      const span = rateBtn.querySelector("span");
-      if (span) span.textContent = RATES[rateAt] + "\u00D7";
-    });
-
-    fullBtn.addEventListener("click", () => {
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else if (video.requestFullscreen) void video.requestFullscreen().catch(() => {});
-    });
-  }
+  if (playerEl && video) wirePlayer(playerEl, video);
 
   /*
    * The word being spoken lights up, and a selection can be cut.
@@ -959,7 +1021,7 @@ if (blocksEl) {
       }
 
       reindexWords();
-      observeFrames();
+      observeFrames(blocksEl.querySelectorAll(".blk-frame"));
     } catch (err) {
       sentinel.dataset.busy = "0";
       toast((err && err.message) || "Couldn't load the rest");
@@ -1360,7 +1422,7 @@ if (blocksEl) {
         /* The highlight and the selection counter keep their own index of the
            words; blocks that arrive this way have to be in it too. */
         reindexWords();
-        observeFrames();
+        observeFrames(blocksEl.querySelectorAll(".blk-frame"));
       }
       if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
     };
@@ -3299,15 +3361,289 @@ if (clipDrop) {
 
 /* Make the video of one short. Rendering costs money, so it happens when you
    ask and not because a scoring pass found something. */
+/*
+ * CLIPPING'S CARDS.
+ *
+ * Each paints its own moment rather than wearing the source's first frame,
+ * and each rendered short gets its own player — the same two pieces the editor
+ * uses, called per card.
+ */
+const shortCards = document.querySelectorAll("[data-short]");
+if (shortCards.length) {
+  paintMoments(document.querySelectorAll(".short-frame"), "");
+  shortCards.forEach((card) => {
+    const v = card.querySelector(".short-video");
+    const bar = card.querySelector(".player");
+    if (v && bar) wirePlayer(bar, v);
+  });
+}
+
+/*
+ * ADJUST — the verb the clipper never had.
+ *
+ * Everything a short is can be changed before a render is spent on it: where
+ * it starts and ends, by a second at a time or by pointing at the words. The
+ * server writes start_ms and end_ms, which is exactly what renderShort builds
+ * its plan from, so a trimmed clip renders trimmed with nothing downstream
+ * needing to know.
+ */
+const adjust = document.querySelector("#adjust");
+if (adjust) {
+  /*
+   * OUT OF THE PAGE BODY, or it is not fixed to anything.
+   *
+   * The shell animates each surface in with viewIn, which leaves a transform
+   * on the wrapper — and a transformed ancestor becomes the containing block
+   * for position:fixed. So the sheet laid itself out against the whole scrolled
+   * page instead of the viewport: the scrim covered everything and the panel
+   * was a thousand pixels below the fold. That is why the shell's own overlays
+   * (the palette, the key sheet) are rendered outside the page body, and this
+   * one has to be too — it belongs to Clipping, so it ships with the page and
+   * moves itself rather than being hoisted into the shell.
+   */
+  document.body.appendChild(adjust);
+  const wordsEl = adjust.querySelector(".adj-words");
+  const headEl = adjust.querySelector(".adj-head");
+  const tailEl = adjust.querySelector(".adj-tail");
+  const fromEl = adjust.querySelector(".adj-from");
+  const durEl = adjust.querySelector(".adj-dur");
+  const frame = adjust.querySelector(".adj-frame");
+  const capWrap = adjust.querySelector(".adj-cap");
+  const whyWrap = adjust.querySelector(".adj-why");
+  const whyHead = adjust.querySelector(".adj-why-head");
+  const whyText = adjust.querySelector(".adj-why-text");
+  const well = adjust.querySelector(".adj-well");
+
+  let clip = null;
+  /* The bounds as edited here, saved when they settle rather than on every
+     press of a stepper — five taps on + is one clip, not five writes. */
+  let start = 0;
+  let end = 0;
+  let saveTimer = null;
+  let pendingWord = null;
+  let decoder = null;
+
+  const secs = (ms) => {
+    const t = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+      : m + ":" + String(sec).padStart(2, "0");
+  };
+
+  /* The frame at the in-point, so the preview is of the short you are about to
+     make rather than of wherever it used to begin. */
+  const drawFrame = () => {
+    if (!clip || !frame || !decoder) return;
+    const done = () => {
+      try {
+        frame.getContext("2d").drawImage(decoder, 0, 0, frame.width, frame.height);
+      } catch (err) {
+        /* No frame. The sheet is complete without one. */
+      }
+    };
+    decoder.addEventListener("seeked", done, { once: true });
+    decoder.currentTime = start / 1000;
+  };
+
+  const paint = () => {
+    if (!clip) return;
+    if (headEl) headEl.textContent = secs(start);
+    if (tailEl) tailEl.textContent = secs(end);
+    if (fromEl) fromEl.textContent = "from " + secs(start);
+    if (durEl) durEl.textContent = secs(end - start);
+
+    wordsEl.querySelectorAll("[data-s]").forEach((w) => {
+      const ws = Number(w.getAttribute("data-s"));
+      const we = Number(w.getAttribute("data-e"));
+      const inside = we > start && ws < end;
+      w.style.color = inside ? "#ECECF1" : "rgba(236,236,241,0.32)";
+      w.style.background = inside ? "rgba(94,201,143,0.14)" : "transparent";
+    });
+  };
+
+  const save = async () => {
+    if (!clip) return;
+    try {
+      const res = await fetch("/api/clips/" + clip.id + "/trim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ start_ms: Math.round(start), end_ms: Math.round(end) }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || "That didn't save");
+      /* The server clamps to the video and refuses a clip of nothing, so what
+         it sends back is the truth about the bounds, not what was asked. */
+      start = out.start_ms;
+      end = out.end_ms;
+      paint();
+    } catch (err) {
+      toast((err && err.message) || "That didn't save");
+    }
+  };
+
+  const queueSave = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 400);
+  };
+
+  const nudge = (which, deltaMs) => {
+    if (!clip) return;
+    if (which === "head") start = Math.max(0, Math.min(start + deltaMs, end - 500));
+    else end = Math.max(start + 500, end + deltaMs);
+    pendingWord = null;
+    paint();
+    drawFrame();
+    queueSave();
+  };
+
+  const open = async (clipId) => {
+    adjust.hidden = false;
+    wordsEl.innerHTML = "";
+    clip = null;
+    try {
+      const res = await fetch("/api/clips/" + clipId);
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || "Couldn't open that");
+      clip = out;
+      start = out.start_ms;
+      end = out.end_ms;
+      pendingWord = null;
+
+      /* Why the model liked it, when a model picked it at all. A clip you
+         chose yourself was not scored, and saying "0" about it is the bug this
+         whole card was carrying. */
+      if (whyWrap) {
+        const scored = out.score != null && out.score > 0;
+        whyWrap.hidden = !(scored || out.origin === "manual");
+        if (whyHead) whyHead.textContent = scored ? "Why it scored " + out.score : "Yours";
+        if (whyText) whyText.textContent = scored ? (out.why || "") : "You picked this one — it was never scored.";
+      }
+
+      wordsEl.innerHTML = (out.words || [])
+        .map(
+          (w) =>
+            '<span data-s="' + w.s + '" data-e="' + w.e + '" style="padding:1px 5px;border-radius:4px;cursor:pointer">' +
+            escapeHtml(w.w) + "</span>",
+        )
+        .join("");
+
+      if (capWrap) {
+        /* What the caption will look like, in the style chosen on the page —
+           the preview exists so the short can be judged before it is paid for. */
+        const form = document.querySelector(".clip-form");
+        const style = form ? new FormData(form).get("captionStyle") : "None";
+        capWrap.hidden = style === "None";
+        const span = capWrap.querySelector("span");
+        if (span) span.textContent = (out.quote || "").split(/\s+/).slice(0, 6).join(" ");
+        if (span && style === "Clean") {
+          span.style.background = "transparent";
+          span.style.color = "#ECECF1";
+          span.style.fontWeight = "600";
+        }
+        const aspect = form ? new FormData(form).get("aspect") : "9:16";
+        if (well && aspect) well.style.aspectRatio = String(aspect).replace(":", "/");
+      }
+
+      if (decoder) decoder.remove();
+      decoder = document.createElement("video");
+      decoder.src = "/media/" + out.sourceKey;
+      decoder.muted = true;
+      decoder.playsInline = true;
+      decoder.preload = "metadata";
+      decoder.addEventListener("loadedmetadata", drawFrame, { once: true });
+      decoder.load();
+
+      paint();
+    } catch (err) {
+      adjust.hidden = true;
+      toast((err && err.message) || "Couldn't open that");
+    }
+  };
+
+  document.querySelectorAll(".short-edit").forEach((btn) => {
+    btn.addEventListener("click", () => void open(btn.getAttribute("data-clip")));
+  });
+
+  adjust.querySelectorAll("[data-close]").forEach((el) => {
+    el.addEventListener("click", () => {
+      adjust.hidden = true;
+      /* Any pending nudge is written before the sheet goes, or closing it
+         quickly after a tap would lose the trim. */
+      clearTimeout(saveTimer);
+      if (clip) void save().then(() => location.reload());
+    });
+  });
+
+  adjust.querySelector(".adj-head-minus")?.addEventListener("click", () => nudge("head", -1000));
+  adjust.querySelector(".adj-head-plus")?.addEventListener("click", () => nudge("head", 1000));
+  adjust.querySelector(".adj-tail-minus")?.addEventListener("click", () => nudge("tail", -1000));
+  adjust.querySelector(".adj-tail-plus")?.addEventListener("click", () => nudge("tail", 1000));
+
+  /*
+   * Trim by word. The first click sets the start; the second sets the end.
+   *
+   * The prototype uses right-click for the end, which is unreachable on a
+   * phone and hidden on a desktop. Two clicks in a row say the same thing and
+   * the line above the words explains it.
+   */
+  wordsEl.addEventListener("click", (e) => {
+    const w = e.target.closest("[data-s]");
+    if (!w || !clip) return;
+    const ws = Number(w.getAttribute("data-s"));
+    const we = Number(w.getAttribute("data-e"));
+
+    if (pendingWord === null) {
+      start = ws;
+      end = Math.max(we, ws + 500);
+      pendingWord = ws;
+    } else {
+      /* A second word before the first is a start, not a backwards clip. */
+      if (we <= pendingWord) { start = ws; end = Math.max(we, ws + 500); pendingWord = ws; }
+      else { end = we; pendingWord = null; }
+    }
+    paint();
+    drawFrame();
+    queueSave();
+  });
+
+  adjust.querySelector(".adj-reset")?.addEventListener("click", () => {
+    if (!clip) return;
+    start = clip.start_ms;
+    end = clip.end_ms;
+    pendingWord = null;
+    paint();
+    drawFrame();
+    queueSave();
+  });
+
+  /* Make it from here, so the sheet is somewhere you finish rather than
+     somewhere you pass through. */
+  adjust.querySelector(".adj-make")?.addEventListener("click", async () => {
+    if (!clip) return;
+    clearTimeout(saveTimer);
+    await save();
+    const card = document.querySelector('[data-short="' + clip.id + '"] .make-short');
+    adjust.hidden = true;
+    if (card) card.click();
+    else location.reload();
+  });
+}
+
 document.querySelectorAll(".make-short").forEach((btn) => {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     const was = btn.textContent;
     btn.textContent = "Making it…";
-    /* The Shape and Captions chips on this page were decorative — the client
-       never sent them and the API had no field for them. They drive the render
-       now; with no form on the page (the library view) a short is vertical
-       with no captions, which is what a short is. */
+    /*
+     * Shape and Captions, as chosen on the page.
+     *
+     * These used to live inside the SCAN form, which only exists once you have
+     * picked a video to scan — so on the page you actually land on there was
+     * no form to read and this sent captionStyle "None", while the lede above
+     * it promised "captions burned in". The settings are their own form now
+     * and are on the page either way.
+     */
     const form = document.querySelector(".clip-form");
     const data = form ? new FormData(form) : null;
     try {
@@ -3347,19 +3683,23 @@ if (document.querySelector('[data-short][data-state="queued"], [data-short][data
 /* ── Clipping ──────────────────────────────────────────────────────────
    Two ways to find a moment: a scored batch, or a search for one it missed.
    Both start a job the page then follows. */
-const clipForm = document.querySelector(".clip-form");
-if (clipForm) {
-  /* The chips are radios, so keyboard and form semantics come for free; the
-     visual state has to follow the checked one. */
-  clipForm.addEventListener("change", () => {
-    clipForm.querySelectorAll("input[type=radio]").forEach((input) => {
+/* The chips are radios, so keyboard and form semantics come for free; the
+   visual state has to follow the checked one. Both forms have them — how a
+   short comes out (.clip-form) and what to look for (.clip-scan) — so this is
+   bound to each rather than to one of them. */
+document.querySelectorAll(".clip-form, .clip-scan").forEach((form) => {
+  form.addEventListener("change", () => {
+    form.querySelectorAll("input[type=radio]").forEach((input) => {
       const chip = input.nextElementSibling;
       if (!chip) return;
       chip.style.background = input.checked ? "#2E2E36" : "#17171B";
       chip.style.color = input.checked ? "#ECECF1" : "rgba(236,236,241,0.55)";
     });
   });
+});
 
+const clipForm = document.querySelector(".clip-scan");
+if (clipForm) {
   clipForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const button = clipForm.querySelector('button[type="submit"]');

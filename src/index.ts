@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -54,7 +54,7 @@ import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
-import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
+import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -983,6 +983,10 @@ app.get("/clipping", async (c) => {
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */
   const renders = await shortRendersFor(c.env.DB, user.id, shorts.map((cl) => cl.id));
+  /* Which file each short lives in. A card paints its OWN moment rather than
+     the video's first frame, and on the library view the shorts come from
+     several videos, so the key travels with the row. */
+  const fileOf = new Map(sources.map((sv) => [sv.id, { key: sv.r2_key, title: sv.title }]));
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
@@ -1004,7 +1008,12 @@ app.get("/clipping", async (c) => {
           id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
           poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
         })),
-        shorts: shorts.map((cl) => ({ ...cl, render: renders.get(cl.id) ?? null })),
+        shorts: shorts.map((cl) => ({
+          ...cl,
+          render: renders.get(cl.id) ?? null,
+          sourceKey: fileOf.get(cl.source_id)?.key ?? null,
+          sourceTitle: fileOf.get(cl.source_id)?.title ?? null,
+        })),
         job,
         fromEditor: false,
       }),
@@ -2045,6 +2054,124 @@ app.post("/api/clips/:id/render", async (c) => {
     type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
   });
   return c.json({ ok: true, renderId, jobId: job.id });
+});
+
+/**
+ * One short, and the words in it — everything the Adjust sheet needs.
+ *
+ * The sheet trims by word, which is the gesture the editor already gives you
+ * over a transcript and the thing that makes this ours rather than a copy of
+ * OpusClip. The words come from the segments the clip covers, with a little
+ * either side so the boundaries can be moved OUTWARD as well as in — a clip
+ * that can only ever get shorter is half a trim.
+ */
+app.get("/api/clips/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const clip = await c.env.DB
+    .prepare(
+      `SELECT c.*, s.r2_key AS source_key, s.title AS source_title, s.duration_s
+         FROM v2_clips c JOIN sources s ON s.id = c.source_id
+        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{
+      id: string; source_id: string; start_ms: number; end_ms: number;
+      quote: string; why: string | null; score: number | null; origin: string;
+      source_key: string; source_title: string; duration_s: number | null;
+    }>();
+  if (!clip) return c.json({ error: "not found" }, 404);
+
+  /* A window around the clip, not the whole transcript: an hour of words to
+     trim a thirty-second short is a large response for no benefit. */
+  const AROUND_MS = 20_000;
+  const from = Math.max(0, clip.start_ms - AROUND_MS);
+  const to = clip.end_ms + AROUND_MS;
+
+  const segments = await getSegments(c.env.DB, clip.source_id);
+  const words: Array<{ w: string; s: number; e: number }> = [];
+  for (const seg of segments) {
+    if (seg.end_ms < from || seg.start_ms > to) continue;
+    for (const w of parseWords(seg.words)) {
+      const s0 = wordStartMs(w);
+      const e0 = wordEndMs(w);
+      if (e0 < from || s0 > to) continue;
+      words.push({ w: w.w, s: s0, e: e0 });
+    }
+  }
+
+  return c.json({
+    id: clip.id,
+    start_ms: clip.start_ms,
+    end_ms: clip.end_ms,
+    quote: clip.quote,
+    why: clip.why,
+    score: clip.score,
+    origin: clip.origin,
+    sourceKey: clip.source_key,
+    sourceTitle: clip.source_title,
+    durationMs: clip.duration_s ? clip.duration_s * 1000 : null,
+    words,
+  });
+});
+
+/**
+ * Move a short's in and out points.
+ *
+ * The clipper offered exactly one verb — "Make the video" — so disagreeing
+ * with where the model put a boundary meant spending a render and looking at
+ * what came out. Adjusting the clip is most of what this kind of tool is for.
+ *
+ * Nothing downstream changes: renderShort builds its plan from start_ms and
+ * end_ms, so a trimmed clip renders trimmed the next time it is made.
+ */
+app.post("/api/clips/:id/trim", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const b = await body<{ start_ms?: number | null; end_ms?: number | null }>(c);
+  if (typeof b.start_ms !== "number" && typeof b.end_ms !== "number") {
+    return c.json({ error: "which edge?" }, 400);
+  }
+
+  /* The source's length is the ceiling. Without it a stepper at the tail walks
+     the clip past the end of the video and the encoder is asked for footage
+     that is not there. */
+  const owned = await c.env.DB
+    .prepare(
+      `SELECT c.source_id, s.duration_s FROM v2_clips c
+         JOIN sources s ON s.id = c.source_id
+        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{ source_id: string; duration_s: number | null }>();
+  if (!owned) return c.json({ error: "not found" }, 404);
+
+  const clip = await trimClip(
+    c.env.DB,
+    c.req.param("id"),
+    user.id,
+    { start_ms: b.start_ms, end_ms: b.end_ms },
+    owned.duration_s ? owned.duration_s * 1000 : null,
+  );
+  if (!clip) return c.json({ error: "not found" }, 404);
+
+  /*
+   * Nothing is written to the render.
+   *
+   * A finished file under a clip that no longer matches it must not offer
+   * Download — it is a video of boundaries that no longer exist. The first
+   * attempt marked the row stale, which was wrong twice over: the row is the
+   * cost record for work already paid for, and storage.ts sums the bytes of
+   * READY renders against the user's cap, so a stale row would stop counting
+   * a file that is still sitting in R2.
+   *
+   * The card decides instead, by comparing the length the render actually is
+   * (renders.duration_s, written when it finished) against the length the clip
+   * now claims. No schema, no deletion, and the accounting stays true.
+   */
+  return c.json({ ok: true, start_ms: clip.start_ms, end_ms: clip.end_ms });
 });
 
 app.post("/api/clips/:id/keep", async (c) => {
