@@ -124,7 +124,8 @@ export async function attachProxy(
   env: Env,
   source: { id: string; r2_key: string },
   onProgress?: (label: string) => void,
-): Promise<boolean> {
+): Promise<{ ok: boolean; cpuMs: number; bytes: number }> {
+  const t0 = Date.now();
   try {
     const made = await makeProxy(env, source.r2_key, onProgress);
     await env.DB
@@ -136,10 +137,13 @@ export async function attachProxy(
       )
       .bind(made.key, made.width, made.height, source.id)
       .run();
-    return true;
+    /* What it cost, so the caller can meter it. A 480p transcode of the whole
+       video on four vCPUs is the newest recurring cost in this product and it
+       was the only job not writing a usage row. */
+    return { ok: true, cpuMs: Date.now() - t0, bytes: made.bytes };
   } catch (err) {
     console.log(`[proxy] ${source.id}: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
+    return { ok: false, cpuMs: Date.now() - t0, bytes: 0 };
   }
 }
 
@@ -172,7 +176,7 @@ export async function backfillProxies(env: Env, limit = 2): Promise<number> {
 
   let made = 0;
   for (const src of results ?? []) {
-    if (await attachProxy(env, src)) made++;
+    if ((await attachProxy(env, src)).ok) made++;
   }
   return made;
 }

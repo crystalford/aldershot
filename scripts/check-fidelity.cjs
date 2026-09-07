@@ -303,6 +303,20 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
+      "Watch the cut",
+      "The editor has always played the ORIGINAL: striking a line greys it out " +
+        "and changes a number, and that is the whole feedback. Whether the cut " +
+        "actually flows could only be found out by exporting the file and " +
+        "watching it, which is the missing half of editing by text. The " +
+        "prototype has no such control because its demo cut is not playable. " +
+        "The toggle reads \"Whole video\" while it is on.",
+    ],
+    [
+      "Whole video",
+      "The same toggle, pressed. Says what it will do rather than what it is " +
+        "doing, like every other control in this product.",
+    ],
+    [
       "\u2190 All shorts",
       "Clipping lists the shorts you have MADE, and choosing a video filters " +
         "them. It said 'All videos' and pointed at /clipping, which redirected " +

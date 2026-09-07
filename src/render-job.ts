@@ -19,7 +19,7 @@ import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from ".
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { putFromResponse } from "./r2stream.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
-import { getSegments, getSource } from "./sources.ts";
+import { getSegments, getSource, playableKey } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { ulid } from "./id.ts";
 
@@ -247,7 +247,9 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
    */
   const { blocks, cuts } = await blocksForProject(env.DB, project, userId, { segments });
 
-  const edl = buildEdl(source.r2_key, blocks, cuts);
+  /* Two keys: the master for the render, the editing copy for the preview.
+     playableKey is the one definition of which file you watch. */
+  const edl = buildEdl(source.r2_key, blocks, cuts, playableKey(source));
   return { edl, source, segments };
 }
 

@@ -34,6 +34,8 @@ export interface CutData {
   sourceTitle: string | null;
   sourceKey: string | null;
   posterKey: string | null;
+  /** The video's own shape, so the player is not a hardcoded 16/9 box. */
+  aspect?: string;
   blocks: Block[];
   cuts: Cut[];
   runtimeMs: number;
@@ -606,12 +608,13 @@ export function renderCut(d: CutData): string {
   const clockStyle = `flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums`;
 
   const player = d.sourceKey
-    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
       <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
         <button class="pl-play" aria-label="Play" style="${ctl}">
           <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
           <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
         </button>
+        <button class="pl-cut" data-project="${esc(d.projectId)}" aria-pressed="false" title="Play only what you kept" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:4px 9px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Watch the cut</button>
         <span class="pl-now" data-content style="${clockStyle}">0:00</span>
         <div class="pl-track" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
           style="position:relative;flex:1 1 60px;min-width:min(50px,100%);height:16px;cursor:pointer;touch-action:none">

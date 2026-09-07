@@ -125,6 +125,22 @@ export async function createSource(
 export const playableKey = (s: { r2_key: string; proxy_r2_key?: string | null }): string =>
   s.proxy_r2_key || s.r2_key;
 
+/**
+ * The shape of this video, as a CSS aspect-ratio.
+ *
+ * `sources.width` and `sources.height` have been columns since the first
+ * schema and were written as null by everything until the proxy pass started
+ * probing the file. Nothing read them even then: both players were a
+ * hardcoded 16/9, so a vertical video played letterboxed in a landscape box
+ * with most of the panel black. Not distortion — a video element keeps its own
+ * aspect inside whatever box it is given — but a box of the wrong shape.
+ *
+ * 16/9 when the dimensions are unknown, which is every video read before the
+ * proxy existed and any the probe could not answer for.
+ */
+export const aspectOf = (s: { width?: number | null; height?: number | null }): string =>
+  s.width && s.height && s.width > 0 && s.height > 0 ? `${s.width}/${s.height}` : "16/9";
+
 export async function getSource(db: D1Database, id: string, userId: string): Promise<Source | null> {
   return await db
     .prepare(`SELECT * FROM sources WHERE id=? AND user_id=? AND deleted_at IS NULL`)

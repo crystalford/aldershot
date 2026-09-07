@@ -27,6 +27,7 @@ import type { Env } from "./env.ts";
 import type { Plan } from "./plans.ts";
 import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
 import { attachProxy } from "./proxy.ts";
+import { meter } from "./usage.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { runShorts } from "./shorts-job.ts";
@@ -153,8 +154,23 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
       const src = await getSource(env.DB, msg.sourceId, msg.userId);
       if (!src) return void (await failJob(env.DB, msg.jobId, "That video is no longer here."));
       await startJob(env.DB, msg.jobId, "making an editing copy");
-      const ok = await attachProxy(env, src, (label) => void advance(env.DB, msg.jobId, 50, label));
-      if (!ok) {
+      const out = await attachProxy(env, src, (label) => void advance(env.DB, msg.jobId, 50, label));
+
+      /*
+       * METERED whether it worked or not — a failed transcode still burned the
+       * container time it burned. Every other job in this product writes a
+       * usage row and this one did not, which left the cost panel blind to the
+       * newest recurring cost in it.
+       */
+      await meter(env.DB, {
+        user_id: msg.userId,
+        job_id: msg.jobId,
+        job_type: "proxy",
+        cpu_ms: out.cpuMs,
+        bytes_stored: out.bytes,
+      });
+
+      if (!out.ok) {
         /* A video with no editing copy is still a video you can cut, so this
            is a failure of the copy and not of the video. The sweep retries. */
         return void (await failJob(env.DB, msg.jobId, "Couldn't make an editing copy. It plays from the original."));

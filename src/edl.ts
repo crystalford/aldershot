@@ -15,8 +15,19 @@ import { playableRanges, type Cut, type Segmentish, wordStartMs, wordEndMs } fro
 import { blockRanges, type Block } from "./blocks.ts";
 
 export interface EdlCut {
-  /** R2 key of the source to cut from. */
+  /** R2 key of the source to cut from. The MASTER — a render reads this. */
   sourceKey: string;
+  /**
+   * The same range, in the file you WATCH.
+   *
+   * The editor plays the 480p editing copy and the export is cut from the
+   * master, so the preview needs its own key. Carried here rather than looked
+   * up client-side because the preview's whole claim is that it plays the
+   * ranges the export is built from — one list, two keys, no second source of
+   * truth. buildRenderPlan never reads this, and test/proxy.test.ts fails if
+   * an .edit.mp4 ever reaches a render plan.
+   */
+  previewKey: string;
   start_ms: number;
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
@@ -61,7 +72,15 @@ export interface Edl {
  * also fixes captions: `captionCues` gets one cue per line instead of one cue
  * holding minutes of joined text.
  */
-export function buildEdl(sourceKey: string, blocks: Block[], cuts: Cut[]): Edl {
+export function buildEdl(
+  sourceKey: string,
+  blocks: Block[],
+  cuts: Cut[],
+  /* The project's own editing copy, for blocks that do not carry their own.
+     Optional so every existing caller keeps working; without it the preview
+     plays the master, which is correct and merely slower. */
+  previewKey?: string,
+): Edl {
   const out: EdlCut[] = [];
 
   for (const block of blocks) {
@@ -77,6 +96,7 @@ export function buildEdl(sourceKey: string, blocks: Block[], cuts: Cut[]): Edl {
       const audioOnly = block.origin === "voice";
       out.push({
         sourceKey: block.mediaKey,
+        previewKey: block.previewKey || block.mediaKey,
         start_ms: 0,
         end_ms: Math.max(0, block.end_ms - block.start_ms),
         text: block.text ?? "",
@@ -98,6 +118,7 @@ export function buildEdl(sourceKey: string, blocks: Block[], cuts: Cut[]): Edl {
          * own footage.
          */
         sourceKey: block.mediaKey || sourceKey,
+        previewKey: block.previewKey || previewKey || block.mediaKey || sourceKey,
         start_ms: range.start_ms,
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),
