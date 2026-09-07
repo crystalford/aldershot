@@ -56,13 +56,40 @@ export interface ClippingSource {
   clip_count: number;
 }
 
+/** A short that exists as a file — the thing this page is a list of. */
+export interface MadeShort {
+  id: string;
+  r2_key: string | null;
+  duration_s: number | null;
+  aspect: string;
+  created_at: number;
+  /** The video it was cut from. */
+  title: string | null;
+  href: string | null;
+}
+
 export interface ClippingData {
-  /** The video being clipped, if one is chosen. */
+  /** The video being clipped, if one is chosen. Filters, never a precondition. */
   source: ClippingSource | null;
   shorts: ShortRow[];
   job: { state: string; pct: number; stage_label: string | null; error: string | null; started_at?: number | null } | null;
   /** Set when reached as an editor stage rather than from the nav. */
   fromEditor: boolean;
+  /**
+   * The shorts this account has actually MADE — the page's subject.
+   *
+   * Footage's Clips tab lists moments a model found; nothing listed the ones
+   * that became files, which is what the subtitle above has always promised.
+   */
+  made: MadeShort[];
+  /** Only when nothing has been made yet — then the page is the way to start. */
+  videos: Array<{
+    id: string;
+    title: string;
+    duration_s: number | null;
+    poster_r2_key: string | null;
+    clip_count: number;
+  }>;
 }
 
 function chipRow(name: string, label: string, options: readonly string[], selected: string): string {
@@ -94,16 +121,23 @@ function chipRow(name: string, label: string, options: readonly string[], select
  * the one thing Footage's own empty state does not offer from here: somewhere
  * to put a video so there is something to clip.
  */
-function picker(): string {
+function picker(hasVideos = false): string {
   const drop = `<label id="clipDrop" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:22px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);font-size:13px;color:rgba(236,236,241,0.55);cursor:pointer">
     ${iconPlus({ size: 15 })}
     <span>Drop a new video here or <span style="color:${C.ink};text-decoration:underline;text-decoration-color:rgba(236,236,241,0.25)">browse</span> — it lands in Footage, then gets clipped</span>
     <input type="file" accept="video/*" id="clipFilePick" style="display:none"/>
   </label>`;
 
+  /* "Nothing read yet" is only true when nothing has been read. It was
+     unconditional, so it sat directly above a list of nine readable videos
+     telling you there were none. */
   return `<div style="margin-top:24px">
-    <div data-content style="padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45};line-height:1.6">Nothing read yet — add a video and it starts reading.</div>
-    <div style="margin-top:12px">${drop}</div>
+    ${
+      hasVideos
+        ? ""
+        : `<div data-content style="padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45};line-height:1.6">Nothing read yet — add a video and it starts reading.</div>`
+    }
+    <div style="${hasVideos ? "" : "margin-top:12px"}">${drop}</div>
   </div>`;
 }
 
@@ -124,6 +158,72 @@ function output(): string {
     ${chipRow("aspect", "Shape", ASPECTS, "9:16")}
     ${chipRow("captionStyle", "Captions", CAPTION_STYLES, "Bold")}
   </form>`;
+}
+
+/**
+ * A short that EXISTS — a file you can watch and post.
+ *
+ * The distinction this page turns on. Footage's Clips tab lists moments a
+ * model found; these are the ones that became videos. Nothing in the product
+ * listed them, so a short you made last week could only be found by
+ * remembering which video it came from and opening that.
+ *
+ * The frame is painted client-side from the short's own file by paintMoments,
+ * the same way every other card in this product gets a real frame rather than
+ * a placeholder.
+ */
+function madeCard(m: MadeShort): string {
+  if (!m.r2_key) return "";
+  const meta = [m.duration_s ? hms(m.duration_s) : null, m.aspect].filter(Boolean).join(" · ");
+  return `<div style="border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;display:flex;flex-direction:column">
+    <div style="position:relative;aspect-ratio:9/16;background:#0B0B0E">
+      <canvas class="short-frame" data-media="${esc(m.r2_key)}" data-at="0" width="216" height="384"
+        style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+    </div>
+    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+      <span data-content style="font-size:${SIZE.secondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.title ?? "")}</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span data-content style="flex:1;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(meta)}</span>
+        <a href="/media/${esc(m.r2_key)}?download=1" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 11px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Download</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+/** Every short this account has made, newest first. */
+function madeGrid(made: MadeShort[]): string {
+  if (!made.length) return "";
+  return `<div style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),190px));gap:14px">${made
+    .map(madeCard)
+    .join("")}</div>`;
+}
+
+/**
+ * The videos you could clip, when you have not clipped anything yet.
+ *
+ * The ONE case where naming videos on this page is right: with nothing made,
+ * there is nothing else to show, and sending somebody to Footage to come back
+ * is a worse answer than a row of what they can start from.
+ */
+function startFrom(videos: ClippingData["videos"]): string {
+  if (!videos.length) return "";
+  return `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px">${videos
+    .map(
+      (v) => `<a href="/clipping?source=${esc(v.id)}" style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface}">
+      <span style="flex:none;width:56px;aspect-ratio:16/9;border-radius:5px;background:#0B0B0E;overflow:hidden;display:block">${
+        v.poster_r2_key
+          ? `<img loading="lazy" src="/media/${esc(v.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+          : ""
+      }</span>
+      <span style="flex:1;min-width:0">
+        <span data-content style="display:block;font-size:${SIZE.secondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.title)}</span>
+        <span data-content style="display:block;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${
+          v.duration_s ? hms(v.duration_s) : ""
+        }</span>
+      </span>
+    </a>`,
+    )
+    .join("")}</div>`;
 }
 
 /** What to look for, and the button that starts the run. */
@@ -439,21 +539,25 @@ export function renderClipping(d: ClippingData): string {
    */
   if (!d.source) {
     /*
-     * CLIPPING IS A VERB.
+     * WHAT YOU HAVE MADE.
      *
-     * This used to lead with every short in the library, and the reasoning was
-     * sound at the time: made shorts were otherwise invisible unless you
-     * remembered which video they came from. That is no longer true — Footage's
-     * clip cards carry a Short badge, a player and Download now — and what was
-     * left was a third list of clips in a product whose owner had already said
-     * "the clipping page, then theres also clips in the footage, like .. and
-     * it's all just kind of not thought out properly as a UX".
+     * This page has been through both extremes. It listed every video you own,
+     * which was Footage with fewer features. So I stripped the list — and the
+     * route then had to GUESS a video, which is why "← All videos" bounced
+     * straight back to the screen you were already on and landing here cold
+     * showed whatever was newest. For the owner that was a nine-second drone
+     * clip with nothing in it.
      *
-     * So each nav item means exactly one thing: Home is what needs you, Editor
-     * is the edit you are in, Footage is everything you have, and this is how
-     * you turn a video into shorts. Pick one and it does the rest.
+     * The redundancy was real and I fixed the wrong half. Footage's Clips tab
+     * lists moments a model FOUND. Nothing listed the shorts that became
+     * FILES — which is exactly what the subtitle above has promised all along:
+     * "watch them, keep the ones that land". So that is the list, and choosing
+     * a video filters it rather than being the price of admission.
+     *
+     * With nothing made yet the page is the way to start: somewhere to drop a
+     * video, and the ones you already have.
      */
-    return heading + picker();
+    return heading + madeGrid(d.made) + (d.made.length ? "" : picker(d.videos.length > 0) + startFrom(d.videos));
   }
 
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");
@@ -485,9 +589,15 @@ export function renderClipping(d: ClippingData): string {
    * WHICH VIDEO. The page said "Clipping", then "Find clips in this", and
    * never once named what "this" was — you arrived from a picker and lost the
    * thing you had just chosen.
+   *
+   * "← All shorts", not "← All videos". It always pointed at /clipping, and
+   * /clipping used to redirect to a guessed video — so the link could not
+   * move, and the owner reported exactly that: "I click ← All videos it just
+   * stays on this screen." It now goes to the list of what you have made,
+   * which is what this page is, and the label says so.
    */
   const which = `<div style="margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <a href="/clipping" style="font-size:${SIZE.secondary};color:${C.ink45};white-space:nowrap">← All videos</a>
+    <a href="/clipping" style="font-size:${SIZE.secondary};color:${C.ink45};white-space:nowrap">← All shorts</a>
     <span data-content style="font-size:${SIZE.body};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.source.title)}</span>
     ${
       d.source.duration_s

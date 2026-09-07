@@ -423,6 +423,48 @@ export function renderLanding(d: LandingData): string {
         </div>
       </div>
 
+      <!--
+        THE OTHER HALF OF THE PRODUCT.
+
+        This page sold the editor and only the editor — "editing is reading
+        now", "NO TIMELINE · NO SCRUBBING · NO NLE", "EDIT BY READING". The
+        pitch is Descript AND OpusClip, and somebody arriving because they
+        want a clipper found nothing here they recognised. Clipping is a nav
+        item in the product and was invisible on the way in.
+
+        Deliberately not an anonymous "drop a file, get clips before you sign
+        up" funnel yet: reading a video from a link is not built, and an
+        upload with no account has no plan and therefore no cap on the one
+        cost that can actually hurt. This says what the product does; if
+        people click it, the funnel is worth building properly.
+      -->
+      <div style="margin-top:44px;display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap">
+        <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            ${[0, 1, 2]
+              .map(
+                (i) => `<div style="position:relative;aspect-ratio:9/16;border-radius:7px;overflow:hidden;background:#101014">
+                  <img src="/assets/frame-${i + 1}.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>
+                  <div style="position:absolute;left:0;right:0;bottom:0;padding:8px 6px;background:linear-gradient(transparent,rgba(0,0,0,0.75))">
+                    <div style="font-size:9.5px;font-weight:700;color:#fff;text-align:center;line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,0.8)">${
+                      ["THAT'S THE WHOLE", "POINT THOUGH", "ISN'T IT"][i]
+                    }</div>
+                  </div>
+                  <span style="position:absolute;right:5px;top:5px;font-size:9px;font-family:${MONO};color:rgba(255,255,255,0.7)">${
+                    ["0:34", "0:41", "0:28"][i]
+                  }</span>
+                </div>`,
+              )
+              .join("")}
+          </div>
+        </div>
+        <div style="flex:1 1 320px;min-width:min(300px,100%)">
+          <div style="${EYEBROW};color:${GREEN}">VERTICAL, WITHOUT ASKING</div>
+          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">One long video in. Eight shorts out.</h3>
+          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">It reads the whole thing and scores what would stand alone — then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.</p>
+        </div>
+      </div>
+
       <div style="margin-top:44px;display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap">
         <div style="flex:1 1 320px;min-width:min(300px,100%)">
           <div style="${EYEBROW};color:${CYAN}">FOOTAGE THAT REMEMBERS</div>

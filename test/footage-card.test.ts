@@ -38,6 +38,8 @@ const videos = (over: Partial<SourceRow> = {}) =>
     canMean: false,
     thread: null,
     sort: "newest",
+    exports: [],
+    exportCount: 0,
   });
 
 test("a card says what has come out of the video and what is being made from it", () => {
@@ -82,6 +84,8 @@ test("Find is still reachable by URL, so it comes back by flipping one condition
     canMean: false,
     thread: null,
     sort: "newest",
+    exports: [],
+    exportCount: 0,
   });
   assert.match(html, /tab=find/);
   assert.match(html, /Find a moment in a video you don't have yet/);

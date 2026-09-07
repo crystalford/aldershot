@@ -14,7 +14,7 @@ import { iconPause, iconPlay, iconSearch } from "../icons.ts";
 import { itemMenu } from "../item-menu.ts";
 import { selectBar, selectBox } from "../select-bar.ts";
 
-export type FootTab = "moments" | "threads" | "sources" | "find";
+export type FootTab = "moments" | "threads" | "sources" | "exports" | "find";
 
 export interface SourceRow {
   id: string;
@@ -85,6 +85,20 @@ function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string
     ["moments", "Clips"],
     ["threads", "Threads"],
     ["sources", "Videos"],
+    /*
+     * WHAT YOU HAVE FINISHED.
+     *
+     * A rendered cut lived only in the Exports strip inside the one edit that
+     * made it, so finding last week's meant remembering which edit that was.
+     * The owner said it the moment his first export worked: "that should also
+     * be saved to a place of finished or exported or whatever."
+     *
+     * Here rather than behind a fifth nav item, because Footage is already
+     * "everything you have" and a finished cut is a video you own as much as
+     * an upload is. Every extra surface has made this product feel MORE
+     * redundant, not less.
+     */
+    ["exports", "Exports"],
     ["find", "Find"],
   ];
   const items = all
@@ -411,6 +425,32 @@ function threadCard(t: ThreadRow): string {
   </div>`;
 }
 
+/**
+ * One finished export, as a row.
+ *
+ * A row rather than a card: these are files you go and get, identified by
+ * which edit made them and how long they run, and a wall of 16:9 thumbnails
+ * of the same footage tells you less than the titles do.
+ */
+function exportRow(r: ExportRow): string {
+  if (!r.r2_key) return "";
+  const size = r.bytes
+    ? r.bytes / 1e9 >= 1
+      ? `${(r.bytes / 1e9).toFixed(1)} GB`
+      : `${Math.round(r.bytes / 1e6)} MB`
+    : "";
+  const meta = [r.duration_s ? hms(r.duration_s) : null, r.format.startsWith("mp4") ? r.aspect : r.format, size]
+    .filter(Boolean)
+    .join(" · ");
+  const name = `<span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title ?? "")}</span>`;
+  return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+    <span style="flex:none;width:6px;height:6px;border-radius:50%;background:${ACCENT.green}"></span>
+    ${r.href ? `<a href="${esc(r.href)}" style="flex:1;min-width:0;display:flex">${name}</a>` : name}
+    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(meta)}</span>
+    <a href="/media/${esc(r.r2_key)}?download=1" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Download</a>
+  </div>`;
+}
+
 export interface FootageData {
   tab: FootTab;
   sources: SourceRow[];
@@ -436,6 +476,29 @@ export interface FootageData {
   thread: string | null;
   /** How the video grid is ordered. */
   sort?: string;
+  /**
+   * Finished exports — the cuts you have actually rendered.
+   *
+   * Only loaded on the Exports tab, and counted separately for the same
+   * reason momentCount exists: a tab that says 0 and then shows six is the
+   * tab bar telling you there is nothing there.
+   */
+  exports: ExportRow[];
+  exportCount: number;
+}
+
+/** One finished cut, as Footage lists it. */
+export interface ExportRow {
+  id: string;
+  r2_key: string | null;
+  duration_s: number | null;
+  bytes: number | null;
+  format: string;
+  aspect: string;
+  created_at: number;
+  /** The edit it came from. */
+  title: string | null;
+  href: string | null;
 }
 
 /*
@@ -504,7 +567,7 @@ export function renderFootageFull(d: FootageData): string {
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
     searchBox(d.tab, d.mode, d.q, d.canMean) +
-    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length });
+    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length, exports: d.exportCount });
 
   if (d.tab === "find") return head + findPanel();
 
@@ -517,6 +580,23 @@ export function renderFootageFull(d: FootageData): string {
       head +
       sortBar(d.sort ?? "newest", d.q, d.mode) +
       `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
+    );
+  }
+
+  if (d.tab === "exports") {
+    /*
+     * The videos you have finished.
+     *
+     * Every one of these was reachable before only by opening the edit that
+     * made it and scrolling to its Exports strip. A file you own should be
+     * findable by looking for it.
+     */
+    if (!d.exports.length) {
+      return head + emptyState("Nothing exported yet — finish a cut and it lands here.");
+    }
+    return (
+      head +
+      `<div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${d.exports.map(exportRow).join("")}</div>`
     );
   }
 

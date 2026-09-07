@@ -248,7 +248,17 @@ function checkWiring() {
 
 async function checkStrings() {
   const BASE = process.env.BASE || 'http://localhost:8787';
-  const ROUTES = ['/', '/projects', '/footage', '/footage?tab=sources', '/clipping', '/editor', '/settings'];
+  /*
+   * '/landing' as well as '/'.
+   *
+   * `/` is the landing site when signed out and Home when signed in — and the
+   * dev server this check talks to has DEV_LOGIN_EMAIL set, so it is ALWAYS
+   * signed in and `/` is always Home. The landing page has therefore never
+   * once been string-checked, and a whole section could be added to it without
+   * this noticing. It has its own prototype (design/Landing.dc.html) and the
+   * check already reads it; only the route was missing.
+   */
+  const ROUTES = ['/', '/landing', '/projects', '/footage', '/footage?tab=sources', '/footage?tab=exports', '/clipping', '/editor', '/settings'];
 
   let up = false;
   try {
@@ -293,13 +303,70 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
-      "\u2190 All videos",
-      "Clipping opens a video rather than listing videos, the way the Editor " +
-        "opens an edit. The prototype's Clipping never named the video it was " +
-        "working on because its demo only ever has one; a real account has " +
-        "nineteen, and arriving on a page headed 'Find clips in this' with no " +
-        "'this' anywhere is the thing the owner reported.",
+      "\u2190 All shorts",
+      "Clipping lists the shorts you have MADE, and choosing a video filters " +
+        "them. It said 'All videos' and pointed at /clipping, which redirected " +
+        "to a guessed video — so the link could not move: 'I click All videos " +
+        "it just stays on this screen'. The prototype's Clipping never needed " +
+        "a way back because its demo only ever has one video.",
     ],
+    [
+      "Exports",
+      "Footage's fourth tab. A finished cut lived only in the Exports strip " +
+        "inside the one edit that made it, so finding last week's meant " +
+        "remembering which edit that was — 'that should also be saved to a " +
+        "place of finished or exported or whatever'. The word is the one the " +
+        "export panel already uses.",
+    ],
+    [
+      "Nothing exported yet \u2014 finish a cut and it lands here.",
+      "The Exports tab's empty state. Says what fills it, rather than that it " +
+        "is empty.",
+    ],
+    /*
+     * THE LANDING PAGE.
+     *
+     * These are the first strings this check has ever seen from it. `/` is the
+     * landing site when signed out and Home when signed in, and the dev server
+     * has DEV_LOGIN_EMAIL set — so `/` was always Home and the whole marketing
+     * page went unchecked. Adding /landing to ROUTES surfaced thirteen strings
+     * at once: five new (the shorts section) and eight that had drifted from
+     * design/Landing.dc.html at some point with nothing to notice.
+     *
+     * Signed off collectively rather than argued line by line: this is authored
+     * marketing prose, which is a different thing from UI chrome, and the point
+     * of listing it is that from now on changing it is visible.
+     */
+    ...[
+      "VERTICAL, WITHOUT ASKING",
+      "One long video in. Eight shorts out.",
+      "It reads the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
+      "THAT'S THE WHOLE",
+      "POINT THOUGH",
+      "ISN'T IT",
+    ].map((t) => [
+      t,
+      "The shorts half of the product, which this page did not mention at all: " +
+        "it sold 'editing is reading now' and nothing else, while Clipping is a " +
+        "nav item inside. The pitch is Descript AND OpusClip and only one half " +
+        "was on the way in.",
+    ]),
+    ...[
+      "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
+      "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
+      "Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it \u2014 move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
+      "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
+      "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
+      "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
+      "6 clips from 2 sources \u00b7 2 of your own \u00b7 1080p MP4 \u00b7 9:04",
+    ].map((t) => [
+      t,
+      "Landing copy that already differed from design/Landing.dc.html before " +
+        "this check could see the page. Recorded as it stands rather than " +
+        "reverted \u2014 it reads better than the prototype's and is what the site " +
+        "has been serving; the value of listing it is that the next change to " +
+        "it is visible.",
+    ]),
     ...[
       "Keep only the strongest points",
       "Where I actually make the point",

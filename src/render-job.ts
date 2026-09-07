@@ -160,6 +160,66 @@ export async function listRenders(
 }
 
 /**
+ * WHAT YOU HAVE FINISHED, across the whole library.
+ *
+ * `listRenders` above is per-project, which is the only view this product has
+ * ever had of its own output: an mp4 lived in the Exports strip inside the one
+ * edit that made it, and finding last week's meant remembering which edit that
+ * was. The owner said it the moment his first export worked — "that should
+ * also be saved to a place of finished or exported or whatever".
+ *
+ * Two surfaces need exactly this list and differ only by `kind`, so it is one
+ * function: 'cut' is Footage's Exports tab, 'short' is Clipping. Writing it
+ * twice is how Footage and Clipping came to disagree about a count before.
+ *
+ * Finished only. A render that failed is not something you have, and one still
+ * running belongs on the surface that started it, where there is a Stop.
+ */
+export interface FinishedRender extends RenderRow {
+  /** What it was made from, so a row can name itself without a second query. */
+  title: string | null;
+  /** Where to go back to — the edit, or the video a short was cut from. */
+  href: string | null;
+}
+
+export async function listFinished(
+  db: D1Database,
+  userId: string,
+  kind: "cut" | "short",
+  limit = 60,
+): Promise<FinishedRender[]> {
+  const { results } = await db
+    .prepare(
+      /* A cut is named by its edit; a short by the video its clip came from,
+         because a short has no project. LEFT JOINs so a render whose edit has
+         since been deleted still lists rather than vanishing — the file is
+         still yours. */
+      `SELECT r.*,
+              COALESCE(p.title, s.title) AS title,
+              p.id AS project_id_for_link,
+              s.id AS source_id_for_link
+         FROM renders r
+         LEFT JOIN v2_projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+         LEFT JOIN v2_clips cl ON cl.id = r.clip_id
+         LEFT JOIN sources s ON s.id = cl.source_id AND s.deleted_at IS NULL
+        WHERE r.user_id=? AND r.kind=? AND r.state='ready' AND r.r2_key IS NOT NULL
+        ORDER BY r.created_at DESC LIMIT ?`,
+    )
+    .bind(userId, kind, limit)
+    .all<RenderRow & { title: string | null; project_id_for_link: string | null; source_id_for_link: string | null }>();
+
+  return (results ?? []).map((r) => ({
+    ...r,
+    title: r.title,
+    href: r.project_id_for_link
+      ? `/p/${r.project_id_for_link}/cut`
+      : r.source_id_for_link
+        ? `/clipping?source=${r.source_id_for_link}`
+        : null,
+  }));
+}
+
+/**
  * Builds the EDL for a project as it stands right now.
  *
  * Exported because it is also what the preview and the runtime figures should
