@@ -41,7 +41,7 @@ import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderProjects } from "./ui/pages/projects.ts";
 import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
-import { ACCENT } from "./ui/tokens.ts";
+import { ACCENT, C } from "./ui/tokens.ts";
 
 /* Named here so the cost panel's categories read as colour decisions. */
 const ACCENT_CYAN = ACCENT.cyan;
@@ -990,12 +990,24 @@ app.get("/clipping", async (c) => {
    * the other half of Footage saying thirteen and Clipping saying two about
    * the same table.
    */
-  /* Only this video's. Clipping is a verb now — with nothing picked the page
-     is the picker, so loading every short in the library was work for a list
-     that is no longer rendered. Footage is where everything you have lives. */
-  const shorts = source
-    ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
-    : [];
+  /*
+   * EVERY moment in this video, whatever found it.
+   *
+   * This filtered to origin='clipping', so a video with thirteen moments from
+   * an editor pass showed NOTHING here — you clicked it, and got a blank
+   * screen under a box offering to find some. The filter was added to stop
+   * Footage and Clipping disagreeing about a count, and it fixed that by
+   * making one of them wrong.
+   *
+   * A clip is a moment in a video. Where it was found does not decide whether
+   * this page will show it to you: a moment a scoring pass turned up in the
+   * editor is exactly as good a candidate for a short. The counts still
+   * agree, because Footage is every clip in the library and this is every
+   * clip in one video.
+   *
+   * With nothing picked the page is the picker, so there is nothing to load.
+   */
+  const shorts = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
 
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */
@@ -2549,6 +2561,42 @@ app.post("/webhooks/stripe", async (c) => {
  * No account state reaches it: it renders exactly what a stranger sees, which
  * is the whole reason to look at it.
  */
+/**
+ * The mark, as a tab icon.
+ *
+ * There was none, so every tab in every browser showed the generic globe —
+ * on a product whose wordmark is three coloured bars and whose whole pitch is
+ * that it was designed. It is the first thing anybody sees of it and the last
+ * thing to get made.
+ *
+ * The bars themselves, at the wordmark's own proportions and opacities, in
+ * the gold that leads on Home. SVG rather than .ico: it stays sharp at every
+ * size, it is 300 bytes, and it is the same three rectangles the nav draws
+ * rather than a second drawing of the same thing that can drift from it.
+ */
+const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="${C.canvas}"/>
+  <rect x="6"  y="9" width="5" height="14" rx="2" fill="${ACCENT.gold}"/>
+  <rect x="13.5" y="9" width="5" height="14" rx="2" fill="${ACCENT.gold}" opacity="0.5"/>
+  <rect x="21" y="9" width="5" height="14" rx="2" fill="${ACCENT.gold}" opacity="0.22"/>
+</svg>`;
+
+app.get("/favicon.svg", (c) =>
+  c.body(FAVICON, 200, {
+    "content-type": "image/svg+xml",
+    "cache-control": "public, max-age=86400",
+  }),
+);
+
+/* Browsers ask for this by name whatever the page says, and a 404 per
+   navigation is noise in every log. Served the same drawing. */
+app.get("/favicon.ico", (c) =>
+  c.body(FAVICON, 200, {
+    "content-type": "image/svg+xml",
+    "cache-control": "public, max-age=86400",
+  }),
+);
+
 app.get("/landing", async (c) => {
   return c.html(
     renderLanding({ sentTo: null, devLink: null, error: null, google: googleConfigured(c.env) }),
