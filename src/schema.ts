@@ -324,6 +324,18 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * master.
    */
   { table: "sources", column: "proxy_r2_key", ddl: "ALTER TABLE sources ADD COLUMN proxy_r2_key TEXT" },
+
+  /*
+   * Whether this export asked for its sound cleaned up — denoise, de-click, a
+   * presence lift, compression and broadcast loudness, applied once over the
+   * finished timeline.
+   *
+   * On the RENDER rather than the project, because it is a choice about one
+   * export: the same cut can be rendered clean for YouTube and raw for an
+   * archive, and a render is already the row that remembers format, aspect
+   * and caption style for exactly that reason.
+   */
+  { table: "renders", column: "enhance", ddl: "ALTER TABLE renders ADD COLUMN enhance INTEGER DEFAULT 0" },
 ];
 
 let ensured = false;

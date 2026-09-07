@@ -211,10 +211,3 @@ export async function transcribeObject(
  */
 export const SINGLE_CALL_MAX_BYTES = 20 * 1024 * 1024;
 
-/**
- * The largest file accepted without extracting its audio first.
- *
- * A raw video is far larger than its audio, so anything above this is really a
- * video and needs the audio pulled out before it can be read at all.
- */
-export const DIRECT_TRANSCRIBE_MAX_BYTES = SINGLE_CALL_MAX_BYTES;

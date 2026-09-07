@@ -369,6 +369,10 @@ document.querySelectorAll(".item-menu").forEach((menu) => {
  * play, scrub, position, fullscreen — without a duration or a speed control it
  * has no room for.
  */
+/* Every wired player, by its video element, so a control rendered elsewhere
+   on the page can put one into cut mode after the fact. */
+const players = new Map();
+
 function wirePlayer(root, video) {
   const playBtn = root.querySelector(".pl-play");
   const iPlay = root.querySelector(".pl-i-play");
@@ -381,6 +385,47 @@ function wirePlayer(root, video) {
   const durEl = root.querySelector(".pl-dur");
   const rateBtn = root.querySelector(".pl-rate");
   const fullBtn = root.querySelector(".pl-full");
+
+  /*
+   * WATCHING THE CUT.
+   *
+   * Null until the editor turns it on. When it is set, this player stops
+   * being a window onto the whole source and becomes a window onto the EDIT:
+   * the playhead skips whatever you struck, the clock counts the cut's
+   * length rather than the video's, and the scrub bar spans the cut.
+   *
+   * The ranges come from GET /api/projects/:id/edl, which is the same builder
+   * the export is cut from — so the preview cannot drift from the file. That
+   * endpoint has existed since the editor was written, says in its own comment
+   * that it is there so "the number a user sees and the video they get come
+   * from the same place", and had never been called by anything.
+   *
+   * Each range carries where it starts in CUT time, so mapping either way is a
+   * lookup rather than a scan.
+   */
+  let cut = null;
+
+  /* Where in the cut is this moment of this file? Null if the moment is not
+     in the cut at all — a struck line, or a different video. */
+  const cutTimeOf = (key, srcT) => {
+    if (!cut) return null;
+    for (const r of cut.ranges) {
+      if (r.key === key && srcT >= r.start - 0.02 && srcT < r.end) return r.at + (srcT - r.start);
+    }
+    return null;
+  };
+
+  /* And back: what should be on screen at this moment of the cut? */
+  const sourceAt = (cutT) => {
+    if (!cut || !cut.ranges.length) return null;
+    for (const r of cut.ranges) {
+      if (cutT < r.at + (r.end - r.start)) return { key: r.key, t: r.start + Math.max(0, cutT - r.at), range: r };
+    }
+    const last = cut.ranges[cut.ranges.length - 1];
+    return { key: last.key, t: last.end, range: last };
+  };
+
+  const currentKey = () => (video.getAttribute("src") || "").replace("/media/", "");
 
   const secs = (n) => {
     const t = Math.max(0, Math.floor(n || 0));
@@ -398,6 +443,23 @@ function wirePlayer(root, video) {
   };
 
   const paintBar = () => {
+    /* In cut mode the bar spans the EDIT, not the file. A cut of 1:21 made
+       from a 3:05 video should show 1:21, which is the number already on the
+       footer — two places saying different lengths about one thing is the
+       confusion this is here to end. */
+    if (cut) {
+      const at = cutTimeOf(currentKey(), video.currentTime);
+      const pos = at === null ? cut.lastAt || 0 : at;
+      cut.lastAt = pos;
+      const p = cut.total > 0 ? Math.min(100, Math.max(0, (pos / cut.total) * 100)) : 0;
+      if (played) played.style.width = p + "%";
+      if (knob) knob.style.left = p + "%";
+      if (track) track.setAttribute("aria-valuenow", String(Math.round(p)));
+      if (nowEl) nowEl.textContent = secs(pos);
+      if (buffered) buffered.style.width = "0%";
+      return;
+    }
+
     const dur = video.duration;
     if (!Number.isFinite(dur) || dur <= 0) return;
     const pct = Math.min(100, Math.max(0, (video.currentTime / dur) * 100));
@@ -420,6 +482,10 @@ function wirePlayer(root, video) {
   };
 
   const paintDuration = () => {
+    if (cut) {
+      if (durEl) durEl.textContent = secs(cut.total);
+      return void paintBar();
+    }
     if (durEl && Number.isFinite(video.duration)) durEl.textContent = secs(video.duration);
     paintBar();
   };
@@ -445,10 +511,158 @@ function wirePlayer(root, video) {
     }, 700);
   });
 
+  /*
+   * Put the playhead somewhere, in whichever file that somewhere lives in.
+   *
+   * A cut can contain ranges from more than one video — a clip pulled from
+   * other footage, a voiceover you recorded — so moving through it sometimes
+   * means changing the file. It stalls for a moment while the new one loads.
+   * That is worth it: skipping those ranges silently would make the preview a
+   * lie about the export, which is the one thing it exists not to be.
+   */
+  const goTo = (want) => {
+    const src = "/media/" + want.key;
+    if (video.getAttribute("src") === src) {
+      video.currentTime = want.t;
+      return;
+    }
+    const resume = !video.paused;
+    video.setAttribute("src", src);
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        video.currentTime = want.t;
+        if (resume) video.play().catch(() => {});
+      },
+      { once: true },
+    );
+    video.load();
+  };
+
+  /*
+   * THE NARRATION, played alongside the picture.
+   *
+   * A block of b-roll you talked over renders as the shot with your voice
+   * mixed in and the shot's own audio ducked under it. The preview showed the
+   * picture in SILENCE — so "Watch the cut", which exists on the claim that
+   * what it plays is what you get, was lying about exactly the blocks that
+   * needed it most.
+   *
+   * One element, reused. Created on demand so a cut with no narration in it
+   * never makes one.
+   */
+  let voiceEl = null;
+  let ducked = false;
+
+  const voiceFor = () => {
+    if (!voiceEl) {
+      voiceEl = document.createElement("audio");
+      voiceEl.preload = "metadata";
+      /* IN the document, hidden. A detached element does play, but nothing can
+         see it — not the page, not a test, not me. An audio element that only
+         exists in a closure is the kind of thing that keeps playing after
+         everything else has stopped and nobody can find out why. */
+      voiceEl.hidden = true;
+      voiceEl.setAttribute("data-cut-voice", "1");
+      root.appendChild(voiceEl);
+    }
+    return voiceEl;
+  };
+
+  const stopVoice = () => {
+    if (voiceEl) voiceEl.pause();
+    if (ducked) {
+      /* The bed comes back up, or every later block plays quiet. */
+      video.volume = 1;
+      ducked = false;
+    }
+  };
+
+  /*
+   * Keep the take with the picture.
+   *
+   * Called on the same timeupdate that drives the skip, so it re-seeks rather
+   * than trusting two clocks to stay together — scrubbing, a range change and
+   * a rate change all land here.
+   */
+  const syncVoice = (range) => {
+    if (!cut || !range || !range.voice) return stopVoice();
+
+    const el = voiceFor();
+    const src = "/media/" + range.voice;
+    if (el.getAttribute("src") !== src) {
+      el.setAttribute("src", src);
+      el.load();
+    }
+
+    const want = Math.max(0, video.currentTime - range.start);
+    if (Math.abs(el.currentTime - want) > 0.25) el.currentTime = want;
+    el.playbackRate = video.playbackRate;
+
+    /*
+     * DUCK THE BED, as the render does.
+     *
+     * The export sidechain-compresses the shot's own audio under the voice.
+     * A browser cannot sidechain, but dropping the video's volume while the
+     * take plays is the audible half of it and much closer than leaving both
+     * at full, which is two people talking over each other.
+     */
+    if (!ducked) {
+      video.volume = 0.25;
+      ducked = true;
+    }
+    if (video.paused) el.pause();
+    else el.play().catch(() => {});
+  };
+
+  /*
+   * THE WHOLE MECHANIC.
+   *
+   * Run off the end of a kept range and jump to the start of the next one.
+   * That is the entire preview: no render, no second file, and seeking is
+   * cheap because the editor plays a 480p copy with a keyframe every two
+   * seconds. At the last range it stops, because the cut is over even though
+   * the video is not.
+   */
+  const skip = () => {
+    if (!cut || !cut.ranges.length) return;
+    const key = currentKey();
+    const here = cut.ranges.findIndex(
+      (r) => r.key === key && video.currentTime >= r.start - 0.02 && video.currentTime < r.end,
+    );
+    if (here >= 0) {
+      /* Inside a kept range: this is where the narration lives or does not. */
+      cut.lastIdx = here;
+      syncVoice(cut.ranges[here]);
+      return;
+    }
+    stopVoice();
+
+    /* Not inside any kept range. Which one comes next in the cut? */
+    const after = cut.ranges.find((r) => r.key === key && r.start > video.currentTime);
+    const idx = after ? cut.ranges.indexOf(after) : cut.lastIdx + 1;
+    const next = cut.ranges[idx];
+    if (!next) {
+      /* Past the end of the cut. Stop ON the last frame of it rather than
+         wherever the playhead happens to be — leaving it parked on footage you
+         struck is the preview showing you the one thing it exists to hide. */
+      const last = cut.ranges[cut.ranges.length - 1];
+      cut.lastAt = cut.total;
+      video.pause();
+      if (video.currentTime > last.end) goTo({ key: last.key, t: Math.max(last.start, last.end - 0.05) });
+      paintBar();
+      return;
+    }
+    cut.lastIdx = idx;
+    goTo({ key: next.key, t: next.start });
+  };
+
   video.addEventListener("play", paintFace);
-  video.addEventListener("pause", paintFace);
-  video.addEventListener("ended", paintFace);
-  video.addEventListener("timeupdate", paintBar);
+  video.addEventListener("pause", () => { stopVoice(); paintFace(); });
+  /* A take still playing after the picture has stopped is the kind of ghost
+     this codebase keeps finding. */
+  video.addEventListener("ended", () => { stopVoice(); paintFace(); });
+  video.addEventListener("timeupdate", () => { if (cut) skip(); paintBar(); });
   video.addEventListener("progress", paintBar);
   video.addEventListener("loadedmetadata", paintDuration);
   if (Number.isFinite(video.duration)) paintDuration();
@@ -462,10 +676,20 @@ function wirePlayer(root, video) {
    * which on a narrow bar is most drags.
    */
   const seekTo = (clientX) => {
-    const dur = video.duration;
-    if (!Number.isFinite(dur) || dur <= 0) return;
     const r = track.getBoundingClientRect();
     const at = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+
+    /* Dragging the bar in cut mode moves you through the EDIT, so a drag to
+       halfway lands halfway through the cut rather than halfway through the
+       footage most of which is not in it. */
+    if (cut) {
+      const want = sourceAt(at * cut.total);
+      if (want) goTo(want);
+      return void paintBar();
+    }
+
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return;
     video.currentTime = at * dur;
     paintBar();
   };
@@ -497,10 +721,38 @@ function wirePlayer(root, video) {
     if (span) span.textContent = RATES[rateAt] + "\u00D7";
   });
 
+  /*
+   * Turning it on and off. Returned rather than exported, so the only way to
+   * put a player into cut mode is to have a player.
+   */
+  const setCut = (ranges) => {
+    stopVoice();
+    if (!ranges || !ranges.length) {
+      cut = null;
+      paintDuration();
+      return;
+    }
+    let at = 0;
+    const list = ranges.map((r) => {
+      /* voice travels with the range. Rebuilding these without it is how the
+         narration got dropped the first time — the fetch carried it and this
+         copied four fields out of five. */
+      const one = { key: r.key, start: r.start, end: r.end, voice: r.voice || null, at };
+      at += r.end - r.start;
+      return one;
+    });
+    cut = { ranges: list, total: at, lastAt: 0, lastIdx: 0 };
+    const first = list[0];
+    goTo({ key: first.key, t: first.start });
+    paintDuration();
+  };
+
   fullBtn?.addEventListener("click", () => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else if (video.requestFullscreen) void video.requestFullscreen().catch(() => {});
   });
+
+  return { setCut };
 }
 
 function paintMoments(canvases, defaultSrc) {
@@ -3167,6 +3419,7 @@ if (exportPanel) {
           format: data.get("format"),
           aspect: data.get("aspect"),
           captionStyle: data.get("captionStyle"),
+          enhance: data.get("enhance") === "1",
         }),
       });
       const out = await res.json().catch(() => ({}));
@@ -3214,6 +3467,63 @@ if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
     }
   }, 4000);
 }
+
+/*
+ * WATCH THE CUT.
+ *
+ * The editor has always played the ORIGINAL. Striking a line greys it out and
+ * changes a number, and that is the whole feedback you get — so the one
+ * question a text editor for video should answer instantly, does my cut
+ * actually flow, could only be answered by exporting the file and watching it.
+ *
+ * The ranges come from the server, not from the DOM. /api/projects/:id/edl is
+ * the same builder the export is cut from, which is what makes this a preview
+ * rather than an impression: if it plays, that is what you get.
+ */
+document.addEventListener("click", async (e) => {
+  const btn = e.target && e.target.closest && e.target.closest(".pl-cut");
+  if (!btn) return;
+  e.preventDefault();
+
+  const video = document.querySelector("#cut-video");
+  const api = video && players.get(video);
+  if (!api) return void toast("There's nothing to play yet.");
+
+  /* Off again: back to the whole video, wherever it happens to be. */
+  if (btn.getAttribute("aria-pressed") === "true") {
+    api.setCut(null);
+    btn.setAttribute("aria-pressed", "false");
+    btn.textContent = "Watch the cut";
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/edl");
+    if (!res.ok) throw new Error("no edl");
+    const { cuts } = await res.json();
+    const ranges = (cuts || []).map((c) => ({
+      /* previewKey is the editing copy; sourceKey is the master the render
+         uses. Playing the master here would scrub gigabytes. */
+      key: c.previewKey || c.sourceKey,
+      start: c.start_ms / 1000,
+      end: c.end_ms / 1000,
+      /* Narration recorded over this shot. The export mixes it in; a preview
+         that showed the picture in silence would be lying about the file. */
+      voice: c.voiceKey || null,
+    }));
+    if (!ranges.length) {
+      return void toast("There's nothing kept to watch yet.");
+    }
+    api.setCut(ranges);
+    btn.setAttribute("aria-pressed", "true");
+    btn.textContent = "Whole video";
+  } catch (err) {
+    toast("Couldn't work out the cut.");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 /*
  * STOP.
@@ -3732,7 +4042,7 @@ document.querySelectorAll(".player").forEach((bar) => {
      one. On a grid of cards it would wire one card's bar to another card's
      video, and pressing play would start something else entirely. */
   const video = own || (allVideos.length === 1 ? allVideos[0] : null);
-  if (video) wirePlayer(bar, video);
+  if (video) players.set(video, wirePlayer(bar, video));
 });
 
 /*

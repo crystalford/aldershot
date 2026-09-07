@@ -19,7 +19,7 @@ import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from ".
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { putFromResponse } from "./r2stream.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
-import { getSegments, getSource } from "./sources.ts";
+import { getSegments, getSource, playableKey } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { ulid } from "./id.ts";
 
@@ -67,6 +67,8 @@ export interface RenderRow {
   format: string;
   aspect: string;
   caption_style: string | null;
+  /** 1 when this export asked for its sound cleaned up. */
+  enhance?: number | null;
   r2_key: string | null;
   stream_uid: string | null;
   duration_s: number | null;
@@ -78,7 +80,7 @@ export interface RenderRow {
 
 export async function createRender(
   db: D1Database,
-  opts: { user_id: string; project_id: string; format: Format; aspect: Aspect; captionStyle?: string | null; kind?: string },
+  opts: { user_id: string; project_id: string; format: Format; aspect: Aspect; captionStyle?: string | null; kind?: string; enhance?: boolean },
 ): Promise<RenderRow> {
   const row: RenderRow = {
     id: ulid(),
@@ -88,6 +90,7 @@ export async function createRender(
     format: opts.format,
     aspect: opts.aspect,
     caption_style: opts.captionStyle ?? null,
+    enhance: opts.enhance ? 1 : 0,
     r2_key: null,
     stream_uid: null,
     duration_s: null,
@@ -98,12 +101,12 @@ export async function createRender(
   };
   await db
     .prepare(
-      `INSERT INTO renders (id,project_id,user_id,kind,format,aspect,caption_style,r2_key,stream_uid,duration_s,bytes,state,error,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO renders (id,project_id,user_id,kind,format,aspect,caption_style,enhance,r2_key,stream_uid,duration_s,bytes,state,error,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       row.id, row.project_id, row.user_id, row.kind, row.format, row.aspect, row.caption_style,
-      row.r2_key, row.stream_uid, row.duration_s, row.bytes, row.state, row.error, row.created_at,
+      row.enhance ?? 0, row.r2_key, row.stream_uid, row.duration_s, row.bytes, row.state, row.error, row.created_at,
     )
     .run();
   return row;
@@ -247,7 +250,9 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
    */
   const { blocks, cuts } = await blocksForProject(env.DB, project, userId, { segments });
 
-  const edl = buildEdl(source.r2_key, blocks, cuts);
+  /* Two keys: the master for the render, the editing copy for the preview.
+     playableKey is the one definition of which file you watch. */
+  const edl = buildEdl(source.r2_key, blocks, cuts, playableKey(source));
   return { edl, source, segments };
 }
 
@@ -298,21 +303,31 @@ export async function runRender(
      * Two hours is comfortably longer than any render and shorter than a URL
      * being worth stealing.
      */
-    const plan = buildRenderPlan(built.edl, render.format, render.aspect, render.caption_style);
-    const urls = await Promise.all(
-      plan.cuts.map(async (c) => {
-        const signed =
-          (await presignGet(env, c.key, 7200)) ??
-          (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${c.key}` : null);
-        return signed;
-      }),
-    );
+    const plan = buildRenderPlan(built.edl, render.format, render.aspect, render.caption_style, Boolean(render.enhance));
+    const sign = async (key: string) =>
+      (await presignGet(env, key, 7200)) ??
+      (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${key}` : null);
+
+    const urls = await Promise.all(plan.cuts.map((c) => sign(c.key)));
+    /* And the voice over it, where there is one. B-roll with narration: the
+       container mixes it over the picture with the picture's own audio ducked
+       underneath, which it has been able to do since that branch was written
+       and had never been given one to do it with. */
+    const voiceUrls = await Promise.all(plan.cuts.map((c) => (c.voiceKey ? sign(c.voiceKey) : null)));
+
     if (urls.some((u) => !u)) {
       return void (await fail("Couldn't give the encoder a way to read your footage."));
     }
+    if (plan.cuts.some((c, i) => c.voiceKey && !voiceUrls[i])) {
+      return void (await fail("Couldn't give the encoder a way to read your recording."));
+    }
     const withUrls = {
       ...plan,
-      cuts: plan.cuts.map((c, i) => ({ ...c, url: urls[i] as string })),
+      cuts: plan.cuts.map((c, i) => ({
+        ...c,
+        url: urls[i] as string,
+        ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
+      })),
     };
 
     /* The output length is known from the plan, so it is recorded before the

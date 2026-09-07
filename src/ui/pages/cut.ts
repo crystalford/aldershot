@@ -34,6 +34,8 @@ export interface CutData {
   sourceTitle: string | null;
   sourceKey: string | null;
   posterKey: string | null;
+  /** The video's own shape, so the player is not a hardcoded 16/9 box. */
+  aspect?: string;
   blocks: Block[];
   cuts: Cut[];
   runtimeMs: number;
@@ -219,6 +221,17 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
   const beatId = esc(b.id.slice(2));
   const took = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
 
+  /*
+   * TWO KINDS OF BLOCK CAN CARRY A RECORDING.
+   *
+   * A voiceover beat IS the recording — its mediaKey is the take. A clip
+   * pulled in as b-roll has a picture of its own and the take goes OVER it,
+   * which is voiceKey. Same recorder either way; only which field holds the
+   * audio differs.
+   */
+  const overBRoll = b.origin === "footage" && b.id.startsWith("b:");
+  const voice = b.origin === "voice" ? b.mediaKey : b.voiceKey;
+
   const bar = (h: number) =>
     `<div class="rec-bar" style="width:3px;height:${h}px;border-radius:99px;background:rgba(236,236,241,0.5);flex:none"></div>`;
 
@@ -226,10 +239,10 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 
     <!-- Idle. Recording is the real answer, so it is the gold one. -->
     <div class="rec-idle" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${b.mediaKey ? "Another take" : "Record it"}</button>
+      <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${voice ? "Another take" : overBRoll ? "Talk over it" : "Record it"}</button>
       <button class="blk-tts" style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
       ${
-        b.mediaKey
+        voice
           ? `<button class="blk-unrecord" style="margin-left:auto;font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;padding:0 4px;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Remove</button>`
           : ""
       }
@@ -247,14 +260,17 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 
   /* The take you already have, playable. A recording you cannot hear back is
      one you have to re-record to check. */
-  const take = b.mediaKey
+  const take = voice
     ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
-        <audio controls preload="none" src="/media/${esc(b.mediaKey)}" style="flex:1 1 220px;min-width:min(200px,100%);height:32px"></audio>
+        <audio controls preload="none" src="/media/${esc(voice)}" style="flex:1 1 220px;min-width:min(200px,100%);height:32px"></audio>
         ${took ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${ACCENT.green};white-space:nowrap">${took}</span>` : ""}
       </div>`
     : "";
 
-  const fill = b.origin === "voice" && !struck ? take + recorder : "";
+  /* B-roll gets the recorder too — that is the whole point: a shot, and you
+     saying what it means over it. "Generate it" is left to voiceover beats,
+     where a synthetic line stands on its own. */
+  const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder : "";
 
   const meta = [
     b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",
@@ -606,12 +622,13 @@ export function renderCut(d: CutData): string {
   const clockStyle = `flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums`;
 
   const player = d.sourceKey
-    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
       <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
         <button class="pl-play" aria-label="Play" style="${ctl}">
           <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
           <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
         </button>
+        <button class="pl-cut" data-project="${esc(d.projectId)}" aria-pressed="false" title="Play only what you kept" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:4px 9px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Watch the cut</button>
         <span class="pl-now" data-content style="${clockStyle}">0:00</span>
         <div class="pl-track" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
           style="position:relative;flex:1 1 60px;min-width:min(50px,100%);height:16px;cursor:pointer;touch-action:none">

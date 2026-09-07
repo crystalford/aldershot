@@ -17,7 +17,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scorePass } from "../src/score.ts";
+import { scorePass, windowSegments } from "../src/score.ts";
 
 const seg = (idx: number, text: string) => ({
   id: `s${idx}`,
@@ -71,6 +71,9 @@ function fakeAI(opts: { delayFor?: (n: number) => number; hangFor?: number[] } =
 
 const env = (ai: unknown) => ({ AI: ai, MODEL_REASON: undefined }) as never;
 
+/** How many windows a transcript of n lines divides into. */
+const windowsIn = (n: number) => windowSegments(transcript(n)).length;
+
 test("windows are read at the same time, not one after another", async () => {
   const ai = fakeAI({ delayFor: () => 60 });
   const t0 = Date.now();
@@ -96,14 +99,17 @@ test("the answer is in transcript order however the windows land", async () => {
   assert.deepEqual(starts, [...starts].sort((a, b) => a - b), "the moments came back out of order");
 });
 
-test("a window that never answers is retried, then fails with a sentence", async () => {
-  /* Both attempts hang, so the pass gives up — in a minute and a half rather
-     than at the thirty-minute reaper. */
-  const ai = fakeAI({ hangFor: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] });
-  await assert.rejects(
-    () => scorePass(env(ai.AI), transcript(40), "find the strong bits", { windowTimeoutMs: 50 }),
-    (e: Error) => /didn't answer in time/.test(e.message),
-  );
+test("a window that never answers is retried before it is given up on", async () => {
+  /*
+   * It used to be that both attempts hanging failed the whole pass. That is
+   * now only true when EVERY window fails — see the two tests at the bottom of
+   * this file. What still has to hold is that a stretch gets a SECOND chance
+   * before it is written off, because these fail when something is momentarily
+   * busy and the retry is the thing that rescues them.
+   */
+  const ai = fakeAI({ hangFor: [0] });
+  await scorePass(env(ai.AI), transcript(40), "find the strong bits", { windowTimeoutMs: 50 });
+  assert.ok(ai.calls() > windowsIn(40), "the stalled window was never tried again");
 });
 
 test("one window hanging is survived by the retry", async () => {
@@ -123,4 +129,50 @@ test("progress is reported once per window, counting up", async () => {
   assert.equal(seen.length, ai.calls(), "a window finished without saying so");
   assert.deepEqual(seen.map((s) => s[0]), seen.map((_, i) => i + 1), "the count did not go up by one");
   assert.ok(out.clips.length > 0);
+});
+
+/**
+ * One slow window must not throw the whole pass away.
+ *
+ * "Couldn't work out what to keep: the model didn't answer in time" — on a
+ * 13:56 video with 116 lines. A window that timed out threw, the throw came
+ * out of Promise.all, and everything the model HAD read was discarded with it.
+ *
+ * A stretch nobody could read is a stretch with no moments in it, which is a
+ * true answer and a useful one. Only a pass where nothing at all came back has
+ * really failed.
+ */
+test("a pass survives a window that never answers", async () => {
+  const ai = fakeAI({ hangFor: [0] });
+  const out = await scorePass(env(ai.AI), transcript(120), "find the strong bits", {
+    windowTimeoutMs: 40,
+  });
+  assert.ok(out.clips.length > 0, "one slow stretch threw away every other one");
+});
+
+test("but a pass where nothing answered still fails, with its reason", async () => {
+  const ai = fakeAI({ hangFor: Array.from({ length: 40 }, (_, i) => i) });
+  await assert.rejects(
+    () => scorePass(env(ai.AI), transcript(120), "find the strong bits", { windowTimeoutMs: 40 }),
+    (e: Error) => /didn't answer/.test(e.message),
+  );
+});
+
+test("progress still counts a lost window as done, or the bar would stall", async () => {
+  const ai = fakeAI({ hangFor: [1] });
+  const seen: number[] = [];
+  await scorePass(env(ai.AI), transcript(120), "find the strong bits", {
+    windowTimeoutMs: 40,
+    onProgress: (_f, done) => void seen.push(done),
+  });
+  assert.deepEqual(seen, seen.map((_, i) => i + 1), "the count skipped the window that failed");
+});
+
+test("the deadline grows with the window, because a bigger prompt takes longer", async () => {
+  const { windowTimeout } = await import("../src/score.ts");
+  const small = windowTimeout(2_000);
+  const big = windowTimeout(24_000);
+  assert.ok(big > small, "one flat number is either too tight or useless");
+  assert.ok(small >= 150_000, "a short window still gets a generous floor");
+  assert.ok(big <= 420_000, "and nothing waits for ever");
 });

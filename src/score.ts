@@ -168,7 +168,26 @@ export const asked = (brief: string) => brief.trim() || "the moments worth keepi
  * and short enough that a wedged call is a failure you can retry rather than
  * an afternoon.
  */
-const WINDOW_TIMEOUT_MS = 90_000;
+/*
+ * Ninety seconds flat was wrong, and it failed a real pass: a 13:56 video,
+ * 116 lines, one window, "Couldn't work out what to keep: the model didn't
+ * answer in time". A big window is a big prompt and legitimately takes longer
+ * than a small one, so a fixed number is either too tight for the long ones or
+ * useless for the short ones.
+ *
+ * Scaled to the work, with a floor that is generous and a ceiling that still
+ * stops a wedged call holding a queue invocation all afternoon.
+ */
+const WINDOW_TIMEOUT_FLOOR_MS = 150_000;
+const WINDOW_TIMEOUT_PER_KCHAR_MS = 12_000;
+const WINDOW_TIMEOUT_CEIL_MS = 420_000;
+
+export function windowTimeout(chars: number): number {
+  return Math.min(
+    WINDOW_TIMEOUT_CEIL_MS,
+    WINDOW_TIMEOUT_FLOOR_MS + Math.round((chars / 1000) * WINDOW_TIMEOUT_PER_KCHAR_MS),
+  );
+}
 
 /** One window, once, with a deadline and a single retry. */
 async function readWindow(
@@ -193,12 +212,18 @@ async function readWindow(
       max_tokens: 8000,
     });
 
-  /* One retry, because the failure this guards against is a call that hangs,
-     and a hung call is very often the only one that will. */
+  /*
+   * One retry, after a pause.
+   *
+   * These fail because something was busy, and asking the same busy thing
+   * again a millisecond later asks the same question. The same reasoning as
+   * the queue consumer's backoff in src/queue.ts.
+   */
   let res: unknown;
   try {
     res = await withDeadline(once(), timeoutMs);
   } catch {
+    await new Promise((r) => setTimeout(r, 3_000));
     res = await withDeadline(once(), timeoutMs);
   }
 
@@ -270,16 +295,52 @@ export async function scorePass(
 
   let finished = 0;
   let next = 0;
+  let lost = 0;
   const lane = async () => {
     for (;;) {
       const i = next++;
       if (i >= windows.length) return;
-      answers[i] = await readWindow(run, model.id, windows[i], brief, opts.windowTimeoutMs ?? WINDOW_TIMEOUT_MS);
+      const chars = windows[i].reduce((n, sg) => n + sg.text.length + 32, 0);
+      try {
+        answers[i] = await readWindow(
+          run,
+          model.id,
+          windows[i],
+          brief,
+          opts.windowTimeoutMs ?? windowTimeout(chars),
+        );
+      } catch (err) {
+        /*
+         * ONE BAD WINDOW IS NOT A BAD PASS.
+         *
+         * This threw, and the throw came out of Promise.all, and the whole
+         * pass failed — so eleven stretches the model had already read were
+         * discarded because the twelfth was slow. The owner got "Couldn't work
+         * out what to keep: the model didn't answer in time" on a fourteen
+         * minute video and nothing else.
+         *
+         * A stretch nobody could read is a stretch with no moments in it,
+         * which is a true and useful answer. Only a pass where EVERY window
+         * failed has genuinely failed, and that is raised below.
+         */
+        lost++;
+        answers[i] = { clips: [], tokensIn: 0, tokensOut: 0, cutting: false };
+        console.log(`[score] window ${i + 1}/${windows.length}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       finished++;
       opts.onProgress?.(finished / windows.length, finished, windows.length);
     }
   };
   await Promise.all(Array.from({ length: Math.min(LANES, windows.length) }, lane));
+
+  /* Nothing was read at all. That is a failure, and it keeps its reason. */
+  if (lost === windows.length) {
+    throw new Error(
+      windows.length === 1
+        ? "the model didn't answer in time"
+        : `the model didn't answer for any of the ${windows.length} stretches`,
+    );
+  }
 
   const clips: ScoredClip[] = [];
   let tokensIn = 0;

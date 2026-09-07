@@ -21,6 +21,13 @@ out=$(npm test 2>&1) || { echo "$out"; exit 1; }
 echo "$out" | grep -qE '^# fail 0$' || { echo "$out" | tail -40; echo; echo "TESTS FAILED"; exit 1; }
 echo "$out" | grep -E '^# (tests|pass|fail) '
 
+# The container is a separate process with its own module graph, and nothing
+# above can see it: `node --check` parses it but never runs it, so a function
+# the server calls at runtime can be deleted and every stage above stays green.
+# That happened — twice in one day — and the second time it shipped.
+echo "── container"
+node scripts/check-container.cjs
+
 echo "── fidelity"
 node scripts/check-fidelity.cjs
 

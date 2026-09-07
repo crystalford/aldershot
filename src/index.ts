@@ -65,7 +65,7 @@ import { abortMultipart, canPresign, completeMultipart, createMultipart, presign
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { backfillProxies } from "./proxy.ts";
-import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
+import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
@@ -1275,6 +1275,9 @@ app.get("/p/:id/:stagePath", async (c) => {
         /* The editing copy when there is one — see playableKey. The RENDER
            still reads r2_key; this is only what you watch. */
         sourceKey: source ? playableKey(source) : null,
+        /* The video's own shape. Recorded by the proxy pass and, until now,
+           read by nothing — see aspectOf. */
+        aspect: source ? aspectOf(source) : undefined,
         posterKey: source?.poster_r2_key ?? null,
         blocks,
         beats,
@@ -1754,7 +1757,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
 app.post("/api/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ projectId: string; format: Format; aspect: Aspect; captionStyle?: string }>(c);
+  const b = await body<{ projectId: string; format: Format; aspect: Aspect; captionStyle?: string; enhance?: boolean | string }>(c);
   if (!b.projectId) return c.json({ error: "which project?" }, 400);
 
   const project = await getProject(c.env.DB, b.projectId, user.id);
@@ -1785,6 +1788,9 @@ app.post("/api/renders", async (c) => {
     format,
     aspect,
     captionStyle,
+    /* Opt-in, and read as a boolean rather than trusted as one: this arrives
+       from the client like everything else here. */
+    enhance: b.enhance === true || b.enhance === "1",
   });
   /*
    * ref_id IS THE RENDER, and never was.
@@ -1914,6 +1920,8 @@ app.get("/api/projects/:id/edl", async (c) => {
   if (!project) return c.json({ error: "not found" }, 404);
   const built = await edlForProject(c.env, project, user.id);
   if (!built) return c.json({ error: "no source" }, 400);
+  /* cuts carry BOTH keys: sourceKey is the master a render is cut from,
+     previewKey is the editing copy the preview plays. See src/edl.ts. */
   return c.json({ cuts: built.edl.cuts, durationMs: built.edl.durationMs });
 });
 

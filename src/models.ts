@@ -162,9 +162,6 @@ export const EMBED: ModelSpec = {
   native: true,
   
 };
-export const EMBED_DIMS = 1024;
-export const EMBED_POOLING = "mean" as const;
-
 /** Anthropic model used for the upgraded path. */
 export const ANTHROPIC_REASON = "claude-sonnet-5";
 
