@@ -36,8 +36,18 @@ const SCHEMA = {
         required: ["start_ms", "end_ms", "why", "score"],
       },
     },
+    /*
+     * KEEP THESE, or CUT THESE.
+     *
+     * The same call answers both — "find the strong bits" and "cut the false
+     * starts" both return the moments that match, and the two mean opposite
+     * things about the other ninety per cent of the video. Without this a pass
+     * could only annotate, which is why pressing Find the strong bits left the
+     * cut exactly as long as it was.
+     */
+    action: { type: "string", enum: ["keep", "cut"] },
   },
-  required: ["clips"],
+  required: ["clips", "action"],
 } as const;
 
 function transcriptForPrompt(segments: Segment[]): string {
@@ -63,10 +73,22 @@ const SYSTEM = [
   "Prefer whole thoughts over fragments: start where the point starts and end",
   "where it lands. If nothing in the transcript matches, return an empty list.",
   "Saying you found nothing is a correct answer; padding the list is not.",
+  "",
+  "Then say what the user wants DONE with them, in `action`:",
+  '  "keep" — these are what they want, and the rest of the video should go.',
+  '           "find the strong bits", "keep only the ones under 20 seconds",',
+  '           "just the story".',
+  '  "cut"  — these are what they want removed, and the rest should stay.',
+  '           "cut the false starts", "also cut the sponsor read",',
+  '           "cut anything I said better later".',
+  "This decides what happens to the other ninety per cent of the video, so",
+  "read the sentence carefully. When it is genuinely ambiguous, say \"keep\".",
 ].join("\n");
 
 export interface ScoreResult {
   clips: ScoredClip[];
+  /** What to do with them — see the schema. "keep" when the model is unsure. */
+  action: "keep" | "cut";
   tokensIn: number;
   tokensOut: number;
   model: string;
@@ -142,7 +164,7 @@ export async function scorePass(
     onProgress?: (fraction: number, done: number, total: number) => void;
   } = {},
 ): Promise<ScoreResult> {
-  if (!segments.length) return { clips: [], tokensIn: 0, tokensOut: 0, model: "" };
+  if (!segments.length) return { clips: [], action: "keep", tokensIn: 0, tokensOut: 0, model: "" };
 
   const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
@@ -151,6 +173,10 @@ export async function scorePass(
   const clips: ScoredClip[] = [];
   let tokensIn = 0;
   let tokensOut = 0;
+  /* A long transcript is read in windows and each one answers separately. One
+     window saying "cut" is enough — an instruction is about the whole video,
+     and treating a cut as a keep would strike everything the user wanted. */
+  let cutting = false;
 
   for (let i = 0; i < windows.length; i++) {
     const window = windows[i];
@@ -175,6 +201,7 @@ export async function scorePass(
     /* Grounded against THIS window, so a model that wanders outside the lines
        it was shown is corrected rather than trusted. */
     clips.push(...groundClips(parseClips(res), window));
+    if (readAction(res) === "cut") cutting = true;
 
     opts.onProgress?.((i + 1) / windows.length, i + 1, windows.length);
   }
@@ -193,5 +220,65 @@ export async function scorePass(
     merged.push(c);
   }
 
-  return { clips: merged, tokensIn, tokensOut, model: model.id };
+  /* The sentence wins. The model is the tie-break, not the authority. */
+  const stated = actionFor(brief);
+  return {
+    clips: merged,
+    action: stated ?? (cutting ? "cut" : "keep"),
+    tokensIn,
+    tokensOut,
+    model: model.id,
+  };
+}
+
+/**
+ * Does this instruction mean KEEP what you find, or CUT it?
+ *
+ * Read from the sentence rather than from the model. The schema asks for an
+ * `action` and the model usually gives one, but JSON mode here is not
+ * constrained decoding — this file already says so about the clips — and a
+ * field that silently goes missing would default every instruction to "keep",
+ * which turns "cut the false starts" into "keep ONLY the false starts". That
+ * is the one mistake in this whole feature that ruins an edit rather than
+ * merely disappointing.
+ *
+ * So the sentence decides, deterministically and testably, and the model's
+ * answer is only consulted when the sentence does not say.
+ *
+ * "cut it down to the strong bits" is the trap: it opens with a removal verb
+ * and means the opposite. A removal verb only counts when what follows is the
+ * thing being removed, so "down to", "to just" and "to only" put it back.
+ */
+export function actionFor(instruction: string): "keep" | "cut" | null {
+  const t = instruction.toLowerCase().trim();
+  if (!t) return null;
+
+  /* "cut it down to X", "trim it to just X" — a removal verb pointed at the
+     result rather than at what goes. */
+  if (/\b(down to|to just|to only|so it.s just)\b/.test(t)) return "keep";
+
+  if (/^(cut|remove|drop|delete|lose|get rid of|take out|strip)\b/.test(t)) return "cut";
+  if (/\b(also cut|and cut|cut out|cut all|cut every|cut any|remove all|remove every|remove any)\b/.test(t)) return "cut";
+
+  if (/^(keep|find|just|only|show|give me)\b/.test(t)) return "keep";
+  if (/\b(keep only|only the|the best|the strongest|the funniest|worth keeping)\b/.test(t)) return "keep";
+
+  return null;
+}
+
+/**
+ * The model's own answer, when the sentence did not settle it.
+ *
+ * Anything unreadable is "keep", which is the safer of the two: keeping what
+ * it found and cutting the rest is a visible, undoable edit, while mistaking a
+ * keep for a cut strikes exactly the moments the user asked to see.
+ */
+function readAction(res: unknown): "keep" | "cut" {
+  try {
+    const raw = (res as { response?: unknown })?.response ?? res;
+    const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return (obj as { action?: string })?.action === "cut" ? "cut" : "keep";
+  } catch {
+    return "keep";
+  }
 }

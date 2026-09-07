@@ -682,14 +682,24 @@ if (blocksEl) {
     let following = true;
     let selfScrolled = 0;
 
+    /*
+     * The way back to the playhead, offered only when there IS one.
+     *
+     * "what is this follow along button?" — a fair question, because it
+     * appeared on any scroll whether or not anything was playing. On a paused
+     * page, which is most of the time, scrolling summoned an unexplained
+     * button into the dead space below the export bar. It now exists only
+     * while the video is running, which is the only moment following means
+     * anything, and it says what pressing it does rather than naming a mode.
+     */
     const followBtn = document.createElement("button");
     followBtn.type = "button";
     followBtn.hidden = true;
-    followBtn.textContent = "Follow along";
+    followBtn.textContent = "Back to what's playing";
     followBtn.style.cssText =
-      "position:fixed;z-index:20;left:50%;transform:translateX(-50%);bottom:76px;font-size:12px;font-weight:600;" +
-      "padding:7px 14px;border-radius:5px;background:#ECECF1;color:#131316;border:none;cursor:pointer;" +
-      "white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.45)";
+      "position:fixed;z-index:56;left:50%;transform:translateX(-50%);bottom:96px;font-size:12px;font-weight:600;" +
+      "padding:8px 15px;border-radius:5px;background:#ECECF1;color:#131316;border:none;cursor:pointer;" +
+      "white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5)";
     followBtn.addEventListener("click", () => {
       following = true;
       followBtn.hidden = true;
@@ -697,6 +707,12 @@ if (blocksEl) {
       light();
     });
     document.body.appendChild(followBtn);
+
+    /* Nothing to follow when nothing is playing, so the offer goes away with
+       the playhead — including when the video simply reaches its end. */
+    const stopOffering = () => { followBtn.hidden = true; };
+    video.addEventListener("pause", stopOffering);
+    video.addEventListener("ended", stopOffering);
 
     window.addEventListener(
       "scroll",
@@ -706,7 +722,9 @@ if (blocksEl) {
         if (Date.now() - selfScrolled < 700) return;
         if (!following) return;
         following = false;
-        followBtn.hidden = false;
+        /* Scrolling a paused page is just reading. It is not a decision to
+           stop following something that is not moving. */
+        if (!video.paused && !video.ended) followBtn.hidden = false;
       },
       { passive: true },
     );
@@ -1507,6 +1525,19 @@ if (assist) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't start");
+      /*
+       * A pass rewrites the cut, so it needs an undo — and it finishes minutes
+       * after this reload, so the state to go back to is the one that exists
+       * right now. Held under its own key and handed to the normal undo park
+       * only when the job actually completes; the ordinary one is consumed on
+       * the very next load, which would be this one.
+       */
+      if (out.before) {
+        sessionStorage.setItem(
+          "pass-undo:" + projectId,
+          JSON.stringify({ label: "Ran a pass", before: out.before }),
+        );
+      }
       location.reload();
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = was; }
@@ -3001,7 +3032,18 @@ if (scoring) {
       const job = (jobs || []).find((j) => j.ref_id === projectId);
       /* Gone from the active list means finished, one way or the other. The
          reload is what brings the scores onto the blocks. */
-      if (!job) { clearInterval(tickClock); location.reload(); return; }
+      if (!job) {
+        clearInterval(tickClock);
+        /* The pass has landed, so the snapshot taken when it started becomes
+           the undo the next page offers. */
+        const held = sessionStorage.getItem("pass-undo:" + projectId);
+        if (held) {
+          sessionStorage.removeItem("pass-undo:" + projectId);
+          sessionStorage.setItem("undo:" + projectId, held);
+        }
+        location.reload();
+        return;
+      }
       if (label && job.stage_label) label.textContent = job.stage_label;
       if (typeof job.pct === "number") {
         if (bar) bar.style.width = job.pct + "%";

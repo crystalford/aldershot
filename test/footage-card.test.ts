@@ -87,8 +87,13 @@ test("Find is still reachable by URL, so it comes back by flipping one condition
   assert.match(html, /Find a moment in a video you don't have yet/);
 });
 
-test("the video grid does not leave empty tracks beside a short library", () => {
-  /* auto-fill puts two videos in a four-track grid with two blanks beside
-     them, which is why this page read as half empty. */
-  assert.doesNotMatch(videos(), /auto-fill/);
+test("the video grid fills the row rather than stranding the leftover", () => {
+  /* The first version of this banned auto-fill and aimed at the wrong half.
+     The problem is a PIXEL max: capped at 240px, a 960px column fits three
+     cards and leaves 208px dead on every row — "it looks weird having only 3
+     and then blank space". 1fr shares the row out; auto-fill keeps the track
+     count steady so two videos do not balloon to half the page each. */
+  const html = videos();
+  assert.match(html, /repeat\(auto-fill,minmax\(min\(210px,100%\),1fr\)\)/);
+  assert.doesNotMatch(html, /minmax\([^)]*,\s*\d+px\)/, "a px cap is back");
 });

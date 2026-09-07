@@ -1007,6 +1007,25 @@ app.get("/clipping", async (c) => {
    *
    * With nothing picked the page is the picker, so there is nothing to load.
    */
+  /*
+   * NO LIST HERE. Footage is the list.
+   *
+   * "why not also just have them listed sort of like footage .. but also not
+   * sure about clipping like again feels almost redundant" — and it was.
+   * Turning Clipping into a verb left a picker behind, and a picker of your
+   * videos is Footage with fewer features and a worse layout. Footage already
+   * shows every video with a Clip it button on each one.
+   *
+   * So it behaves like the Editor, which was settled the same way: that opens
+   * the edit you were last in rather than listing edits. This opens the newest
+   * video you can actually clip. With nothing readable yet there is no list to
+   * show either — just the way to add one.
+   */
+  if (!source) {
+    const newest = sources.find((sv) => sv.transcript_state === "ready");
+    if (newest) return c.redirect(`/clipping?source=${newest.id}`);
+  }
+
   const shorts = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
 
   /* Whether each one has actually been made into a video yet. Without this the
@@ -1033,10 +1052,6 @@ app.get("/clipping", async (c) => {
               clip_count: clipCounts.get(source.id) ?? 0,
             }
           : null,
-        available: sources.map((s) => ({
-          id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
-          poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
-        })),
         shorts: shorts.map((cl) => ({
           ...cl,
           render: renders.get(cl.id) ?? null,
@@ -1578,8 +1593,10 @@ app.post("/api/projects/:id/cuts", async (c) => {
    * all, silently.
    */
   if (b.kind === "segment" && b.block?.startsWith("b:")) {
-    const found = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
-    if (!found) return c.json({ error: "that block is gone" }, 404);
+    /* null means no such beat. false means it is now UNSTRUCK, which is a
+       success — reading it as failure is what made "Add back" do nothing. */
+    const now = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
+    if (now === null) return c.json({ error: "that block is gone" }, 404);
   } else if (b.kind === "range" && Array.isArray(b.ranges) && b.ranges.length) {
     /* Added, never toggled. A drag across ten words means "cut these", and
        toggling would put back any word inside the selection that happened to
@@ -2268,7 +2285,13 @@ app.post("/api/projects/:id/passes", async (c) => {
     projectId: project.id,
     brief: instruction,
   });
-  return c.json({ jobId: job.id });
+  /* A pass CHANGES the cut now, so it needs an undo like every other edit —
+     and the change lands minutes later, so the state to go back to is the one
+     that exists right now. The editor holds it until the job finishes. */
+  return c.json({
+    jobId: job.id,
+    before: { cuts: project.cuts ?? null, order: project.block_order ?? null },
+  });
 });
 
 /**

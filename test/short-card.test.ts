@@ -43,7 +43,7 @@ const SOURCE = {
 /* With a video picked. Clipping is a verb: /clipping on its own is the picker,
    and cards only exist once you have pointed it at something. */
 const page = (over: Partial<ShortRow> = {}) =>
-  renderClipping({ source: SOURCE, available: [SOURCE], shorts: [short(over)], job: null, fromEditor: false });
+  renderClipping({ source: SOURCE, shorts: [short(over)], job: null, fromEditor: false });
 
 const ready = (over: Partial<NonNullable<ShortRow["render"]>> = {}) => ({
   id: "r1",
@@ -134,17 +134,25 @@ test("shape and captions are on the page, so the lede is not a lie", () => {
 });
 
 test("an empty Clipping offers no sheet and no settings to nothing", () => {
-  const html = renderClipping({ source: SOURCE, available: [SOURCE], shorts: [], job: null, fromEditor: false });
+  const html = renderClipping({ source: SOURCE, shorts: [], job: null, fromEditor: false });
   assert.doesNotMatch(html, /id="adjust"/);
   assert.doesNotMatch(html, /class="clip-form"/);
 });
 
-test("with no video picked it is the picker, not a library", () => {
-  /* The third list of clips in the product, after Footage's. Each nav item
-     means one thing: this one is how you turn a video into shorts. */
-  const html = renderClipping({ source: null, available: [SOURCE], shorts: [], job: null, fromEditor: false });
+test("with nothing readable it offers a way in, not a list", () => {
+  /* Reached only when there is no video to open — the route redirects into
+     one otherwise. It used to list every video you own, which is Footage
+     with fewer features, and Footage already has a Clip it button per card. */
+  const html = renderClipping({ source: null, shorts: [], job: null, fromEditor: false });
   assert.match(html, /Pick a video and it does the rest/);
-  assert.match(html, /Drop a video, or clip one you already have/);
+  assert.match(html, /Nothing read yet/);
+  assert.match(html, /id="clipDrop"/);
   assert.doesNotMatch(html, /data-short=/);
   assert.doesNotMatch(html, /id="adjust"/);
+});
+
+test("the video being clipped is named, with a way back", () => {
+  const html = renderClipping({ source: SOURCE, shorts: [short()], job: null, fromEditor: false });
+  assert.match(html, /Kino Casino #372/);
+  assert.match(html, /All videos/);
 });

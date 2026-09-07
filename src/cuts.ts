@@ -362,6 +362,56 @@ export function pauseCuts(segments: Segmentish[], overMs = PAUSE_OVER_MS): Cut[]
   return cuts;
 }
 
+/**
+ * Turn what a pass found into an actual cut.
+ *
+ * "yeah that's the whole point is like one click sort of does it right ..
+ * otherwise i have no idea what the fuck it is doing." Until now a pass could
+ * only annotate: it scored some moments, drew badges on them, and left a
+ * 2:50 edit exactly 2:50 long. Pressing a button called "Find the strong
+ * bits" and watching nothing change is not a subtle failure.
+ *
+ * keep — the moments ARE the cut, so every line they do not cover goes.
+ * cut  — the moments are what to remove, so only those lines go.
+ *
+ * Lines only. A word-level cut somewhere else in the transcript is somebody's
+ * deliberate work and survives untouched, which is also what makes this safe
+ * to undo: the snapshot restores exactly what was there.
+ */
+export function applyMoments(
+  segments: Segmentish[],
+  moments: Array<{ start_ms: number; end_ms: number }>,
+  action: "keep" | "cut",
+): Cut[] {
+  /* Half of a line inside a moment counts as being in it. A moment starts and
+     ends on a thought, not on a segment boundary, so the line it clips the
+     corner of was never the point. */
+  const covered = (seg: Segmentish) => {
+    const span = Math.max(1, seg.end_ms - seg.start_ms);
+    return moments.some(
+      (m) => (Math.min(seg.end_ms, m.end_ms) - Math.max(seg.start_ms, m.start_ms)) / span > 0.5,
+    );
+  };
+
+  /*
+   * Nothing found means nothing to do.
+   *
+   * Read literally, "keep these" with an empty list means "keep none of it",
+   * and one press would strike every line in the transcript. runScore already
+   * declines to call this with no moments, but a function that empties an
+   * edit when handed nothing is a bad thing to leave lying about for the next
+   * caller to find.
+   */
+  if (!moments.length) return [];
+
+  const out: Cut[] = [];
+  for (const seg of segments) {
+    const inside = covered(seg);
+    if (action === "keep" ? !inside : inside) out.push({ seg: seg.idx, words: null });
+  }
+  return out;
+}
+
 /** What a set of cuts would remove, in milliseconds. */
 export function timeSaved(segments: Segmentish[], existing: Cut[], added: Cut[]): number {
   const before = playableRanges(segments, existing).reduce((n, r) => n + (r.end_ms - r.start_ms), 0);
