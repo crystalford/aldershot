@@ -21,6 +21,8 @@ export interface Meter {
   unit: string;
   note: string;
   color: string;
+  /** Metered but never blocked — the cap is not enforced, so it is not shown. */
+  uncapped?: boolean;
 }
 
 export interface CostLine {
@@ -93,7 +95,7 @@ function account(name: string | null, email: string): string {
       <div data-content style="font-size:${SIZE.secondary};color:${C.ink70}">Close this account</div>
       <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:3px;line-height:1.55">Removes every video, edit and export, and the storage they hold. There is no bin behind this one.</div>
     </div>
-    <button id="closeAccount" data-email="${esc(email)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:7px 13px;border-radius:${RADIUS.button};background:transparent;color:${ACCENT.red};border:none;cursor:pointer;font-family:${FONT.ui}">Close account</button>
+    <button id="closeAccount" data-danger data-email="${esc(email)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:7px 13px;border-radius:${RADIUS.button};background:transparent;color:${ACCENT.red};border:none;cursor:pointer;font-family:${FONT.ui}">Close account</button>
   </div>`;
 }
 
@@ -106,16 +108,32 @@ function planBlock(plan: string, meters: Meter[], billingReady: boolean): string
   const btn = pro ? "Manage plan" : "Upgrade to Studio";
 
   const meterRow = (m: Meter) => {
-    const pct = m.cap ? Math.min(100, Math.round((m.used / m.cap) * 100)) : 0;
-    const hot = pct > 85;
+    /*
+     * An uncapped account is METERED, not unmeasured.
+     *
+     * The owner is never blocked, so showing "0 / 1200" against a limit that
+     * will not be enforced is a number that means nothing. What it does mean
+     * — what has actually been used — is the whole point: real consumption on
+     * the account this product is built on is the only honest evidence of what
+     * a plan should cost. So the figure stays and the ceiling goes, and the
+     * bar with it, because there is nothing to be a fraction of.
+     */
+    const pct = m.cap && !m.uncapped ? Math.min(100, Math.round((m.used / m.cap) * 100)) : 0;
+    const hot = !m.uncapped && pct > 85;
     return `<div>
       <div style="display:flex;align-items:baseline;gap:10px">
         <span data-content style="flex:1;font-size:${SIZE.secondary};color:${C.ink70}">${m.label}</span>
-        <span data-content style="font-size:${SIZE.secondary};color:${hot ? ACCENT.red : "rgba(236,236,241,0.4)"};font-family:${FONT.mono};flex:none;white-space:nowrap">${m.used} / ${m.cap}${m.unit ? ` ${m.unit}` : ""}</span>
+        <span data-content style="font-size:${SIZE.secondary};color:${hot ? ACCENT.red : "rgba(236,236,241,0.4)"};font-family:${FONT.mono};flex:none;white-space:nowrap">${
+          m.uncapped ? `${m.used}${m.unit ? ` ${m.unit}` : ""} used` : `${m.used} / ${m.cap}${m.unit ? ` ${m.unit}` : ""}`
+        }</span>
       </div>
-      <div style="margin-top:16px;height:5px;border-radius:99px;background:${C.pill};overflow:hidden">
+      ${
+        m.uncapped
+          ? ""
+          : `<div style="margin-top:16px;height:5px;border-radius:99px;background:${C.pill};overflow:hidden">
         <div style="height:100%;width:${pct}%;background:${hot ? ACCENT.red : m.color};border-radius:99px"></div>
-      </div>
+      </div>`
+      }
       <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:6px;line-height:1.5">${m.note}</div>
     </div>`;
   };

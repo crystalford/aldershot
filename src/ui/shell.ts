@@ -7,7 +7,7 @@
  * block and its children). Every value is copied, not chosen.
  */
 
-import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, RADIUS, SIZE, accentBg } from "./tokens.ts";
+import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, HOVER, RADIUS, SIZE, accentBg } from "./tokens.ts";
 import { iconBell, iconSearch } from "./icons.ts";
 import { FONT_CSS } from "./fontfaces.ts";
 
@@ -216,6 +216,120 @@ p,div{text-wrap:pretty}
 .blk-short{opacity:0;transition:opacity .12s ease}
 .blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
+/* ── The hover layer ───────────────────────────────────────────────────────
+   The prototype specifies 161 hover and focus states. The build had 14, and
+   not by choice: this product is server-rendered INLINE styles, and inline
+   styles cannot express :hover. So they had nowhere to live, and the whole
+   thing sat inert under the cursor — most of why it read as less finished
+   than the design it was built from.
+
+   Selected on the inline value an element ALREADY HAS: background:#232329 is
+   what C.pill renders to, so [style*=…] finds every pill in the product
+   without a single markup change, and a control gets the prototype's
+   hover for whatever surface it happens to be. !important because inline
+   beats a stylesheet rule whatever its specificity — which is precisely the
+   case the keyword exists for, and it is confined to :hover and :active here.
+
+   Six rules, which is why the product feels like one thing. Every value is
+   the prototype's own, counted from it: see HOVER in tokens.ts. */
+
+/* A pill or chip lifts. The commonest rule in the design, 78 times. */
+:is(button,a,label,[role=button])[style*="background:${C.pill}"]:hover:not(:disabled){background:${HOVER.pill}!important;color:${C.ink}!important}
+/* The one primary button on a page, at its brightest. */
+:is(button,a,[role=button])[style*="background:${C.ink}"]:hover:not(:disabled){background:${HOVER.primary}!important}
+/* A card or row, barely — you should feel it more than see it. */
+:is(a,button,[role=button])[style*="background:${C.surface}"]:hover:not(:disabled),
+[data-item-row]:hover > :is(a,button)[style*="background:${C.surface}"]{background:${HOVER.surface}!important}
+:is(a,button,[role=button])[style*="background:${C.raised}"]:hover:not(:disabled){background:${HOVER.surface}!important}
+/* #141418 is the prototype's panel surface — twenty uses and never named,
+   because it is a backdrop everywhere except the drop zone, which is a click
+   target and was the one control on Clipping that stayed dead under the
+   cursor. Left as a literal rather than promoted to a token nobody would
+   use. */
+:is(a,button,label,[role=button])[style*="background:#141418"]:hover:not(:disabled){background:${HOVER.surface}!important}
+
+/* Dim text goes to full ink. 65 times in the prototype, and the reason a
+   quiet link feels like a link at all. Matched on the alpha rather than on
+   the three named steps: the pages also use 0.3, 0.4, 0.42 and 0.55 directly,
+   and a back link that stays grey under the cursor is the one that reads as
+   broken. */
+:is(a,button)[style*="color:rgba(236,236,241,0."]:hover:not(:disabled){color:${C.ink}!important}
+
+/* A control with no surface of its own — a player button, a block's arrows,
+   the seam, the wordmark's neighbours in the nav. It has nothing to lift, so
+   it grows one. */
+:is(button,[role=button])[style*="background:transparent"]:hover:not(:disabled){background:${C.pill}!important}
+
+/* A CARD. No background, no border — just a poster and a title, so there is
+   nothing for the rules above to catch, and the largest click targets in the
+   product were the deadest. The ring around the still brightens and the
+   still itself leans in a little. */
+[data-item-row]:hover img,[data-item-row]:hover canvas{transform:scale(1.025)}
+[data-item-row] img,[data-item-row] canvas{transition:transform .22s ease}
+[data-item-row]:hover [style*="inset 0 0 0 1px"]{box-shadow:inset 0 0 0 1px rgba(255,255,255,0.14)!important}
+[data-item-row]{transition:opacity .13s ease}
+
+/* Gold means your voice, progress, attention — brightened, never recoloured.
+   Both ways round: gold text, and the one gold button in the product ("Record
+   it"), which is the most important control on a block and was inert. */
+:is(button,a)[style*="color:${ACCENT.gold}"]:hover:not(:disabled){color:${HOVER.gold}!important}
+:is(button,a)[style*="background:${ACCENT.gold}"]:hover:not(:disabled){background:${HOVER.gold}!important}
+
+/* The nav's quiet three — the key sheet, the bell, the avatar. Icons and a
+   glyph with no surface, sitting next to four links that all light up. */
+#navKeys:hover{color:${C.ink}!important}
+/* The bell is an icon in a bare div — nothing to recolour but the stroke,
+   and a target you have to hit exactly. It gets a surface to aim at. */
+#navNotif{padding:4px;margin:-4px;border-radius:${RADIUS.button};transition:background-color .13s ease}
+#navNotif:hover{background:${C.pill}}
+#navNotif:hover svg{stroke:${C.ink}}
+/* The wordmark already answers — [data-mark]:hover animates its three bars,
+   further down. It reads as inert to a probe that watches background and
+   colour, which is a limit of the probe and not of the design. */
+
+/* A still with a play badge over it: the block rows in the editor, and the
+   poster well on a card. The same lean as [data-item-row], because it is the
+   same gesture. */
+.blk-play canvas,.blk-play{transition:transform .22s ease,box-shadow .13s ease}
+.blk-play:hover canvas{transform:scale(1.04)}
+.blk-play:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,0.16)!important}
+/* Delete, remove, sign out. The only place a hover changes the hue. */
+:is(button,a)[data-danger]:hover{color:${HOVER.danger}!important;background:${accentBg(ACCENT.red)}!important}
+
+/* Everything that reacts, reacts at the same speed. */
+button,a,label,[role=button],.chip,.seg-pill{transition:background-color .13s ease,color .13s ease,opacity .13s ease,border-color .13s ease}
+/* A press should be felt. Nothing sets transform inline, so no !important. */
+:is(button,[role=button]):active:not(:disabled){transform:translateY(0.5px)}
+
+/* Keyboard focus, which the build had nowhere at all. Not :focus — a mouse
+   press must not leave a ring behind it. */
+:is(button,a,input,textarea,select,label,[role=button],[tabindex]):focus-visible{
+  outline:2px solid ${ACCENT.gold};outline-offset:2px;border-radius:${RADIUS.button}}
+/* A disabled control should look unavailable, not broken. */
+:is(button,[role=button]):disabled{cursor:default}
+
+/* SELECTION, out of the way until you want it.
+   A native checkbox sat on every poster at all times — the loudest thing on
+   Footage, in front of the still it was covering, on a page whose subject is
+   the stills. It follows the rule .blk-short already uses for the same
+   problem: it keeps its space so nothing reflows under the cursor, and shows
+   itself on the card you are actually on. Anything already ticked stays
+   visible, or a selection you had made would vanish as you moved away. */
+.sel-box{opacity:0;transition:opacity .13s ease}
+[data-item-row]:hover .sel-box,.sel-box:focus-within,.sel-box:has(:checked){opacity:1}
+/* While a selection is live, every box is out — you are picking now, and
+   hunting for the next one card at a time is the wrong gesture. */
+body:has(.sel-item:checked) .sel-box{opacity:1}
+
+/* A heading should not leave one word alone on a second line. The pages set
+   their own sizes and weights inline; this is the one thing about a headline
+   that cannot be expressed there and is wrong everywhere without it. */
+[data-screen-label] [style*="font-size:24px"],[data-screen-label] [style*="font-size:17px"]{text-wrap:balance}
+
+/* A poster arriving should not snap into place. */
+img{opacity:1;animation:imgIn .22s ease}
+@keyframes imgIn{from{opacity:0}to{opacity:1}}
+
 @keyframes blip{0%,100%{opacity:.35}50%{opacity:1}}
 @keyframes viewIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @keyframes popIn{from{opacity:0;transform:translateX(-50%) scale(.98)}to{opacity:1;transform:translateX(-50%) scale(1)}}
