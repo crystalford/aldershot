@@ -17,6 +17,7 @@ import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
+import { putFromResponse } from "./r2stream.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
@@ -301,23 +302,16 @@ export async function runRender(
     await advance(env.DB, jobId, 80, "saving it");
 
     /*
-     * STREAM it into R2 rather than holding it.
+     * Into R2, streamed and with a length R2 will accept.
      *
-     * This was `await res.arrayBuffer()` — the entire finished mp4 in Worker
-     * memory before a byte reached storage. A short cut is fine; a long 4K
-     * export is hundreds of megabytes and would hit the memory ceiling and
-     * report "Couldn't put it together", which reads like an encoder fault
-     * rather than the Worker running out of room. The panel offers 4K with no
-     * length cap, so the ceiling is reachable from the UI.
-     *
-     * R2 reports the size it actually stored, so nothing has to be counted on
-     * the way past.
+     * This handed `res.body` straight to put, and R2 refuses a stream of
+     * unknown length. The encode had already SUCCEEDED — fifty-four seconds
+     * of work, the file made — and the export reported "Couldn't put it
+     * together" at the last line. src/r2stream.ts is now the one place that
+     * knows how to do this.
      */
     const key = `u/${opts.userId}/renders/${renderId}.mp4`;
-    const stored = await env.MEDIA.put(key, res.body, {
-      httpMetadata: { contentType: "video/mp4" },
-    });
-    const size = stored?.size ?? Number(res.headers.get("content-length")) ?? 0;
+    const size = await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
     const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
 
     // Subtitles alongside the render, in output time (Phase 3).
