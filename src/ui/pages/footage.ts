@@ -306,7 +306,10 @@ function momentCard(m: MomentRow): string {
      video; neither is a still pretending to be a player. */
   const media = m.short_key
     ? `<video preload="none" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.short_key)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`
-    : `<video preload="metadata" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.source_key)}#t=${from},${to}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`;
+    /* preload="none": a grid of clips is a grid of VIDEOS, and asking each
+       one for its metadata on page load is one range request per card before
+       anybody has pressed anything. The browser fetches when you play. */
+    : `<video preload="none" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.source_key)}#t=${from},${to}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`;
 
   return `<div data-moment="${esc(m.id)}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
     <div style="position:relative;aspect-ratio:16/9;background:#0B0B0E">

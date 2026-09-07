@@ -115,8 +115,12 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 
   /* The model's opinion, when it has one. Absent is absent — an unjudged block
      shows nothing rather than a zero, which would read as "bad". */
+  /* A zero is not a verdict, it is the absence of one. saveClips writes
+     score: 0 for anything the model did not rate, and rendering that as a
+     green badge told the user their line scored nothing — the comment below
+     has always said absent should look absent, and 0 slipped through it. */
   const judged =
-    b.score != null
+    b.score != null && b.score > 0
       ? `<span data-content style="flex:none;font-size:${SIZE.pill};font-weight:600;font-family:${FONT.mono};padding:2px 6px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green}">${b.score}</span>`
       : "";
 

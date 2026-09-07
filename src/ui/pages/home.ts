@@ -226,11 +226,52 @@ function ago(ms: number): string {
  * job is red and says what went wrong, because coming back to a silent gap is
  * worse than coming back to bad news.
  */
-function feedRow(f: FeedItem): string {
+/**
+ * The same thing, over and over, is one thing.
+ *
+ * Pressing Export on a source the encoder cannot read produces one job per
+ * press, and the feed listed every one — six rows of "Couldn't give the
+ * encoder a way to read your footage." A repeated failure is a single problem
+ * you have hit repeatedly, and reading it six times does not help you fix it.
+ */
+function collapse(feed: FeedItem[]): Array<FeedItem & { times?: number }> {
+  const out: Array<FeedItem & { times?: number }> = [];
+  for (const f of feed) {
+    const last = out[out.length - 1];
+    if (last && last.text === f.text && last.state === f.state) {
+      last.times = (last.times ?? 1) + 1;
+      continue;
+    }
+    out.push({ ...f });
+  }
+  return out;
+}
+
+/**
+ * What the heading counts.
+ *
+ * It said "6 finished" over six failures. Finishing and failing are different
+ * news, and the number beside a section heading is the one thing people read
+ * before deciding whether to look at all.
+ */
+function awayCount(feed: FeedItem[]): string {
+  const bad = feed.filter((f) => f.state === "failed").length;
+  const ok = feed.length - bad;
+  return [ok ? `${ok} finished` : "", bad ? `${bad} failed` : ""].filter(Boolean).join(" · ");
+}
+
+function feedRow(f: FeedItem & { times?: number }): string {
   const failed = f.state === "failed";
   return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
     <span style="width:6px;height:6px;border-radius:50%;background:${failed ? ACCENT.red : ACCENT.green};flex:none"></span>
-    <span data-content style="flex:1;font-size:${SIZE.body};color:rgba(236,236,241,0.85);min-width:0">${esc(f.text)}</span>
+    <span data-content style="flex:1;font-size:${SIZE.body};color:rgba(236,236,241,0.85);min-width:0">${esc(f.text)}${
+      /* How many times, when it happened more than once. The count is the
+         useful part: one failure is a mishap, six is a thing that will keep
+         happening until you change something. */
+      f.times && f.times > 1
+        ? ` <span style="color:rgba(236,236,241,0.35);font-family:${FONT.mono};font-size:${SIZE.meta}">×${f.times}</span>`
+        : ""
+    }</span>
     <span data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.28);font-family:${FONT.mono};flex:none">${ago(f.at)}</span>
     ${f.href ? `<a href="${esc(f.href)}" style="font-size:${SIZE.secondary};font-weight:500;padding:6px 14px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};flex:none;white-space:nowrap">${esc(f.link ?? "Open")}</a>` : ""}
   </div>`;
@@ -288,11 +329,11 @@ ${composer()}
 ${
   d.isFresh
     ? ""
-    : sectionHead("Since you were away", d.feed.length ? `${d.feed.length} finished` : "") +
+    : sectionHead("Since you were away", awayCount(d.feed)) +
       (d.working.length ? workingRow(d.working) : "") +
       `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
         d.feed.length
-          ? d.feed.map(feedRow).join("")
+          ? collapse(d.feed).map(feedRow).join("")
           : `<div data-content style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
       }</div>`
 }

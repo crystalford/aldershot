@@ -183,7 +183,12 @@ p,div{text-wrap:pretty}
    sliver of transcript scrolling underneath — the same full-screen editor
    problem, arrived at from a different direction. It scrolls away on narrow
    screens. */
-.editor-aside{flex:1 1 340px;min-width:min(320px,100%);max-width:min(400px,100%);position:sticky;top:88px}
+/* The transcript is the point, so it gets the room.
+   The aside was up to 400px of a 960px column, and with a thumbnail and an
+   always-visible action cluster on every row the words themselves were left
+   about 180px — wrapping every three or four words in a product whose whole
+   claim is editing by text. */
+.editor-aside{flex:0 1 300px;min-width:min(280px,100%);max-width:min(320px,100%);position:sticky;top:88px}
 @media (max-width: 760px){ .editor-aside{position:static;max-width:100%} }
 /* Export chips. Radio labels, so the selected one is styled by :has() rather
    than by the client setting colours it would have to hardcode. */
@@ -204,6 +209,12 @@ p,div{text-wrap:pretty}
    page. It still reads as a control, which is what was actually wrong. */
 .seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
 .blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
+/* "Make a short" is a secondary gesture on a line you are reading, and one
+   per row held about 110px of the text column open at all times. It keeps its
+   space so nothing reflows under the cursor, and shows itself on the row you
+   are actually on. */
+.blk-short{opacity:0;transition:opacity .12s ease}
+.blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
 @keyframes blip{0%,100%{opacity:.35}50%{opacity:1}}
 @keyframes viewIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
