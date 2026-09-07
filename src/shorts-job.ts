@@ -42,9 +42,22 @@ export async function runShorts(env: Env, opts: ShortsOpts): Promise<void> {
     // matching the transcript is faster, free, and cannot invent a moment.
     const found = opts.query
       ? { clips: searchTranscript(segments, opts.query), tokensIn: 0, tokensOut: 0, model: "" }
-      : await findShorts(env, segments, { length: opts.length, count: opts.count });
+      : await findShorts(env, segments, {
+          length: opts.length,
+          count: opts.count,
+          /* Windows finished — measured work, never a timer. Clipping's bar
+             sat at zero for the whole slow part until this. */
+          onProgress: (fraction, done, total) => {
+            void advance(
+              env.DB,
+              jobId,
+              Math.round(fraction * 85),
+              total > 1 ? `finding clips — part ${done} of ${total}` : "finding clips",
+            );
+          },
+        });
 
-    await advance(env.DB, jobId, 70, "picking out the moments");
+    await advance(env.DB, jobId, 90, "picking out the moments");
 
     await saveClips(
       env.DB,

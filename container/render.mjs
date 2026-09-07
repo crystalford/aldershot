@@ -103,12 +103,29 @@ function render(plan, res) {
   const cuts = Array.isArray(plan?.cuts) ? plan.cuts : [];
   if (!cuts.length) return jsonError(res, 400, { error: "nothing to render" });
 
-  const SIZE = { mp4_1080: "1920:1080", mp4_720: "1280:720", mp4_4k: "3840:2160" };
-  const scale = SIZE[plan.format] || SIZE.mp4_1080;
-  const [w, h] = plan.aspect === "9:16" ? ["1080", "1920"]
-    : plan.aspect === "1:1" ? ["1080", "1080"]
-    : plan.aspect === "4:5" ? ["1080", "1350"]
-    : scale.split(":");
+  /*
+   * Size and shape are independent, and were not.
+   *
+   * Every non-landscape aspect hardcoded 1080 on its long edge, so "4K +
+   * vertical" rendered at 1080 wide — while the Worker charged the Studio plan
+   * for a 4K the user never received. The export panel presents Size and Shape
+   * as two separate choices, so they have to be two separate choices.
+   *
+   * The long edge comes from the format; the short edge from the aspect. Both
+   * are forced even, because h264 will not encode an odd dimension.
+   */
+  const LONG = { mp4_720: 1280, mp4_1080: 1920, mp4_4k: 3840 };
+  const RATIO = { "9:16": 9 / 16, "1:1": 1, "4:5": 4 / 5, "16:9": 16 / 9 };
+  const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+
+  const long = LONG[plan.format] || LONG.mp4_1080;
+  const ratio = RATIO[plan.aspect] ?? RATIO["16:9"];
+  /* Landscape keeps the long edge horizontal; anything taller than it is wide
+     puts the format's long edge on the HEIGHT, so 4K vertical is 2160x3840
+     rather than a 1080 letterbox of it. */
+  const [w, h] = ratio >= 1
+    ? [even(long), even(long / ratio)]
+    : [even(long * ratio), even(long)];
 
   mkdirSync(dir, { recursive: true });
 

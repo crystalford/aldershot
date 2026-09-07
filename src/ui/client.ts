@@ -573,6 +573,7 @@ if (blocksEl) {
         }
         window.getSelection()?.removeAllRanges();
         retotal(out.afterS, out.kept);
+        undoable("Cut " + pending.count + " word" + (pending.count === 1 ? "" : "s"), out.before);
       } catch (err) {
         toast((err && err.message) || "That didn't save");
       }
@@ -632,6 +633,57 @@ if (blocksEl) {
       pill.textContent = struck ? "Add back" : "Cut";
       pill.setAttribute("data-kept", struck ? "0" : "1");
     }
+  };
+
+  /*
+   * Undo, for the gestures that change the cut.
+   *
+   * doUndoable has existed since the first delete shipped and the editor never
+   * called it once — striking a word, cutting a phrase across three lines,
+   * moving a block and taking out every "um" were all irreversible except by
+   * doing the inverse by hand. On a product whose pitch is editing by text
+   * that is the gap you notice first.
+   *
+   * A SNAPSHOT rather than an inverse per gesture: each mutation hands back
+   * the cuts and order it replaced, and Undo posts them straight back. An
+   * inverse per gesture is how an undo stack drifts out of step with the thing
+   * it is undoing, and this one covers gestures not written yet.
+   */
+  /*
+   * An Undo that survives a reload.
+   *
+   * Moving a block and running a clean-up both reload — one reorders the
+   * whole list, the other restrikes words all over the transcript, and
+   * repainting either by hand is how the page and the server drift. A toast
+   * does not survive that, so the snapshot is parked and picked up here, once.
+   */
+  const parked = sessionStorage.getItem("undo:" + projectId);
+  if (parked) {
+    sessionStorage.removeItem("undo:" + projectId);
+    try {
+      const { label, before } = JSON.parse(parked);
+      setTimeout(() => undoable(label, before), 0);
+    } catch {
+      /* A snapshot we cannot read is one we cannot honour; say nothing rather
+         than offer an Undo that would do something unpredictable. */
+    }
+  }
+
+  const undoable = (label, before) => {
+    if (!before) return;
+    window.doUndoable(label, () => {}, async () => {
+      try {
+        const res = await fetch("/api/projects/" + projectId + "/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(before),
+        });
+        if (!res.ok) throw new Error("Couldn't undo that");
+        location.reload();
+      } catch (err) {
+        toast((err && err.message) || "Couldn't undo that");
+      }
+    });
   };
 
   const sendCut = async (payload) => {
@@ -821,6 +873,7 @@ if (blocksEl) {
         const id = row.getAttribute("data-block");
         const out = await sendCut({ kind: "segment", block: id, seg: Number(id.slice(2)), word: null });
         retotal(out.afterS, out.kept);
+        undoable(next ? "Cut" : "Put back", out.before);
       } catch (err) {
         paintBlock(row, !next);
         retotal(undefined, keptTotal + (next ? 1 : -1));
@@ -840,6 +893,10 @@ if (blocksEl) {
           body: JSON.stringify({ block: move.getAttribute("data-block"), dir: Number(move.getAttribute("data-dir")) }),
         });
         if (!res.ok) throw new Error("Couldn't move that");
+        /* Parked for the page that is about to load: a reload throws away the
+           toast, so the snapshot has to outlive it. */
+        const out = await res.json().catch(() => ({}));
+        if (out.before) sessionStorage.setItem("undo:" + projectId, JSON.stringify({ label: "Moved", before: out.before }));
         location.reload();
       } catch (err) {
         move.disabled = false;
@@ -1075,6 +1132,13 @@ if (assist) {
         body: JSON.stringify({ kind }),
       });
       if (!res.ok) throw new Error("That didn't save");
+      const out = await res.json().catch(() => ({}));
+      if (out.before) {
+        sessionStorage.setItem(
+          "undo:" + projectId,
+          JSON.stringify({ label: kind === "fillers" ? "Fillers removed" : "Silences tightened", before: out.before }),
+        );
+      }
       /* Reload: this restrikes words all over the transcript, and repainting
          every one of them by hand is how the page and the server drift. */
       location.reload();

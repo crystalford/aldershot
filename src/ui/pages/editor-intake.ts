@@ -158,7 +158,22 @@ export function renderEditorIntake(d: EditorIntakeData): string {
   </div>`;
 
   const right = `<div>
-    <div style="${SECTION}">Pick up an edit</div>
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="${SECTION}">Pick up an edit</span>
+      ${
+        /*
+         * The way into Projects.
+         *
+         * /projects renders, and NOTHING in the UI linked to it — the only
+         * route in was the "g p" shortcut, which the owner has said plainly
+         * they do not use. This list shows six; Projects shows the rest, which
+         * is the only thing it has that this does not.
+         */
+        d.edits.length > 6
+          ? `<a href="/projects" style="margin-left:auto;font-size:${SIZE.secondary};color:${C.ink45};white-space:nowrap">All ${d.edits.length} →</a>`
+          : ""
+      }
+    </div>
     <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
       d.edits.length
         ? d.edits

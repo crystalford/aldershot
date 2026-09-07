@@ -12,6 +12,7 @@
 
 import type { Env } from "./env.ts";
 import { groundClips, parseClips, usageTokens, type ScoredClip } from "./grounding.ts";
+import { windowSegments } from "./score.ts";
 import { resolveModel } from "./models.ts";
 import type { Segment } from "./sources.ts";
 
@@ -79,31 +80,70 @@ export interface ShortsResult {
   model: string;
 }
 
+/*
+ * WHY THIS IS NOT scorePass.
+ *
+ * They look like duplicates and were listed as such: two model passes both
+ * meaning "find the good bits". Read side by side they ask different
+ * questions. scorePass takes the user's sentence and returns what MATCHES it,
+ * at whatever length the thought runs. This takes no brief and returns
+ * moments that stand alone at a length you asked for, ranked so the best is
+ * watched first.
+ *
+ * The duplication that actually hurt is gone: both windows the transcript the
+ * same way, both ground against real timecodes, and Clipping is a subset of
+ * the library rather than a rival to it. Merging the prompts as well would
+ * mean one that does neither job properly.
+ */
 export async function findShorts(
   env: Env,
   segments: Segment[],
-  opts: { length?: ClipLength; count?: number; upgrade?: boolean } = {},
+  opts: {
+    length?: ClipLength;
+    count?: number;
+    upgrade?: boolean;
+    onProgress?: (fraction: number, done: number, total: number) => void;
+  } = {},
 ): Promise<ShortsResult> {
   if (!segments.length) return { clips: [], tokensIn: 0, tokensOut: 0, model: "" };
 
   const len = CLIP_LENGTHS.find((l) => l.id === opts.length) ?? CLIP_LENGTHS[1];
   const count = opts.count ?? 8;
   const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
-
-  const transcript = segments.map((s) => `[${s.start_ms}-${s.end_ms}] ${s.text}`).join("\n");
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
 
-  const res = await run(model.id, {
-    messages: [
-      { role: "system", content: systemPrompt(len.min, len.max, count) },
-      { role: "user", content: `Transcript:\n${transcript}` },
-    ],
-    response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 8000,
-  });
+  /*
+   * Read in windows, for the same two reasons the score pass does: progress
+   * can only be honest if the work is actually divided, and asked for the best
+   * moments in three hours at once a model returns things from the first
+   * stretch and thins out. Clipping's bar sat at zero through the whole slow
+   * part until this — the same complaint that was fixed for "Find the strong
+   * bits" and left here.
+   */
+  const windows = windowSegments(segments);
+  const grounded: ScoredClip[] = [];
+  let tokensIn = 0;
+  let tokensOut = 0;
 
-  const { tokensIn, tokensOut } = usageTokens(res);
-  const grounded = groundClips(parseClips(res), segments);
+  for (let i = 0; i < windows.length; i++) {
+    const window = windows[i];
+    const transcript = window.map((sg) => `[${sg.start_ms}-${sg.end_ms}] ${sg.text}`).join("\n");
+
+    const res = await run(model.id, {
+      messages: [
+        { role: "system", content: systemPrompt(len.min, len.max, count) },
+        { role: "user", content: `Transcript:\n${transcript}` },
+      ],
+      response_format: { type: "json_schema", json_schema: SCHEMA },
+      max_tokens: 8000,
+    });
+
+    const used = usageTokens(res);
+    tokensIn += used.tokensIn;
+    tokensOut += used.tokensOut;
+    grounded.push(...groundClips(parseClips(res), window));
+    opts.onProgress?.((i + 1) / windows.length, i + 1, windows.length);
+  }
 
   return {
     // Highest-scoring first: Clipping is a triage surface, so the best should

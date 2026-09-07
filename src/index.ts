@@ -1087,6 +1087,40 @@ app.get("/p/:id/:stagePath", async (c) => {
  * never touches the cuts — the two are independent, which is what makes both
  * undoable on their own. See docs/decisions/blocks.md.
  */
+/**
+ * Put the cut back the way it was.
+ *
+ * Undo, as a SNAPSHOT rather than a pile of inverse operations. Every gesture
+ * in the editor is some combination of cuts and order — strike a line, cut a
+ * selection across three of them, move a block, take out every "um" — and
+ * writing an inverse for each is how an undo stack drifts out of step with
+ * the thing it is undoing. Restoring the two fields the editor actually reads
+ * cannot drift, and one implementation covers gestures not written yet.
+ *
+ * The client sends back the state it was given BEFORE its own change, so this
+ * never has to keep history server-side.
+ */
+app.post("/api/projects/:id/restore", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ cuts?: string | null; order?: string | null }>(c);
+  /* Parsed and re-serialised rather than trusted: this writes straight into
+     the columns the render is built from, and a malformed cuts blob would
+     make every later read silently return "no cuts" — an edit quietly
+     undone. */
+  const cuts = serialiseCuts(parseCuts(b.cuts ?? null));
+  const order = b.order ? serialiseOrder(parseOrder(b.order)) : null;
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET cuts=?, block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(cuts, order, Date.now(), project.id, user.id)
+    .run();
+  return c.json({ ok: true });
+});
+
 app.post("/api/projects/:id/blocks/move", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1103,13 +1137,14 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
   ]);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
+  const before = { cuts: project.cuts ?? null, order: project.block_order ?? null };
   const order = moveBlock(blocks, b.block, dir);
   await c.env.DB
     .prepare(`UPDATE v2_projects SET block_order=?, updated_at=? WHERE id=? AND user_id=?`)
     .bind(serialiseOrder(order), Date.now(), project.id, user.id)
     .run();
 
-  return c.json({ ok: true, order });
+  return c.json({ ok: true, order, before });
 });
 
 /**
@@ -1343,6 +1378,9 @@ app.post("/api/projects/:id/cuts", async (c) => {
     kind: "word" | "segment" | "fillers" | "pauses" | "range";
   }>(c);
   const segments = await getSegments(c.env.DB, project.source_id);
+  /* What the cut looked like before this gesture. Handed back so Undo can put
+     it there again without the server keeping a history. */
+  const before = { cuts: project.cuts ?? null, order: project.block_order ?? null };
   let cuts = parseCuts(project.cuts);
 
   /*
@@ -1398,6 +1436,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
   const blocks = (await blocksForProject(c.env.DB, after, user.id, { segments })).blocks;
   return c.json({
     cuts,
+    before,
     afterS: runtimeMs(blocks, cuts) / 1000,
     kept: blocks.filter((x) => !x.struck).length,
   });
