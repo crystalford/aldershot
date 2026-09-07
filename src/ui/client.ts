@@ -1525,6 +1525,19 @@ if (assist) {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't start");
+      /*
+       * A pass rewrites the cut, so it needs an undo — and it finishes minutes
+       * after this reload, so the state to go back to is the one that exists
+       * right now. Held under its own key and handed to the normal undo park
+       * only when the job actually completes; the ordinary one is consumed on
+       * the very next load, which would be this one.
+       */
+      if (out.before) {
+        sessionStorage.setItem(
+          "pass-undo:" + projectId,
+          JSON.stringify({ label: "Ran a pass", before: out.before }),
+        );
+      }
       location.reload();
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = was; }
@@ -3019,7 +3032,18 @@ if (scoring) {
       const job = (jobs || []).find((j) => j.ref_id === projectId);
       /* Gone from the active list means finished, one way or the other. The
          reload is what brings the scores onto the blocks. */
-      if (!job) { clearInterval(tickClock); location.reload(); return; }
+      if (!job) {
+        clearInterval(tickClock);
+        /* The pass has landed, so the snapshot taken when it started becomes
+           the undo the next page offers. */
+        const held = sessionStorage.getItem("pass-undo:" + projectId);
+        if (held) {
+          sessionStorage.removeItem("pass-undo:" + projectId);
+          sessionStorage.setItem("undo:" + projectId, held);
+        }
+        location.reload();
+        return;
+      }
       if (label && job.stage_label) label.textContent = job.stage_label;
       if (typeof job.pct === "number") {
         if (bar) bar.style.width = job.pct + "%";

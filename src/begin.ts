@@ -11,8 +11,9 @@ import type { Env } from "./env.ts";
 import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
 import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
-import { createProject, putBeats, saveClips, titleFromBrief } from "./projects.ts";
+import { createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief } from "./projects.ts";
 import { asked, scorePass } from "./score.ts";
+import { applyMoments, parseCuts, serialiseCuts } from "./cuts.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { recordPass } from "./passes.ts";
@@ -248,6 +249,36 @@ export async function runScore(
       result.clips,
     );
 
+    /*
+     * NOW DO IT.
+     *
+     * A pass used to score some moments, draw badges on them, and leave the
+     * cut exactly as long as it was — press "Find the strong bits" and the
+     * 2:50 edit is still 2:50. "that's the whole point is like one click sort
+     * of does it right .. otherwise i have no idea what the fuck it is doing."
+     *
+     * So the moments become the cut. The model says which way round the
+     * instruction meant it: keep these and lose the rest, or cut these and
+     * keep the rest.
+     *
+     * Nothing is destroyed. These are line cuts on the project, the same ones
+     * striking a line by hand writes, and the previous state is handed back to
+     * the editor so one ⌘Z puts the whole pass back.
+     */
+    let struck = 0;
+    if (opts.projectId && result.clips.length) {
+      const project = await getProject(env.DB, opts.projectId, opts.userId);
+      if (project) {
+        const existing = parseCuts(project.cuts);
+        /* Word-level work elsewhere in the transcript is somebody's deliberate
+           edit and is not touched — only whole lines are decided here. */
+        const kept = existing.filter((c) => c.words !== null || c.tighten);
+        const fresh = applyMoments(segments, result.clips, result.action);
+        struck = fresh.length;
+        await saveCuts(env.DB, project.id, opts.userId, serialiseCuts([...kept, ...fresh]));
+      }
+    }
+
     // The pass log records what was asked and what came back, in a sentence a
     // person can read. A pass that found nothing says so — it never silently
     // succeeds (04-API-AND-JOBS.md §3). The number was hardcoded to 1, so an
@@ -258,8 +289,18 @@ export async function runScore(
       /* What was really asked. An edit begun with "Skip the brief" sends the
          model a fallback, and the log has to say that rather than blank. */
       instruction: asked(opts.brief),
-      result: clips.length
-        ? `${clips.length} moment${clips.length === 1 ? "" : "s"} found`
+      /*
+       * WHAT THE MODEL FOUND, not what the library kept.
+       *
+       * saveClips drops a moment that overlaps one already held, so running a
+       * pass twice over the same video returned an empty list and this said
+       * "no matches — try different words" about moments it had just found and
+       * already had. Deduplication is about the clip LIBRARY; it has no
+       * business deciding what a pass reports, or what it does to the cut.
+       */
+      result: result.clips.length
+        ? `${result.clips.length} moment${result.clips.length === 1 ? "" : "s"} found` +
+          (struck ? ` · ${struck} line${struck === 1 ? "" : "s"} cut` : "")
         : "no matches — try different words",
       model: result.model,
       tokensIn: result.tokensIn,
@@ -270,6 +311,9 @@ export async function runScore(
     // the user can see the whole hour and take things out. Nothing is dropped
     // on their behalf.
     if (opts.projectId && clips.length) {
+      /* Beats are seeded from the clips actually SAVED, because a beat points
+         at a clip row by id — a moment already in the library is already a
+         block in the transcript and does not need a second one. */
       await putBeats(
         env.DB,
         opts.projectId,

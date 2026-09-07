@@ -2285,7 +2285,13 @@ app.post("/api/projects/:id/passes", async (c) => {
     projectId: project.id,
     brief: instruction,
   });
-  return c.json({ jobId: job.id });
+  /* A pass CHANGES the cut now, so it needs an undo like every other edit —
+     and the change lands minutes later, so the state to go back to is the one
+     that exists right now. The editor holds it until the job finishes. */
+  return c.json({
+    jobId: job.id,
+    before: { cuts: project.cuts ?? null, order: project.block_order ?? null },
+  });
 });
 
 /**
