@@ -41,6 +41,8 @@ export interface CapCheck {
   used: number;
   cap: number;
   remaining: number;
+  /** The owner's account is metered but never blocked — see checkCap. */
+  unlimited?: boolean;
   /** Plain-language refusal, stating the cap. Shown to the user verbatim. */
   message?: string;
 }
@@ -59,6 +61,27 @@ function startOfMonth(now = Date.now()): number {
  */
 export async function checkCap(db: D1Database, userId: string, plan: Plan, minutes: number): Promise<CapCheck> {
   const cap = PLANS[plan].sourceMinutes;
+
+  /*
+   * THE OWNER IS METERED, NEVER BLOCKED.
+   *
+   * upsertUser puts the owner on Studio with the comment "so caps never block
+   * their own testing" — but Studio's cap is a number like any other, and a
+   * 2,674-minute upload duly hit it. Being unable to use your own product is
+   * not a plan tier.
+   *
+   * Read here rather than passed in: there are two call sites today and the
+   * one that matters is deep inside ingest, so a flag threaded through
+   * arguments is a flag the third call site forgets. Usage is unaffected —
+   * meter() writes usage_events regardless of this function, which is the
+   * whole point: the owner's real consumption is what says what a plan should
+   * cost.
+   */
+  const owner = await db
+    .prepare(`SELECT is_owner FROM v2_users WHERE id=?`)
+    .bind(userId)
+    .first<{ is_owner: number }>();
+
   const row = await db
     .prepare(
       `SELECT COALESCE(SUM(source_minutes),0) AS used
@@ -70,6 +93,7 @@ export async function checkCap(db: D1Database, userId: string, plan: Plan, minut
 
   const used = row?.used ?? 0;
   const remaining = Math.max(0, cap - used);
+  if (owner?.is_owner) return { ok: true, used, cap, remaining, unlimited: true };
   if (used + minutes <= cap) return { ok: true, used, cap, remaining };
 
   const mins = (n: number) => `${Math.round(n)} minute${Math.round(n) === 1 ? "" : "s"}`;

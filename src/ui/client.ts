@@ -553,7 +553,7 @@ function paintMoments(canvases, defaultSrc) {
           shot.addEventListener("error", fail, { once: true });
           shot.currentTime = at;
         });
-        canvas.getContext("2d").drawImage(shot, 0, 0, canvas.width, canvas.height);
+        drawCover(canvas, shot);
         canvas.dataset.painted = "1";
       } catch (err) {
         /* No frame for this one. Every card is still complete without it. */
@@ -2689,6 +2689,36 @@ async function uploadResumable(file, durationS, onProgress, started) {
 }
 
 /*
+ * Draw a video into a canvas WITHOUT stretching it.
+ *
+ * drawImage(video, 0, 0, w, h) scales the source to fill, so a 9:16 phone
+ * video drawn into a 16:9 thumbnail comes out squashed — every clip card of
+ * vertical footage showed a face half its real width. The frames these
+ * canvases hold are the only picture of a moment anywhere in the product, so
+ * they have to be the shape the camera saw.
+ *
+ * Cover, not contain: the canvas is filled and the overflow is cropped
+ * evenly, which is what object-fit:cover does for the <img> and <video>
+ * elements beside them. Letterboxing instead would put black bars inside a
+ * card that is already a rectangle on a dark page.
+ */
+function drawCover(canvas, video) {
+  const ctx = canvas.getContext("2d");
+  const sw = video.videoWidth;
+  const sh = video.videoHeight;
+  if (!sw || !sh) return;
+
+  const want = canvas.width / canvas.height;
+  const have = sw / sh;
+  let cw = sw;
+  let ch = sh;
+  if (have > want) cw = sh * want;       /* too wide: take a centre column */
+  else ch = sw / want;                   /* too tall: take a centre band */
+
+  ctx.drawImage(video, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
+}
+
+/*
  * How much is going on in a frame — brightness, and how varied it is.
  *
  * A frame can be bright and empty (a white flash) or dark and interesting, so
@@ -2741,7 +2771,7 @@ function grabPoster(file, atSeconds) {
     el.playsInline = true;
 
     const canvas = document.createElement("canvas");
-    const draw = () => canvas.getContext("2d").drawImage(el, 0, 0, canvas.width, canvas.height);
+    const draw = () => drawCover(canvas, el);
 
     let points = [];
     let at = 0;
@@ -3598,7 +3628,7 @@ if (adjust) {
     if (!clip || !frame || !decoder) return;
     const done = () => {
       try {
-        frame.getContext("2d").drawImage(decoder, 0, 0, frame.width, frame.height);
+        drawCover(frame, decoder);
       } catch (err) {
         /* No frame. The sheet is complete without one. */
       }
@@ -3702,8 +3732,16 @@ if (adjust) {
           span.style.color = "#ECECF1";
           span.style.fontWeight = "600";
         }
-        const aspect = form ? new FormData(form).get("aspect") : "9:16";
-        if (well && aspect) well.style.aspectRatio = String(aspect).replace(":", "/");
+        const aspect = String((form ? new FormData(form).get("aspect") : "9:16") || "9:16");
+        if (well) well.style.aspectRatio = aspect.replace(":", "/");
+        /* The canvas has to be the chosen shape too, or drawCover crops to
+           9:16 and the browser then stretches that into a 1:1 well — the
+           preview would be lying about the thing it exists to show. */
+        const [aw, ah] = aspect.split(":").map(Number);
+        if (frame && aw && ah) {
+          frame.width = 270;
+          frame.height = Math.round((270 * ah) / aw);
+        }
       }
 
       if (decoder) decoder.remove();

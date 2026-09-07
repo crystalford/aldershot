@@ -99,6 +99,24 @@ export async function userForEmail(
   const email = emailRaw.trim().toLowerCase();
   const existing = await db.prepare(`SELECT * FROM v2_users WHERE email=?`).bind(email).first<User>();
   if (existing) {
+    /*
+     * The owner flag is set at INSERT and nowhere else, so a row written
+     * before that rule existed — or before the address was the owner's —
+     * keeps is_owner = 0 for ever, and every cap in the product then applies
+     * to the account the product is built on. That is how a 2,674-minute
+     * upload was refused on Studio.
+     *
+     * Corrected on the way past, the same shape as repairName: the rule is
+     * right, the stored row predates it.
+     */
+    if (email === OWNER_EMAIL && (!existing.is_owner || existing.plan !== "studio")) {
+      await db
+        .prepare(`UPDATE v2_users SET is_owner=1, plan='studio' WHERE id=?`)
+        .bind(existing.id)
+        .run();
+      return { ...existing, is_owner: 1, plan: "studio" };
+    }
+
     // Fill a name in later if we learn one — signing in with Google after an
     // email signup should stop the greeting being nameless.
     if (!existing.name && providedName) {

@@ -225,12 +225,42 @@ export async function setTranscriptState(db: D1Database, id: string, state: Tran
 }
 
 /**
+ * Is this a line somebody said, or an artefact of the model?
+ *
+ * Whisper hallucinates on silence. Point it at a quiet passage and it emits
+ * runs of "you", "Thank you.", "Thanks for watching!" — each with start and
+ * end collapsed onto the same instant. The owner hit this: a wall of blocks
+ * reading "you", every one 0:00 long, in the middle of a cut.
+ *
+ * A segment with NO duration is not a judgement call. It cannot be played, it
+ * cannot be cut, it contributes nothing to a render, and striking it changes
+ * nothing — it is a row that can only ever be in the way.
+ *
+ * The first version of this used an 80ms floor, on the reasoning that no real
+ * syllable is shorter. Checking it against the database rather than trusting
+ * the unit test, it had eaten a real line — a 60ms "Thank you." Whatever that
+ * row was, the rule that removed it was a judgement about what counts as
+ * speech, dressed up as arithmetic, and silently deleting words out of
+ * somebody's transcript is worse than the 0:00 row it was meant to prevent.
+ *
+ * So: zero-length only. Every hallucinated row the owner saw came back with
+ * start and end on the same instant, so nothing is lost by being strict here,
+ * and a short real utterance survives.
+ *
+ * Deliberately NOT filtering on the text either. "you" is a real word and a
+ * rule that threw it away would eventually eat a real line.
+ */
+export const saidAloud = (s: { start: number; end: number; text: string }): boolean =>
+  Boolean(s.text && s.text.trim()) && s.end > s.start;
+
+/**
  * Writes the transcript. Replaces any previous one for this source so a retry
  * is idempotent — a failed transcribe that half-wrote its segments must not
  * leave duplicates behind when the user hits Retry.
  */
 export async function saveSegments(db: D1Database, sourceId: string, segments: WhisperSegment[]): Promise<number> {
   await db.prepare(`DELETE FROM segments WHERE source_id=?`).bind(sourceId).run();
+  segments = segments.filter(saidAloud);
   if (!segments.length) return 0;
 
   const stmt = db.prepare(
@@ -264,5 +294,16 @@ export async function getSegments(db: D1Database, sourceId: string): Promise<Seg
     .prepare(`SELECT * FROM segments WHERE source_id=? ORDER BY idx`)
     .bind(sourceId)
     .all<Segment>();
-  return results ?? [];
+  /*
+   * And on the way out, for the transcripts that already have them.
+   *
+   * saveSegments keeps them out from now on; every video already read still
+   * has its run of zero-length "you" rows, and a fix that only helps the next
+   * upload is not a fix for the person looking at this one.
+   *
+   * Filtered rather than deleted, and `idx` is left exactly as it was: cuts
+   * are stored against segment indices, so renumbering would silently move
+   * every cut in every edit made from this video onto a different line.
+   */
+  return (results ?? []).filter((r) => saidAloud({ start: r.start_ms / 1000, end: r.end_ms / 1000, text: r.text }));
 }
