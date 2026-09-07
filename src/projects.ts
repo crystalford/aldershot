@@ -224,10 +224,18 @@ export async function nameUntitledEdits(db: D1Database, userId: string): Promise
  * A project with no source was made deliberately from the composer and is
  * always real.
  *
+ * EXPORTED, because begin() needs the same answer. It had its own, different
+ * rule for whether an edit could be reused — "has no brief" — which is a much
+ * weaker test: an edit you had spent an hour cutting has no brief either, so
+ * clicking your own footage handed it back to you and there was no way to
+ * start a fresh cut of a video you had already edited. Two definitions of "is
+ * this edit yours yet" in one product is the conflict the owner has been
+ * reporting since the beginning.
+ *
  * "A name you typed" is any title that is not one the product chose — see
  * UNNAMED. The auto-name is one the product chose.
  */
-const TOUCHED = `(
+export const TOUCHED = `(
   v2_projects.source_id IS NULL
   OR (brief IS NOT NULL AND TRIM(brief) <> '')
   OR (cuts IS NOT NULL AND cuts <> '' AND cuts <> '[]')

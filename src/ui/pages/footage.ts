@@ -249,7 +249,20 @@ function sourceCard(s: SourceRow): string {
     ${selectBox("sources", s.id)}
     ${
       ready
-        ? `<a href="/sources/${esc(s.id)}/edit" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
+        ? `<a href="${
+            /*
+             * A video you have already cut opens ITS PAGE, not an edit.
+             *
+             * Straight into /edit is right for footage you have never touched
+             * — one click, start cutting. It is wrong the moment an edit
+             * exists: the card says "2 edits" and then hides both of them,
+             * and the only way to start a fresh cut of that video was to undo
+             * the one you had. The source page lists every edit from this
+             * footage and has New edit on it; that is the choice, so make it
+             * reachable.
+             */
+            s.edit_count ? `/sources/${esc(s.id)}` : `/sources/${esc(s.id)}/edit`
+          }" style="display:block;color:${C.ink}"><div style="${cardStyle}">${poster}${stamp}</div>${label}</a>`
         : art + label
     }
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">

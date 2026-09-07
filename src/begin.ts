@@ -11,7 +11,7 @@ import type { Env } from "./env.ts";
 import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
 import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
-import { createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief } from "./projects.ts";
+import { createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief, TOUCHED } from "./projects.ts";
 import { asked, scorePass } from "./score.ts";
 import { applyMoments, parseCuts, serialiseCuts } from "./cuts.ts";
 import { getSegments, getSource } from "./sources.ts";
@@ -84,11 +84,28 @@ export async function begin(
      * unassisted open and a briefed request are different pieces of work
      * and must not collapse into each other.
      */
+    /*
+     * UNTOUCHED ONLY.
+     *
+     * This reused any edit without a brief, which sounds like "one you have
+     * not asked anything of" and is not: an edit you spent an hour cutting by
+     * hand has no brief either. So opening your own footage handed back the
+     * cut you made last time, and starting a fresh one from that video meant
+     * undoing your own work first. "if i wanted to start a new edit with the
+     * footage i'd have to essentially undo what i did before."
+     *
+     * TOUCHED is the product's existing answer to "is this edit yours yet" —
+     * a brief, a cut, a beat, a render, or a name you typed — and Projects has
+     * used it all along to decide what to list. Reuse now asks the same
+     * question, so an untouched row is still picked up (no pile-up of empty
+     * edits from clicking around) and a real one never is.
+     */
     const existing = await env.DB
       .prepare(
         `SELECT * FROM v2_projects
           WHERE user_id=? AND source_id=? AND kind=?
             AND (brief IS NULL OR TRIM(brief)='')
+            AND NOT ${TOUCHED}
             AND deleted_at IS NULL AND archived_at IS NULL
           ORDER BY updated_at DESC LIMIT 1`,
       )
