@@ -58,7 +58,7 @@ import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pa
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
-import { currentUser, userForEmail, repairName } from "./user.ts";
+import { currentUser, userForEmail, reconcileUser } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
@@ -352,9 +352,9 @@ app.get("/", async (c) => {
     );
   }
 
-  /* A stored name today's rule would refuse is cleared on the way past — see
-     repairName. Home is where it shows, so Home is where it is fixed. */
-  const user = await repairName(c.env.DB, visitor);
+  /* A stored row today's rules would not produce is corrected on the way past
+     — see reconcileUser. Home is the page everybody lands on. */
+  const user = await reconcileUser(c.env.DB, visitor);
 
   /* Signed in, and they asked for Studio on the way. Clear it first, so a
      checkout that fails does not trap them in a redirect loop. */

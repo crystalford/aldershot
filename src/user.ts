@@ -69,16 +69,53 @@ function nameFromEmail(email: string): string | null {
  * name is better than a wrong one. A name a PROVIDER gave us is left alone —
  * Google telling us who someone is beats any guess.
  */
-export async function repairName(db: D1Database, user: User): Promise<User> {
-  if (!user.name) return user;
-  /* Only a name that looks derived from the address is up for review; anything
-     with a space in it came from somewhere that actually knows. */
-  if (user.name.includes(" ")) return user;
-  if (user.name === nameFromEmail(user.email)) return user;
+/**
+ * Bring a stored account into line with today's rules.
+ *
+ * A CLASS OF BUG, not one bug. Twice in a day: nameFromEmail refuses anything
+ * over twelve characters, but only at INSERT, so a row written before that
+ * guard kept "Chrisrobtelford" for ever and greeted its owner by it. is_owner
+ * was likewise set at INSERT and nowhere else, so every cap in the product
+ * applied to the account the product is built on, and a 2,674-minute upload
+ * was refused on it.
+ *
+ * Both had the same shape — the rule is right, the row predates it — and both
+ * were patched in a different place. So they live together now, under a name
+ * that says what this is, because there will be a third.
+ *
+ * Called on the way past on Home, which is the one page everybody lands on.
+ * Each repair is its own guard clause: cheap when there is nothing to do, and
+ * a write only when the row actually disagrees.
+ */
+export async function reconcileUser(db: D1Database, user: User): Promise<User> {
+  let out = user;
 
-  await db.prepare(`UPDATE v2_users SET name=NULL WHERE id=?`).bind(user.id).run();
-  return { ...user, name: null };
+  /*
+   * The owner is metered and never blocked. A row written before that rule —
+   * or before this address was the owner's — leaves is_owner at 0, and then
+   * every cap applies however the checks are written.
+   */
+  if (out.email === OWNER_EMAIL && (!out.is_owner || out.plan !== "studio")) {
+    await db.prepare(`UPDATE v2_users SET is_owner=1, plan='studio' WHERE id=?`).bind(out.id).run();
+    out = { ...out, is_owner: 1, plan: "studio" };
+  }
+
+  /*
+   * A stored name today's rule would not produce. Only a name that looks
+   * DERIVED from the address is up for review; anything with a space in it
+   * came from somewhere that actually knows.
+   *
+   * Nulling is right: the product never asks for a name, and greeting someone
+   * by a mangled surname-mashup is worse than dropping the vocative.
+   */
+  if (out.name && !out.name.includes(" ") && out.name !== nameFromEmail(out.email)) {
+    await db.prepare(`UPDATE v2_users SET name=NULL WHERE id=?`).bind(out.id).run();
+    out = { ...out, name: null };
+  }
+
+  return out;
 }
+
 
 export async function getUserById(db: D1Database, id: string): Promise<User | null> {
   return await db.prepare(`SELECT * FROM v2_users WHERE id=?`).bind(id).first<User>();
@@ -99,31 +136,17 @@ export async function userForEmail(
   const email = emailRaw.trim().toLowerCase();
   const existing = await db.prepare(`SELECT * FROM v2_users WHERE email=?`).bind(email).first<User>();
   if (existing) {
-    /*
-     * The owner flag is set at INSERT and nowhere else, so a row written
-     * before that rule existed — or before the address was the owner's —
-     * keeps is_owner = 0 for ever, and every cap in the product then applies
-     * to the account the product is built on. That is how a 2,674-minute
-     * upload was refused on Studio.
-     *
-     * Corrected on the way past, the same shape as repairName: the rule is
-     * right, the stored row predates it.
-     */
-    if (email === OWNER_EMAIL && (!existing.is_owner || existing.plan !== "studio")) {
-      await db
-        .prepare(`UPDATE v2_users SET is_owner=1, plan='studio' WHERE id=?`)
-        .bind(existing.id)
-        .run();
-      return { ...existing, is_owner: 1, plan: "studio" };
-    }
-
     // Fill a name in later if we learn one — signing in with Google after an
-    // email signup should stop the greeting being nameless.
+    // email signup should stop the greeting being nameless. A provider's name
+    // is better than anything derived, so this runs before the reconcile that
+    // would otherwise review a derived one.
     if (!existing.name && providedName) {
       await db.prepare(`UPDATE v2_users SET name=? WHERE id=?`).bind(providedName, existing.id).run();
       return { ...existing, name: providedName };
     }
-    return existing;
+    /* Signing in is the other moment worth reconciling on, so a stale row is
+       corrected before anything reads it — not only once Home is opened. */
+    return await reconcileUser(db, existing);
   }
 
   const isOwner = email === OWNER_EMAIL;
