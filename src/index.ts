@@ -56,6 +56,7 @@ import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { encoderFor } from "./encode.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
 import { currentUser, userForEmail, reconcileUser } from "./user.ts";
@@ -63,7 +64,8 @@ import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
-import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
+import { backfillProxies } from "./proxy.ts";
+import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
@@ -316,6 +318,71 @@ app.post("/auth/signout", async (c) => {
   return c.redirect("/", 302);
 });
 
+/**
+ * What a job was ABOUT, when it is not a source and not a project.
+ *
+ * `ref_id` points at a source for reading and scoring, at a project for
+ * passes, and — since a render's job started pointing at its render rather
+ * than at the project — at a RENDER. Home names every row it shows and drops
+ * the ones it cannot name, so without this an export in flight would simply
+ * disappear from the working row while it ran.
+ *
+ * One query for all of them rather than one per row: the feed did a clip
+ * lookup inside a `.map()`, which is a round trip per item.
+ *
+ * A render is named after what it is a render OF — the edit's title, or for a
+ * short, the video the clip came from — because "Rendered a video" tells you
+ * nothing and the id itself is not a name.
+ */
+async function nameLooseRefs(
+  db: D1Database,
+  userId: string,
+  refIds: string[],
+): Promise<Map<string, { title: string; href: string }>> {
+  const out = new Map<string, { title: string; href: string }>();
+  if (!refIds.length) return out;
+  const marks = refIds.map(() => "?").join(",");
+
+  const { results: renders } = await db
+    .prepare(
+      `SELECT r.id AS ref, p.title AS project_title, p.id AS project_id,
+              s.title AS source_title, s.id AS source_id
+         FROM renders r
+         LEFT JOIN v2_projects p ON p.id = r.project_id
+         LEFT JOIN v2_clips cl ON cl.id = r.clip_id
+         LEFT JOIN sources s ON s.id = cl.source_id
+        WHERE r.user_id=? AND r.id IN (${marks})`,
+    )
+    .bind(userId, ...refIds)
+    .all<{ ref: string; project_title: string | null; project_id: string | null; source_title: string | null; source_id: string | null }>();
+
+  for (const r of renders ?? []) {
+    const title = r.project_title ?? r.source_title;
+    if (!title) continue;
+    out.set(r.ref, {
+      title,
+      href: r.project_id ? `/p/${r.project_id}/cut` : `/sources/${r.source_id}`,
+    });
+  }
+
+  /* Clips, for the short-render jobs written before the change above — those
+     rows are still in the table and still have to name themselves. */
+  const rest = refIds.filter((id) => !out.has(id));
+  if (rest.length) {
+    const { results: clips } = await db
+      .prepare(
+        `SELECT cl.id AS ref, s.title AS title, s.id AS source_id
+           FROM v2_clips cl JOIN sources s ON s.id = cl.source_id
+          WHERE cl.user_id=? AND cl.id IN (${rest.map(() => "?").join(",")})`,
+      )
+      .bind(userId, ...rest)
+      .all<{ ref: string; title: string; source_id: string }>();
+    for (const c of clips ?? []) out.set(c.ref, { title: c.title, href: `/sources/${c.source_id}` });
+  }
+
+  return out;
+}
+
 app.get("/", async (c) => {
   await ensureV2Schema(c.env.DB);
 
@@ -384,6 +451,16 @@ app.get("/", async (c) => {
   const isFresh = !sources.some((s) => s.transcript_state !== "pending");
   const byId = new Map(sources.map((s) => [s.id, s]));
 
+  /* Anything neither a source nor a project — a render, or an old short's
+     clip. Resolved in one query for the whole page rather than per row. */
+  const loose = [...new Set(
+    [...jobs, ...finished]
+      .map((j) => j.ref_id)
+      .filter((id): id is string => Boolean(id))
+      .filter((id) => !byId.has(id) && !projects.some((p) => p.id === id)),
+  )];
+  const named = await nameLooseRefs(c.env.DB, user.id, loose);
+
   return c.html(
     surface(
       "home",
@@ -409,11 +486,12 @@ app.get("/", async (c) => {
         /* A job whose source has been deleted is not work in progress — it is
            a leftover. Showing it produced "reading a video and a video". */
         working: jobs
-          .filter((j) => !j.ref_id || byId.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+          .filter((j) => !j.ref_id || byId.has(j.ref_id) || projects.some((p) => p.id === j.ref_id) || named.has(j.ref_id))
           .map((j) => ({
             label:
               byId.get(j.ref_id ?? "")?.title ??
               projects.find((p) => p.id === j.ref_id)?.title ??
+              named.get(j.ref_id ?? "")?.title ??
               "a video",
             type: j.type,
             stage: j.stage_label ?? "working on",
@@ -431,28 +509,23 @@ app.get("/", async (c) => {
                * WHAT this was about, or nothing.
                *
                * ref_id points at a source for reading and scoring, at a
-               * PROJECT for passes and renders, and at a CLIP for a short's
-               * render. The clip case matched neither list, so those rows read
-               * "Rendered a video" and offered an Open that went to
-               * /sources/<clipId> — a link that 404s. A row that cannot name
-               * its subject is dropped rather than shown pointing nowhere.
+               * PROJECT for passes, and at a RENDER for an export. None of
+               * the last two matched either list, so those rows read
+               * "Rendered a video" and offered an Open that went nowhere. A
+               * row that cannot name its subject is dropped rather than shown
+               * pointing at a 404.
+               *
+               * nameLooseRefs did the lookup for the whole page already; this
+               * used to run a query per row inside the map.
                */
               const src = byId.get(j.ref_id ?? "");
               const proj = projects.find((p) => p.id === j.ref_id);
-              const clip = !src && !proj && j.ref_id
-                ? await c.env.DB
-                    .prepare(
-                      `SELECT s.title, s.id FROM v2_clips cl JOIN sources s ON s.id = cl.source_id
-                        WHERE cl.id=? AND cl.user_id=?`,
-                    )
-                    .bind(j.ref_id, user.id)
-                    .first<{ title: string; id: string }>()
-                : null;
+              const other = !src && !proj ? named.get(j.ref_id ?? "") : undefined;
 
-              const what = src?.title ?? proj?.title ?? clip?.title ?? null;
+              const what = src?.title ?? proj?.title ?? other?.title ?? null;
               if (!what) return null;
 
-              const href = proj ? `/p/${j.ref_id}/cut` : `/sources/${src?.id ?? clip?.id}`;
+              const href = proj ? `/p/${j.ref_id}/cut` : (other?.href ?? `/sources/${src?.id}`);
 
               /*
                * A DECISION where there honestly is one. The design's feed rows
@@ -1034,7 +1107,8 @@ app.get("/clipping", async (c) => {
   /* Which file each short lives in. A card paints its OWN moment rather than
      the video's first frame, and on the library view the shorts come from
      several videos, so the key travels with the row. */
-  const fileOf = new Map(sources.map((sv) => [sv.id, { key: sv.r2_key, title: sv.title }]));
+  /* playableKey, not r2_key: the picker's cards decode frames out of this. */
+  const fileOf = new Map(sources.map((sv) => [sv.id, { key: playableKey(sv), title: sv.title }]));
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
@@ -1160,7 +1234,7 @@ app.get("/p/:id/:stagePath", async (c) => {
     })
   ).blocks;
 
-  const renders = await listRenders(c.env.DB, project.id);
+  const renders = await listRenders(c.env.DB, project.id, user.id);
 
   return c.html(
     page(
@@ -1170,7 +1244,9 @@ app.get("/p/:id/:stagePath", async (c) => {
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,
-        sourceKey: source?.r2_key ?? null,
+        /* The editing copy when there is one — see playableKey. The RENDER
+           still reads r2_key; this is only what you watch. */
+        sourceKey: source ? playableKey(source) : null,
         posterKey: source?.poster_r2_key ?? null,
         blocks,
         beats,
@@ -1499,7 +1575,8 @@ app.post("/api/projects/:id/blocks/short", async (c) => {
     aspect,
     captionStyle,
   });
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: clip.id });
+  /* The render, not the clip — see the note on the cut export's job. */
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: renderId });
   await dispatch(c.env, c.executionCtx, {
     type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
   });
@@ -1681,7 +1758,22 @@ app.post("/api/renders", async (c) => {
     aspect,
     captionStyle,
   });
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: project.id });
+  /*
+   * ref_id IS THE RENDER, and never was.
+   *
+   * This said `project.id`, which reads sensibly and was wrong in a way
+   * nothing announced. Three pieces of code join jobs.ref_id to renders.id —
+   * listRenders for the panel's live stage, secondsPerOutputSecond for the
+   * estimate, and reapStaleJobs to close out the renders ROW when its job
+   * dies — and all three silently matched nothing for the life of the
+   * feature. The last one is why an export could say "putting it together"
+   * for ever: the job was reaped, the row it belonged to was not, and the
+   * panel reads the row.
+   *
+   * A render's job is about a render. Home learns to name one (see the feed
+   * below), which is the only thing that depended on the old meaning.
+   */
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: render.id });
 
   await dispatch(c.env, c.executionCtx, {
     type: "render", jobId: job.id, userId: user.id, projectId: project.id, renderId: render.id,
@@ -1689,12 +1781,97 @@ app.post("/api/renders", async (c) => {
   return c.json({ render, jobId: job.id });
 });
 
+/**
+ * STOP.
+ *
+ * There was no way to stop anything in this product. Not an export, not a
+ * pass, not a read — the only "cancel" in the whole codebase was Stripe's. So
+ * when an export wedged, the owner's options were to watch it or to ask me to
+ * go into the database, and he had to do both.
+ *
+ * Whatever the work is doing elsewhere, the rows say stopped from here on.
+ * The queue consumer reads the job before each step; a job already failed is
+ * one it abandons rather than one it resurrects. And an encoder still holding
+ * a container is told to drop it, because a machine grinding on a video
+ * nobody wants is the expensive half of this.
+ *
+ * Deliberately a FAILURE with a reason rather than a fourth state. Every
+ * surface in the product already knows how to show a failed render and offer
+ * Retry, and "You stopped this." is a true, readable reason. A new state
+ * would have to be taught to all of them.
+ */
+app.post("/api/renders/:id/stop", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const id = c.req.param("id");
+
+  const render = await c.env.DB
+    .prepare(`SELECT id, state, clip_id FROM renders WHERE id=? AND user_id=?`)
+    .bind(id, user.id)
+    .first<{ id: string; state: string; clip_id: string | null }>();
+  if (!render) return c.json({ error: "not found" }, 404);
+  /* Stopping a finished render would throw away a video the user has. */
+  if (render.state === "ready") return c.json({ error: "That one already finished." }, 409);
+
+  await c.env.DB
+    .prepare(`UPDATE renders SET state='failed', error='You stopped this.' WHERE id=? AND user_id=?`)
+    .bind(id, user.id)
+    .run();
+  await c.env.DB
+    .prepare(
+      `UPDATE jobs SET state='failed', finished_at=?, error='You stopped this.'
+        WHERE ref_id=? AND user_id=? AND type='render' AND state IN ('queued','running')`,
+    )
+    .bind(Date.now(), id, user.id)
+    .run();
+
+  /* Let go of the container, if one is still working. Best effort: the render
+     is stopped either way, and an encoder that has already finished or been
+     recycled is not a failure to report. */
+  c.executionCtx.waitUntil(
+    (async () => {
+      /* A short's container is addressed by its clip, a cut's by its render —
+         see encoderFor's callers in short-render.ts and render-job.ts. */
+      const encoder = encoderFor(c.env, render.clip_id ? `short-${render.clip_id}` : `render-${id}`);
+      if (!encoder) return;
+      await encoder
+        .fetch("http://container/render", { method: "DELETE" })
+        .catch(() => undefined);
+    })(),
+  );
+
+  return c.json({ ok: true });
+});
+
+/**
+ * Stop a pass, for the same reason.
+ *
+ * A pass has no row of its own to fail — it IS the job — so this stops the
+ * job and the editor's strip reads the failure from there.
+ */
+app.post("/api/projects/:id/pass/stop", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const { meta } = await c.env.DB
+    .prepare(
+      `UPDATE jobs SET state='failed', finished_at=?, error='You stopped this.'
+        WHERE ref_id=? AND user_id=? AND type IN ('pass','score') AND state IN ('queued','running')`,
+    )
+    .bind(Date.now(), project.id, user.id)
+    .run();
+
+  return c.json({ ok: true, stopped: meta?.changes ?? 0 });
+});
+
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
-  return c.json({ renders: await listRenders(c.env.DB, project.id) });
+  return c.json({ renders: await listRenders(c.env.DB, project.id, user.id) });
 });
 
 /**
@@ -2094,7 +2271,8 @@ app.post("/api/clips/:id/render", async (c) => {
   const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "None";
 
   const renderId = await createShortRender(c.env.DB, { userId: user.id, clipId: clip.id, aspect, captionStyle });
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: clip.id });
+  /* The render, not the clip — see the note on the cut export's job. */
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "render", ref_id: renderId });
 
   await dispatch(c.env, c.executionCtx, {
     type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
@@ -2117,7 +2295,7 @@ app.get("/api/clips/:id", async (c) => {
 
   const clip = await c.env.DB
     .prepare(
-      `SELECT c.*, s.r2_key AS source_key, s.title AS source_title, s.duration_s
+      `SELECT c.*, COALESCE(s.proxy_r2_key, s.r2_key) AS source_key, s.title AS source_title, s.duration_s
          FROM v2_clips c JOIN sources s ON s.id = c.source_id
         WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
     )
@@ -3265,6 +3443,16 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (freed) console.log(`[sweep] freed ${Math.round(freed / 1e6)}MB of used audio`);
   } catch (err) {
     console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /* Footage read before the editing copy existed. Two per sweep, so a large
+     backlog works itself off over hours rather than claiming every container
+     at once. See src/proxy.ts. */
+  try {
+    const made = await backfillProxies(env);
+    if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);
+  } catch (err) {
+    console.log(`[sweep] proxy: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   /* Videos that failed because a container slot was busy rather than because

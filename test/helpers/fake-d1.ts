@@ -85,8 +85,8 @@ export function schema(db: DatabaseSync): void {
     CREATE TABLE v2_users (id TEXT PRIMARY KEY, email TEXT, name TEXT, plan TEXT,
       is_owner INTEGER DEFAULT 0, created_at INTEGER, stripe_customer_id TEXT);
     CREATE TABLE sources (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, filename TEXT,
-      origin TEXT, r2_key TEXT, duration_s INTEGER, transcript_state TEXT,
-      poster_r2_key TEXT, bytes INTEGER, created_at INTEGER, deleted_at INTEGER);
+      origin TEXT, r2_key TEXT, proxy_r2_key TEXT, duration_s INTEGER, width INTEGER, height INTEGER,
+      transcript_state TEXT, poster_r2_key TEXT, bytes INTEGER, created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE segments (id TEXT PRIMARY KEY, source_id TEXT, idx INTEGER,
       start_ms INTEGER, end_ms INTEGER, speaker TEXT, text TEXT, words TEXT);
     CREATE TABLE v2_projects (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, kind TEXT,

@@ -19,6 +19,7 @@
 
 import type { Env } from "./env.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
+import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { captionCues, type RenderPlan } from "./edl.ts";
 import { presignGet } from "./r2sign.ts";
 import { getSegments } from "./sources.ts";
@@ -58,8 +59,6 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       .bind(opts.clipId, opts.userId)
       .first<{ start_ms: number; end_ms: number; quote: string; source_key: string; source_id: string }>();
     if (!clip) return void (await fail("That clip isn't there any more."));
-
-    if (!env.RENDER) return void (await fail("Rendering isn't available yet — the encoder isn't running."));
 
     /* Presigned, like every other container read. /media requires a session
        and the container has none. */
@@ -102,16 +101,20 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       ...(wantsCaptions ? { captions, captionStyle: render.caption_style as string } : {}),
     };
 
-    const container = env.RENDER.get(env.RENDER.idFromName(`short-${opts.clipId}`));
-    const res = await container.fetch("http://container/render", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(plan),
+    /* Same conversation as a full export — see src/encode.ts. A short is one
+       cut, so its part count is 1 and the percentage it reports is the
+       encoder's own stage rather than a count. */
+    const container = encoderFor(env, `short-${opts.clipId}`);
+    if (!container) return void (await fail("Rendering isn't available yet — the encoder isn't running."));
+
+    const res = await encode(container, plan, {
+      deadlineMs: 15 * 60 * 1000,
+      cancelled: async () => {
+        const row = await env.DB.prepare(`SELECT state FROM jobs WHERE id=?`).bind(jobId).first<{ state: string }>();
+        return !row || row.state === "failed";
+      },
+      onProgress: (st) => advance(env.DB, jobId, 40 + Math.round((st.pct / 100) * 38), st.stage),
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return void (await fail(detail.slice(0, 200) || `The encoder failed (${res.status})`));
-    }
 
     await advance(env.DB, jobId, 80, "saving it");
 
@@ -138,6 +141,10 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     await finishJob(env.DB, jobId);
   } catch (err) {
+    /* Stopped is not broken — the rows already carry the true reason. */
+    if (err instanceof Cancelled) return;
+    /* Already a sentence a person can act on. */
+    if (err instanceof EncodeError) return void (await fail(err.message));
     await fail(`Couldn't make that short: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -169,19 +176,23 @@ export async function shortRendersFor(
   db: D1Database,
   userId: string,
   clipIds: string[],
-): Promise<Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>> {
+): Promise<Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>> {
   if (!clipIds.length) return new Map();
   const marks = clipIds.map(() => "?").join(",");
   const { results } = await db
     .prepare(
-      `SELECT clip_id, id, state, r2_key, error, duration_s FROM renders
-        WHERE user_id=? AND kind='short' AND clip_id IN (${marks})
-        ORDER BY created_at DESC`,
+      `SELECT r.clip_id, r.id, r.state, r.r2_key, r.error, r.duration_s,
+              (SELECT j.started_at FROM jobs j
+                WHERE j.ref_id = r.id AND j.type='short-render'
+                ORDER BY j.created_at DESC LIMIT 1) AS started_at
+         FROM renders r
+        WHERE r.user_id=? AND r.kind='short' AND r.clip_id IN (${marks})
+        ORDER BY r.created_at DESC`,
     )
     .bind(userId, ...clipIds)
-    .all<{ clip_id: string; id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>();
+    .all<{ clip_id: string; id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
 
-  const out = new Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>();
+  const out = new Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
   /* Newest first, so the first one seen for a clip is the one that counts. */
   for (const r of results ?? []) if (!out.has(r.clip_id)) out.set(r.clip_id, r);
   return out;

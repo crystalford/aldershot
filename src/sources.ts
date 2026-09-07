@@ -34,6 +34,12 @@ export interface Source {
   cut_title: string | null;
   /** What the user asked for when they added it. See src/schema.ts. */
   brief: string | null;
+  /**
+   * The editing copy — a small mp4 the editor plays instead of the original.
+   * Null until it has been made, and null is a working state: every surface
+   * falls back to r2_key. See src/proxy.ts.
+   */
+  proxy_r2_key: string | null;
   created_at: number;
   deleted_at: number | null;
 }
@@ -83,6 +89,7 @@ export async function createSource(
     poster_r2_key: null,
     cut_title: null,
     brief: opts.brief?.trim() || null,
+    proxy_r2_key: null,
     created_at: Date.now(),
     deleted_at: null,
   };
@@ -99,6 +106,24 @@ export async function createSource(
     .run();
   return src;
 }
+
+/**
+ * The key to PLAY this video from, as opposed to the one to render it from.
+ *
+ * One definition, because there are five places that put a video on screen —
+ * the editor, the source page, Footage's moment cards, the thumbnail decoder
+ * and the Adjust sheet — and a product where four of them play the small copy
+ * and one plays the four-gigabyte original is worse than one where none do.
+ *
+ * Falls back to the original whenever there is no copy: footage read before
+ * this existed, a copy still being made, or one that failed. All three are
+ * working states, not errors.
+ *
+ * NOT for rendering. buildEdl is handed source.r2_key deliberately — an export
+ * comes off the master, or 4K would be a 480p upscale.
+ */
+export const playableKey = (s: { r2_key: string; proxy_r2_key?: string | null }): string =>
+  s.proxy_r2_key || s.r2_key;
 
 export async function getSource(db: D1Database, id: string, userId: string): Promise<Source | null> {
   return await db

@@ -19,6 +19,8 @@ import { ASPECTS, CAPTION_STYLES, CLIP_COUNTS, CLIP_LENGTHS } from "../../shorts
 export interface ShortRender {
   id: string;
   state: string;
+  /** When the encode began, for the clock on a card that is still working. */
+  started_at?: number | null;
   r2_key: string | null;
   error: string | null;
   /** How long the finished file actually is — see `stale` below. */
@@ -58,7 +60,7 @@ export interface ClippingData {
   /** The video being clipped, if one is chosen. */
   source: ClippingSource | null;
   shorts: ShortRow[];
-  job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
+  job: { state: string; pct: number; stage_label: string | null; error: string | null; started_at?: number | null } | null;
   /** Set when reached as an editor stage rather than from the nav. */
   fromEditor: boolean;
 }
@@ -243,7 +245,14 @@ function shortCard(s: ShortRow): string {
   const overlay = playable
     ? ""
     : r && (r.state === "queued" || r.state === "running")
-      ? `<span data-content style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:${SIZE.meta};color:${C.ink70};background:rgba(10,10,11,.7);padding:5px 10px;border-radius:${RADIUS.button}">making it…</span>`
+      ? /* One call into the encoder, so no percentage exists — but how long it
+           has been going is a fact, and a card that only says "making it…"
+           gives you no way to tell working from stuck. */
+        `<span class="job-row" data-started="${r!.started_at ?? Date.now()}"
+          style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;font-size:${SIZE.meta};color:${C.ink70};background:rgba(10,10,11,.75);padding:5px 10px;border-radius:${RADIUS.button}">
+          <span data-content>making it…</span>
+          <span class="job-clock" data-content style="font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">0:00</span>
+        </span>`
       : `<div style="position:absolute;left:8px;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:8px">
           ${
             /* A failure says why AND offers the button again. Showing only the
@@ -449,9 +458,20 @@ export function renderClipping(d: ClippingData): string {
 
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");
   const body = running
-    ? `<div id="clipping-job" data-source="${esc(d.source.id)}" style="margin-top:20px;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-        <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-        <span style="flex:1;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job?.stage_label ?? "finding clips")}</span>
+    ? /* The scan reports real progress — windows of transcript finished — and
+         this showed a blinking dot and a label, throwing the number away. The
+         editor's own pass strip has said it properly all along. */
+      `<div id="clipping-job" class="job-row" data-source="${esc(d.source.id)}" data-started="${d.job?.started_at ?? Date.now()}"
+        style="margin-top:20px;padding:14px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
+          <span id="clipping-label" data-content style="flex:1 1 180px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job?.stage_label ?? "finding clips")}</span>
+          <span id="clipping-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${(d.job?.pct ?? 0) > 0 ? `${d.job?.pct}%` : ""}</span>
+          <span class="job-clock" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums">0:00</span>
+        </div>
+        <div style="margin-top:10px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">
+          <div id="clipping-bar" style="height:100%;width:${d.job?.pct ?? 0}%;background:${ACCENT.gold};border-radius:99px;transition:width .4s ease"></div>
+        </div>
       </div>`
     : d.job?.state === "failed"
       ? `<div style="margin-top:20px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24)">

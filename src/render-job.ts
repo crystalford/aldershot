@@ -15,7 +15,8 @@ import type { Env } from "./env.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
-import { advance, failJob, finishJob, startJob } from "./jobs.ts";
+import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
+import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
@@ -107,12 +108,54 @@ export async function createRender(
   return row;
 }
 
-export async function listRenders(db: D1Database, projectId: string): Promise<RenderRow[]> {
+/**
+ * A project's exports, and for one still running, what it is doing.
+ *
+ * The row alone could only say "putting it together" for the whole encode.
+ * The job behind it knows the stage and when it started, and the account's
+ * own finished renders know the rate — so a waiting row can say how long it
+ * has been and roughly how long is left, both from measurement.
+ */
+export async function listRenders(
+  db: D1Database,
+  projectId: string,
+  userId?: string,
+): Promise<RenderRow[]> {
   const { results } = await db
     .prepare(`SELECT * FROM renders WHERE project_id=? ORDER BY created_at DESC`)
     .bind(projectId)
     .all<RenderRow>();
-  return results ?? [];
+  const rows = results ?? [];
+
+  const live = rows.filter((r) => r.state === "queued" || r.state === "running");
+  if (!live.length || !userId) return rows;
+
+  const { results: jobs } = await db
+    .prepare(
+      `SELECT ref_id, stage_label, started_at FROM jobs
+        WHERE type='render' AND ref_id IN (${live.map(() => "?").join(",")})
+        ORDER BY created_at DESC`,
+    )
+    .bind(...live.map((r) => r.id))
+    .all<{ ref_id: string; stage_label: string | null; started_at: number | null }>();
+
+  const byRender = new Map<string, { stage_label: string | null; started_at: number | null }>();
+  for (const j of jobs ?? []) if (!byRender.has(j.ref_id)) byRender.set(j.ref_id, j);
+
+  /* Seconds of encoding per second of output, from this account's own
+     history. Null until there are three finished renders to learn from. */
+  const rate = await secondsPerOutputSecond(db, userId, "render");
+
+  return rows.map((r) => {
+    const j = byRender.get(r.id);
+    if (!j) return r;
+    return {
+      ...r,
+      stage_label: j.stage_label,
+      started_at: j.started_at,
+      eta_ms: rate && r.duration_s ? Math.round(rate * r.duration_s * 1000) : null,
+    };
+  });
 }
 
 /**
@@ -180,27 +223,6 @@ export async function runRender(
     }
 
     /*
-     * The encoder, or a local one.
-     *
-     * RENDER_URL exists so the render can be exercised in development, where
-     * Cloudflare Containers need a Docker daemon that a sandbox usually does
-     * not have. `node container/render.mjs` is a plain HTTP server — point
-     * this at it and the whole path runs for real, which is how the concat,
-     * the burned-in captions, the aspect sizing and the voiceover card were
-     * finally verified instead of reasoned about.
-     *
-     * RENDER_URL WINS when it is set, because the binding can exist and still
-     * not work — wrangler dev declares it whether or not containers are
-     * enabled, and calling it then fails with "Containers have not been
-     * enabled for this Durable Object class". Setting the variable is a
-     * deliberate act; production never does, so the binding is used there.
-     */
-    if (!env.RENDER && !env.RENDER_URL) {
-      // Honest rather than cryptic: the encoder genuinely is not available.
-      return void (await fail("Rendering isn't available yet — the encoder isn't running."));
-    }
-
-    /*
      * The container reads the source over HTTP, so it needs URLs rather than
      * R2 keys. `-ss` before `-i` seeks by range request, which is what makes
      * cutting from a multi-gigabyte source viable without downloading it.
@@ -232,20 +254,49 @@ export async function runRender(
       cuts: plan.cuts.map((c, i) => ({ ...c, url: urls[i] as string })),
     };
 
+    /* The output length is known from the plan, so it is recorded before the
+       encode rather than after — that is what turns a measured rate into an
+       estimate for THIS render while it is still running. */
+    await env.DB
+      .prepare(`UPDATE renders SET duration_s=? WHERE id=?`)
+      .bind(Math.max(1, Math.round(plan.durationS)), opts.renderId)
+      .run();
+
+    /* One conversation with the encoder, for both kinds of render — see
+       src/encode.ts. Keyed by the RENDER id rather than the project: two
+       exports of one edit used to share an instance, and the second sat
+       behind the first. "one at 30% the others just i guess queued". */
+    const encoder = encoderFor(env, `render-${renderId}`);
+    if (!encoder) {
+      // Honest rather than cryptic: the encoder genuinely is not available.
+      return void (await fail("Rendering isn't available yet — the encoder isn't running."));
+    }
+
     await advance(env.DB, jobId, 30, "putting it together");
 
-    const encoder = env.RENDER_URL
-      ? { fetch: (_u: string, init: RequestInit) => fetch(`${env.RENDER_URL}/render`, init) }
-      : env.RENDER!.get(env.RENDER!.idFromName(`render-${opts.projectId}`));
-    const res = await encoder.fetch("http://container/render", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(withUrls),
+    /*
+     * REAL PROGRESS, from the encoder's own count of finished parts.
+     *
+     * 30 to 78 is the encode, 80 onwards is saving it. What the user watches
+     * between those two numbers is measured work now, rather than a bar that
+     * stopped moving because there was nothing behind it.
+     */
+    const res = await encode(encoder, withUrls, {
+      deadlineMs: 25 * 60 * 1000,
+      /* Stop writes 'failed' onto the job from another request; this is where
+         a render in flight finds out. */
+      cancelled: async () => {
+        const row = await env.DB.prepare(`SELECT state FROM jobs WHERE id=?`).bind(jobId).first<{ state: string }>();
+        return !row || row.state === "failed";
+      },
+      onProgress: (st) =>
+        advance(
+          env.DB,
+          jobId,
+          30 + Math.round((st.pct / 100) * 48),
+          st.total > 1 && st.done > 0 ? `${st.stage} — ${st.done} of ${st.total}` : st.stage,
+        ),
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return void (await fail(`Couldn't put it together: ${detail.slice(0, 200) || res.statusText}`));
-    }
 
     await advance(env.DB, jobId, 80, "saving it");
 
@@ -295,6 +346,17 @@ export async function runRender(
 
     await finishJob(env.DB, jobId);
   } catch (err) {
-    await fail(`Couldn't put it together: ${err instanceof Error ? err.message : String(err)}`);
+    /* EncodeError already reads as a sentence a person can act on — encode.ts
+       writes them that way — so it is not wrapped in another one. */
+    /* Stopped is not broken: the rows already say "You stopped this." and
+       overwriting that with an encoder error would lose the true reason. */
+    if (err instanceof Cancelled) return;
+    if (err instanceof EncodeError) return void (await fail(err.message));
+    const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
+    await fail(
+      timedOut
+        ? "The encoder didn't finish in time. It may be busy — try the export again."
+        : `Couldn't put it together: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }

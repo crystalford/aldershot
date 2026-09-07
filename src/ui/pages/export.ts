@@ -64,6 +64,11 @@ export interface RenderRow {
   duration_s: number | null;
   error: string | null;
   created_at: number;
+  /** While it runs: the stage, when it began, and how long it should take. */
+  stage_label?: string | null;
+  started_at?: number | null;
+  /** Null until this account has three finished renders to learn a rate from. */
+  eta_ms?: number | null;
 }
 
 /**
@@ -106,9 +111,39 @@ export function exportsStrip(d: { projectId: string; renders?: RenderRow[] }): s
       </div>`;
     }
 
-    return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
-      <span style="flex:none;width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite"></span>
-      <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45}">${esc(label)} — putting it together</span>
+    /*
+     * WHAT IS KNOWN, and nothing that is not.
+     *
+     * This was a blinking dot and the words "putting it together", with no
+     * sense of how far in or how long left — "no % or anything". A render is
+     * one call into the encoder and nothing reports from inside it, so there
+     * is no percentage, and a bar filling on a timer would be a lie dressed
+     * as measurement.
+     *
+     * Three things are true and all three are shown: the stage it is at, how
+     * long it has been going, and — once this account has finished three
+     * renders to learn from — roughly how long is left, from the rate its own
+     * renders actually ran at. The stripe says "working" without claiming a
+     * fraction.
+     *
+     * AND A WAY OUT. There was none, anywhere in this product, for any kind
+     * of work. When an export wedged the owner could watch it or ask someone
+     * to edit the database, and he had to do both. A row that can only be
+     * waited on is a row that can trap you.
+     */
+    const started = r.started_at ?? r.created_at;
+    return `<div class="job-row" data-render="${esc(r.id)}" data-started="${started}"${r.eta_ms ? ` data-eta="${r.eta_ms}"` : ""}
+      style="padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="flex:none;width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite"></span>
+        <span style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45}">${esc(label)} — <span data-stage data-content>${esc(r.stage_label ?? "putting it together")}</span></span>
+        <span class="job-left" data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono};font-variant-numeric:tabular-nums"></span>
+        <span class="job-clock" data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono};font-variant-numeric:tabular-nums">0:00</span>
+        <button class="job-stop" data-render="${esc(r.id)}" style="flex:none;font-size:${SIZE.meta};color:${C.ink45};background:none;border:0;padding:4px 8px;border-radius:${RADIUS.button};cursor:pointer">Stop</button>
+      </div>
+      <div style="margin-top:9px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">
+        <div class="job-stripe" style="height:100%;width:34%;background:${ACCENT.gold};border-radius:99px"></div>
+      </div>
     </div>`;
   };
 

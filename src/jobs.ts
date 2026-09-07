@@ -39,6 +39,7 @@ export const STAGES: Record<string, string> = {
   embed: "filing what it found",
   score: "reading it for meaning",
   render: "putting it together",
+  proxy: "making an editing copy",
   shorts: "burning captions",
   tts: "speaking it",
 };
@@ -89,7 +90,22 @@ export async function startJob(db: D1Database, id: string, label?: string): Prom
 export async function advance(db: D1Database, id: string, pct: number, label?: string): Promise<void> {
   const clamped = Math.max(0, Math.min(99, Math.round(pct)));
   await db
-    .prepare(`UPDATE jobs SET pct=?, stage_label=COALESCE(?,stage_label), state='running' WHERE id=?`)
+    .prepare(
+      /*
+       * A JOB THAT HAS FINISHED STAYS FINISHED.
+       *
+       * `state='running'` was unconditional, which made Stop a race it could
+       * lose: the user stops a render, the row says failed, and the encode's
+       * next progress write — already in flight — sets it back to running. The
+       * poll that was about to notice then sees a live job and carries on
+       * encoding a video nobody wants.
+       *
+       * The same guard matters for the reaper: a job declared dead must not be
+       * quietly resurrected by whatever was still running when it was reaped.
+       */
+      `UPDATE jobs SET pct=?, stage_label=COALESCE(?,stage_label), state='running'
+        WHERE id=? AND state NOT IN ('failed','ready')`,
+    )
     .bind(clamped, label ?? null, id)
     .run();
 }
@@ -139,6 +155,52 @@ export function isTransient(err: unknown): boolean {
   );
 }
 
+/**
+ * How long this kind of work has actually taken, for this account.
+ *
+ * "export right now just says putting it together and like.. no % or
+ * anything." A render is ONE call into the encoder — nothing reports from
+ * inside it — so there is no percentage to show, and this codebase does not
+ * put elapsed time in a progress bar and call it progress.
+ *
+ * But there is something real to say. Every finished render recorded when it
+ * started, when it stopped, and how many seconds of video it produced. That
+ * is a measured rate, in seconds of work per second of output, and it is the
+ * honest basis for "about a minute left" — the same footage on the same
+ * account really does take about as long as it did last time.
+ *
+ * The MEDIAN, not the mean: one render that hit a cold container and took
+ * four minutes should not move the estimate for the next twenty.
+ *
+ * Returns null with fewer than three finished runs to learn from. An estimate
+ * from one sample is a guess wearing a number.
+ */
+export async function secondsPerOutputSecond(
+  db: D1Database,
+  userId: string,
+  type: string,
+): Promise<number | null> {
+  const { results } = await db
+    .prepare(
+      `SELECT j.started_at, j.finished_at, r.duration_s
+         FROM jobs j JOIN renders r ON r.id = j.ref_id
+        WHERE j.user_id=? AND j.type=? AND j.state='ready'
+          AND j.started_at IS NOT NULL AND j.finished_at IS NOT NULL
+          AND r.duration_s > 0
+        ORDER BY j.finished_at DESC LIMIT 20`,
+    )
+    .bind(userId, type)
+    .all<{ started_at: number; finished_at: number; duration_s: number }>();
+
+  const rates = (results ?? [])
+    .map((r) => (r.finished_at - r.started_at) / 1000 / r.duration_s)
+    .filter((n) => Number.isFinite(n) && n > 0 && n < 120)
+    .sort((a, b) => a - b);
+
+  if (rates.length < 3) return null;
+  return rates[Math.floor(rates.length / 2)];
+}
+
 export async function failJob(db: D1Database, id: string, error: string): Promise<void> {
   await db
     .prepare(`UPDATE jobs SET state='failed', error=?, finished_at=? WHERE id=?`)
@@ -163,7 +225,28 @@ export async function getJobs(db: D1Database, ids: string[]): Promise<Job[]> {
  * with no error, so the surface promised progress that was never coming. That
  * is worse than a failure, because a failure has a Retry next to it.
  */
+/*
+ * How long a job may go silent before it is declared dead.
+ *
+ * Three hours, which was chosen for a transcribe of a feature-length video and
+ * is far too patient for everything else: the owner's first export sat at 30%
+ * for a long time with nothing to say, because 30% is the moment before the
+ * encoder is called and nothing was going to notice for three hours.
+ *
+ * Per type now, from what the work actually takes. A render is one call to a
+ * container that either answers or does not; a transcribe of three hours of
+ * audio genuinely runs a while.
+ */
 const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
+const STALE_BY_TYPE: Record<string, number> = {
+  render: 30 * 60 * 1000,
+  "short-render": 20 * 60 * 1000,
+  score: 30 * 60 * 1000,
+  pass: 30 * 60 * 1000,
+  shorts: 30 * 60 * 1000,
+  proxy: 45 * 60 * 1000,
+  tts: 10 * 60 * 1000,
+};
 
 /**
  * Closes out jobs that stopped without saying so.
@@ -172,16 +255,93 @@ const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
  * that would otherwise display the lie, and needs no scheduled trigger.
  */
 export async function reapStaleJobs(db: D1Database, userId: string): Promise<void> {
+  const now = Date.now();
+
+  /* One statement per deadline, so a render is not kept alive by the patience
+     a three-hour transcribe needs. */
+  const deadlines = new Map<number, string[]>();
+  for (const [type, ms] of Object.entries(STALE_BY_TYPE)) {
+    if (!deadlines.has(ms)) deadlines.set(ms, []);
+    deadlines.get(ms)!.push(type);
+  }
+
+  for (const [ms, types] of deadlines) {
+    await db
+      .prepare(
+        `UPDATE jobs
+            SET state='failed', finished_at=?,
+                error='That stopped partway and didn''t report why. Try it again.'
+          WHERE user_id=? AND state IN ('queued','running')
+            AND type IN (${types.map(() => "?").join(",")})
+            AND COALESCE(started_at, created_at) < ?`,
+      )
+      .bind(now, userId, ...types, now - ms)
+      .run();
+  }
+
+  const rest = Object.keys(STALE_BY_TYPE);
   await db
     .prepare(
       `UPDATE jobs
-          SET state='failed',
-              finished_at=?,
+          SET state='failed', finished_at=?,
               error='That stopped partway and didn''t report why. Try it again.'
         WHERE user_id=? AND state IN ('queued','running')
+          AND type NOT IN (${rest.map(() => "?").join(",")})
           AND COALESCE(started_at, created_at) < ?`,
     )
-    .bind(Date.now(), userId, Date.now() - STALE_AFTER_MS)
+    .bind(now, userId, ...rest, now - STALE_AFTER_MS)
+    .run();
+
+  /*
+   * AND THE THING THE JOB WAS MAKING.
+   *
+   * The reaper only ever touched `jobs`. The export strip reads renders.state
+   * and the video card reads sources.transcript_state, so a job could be dead
+   * for hours while the row it belonged to still said "putting it together" —
+   * a spinner with nothing behind it and no error anywhere. Whatever the job
+   * was for has to learn that it stopped.
+   */
+  await db
+    .prepare(
+      `UPDATE renders SET state='failed',
+              error=COALESCE(error,'That stopped partway and didn''t report why. Try it again.')
+        WHERE user_id=? AND state IN ('queued','running')
+          AND id IN (SELECT ref_id FROM jobs WHERE user_id=? AND state='failed' AND ref_id IS NOT NULL)`,
+    )
+    .bind(userId, userId)
+    .run();
+
+  /*
+   * AND ON ITS OWN AGE, when there is no job to ask.
+   *
+   * The statement above needs a job whose ref_id is this render. For most of
+   * this product's life no such job existed — a render's job carried the
+   * PROJECT id — so it matched nothing, and an export that died stayed on
+   * "putting it together" for ever. The owner watched one do it for hours
+   * while every reaper in the system ran past it.
+   *
+   * That join is fixed now, but a row is not allowed to depend on a join to
+   * stop lying. A render older than the deadline for a render is finished,
+   * whatever the jobs table does or does not say about it — including the
+   * rows written before the fix, which have nothing pointing at them at all.
+   */
+  await db
+    .prepare(
+      `UPDATE renders SET state='failed',
+              error=COALESCE(error,'That stopped partway and didn''t report why. Try it again.')
+        WHERE user_id=? AND state IN ('queued','running') AND created_at < ?`,
+    )
+    .bind(userId, now - STALE_BY_TYPE.render)
+    .run();
+
+  await db
+    .prepare(
+      `UPDATE sources SET transcript_state='failed'
+        WHERE user_id=? AND transcript_state IN ('pending','running')
+          AND id IN (SELECT ref_id FROM jobs WHERE user_id=? AND type='transcribe'
+                       AND state='failed' AND ref_id IS NOT NULL)`,
+    )
+    .bind(userId, userId)
     .run();
 }
 

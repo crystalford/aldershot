@@ -25,7 +25,8 @@
 
 import type { Env } from "./env.ts";
 import type { Plan } from "./plans.ts";
-import { failJob, getJobs } from "./jobs.ts";
+import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
+import { attachProxy } from "./proxy.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { runShorts } from "./shorts-job.ts";
@@ -70,6 +71,16 @@ export type JobMessage =
   | { type: "render"; jobId: string; userId: string; projectId: string; renderId: string }
   /* A short is one clip from the library, with no project behind it. */
   | { type: "short-render"; jobId: string; userId: string; clipId: string; renderId: string }
+  /*
+   * The editing copy, as its own job.
+   *
+   * Deliberately NOT a step inside the read. A 480p pass over three hours of
+   * 4K is minutes of work, and holding the transcript behind it would mean
+   * staring at "reading it" long after the words were ready. The transcript
+   * lands, the editor opens and plays the original, and the copy arrives
+   * behind it. See src/proxy.ts.
+   */
+  | { type: "proxy"; jobId: string; userId: string; sourceId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string };
 
@@ -138,6 +149,18 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         renderId: msg.renderId,
         jobId: msg.jobId,
       });
+    case "proxy": {
+      const src = await getSource(env.DB, msg.sourceId, msg.userId);
+      if (!src) return void (await failJob(env.DB, msg.jobId, "That video is no longer here."));
+      await startJob(env.DB, msg.jobId, "making an editing copy");
+      const ok = await attachProxy(env, src, (label) => void advance(env.DB, msg.jobId, 50, label));
+      if (!ok) {
+        /* A video with no editing copy is still a video you can cut, so this
+           is a failure of the copy and not of the video. The sweep retries. */
+        return void (await failJob(env.DB, msg.jobId, "Couldn't make an editing copy. It plays from the original."));
+      }
+      return void (await finishJob(env.DB, msg.jobId));
+    }
     case "reactions":
       return await runReactions(env, msg);
     case "outline":

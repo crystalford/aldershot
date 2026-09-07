@@ -308,6 +308,22 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * not silently re-run a request from last week.
    */
   { table: "sources", column: "brief", ddl: "ALTER TABLE sources ADD COLUMN brief TEXT" },
+
+  /*
+   * Where this video's EDITING COPY lives — a 480p mp4 in R2 that the editor
+   * plays instead of the original.
+   *
+   * The original is routinely gigabytes and the editor scrubs it, twice over
+   * (the player and the thumbnail decoder). The copy is about a tenth the size
+   * with a keyframe every two seconds, which is what makes clicking a
+   * transcript line land immediately rather than after a decode.
+   *
+   * Null until the copy exists, and null is a working state: every surface
+   * falls back to the original, so old footage and a failed proxy both keep
+   * playing. Nothing about the EXPORT reads this — a render is built from the
+   * master.
+   */
+  { table: "sources", column: "proxy_r2_key", ddl: "ALTER TABLE sources ADD COLUMN proxy_r2_key TEXT" },
 ];
 
 let ensured = false;

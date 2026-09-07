@@ -633,9 +633,43 @@ if (blocksEl) {
   let observeFrames = () => {};
   let reindexWords = () => {};
 
-  /* The editor's blocks all come out of one file, so its canvases carry only
-     a time and the source is passed in. */
+  /* Most of the editor's blocks come out of ONE file, so their canvases carry
+     no media and this is what they fall back to. A block pulled in from
+     another video carries its own — see data-media on .blk-frame. */
   observeFrames = paintMoments(blocksEl.querySelectorAll(".blk-frame"), video?.getAttribute("src") || "");
+
+  /*
+   * PLAY THIS BLOCK, from whichever file it actually belongs to.
+   *
+   * Nearly every block is a range of this project's own video, and for those
+   * this is a seek. But a clip pulled in from ANOTHER video is a different
+   * file, and the editor did not know: the play button carried data-media and
+   * the handler read only data-start, so pressing play on a pulled clip seeked
+   * this project's video to the other video's timecode and played whatever
+   * happened to be there.
+   *
+   * One player, not two. The src is swapped and swapped back, so wirePlayer's
+   * scrub bar, the keyboard shortcuts and the follow-along all keep working on
+   * the same element rather than being duplicated for a second one.
+   *
+   * homeSrc is captured once, before anything can have moved it.
+   */
+  const homeSrc = video ? video.getAttribute("src") || "" : "";
+  const playFrom = (mediaKey, atMs) => {
+    if (!video) return;
+    const want = mediaKey ? "/media/" + mediaKey : homeSrc;
+    const seek = () => {
+      video.currentTime = atMs / 1000;
+      video.play().catch(() => {});
+    };
+    if (video.getAttribute("src") === want) return seek();
+
+    /* A fresh file has no duration yet, and seeking before metadata arrives
+       does nothing at all — which would look exactly like a dead button. */
+    video.setAttribute("src", want);
+    video.addEventListener("loadedmetadata", seek, { once: true });
+    video.load();
+  };
 
   /*
    * The word being spoken lights up, and a selection can be cut.
@@ -1127,8 +1161,7 @@ if (blocksEl) {
     /* Play from here. Reading and watching are the same gesture, which is the
        whole claim — so the timecode is the control. */
     if (play && video) {
-      video.currentTime = Number(play.getAttribute("data-start") || 0) / 1000;
-      video.play().catch(() => {});
+      playFrom(play.getAttribute("data-media"), Number(play.getAttribute("data-start") || 0));
       return;
     }
 
@@ -1144,8 +1177,9 @@ if (blocksEl) {
     if (word && video) {
       const at = Number(word.getAttribute("data-s") || 0);
       if (at || word.getAttribute("data-s")) {
-        video.currentTime = at / 1000;
-        video.play().catch(() => {});
+        /* Null media: a word belongs to THIS video's transcript, so this also
+           brings the player home if a pulled clip left it on another file. */
+        playFrom(null, at);
       }
       return;
     }
@@ -1792,6 +1826,56 @@ if (navNotif) {
   /* Settle the dot on load rather than leaving it permanently lit. */
   loadNotifications();
 }
+
+/*
+ * WAITING, honestly.
+ *
+ * "some doesn't even give you a time countdown .. like export right now just
+ * says putting it together and like.. no % or anything."
+ *
+ * A render is one call into the encoder and nothing reports from inside it,
+ * so there is no percentage to show and a bar filling on a timer would be a
+ * lie dressed as measurement. What is true: how long it has been going, and —
+ * once the account has finished three renders to learn a rate from — roughly
+ * how long is left, from what its own renders actually took.
+ *
+ * The stripe slides rather than fills. It says "working" without claiming a
+ * fraction, which is the honest shape for work whose end is not visible.
+ */
+document.querySelectorAll(".job-row").forEach((row) => {
+  const clock = row.querySelector(".job-clock");
+  const left = row.querySelector(".job-left");
+  const stripe = row.querySelector(".job-stripe");
+  const started = Number(row.getAttribute("data-started")) || Date.now();
+  const eta = Number(row.getAttribute("data-eta")) || 0;
+
+  const mmss = (ms) => {
+    const t = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  };
+
+  let slide = 0;
+  const tick = () => {
+    const elapsed = Date.now() - started;
+    if (clock) clock.textContent = mmss(elapsed);
+
+    if (left && eta) {
+      const remaining = eta - elapsed;
+      /* Past the estimate is not a failure and must not read as one. Its own
+         renders vary; saying "any moment" is truer than a negative number or
+         a stuck zero. */
+      left.textContent = remaining > 4000 ? "about " + mmss(remaining) + " left" : "any moment";
+    }
+
+    if (stripe) {
+      slide = (slide + 1.6) % 134;
+      stripe.style.marginLeft = Math.max(0, slide - 34) + "%";
+      stripe.style.width = Math.min(34, 134 - slide) + "%";
+    }
+  };
+  tick();
+  setInterval(tick, 1000);
+});
 
 /* ── Keyboard map (10-ROUTES-AND-KEYS.md) ─────────────────────────────── */
 let goArmed = false;
@@ -2801,10 +2885,9 @@ function frameInterest(canvas) {
    SEVERAL frames, and the best of them. This took one, a quarter of the way
    in, and on footage that opens dark that is a black card — which is what both
    of the owner's videos showed in Footage, on Home and in Clipping's picker,
-   because they all read the same key. The repair path, healPoster, only ever
-   runs in the editor, so a bad poster on a video you never open stayed bad for
-   ever. Trying four points costs four seeks on a file the browser already has
-   open, once, at upload. */
+   because they all read the same key, and there was no repair path that ever
+   actually ran. Trying four points costs four seeks on a file the browser
+   already has open, once, at upload. */
 function grabPoster(file, atSeconds) {
   return new Promise((resolve, reject) => {
     const el = document.createElement("video");
@@ -2865,53 +2948,15 @@ function grabPoster(file, atSeconds) {
   });
 }
 
-/**
- * Heals a missing poster from the video that is already on screen.
- *
- * A poster is only ever grabbed in the browser at upload time. If that failed
- * — a codec the browser could not decode, a tab closed before it ran, a file
- * picked on a phone — the source had no poster and no way to ever get one, so
- * it stayed a black rectangle in Footage for good. There is no server-side
- * frame extractor to fall back on.
- *
- * The editor has the actual video loaded, which is a frame grabber we are
- * already paying for. So a source with no poster gets one the first time
- * anybody opens it, using the same endpoint the upload path uses.
+/*
+ * There was a healPoster here — a repair path for a black poster, which had
+ * ZERO call sites for its whole life. Deleted rather than wired up: it seeked
+ * the visible player to a quarter in and then restored it to 0 rather than to
+ * where the user actually was, so wiring it up would have yanked the playhead
+ * out from under somebody. grabPoster already samples four points and scores
+ * them (frameInterest), which is the real fix for a dark frame.
  */
-async function healPoster(video, sourceId) {
-  try {
-    const at = Math.max(1, (video.duration || 8) * 0.25);
-    await new Promise((resolve, reject) => {
-      const onSeek = () => { video.removeEventListener("seeked", onSeek); resolve(); };
-      video.addEventListener("seeked", onSeek);
-      video.addEventListener("error", reject, { once: true });
-      video.currentTime = Math.min(at, Math.max(0, (video.duration || 1) - 0.1));
-      setTimeout(reject, 8000);
-    });
 
-    const c = document.createElement("canvas");
-    const w = 640;
-    c.width = w;
-    c.height = Math.round((video.videoHeight / video.videoWidth) * w) || 360;
-    c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
-
-    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
-    if (!blob) return;
-    await fetch("/api/sources/" + sourceId + "/poster", {
-      method: "POST",
-      headers: { "content-type": "image/jpeg" },
-      body: blob,
-    });
-  } catch (err) {
-    /* Cross-origin taint, a codec the browser will not decode, a seek that
-       never lands. A missing poster is cosmetic; failing to fix it must not
-       be louder than the thing it was fixing. */
-  } finally {
-    /* Put the playhead back wherever it was, so healing a poster does not
-       silently scrub the video the user is about to watch. */
-    try { video.currentTime = 0; } catch (e) {}
-  }
-}
 
 /* Reads a video's real duration without uploading it first. */
 function readDuration(file) {
@@ -3047,7 +3092,11 @@ if (scoring) {
       if (label && job.stage_label) label.textContent = job.stage_label;
       if (typeof job.pct === "number") {
         if (bar) bar.style.width = job.pct + "%";
-        if (pctEl) pctEl.textContent = job.pct + "%";
+        /* Zero is not a measurement — see the note beside shownPct in
+           src/ui/pages/cut.ts. A one-window pass has no fraction to give
+           until it is finished, and printing 0 beside a running clock reads
+           as a stalled product. */
+        if (pctEl) pctEl.textContent = job.pct > 0 ? job.pct + "%" : "";
       }
       setTimeout(tick, 2000);
     } catch { setTimeout(tick, 5000); }
@@ -3149,12 +3198,61 @@ if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
       if (!res.ok) return;
       const { renders } = await res.json();
       const busy = (renders || []).some((r) => r.state === "queued" || r.state === "running");
-      if (!busy) { clearInterval(tick); location.reload(); }
+      if (!busy) { clearInterval(tick); location.reload(); return; }
+
+      /* The stage moves while it works — "putting it together", then "saving
+         it" — and this only ever reloaded at the end, so the row said the same
+         four words for the whole encode however long that was. */
+      for (const r of renders || []) {
+        if (r.state !== "queued" && r.state !== "running") continue;
+        const row = exportsEl.querySelector('.job-row[data-render="' + r.id + '"]');
+        const label = row && row.querySelector("[data-stage]");
+        if (label && r.stage_label) label.textContent = r.stage_label;
+      }
     } catch (err) {
       /* A blip is not a reason to stop watching; the next tick tries again. */
     }
   }, 4000);
 }
+
+/*
+ * STOP.
+ *
+ * There was no way to stop anything in this product — not an export, not a
+ * pass. When one wedged, the only way out was to edit the database, and the
+ * owner had to ask for that. A row you can only wait on is a row that can
+ * trap you.
+ *
+ * Delegated from the document rather than bound per row, because the export
+ * strip repaints itself as renders finish and a handler bound to a row that
+ * has been replaced is a dead button.
+ *
+ * The reload is the point: the server has written the failure and its reason,
+ * so the page re-reads it rather than this inventing a state to draw.
+ */
+document.addEventListener("click", async (e) => {
+  const stop = e.target && e.target.closest && e.target.closest(".job-stop, .pass-stop");
+  if (!stop) return;
+  e.preventDefault();
+  if (stop.disabled) return;
+  stop.disabled = true;
+  stop.textContent = "Stopping";
+
+  const render = stop.getAttribute("data-render");
+  const project = stop.getAttribute("data-project");
+  const url = render
+    ? "/api/renders/" + render + "/stop"
+    : "/api/projects/" + project + "/pass/stop";
+  try {
+    const res = await fetch(url, { method: "POST" });
+    if (!res.ok) throw new Error("stop failed");
+    location.reload();
+  } catch (err) {
+    /* It is still running, so say so rather than leaving a dead control. */
+    stop.disabled = false;
+    stop.textContent = "Stop";
+  }
+});
 
 /* Subscribe, or manage an existing subscription. Both are a redirect to
    Stripe's own hosted page — no card fields ever live on this origin. */
@@ -4034,8 +4132,18 @@ if (clipJob) {
       const { jobs } = await (await fetch("/api/jobs")).json();
       const job = jobs.find((j) => j.ref_id === sourceId);
       if (!job) { location.reload(); return; }
-      const label = clipJob.querySelector("span:last-child");
+      /* By id, not by position. This reached for span:last-child, which is
+         now the clock — the stage would have been written over it. */
+      const label = $("#clipping-label");
+      const pct = $("#clipping-pct");
+      const bar = $("#clipping-bar");
       if (label && job.stage_label) label.textContent = job.stage_label;
+      /* The scan reports real progress and this was dropping it on the floor,
+         which is the same thing the editor's pass strip used to do. */
+      if (typeof job.pct === "number") {
+        if (pct) pct.textContent = job.pct > 0 ? job.pct + "%" : "";
+        if (bar) bar.style.width = job.pct + "%";
+      }
       setTimeout(tick, 2000);
     } catch { setTimeout(tick, 5000); }
   };

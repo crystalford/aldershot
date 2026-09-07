@@ -35,8 +35,25 @@ export interface Block {
   /** The model's opinion, when it has one. Null is not zero; it means unjudged. */
   score: number | null;
   why: string | null;
-  /** A recording's own media, and the frame to show for it. */
+  /**
+   * WHAT THIS BLOCK RENDERS FROM. Read by buildEdl, and only by buildEdl.
+   *
+   * Null means "this project's own source". A recording carries its own file,
+   * and so does a clip pulled in from another video.
+   */
   mediaKey: string | null;
+  /**
+   * WHAT THIS BLOCK PLAYS FROM, which is not the same file.
+   *
+   * Since the editing copy exists (src/proxy.ts) the editor watches a 480p mp4
+   * and the export is cut from the master. One field cannot answer both, and a
+   * field that tried would either splice 480p footage into a 4K render or make
+   * the editor scrub four gigabytes.
+   *
+   * Null means "this project's own source", exactly as for mediaKey — the page
+   * already hands the player a preview key for that case.
+   */
+  previewKey: string | null;
   posterKey: string | null;
 }
 
@@ -70,7 +87,10 @@ export interface BeatLike {
 
 /** A moment from another video, resolved for insertion into this cut. */
 export interface PulledClip {
+  /** The master, for the render. */
   sourceKey: string;
+  /** The editing copy, for the editor. Falls back to the master. */
+  previewKey?: string | null;
   sourceTitle: string;
   start_ms: number;
   end_ms: number;
@@ -144,6 +164,7 @@ export function buildBlocks(opts: {
     score: verdicts.get(s.idx)?.score ?? null,
     why: verdicts.get(s.idx)?.why ?? null,
     mediaKey: null,
+    previewKey: null,
     posterKey,
   });
 
@@ -165,7 +186,11 @@ export function buildBlocks(opts: {
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: p.sourceTitle,
+    /* The two differ HERE and essentially nowhere else, which is the whole
+       reason previewKey exists: this block belongs to another video, so it
+       renders from that video's master and plays that video's copy. */
     mediaKey: p.sourceKey,
+    previewKey: p.previewKey || p.sourceKey,
     posterKey: p.frameKey || posterKey,
   });
 
@@ -179,7 +204,9 @@ export function buildBlocks(opts: {
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: null,
+    /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
+    previewKey: b.media_r2_key,
     posterKey,
   });
 

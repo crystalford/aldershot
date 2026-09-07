@@ -108,8 +108,23 @@ export interface Env {
    */
   MEDIA_PUBLIC_BASE?: string;
 
-  // Cloudflare Stream — preview playback (HLS + poster). Optional; without it
-  // previews are served from R2 directly.
-  STREAM_ACCOUNT_ID?: string;
-  STREAM_API_TOKEN?: string;
+  /*
+   * Cloudflare Stream: considered, priced, and NOT used. There is deliberately
+   * no binding here.
+   *
+   * The design routes preview playback through Stream. Stream bills $5 per
+   * 1,000 minutes stored per month REGARDLESS OF FILE SIZE, so a small preview
+   * copy costs exactly what a 4K master costs — and this product deletes
+   * nothing, so it is rent for ever on every minute anyone ever uploads. A
+   * thousand accounts with ten hours each is about $3,000 a month, rising.
+   * 05-INFRA-AND-COSTS.md calls it "the single easiest way to make this
+   * product unprofitable".
+   *
+   * The same editing copy as an mp4 in R2 measured 3.5 MB a minute with no
+   * egress charge — roughly a seventieth of the price for the same job. See
+   * src/proxy.ts.
+   *
+   * Written down rather than left as two empty slots, because an unfilled
+   * credential is a question somebody asks again in six months.
+   */
 }
