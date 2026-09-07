@@ -560,16 +560,32 @@ export async function setBeatMedia(
  * it. Same discipline either way: nothing is deleted, so it renders struck
  * through and can be restored.
  */
+/**
+ * Strike an inserted block, or put it back.
+ *
+ * Returns null when there is no such beat, and otherwise the state it is NOW
+ * in. Those are two different questions and this used to answer them with the
+ * same boolean: it returned "is it struck now", and the route read that as
+ * "did the row exist" —
+ *
+ *     const found = await toggleBeatStruck(...);
+ *     if (!found) return c.json({ error: "that block is gone" }, 404);
+ *
+ * so PUTTING A BLOCK BACK always looked like a failure. The database was
+ * updated, the route 404'd, and the editor repainted the row as struck again.
+ * Pressing "Add back" appeared to do nothing, and pressing it twice left the
+ * row and the server saying opposite things.
+ */
 export async function toggleBeatStruck(
   db: D1Database,
   projectId: string,
   beatId: string,
-): Promise<boolean> {
+): Promise<boolean | null> {
   const row = await db
     .prepare(`SELECT struck FROM beats WHERE id=? AND project_id=?`)
     .bind(beatId, projectId)
     .first<{ struck: string | null }>();
-  if (!row) return false;
+  if (!row) return null;
   const next = Boolean(row.struck) && row.struck !== "0" ? null : "1";
   await db
     .prepare(`UPDATE beats SET struck=? WHERE id=? AND project_id=?`)

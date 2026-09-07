@@ -119,6 +119,20 @@ export function buildBlocks(opts: {
 }): Block[] {
   const { segments, beats = [], cuts, order = [], scores = [], posterKey = null } = opts;
 
+  /*
+   * ONE VERDICT PER MOMENT, not per line it happens to touch.
+   *
+   * judge() answered per segment with no knowledge of the others, so a moment
+   * spanning three lines painted 93 on all three with the same sentence under
+   * each — "three different lines all scored 93 for the same reason", which
+   * reads as broken because it is not what the model said. It rated one
+   * moment, once.
+   *
+   * The line the moment sits in MOST is the one it is about, decided here
+   * across the whole transcript so it can only be true of one.
+   */
+  const verdicts = assignScores(segments, scores);
+
   const fromSegment = (s: SegmentLike): Block => ({
     id: segmentId(s.idx),
     origin: "footage",
@@ -127,7 +141,8 @@ export function buildBlocks(opts: {
     text: s.text,
     words: parseWords(s.words),
     struck: isSegmentCut(cuts, s.idx),
-    ...judge(scores, s.start_ms, s.end_ms),
+    score: verdicts.get(s.idx)?.score ?? null,
+    why: verdicts.get(s.idx)?.why ?? null,
     mediaKey: null,
     posterKey,
   });
@@ -196,20 +211,42 @@ export function buildBlocks(opts: {
   return out;
 }
 
-/** The model's opinion of the range this block covers, if it has one. */
-function judge(scores: ScoreLike[], startMs: number, endMs: number): { score: number | null; why: string | null } {
-  /* The best-overlapping judgement rather than the first: a scored moment can
-     span several lines, and the line most inside it is the one it is about. */
-  let best: ScoreLike | null = null;
-  let bestOverlap = 0;
-  for (const s of scores) {
-    const overlap = Math.min(endMs, s.end_ms) - Math.max(startMs, s.start_ms);
-    if (overlap > bestOverlap) {
-      best = s;
-      bestOverlap = overlap;
+/**
+ * Which line each scored moment belongs to.
+ *
+ * A moment is a RANGE and a line is a range, and a moment usually covers
+ * several. The old rule asked each line "which moment do you overlap most?",
+ * which every line inside one answered the same way — so the same score and
+ * the same sentence appeared under each of them, as if the model had rated
+ * every line identically.
+ *
+ * Asked the other way round it can only be true once: each moment picks the
+ * line it sits in most. A line already spoken for is not taken again, so two
+ * moments in one long line still get a line each rather than fighting over it.
+ */
+function assignScores(
+  segments: SegmentLike[],
+  scores: ScoreLike[],
+): Map<number, ScoreLike> {
+  const out = new Map<number, ScoreLike>();
+  /* Strongest first, so when two moments want the same line the better one
+     gets it and the other falls to its next-best. */
+  const ranked = [...scores].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+  for (const moment of ranked) {
+    let bestIdx: number | null = null;
+    let bestOverlap = 0;
+    for (const seg of segments) {
+      if (out.has(seg.idx)) continue;
+      const overlap = Math.min(seg.end_ms, moment.end_ms) - Math.max(seg.start_ms, moment.start_ms);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestIdx = seg.idx;
+      }
     }
+    if (bestIdx !== null) out.set(bestIdx, moment);
   }
-  return { score: best?.score ?? null, why: best?.why ?? null };
+  return out;
 }
 
 /** Whether one word of a footage block survives. */

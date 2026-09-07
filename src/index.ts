@@ -1593,8 +1593,10 @@ app.post("/api/projects/:id/cuts", async (c) => {
    * all, silently.
    */
   if (b.kind === "segment" && b.block?.startsWith("b:")) {
-    const found = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
-    if (!found) return c.json({ error: "that block is gone" }, 404);
+    /* null means no such beat. false means it is now UNSTRUCK, which is a
+       success — reading it as failure is what made "Add back" do nothing. */
+    const now = await toggleBeatStruck(c.env.DB, project.id, b.block.slice(2));
+    if (now === null) return c.json({ error: "that block is gone" }, 404);
   } else if (b.kind === "range" && Array.isArray(b.ranges) && b.ranges.length) {
     /* Added, never toggled. A drag across ten words means "cut these", and
        toggling would put back any word inside the selection that happened to
