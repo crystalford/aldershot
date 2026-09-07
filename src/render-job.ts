@@ -231,9 +231,24 @@ export async function runRender(
 
     await advance(env.DB, jobId, 80, "saving it");
 
-    const bytes = await res.arrayBuffer();
+    /*
+     * STREAM it into R2 rather than holding it.
+     *
+     * This was `await res.arrayBuffer()` — the entire finished mp4 in Worker
+     * memory before a byte reached storage. A short cut is fine; a long 4K
+     * export is hundreds of megabytes and would hit the memory ceiling and
+     * report "Couldn't put it together", which reads like an encoder fault
+     * rather than the Worker running out of room. The panel offers 4K with no
+     * length cap, so the ceiling is reachable from the UI.
+     *
+     * R2 reports the size it actually stored, so nothing has to be counted on
+     * the way past.
+     */
     const key = `u/${opts.userId}/renders/${renderId}.mp4`;
-    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/mp4" } });
+    const stored = await env.MEDIA.put(key, res.body, {
+      httpMetadata: { contentType: "video/mp4" },
+    });
+    const size = stored?.size ?? Number(res.headers.get("content-length")) ?? 0;
 
     // Subtitles alongside the render, in output time (Phase 3).
     const srt = buildSrt(built.edl);
@@ -245,7 +260,7 @@ export async function runRender(
 
     await env.DB
       .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
-      .bind(key, bytes.byteLength, Math.round(built.edl.durationMs / 1000), renderId)
+      .bind(key, size, Math.round(built.edl.durationMs / 1000), renderId)
       .run();
 
     await meter(env.DB, {
@@ -253,7 +268,7 @@ export async function runRender(
       job_id: jobId,
       job_type: "render",
       cpu_ms: Date.now() - t0,
-      bytes_stored: bytes.byteLength,
+      bytes_stored: size,
     });
 
     await finishJob(env.DB, jobId);

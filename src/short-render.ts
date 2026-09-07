@@ -115,20 +115,25 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     await advance(env.DB, jobId, 80, "saving it");
 
-    const bytes = await res.arrayBuffer();
+    /* Streamed rather than buffered, for the same reason as the full render:
+       holding a finished mp4 in Worker memory to hand it to R2 is a ceiling
+       reachable from the export panel. See src/render-job.ts. */
     const key = `u/${opts.userId}/shorts/${renderId}.mp4`;
-    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/mp4" } });
+    const stored = await env.MEDIA.put(key, res.body, {
+      httpMetadata: { contentType: "video/mp4" },
+    });
+    const size = stored?.size ?? Number(res.headers.get("content-length")) ?? 0;
 
     await env.DB
       .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
-      .bind(key, bytes.byteLength, Math.round(plan.durationS), renderId)
+      .bind(key, size, Math.round(plan.durationS), renderId)
       .run();
 
     await meter(env.DB, {
       user_id: opts.userId,
       job_id: jobId,
       job_type: "shorts",
-      bytes_stored: bytes.byteLength,
+      bytes_stored: size,
     });
 
     await finishJob(env.DB, jobId);
