@@ -15,7 +15,7 @@ import type { Env } from "./env.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
-import { advance, failJob, finishJob, startJob } from "./jobs.ts";
+import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
@@ -107,12 +107,54 @@ export async function createRender(
   return row;
 }
 
-export async function listRenders(db: D1Database, projectId: string): Promise<RenderRow[]> {
+/**
+ * A project's exports, and for one still running, what it is doing.
+ *
+ * The row alone could only say "putting it together" for the whole encode.
+ * The job behind it knows the stage and when it started, and the account's
+ * own finished renders know the rate — so a waiting row can say how long it
+ * has been and roughly how long is left, both from measurement.
+ */
+export async function listRenders(
+  db: D1Database,
+  projectId: string,
+  userId?: string,
+): Promise<RenderRow[]> {
   const { results } = await db
     .prepare(`SELECT * FROM renders WHERE project_id=? ORDER BY created_at DESC`)
     .bind(projectId)
     .all<RenderRow>();
-  return results ?? [];
+  const rows = results ?? [];
+
+  const live = rows.filter((r) => r.state === "queued" || r.state === "running");
+  if (!live.length || !userId) return rows;
+
+  const { results: jobs } = await db
+    .prepare(
+      `SELECT ref_id, stage_label, started_at FROM jobs
+        WHERE type='render' AND ref_id IN (${live.map(() => "?").join(",")})
+        ORDER BY created_at DESC`,
+    )
+    .bind(...live.map((r) => r.id))
+    .all<{ ref_id: string; stage_label: string | null; started_at: number | null }>();
+
+  const byRender = new Map<string, { stage_label: string | null; started_at: number | null }>();
+  for (const j of jobs ?? []) if (!byRender.has(j.ref_id)) byRender.set(j.ref_id, j);
+
+  /* Seconds of encoding per second of output, from this account's own
+     history. Null until there are three finished renders to learn from. */
+  const rate = await secondsPerOutputSecond(db, userId, "render");
+
+  return rows.map((r) => {
+    const j = byRender.get(r.id);
+    if (!j) return r;
+    return {
+      ...r,
+      stage_label: j.stage_label,
+      started_at: j.started_at,
+      eta_ms: rate && r.duration_s ? Math.round(rate * r.duration_s * 1000) : null,
+    };
+  });
 }
 
 /**
@@ -232,15 +274,36 @@ export async function runRender(
       cuts: plan.cuts.map((c, i) => ({ ...c, url: urls[i] as string })),
     };
 
+    /* The output length is known from the plan, so it is recorded before the
+       encode rather than after — that is what turns a measured rate into an
+       estimate for THIS render while it is still running. */
+    await env.DB
+      .prepare(`UPDATE renders SET duration_s=? WHERE id=?`)
+      .bind(Math.max(1, Math.round(plan.durationS)), opts.renderId)
+      .run();
+
     await advance(env.DB, jobId, 30, "putting it together");
 
     const encoder = env.RENDER_URL
       ? { fetch: (_u: string, init: RequestInit) => fetch(`${env.RENDER_URL}/render`, init) }
       : env.RENDER!.get(env.RENDER!.idFromName(`render-${opts.projectId}`));
+    /*
+     * A DEADLINE on the encoder.
+     *
+     * There was none. The container either answers or it does not, and when
+     * it does not — no free instance, a wedged process — this waited, the job
+     * stayed at 30%, and nothing noticed for three hours. The owner's first
+     * export sat there.
+     *
+     * Generous enough for a long 4K export and finite, which is the point: a
+     * timeout is a failure with a reason attached, and a reason can be
+     * retried.
+     */
     const res = await encoder.fetch("http://container/render", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(withUrls),
+      signal: AbortSignal.timeout(25 * 60 * 1000),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -295,6 +358,13 @@ export async function runRender(
 
     await finishJob(env.DB, jobId);
   } catch (err) {
-    await fail(`Couldn't put it together: ${err instanceof Error ? err.message : String(err)}`);
+    /* A deadline reached is a TimeoutError, and "Couldn't put it together:
+       signal timed out" tells a person nothing they can act on. */
+    const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
+    await fail(
+      timedOut
+        ? "The encoder didn't finish in time. It may be busy — try the export again."
+        : `Couldn't put it together: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }

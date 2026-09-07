@@ -1160,7 +1160,7 @@ app.get("/p/:id/:stagePath", async (c) => {
     })
   ).blocks;
 
-  const renders = await listRenders(c.env.DB, project.id);
+  const renders = await listRenders(c.env.DB, project.id, user.id);
 
   return c.html(
     page(
@@ -1694,7 +1694,7 @@ app.get("/api/projects/:id/renders", async (c) => {
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
-  return c.json({ renders: await listRenders(c.env.DB, project.id) });
+  return c.json({ renders: await listRenders(c.env.DB, project.id, user.id) });
 });
 
 /**

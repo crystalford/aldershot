@@ -1793,6 +1793,56 @@ if (navNotif) {
   loadNotifications();
 }
 
+/*
+ * WAITING, honestly.
+ *
+ * "some doesn't even give you a time countdown .. like export right now just
+ * says putting it together and like.. no % or anything."
+ *
+ * A render is one call into the encoder and nothing reports from inside it,
+ * so there is no percentage to show and a bar filling on a timer would be a
+ * lie dressed as measurement. What is true: how long it has been going, and —
+ * once the account has finished three renders to learn a rate from — roughly
+ * how long is left, from what its own renders actually took.
+ *
+ * The stripe slides rather than fills. It says "working" without claiming a
+ * fraction, which is the honest shape for work whose end is not visible.
+ */
+document.querySelectorAll(".job-row").forEach((row) => {
+  const clock = row.querySelector(".job-clock");
+  const left = row.querySelector(".job-left");
+  const stripe = row.querySelector(".job-stripe");
+  const started = Number(row.getAttribute("data-started")) || Date.now();
+  const eta = Number(row.getAttribute("data-eta")) || 0;
+
+  const mmss = (ms) => {
+    const t = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  };
+
+  let slide = 0;
+  const tick = () => {
+    const elapsed = Date.now() - started;
+    if (clock) clock.textContent = mmss(elapsed);
+
+    if (left && eta) {
+      const remaining = eta - elapsed;
+      /* Past the estimate is not a failure and must not read as one. Its own
+         renders vary; saying "any moment" is truer than a negative number or
+         a stuck zero. */
+      left.textContent = remaining > 4000 ? "about " + mmss(remaining) + " left" : "any moment";
+    }
+
+    if (stripe) {
+      slide = (slide + 1.6) % 134;
+      stripe.style.marginLeft = Math.max(0, slide - 34) + "%";
+      stripe.style.width = Math.min(34, 134 - slide) + "%";
+    }
+  };
+  tick();
+  setInterval(tick, 1000);
+});
+
 /* ── Keyboard map (10-ROUTES-AND-KEYS.md) ─────────────────────────────── */
 let goArmed = false;
 const GO = { h: "/", p: "/projects", c: "/clipping", f: "/footage", s: "/settings" };
@@ -3149,7 +3199,17 @@ if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
       if (!res.ok) return;
       const { renders } = await res.json();
       const busy = (renders || []).some((r) => r.state === "queued" || r.state === "running");
-      if (!busy) { clearInterval(tick); location.reload(); }
+      if (!busy) { clearInterval(tick); location.reload(); return; }
+
+      /* The stage moves while it works — "putting it together", then "saving
+         it" — and this only ever reloaded at the end, so the row said the same
+         four words for the whole encode however long that was. */
+      for (const r of renders || []) {
+        if (r.state !== "queued" && r.state !== "running") continue;
+        const row = exportsEl.querySelector('.job-row[data-render="' + r.id + '"]');
+        const label = row && row.querySelector("[data-stage]");
+        if (label && r.stage_label) label.textContent = r.stage_label;
+      }
     } catch (err) {
       /* A blip is not a reason to stop watching; the next tick tries again. */
     }
@@ -4034,8 +4094,18 @@ if (clipJob) {
       const { jobs } = await (await fetch("/api/jobs")).json();
       const job = jobs.find((j) => j.ref_id === sourceId);
       if (!job) { location.reload(); return; }
-      const label = clipJob.querySelector("span:last-child");
+      /* By id, not by position. This reached for span:last-child, which is
+         now the clock — the stage would have been written over it. */
+      const label = $("#clipping-label");
+      const pct = $("#clipping-pct");
+      const bar = $("#clipping-bar");
       if (label && job.stage_label) label.textContent = job.stage_label;
+      /* The scan reports real progress and this was dropping it on the floor,
+         which is the same thing the editor's pass strip used to do. */
+      if (typeof job.pct === "number") {
+        if (pct) pct.textContent = job.pct + "%";
+        if (bar) bar.style.width = job.pct + "%";
+      }
       setTimeout(tick, 2000);
     } catch { setTimeout(tick, 5000); }
   };

@@ -103,10 +103,14 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
     };
 
     const container = env.RENDER.get(env.RENDER.idFromName(`short-${opts.clipId}`));
+    /* A deadline, for the same reason the cut render has one: the container
+       either answers or it does not, and without this a wedged one leaves the
+       card saying "making it…" indefinitely. */
     const res = await container.fetch("http://container/render", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(plan),
+      signal: AbortSignal.timeout(15 * 60 * 1000),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -169,19 +173,23 @@ export async function shortRendersFor(
   db: D1Database,
   userId: string,
   clipIds: string[],
-): Promise<Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>> {
+): Promise<Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>> {
   if (!clipIds.length) return new Map();
   const marks = clipIds.map(() => "?").join(",");
   const { results } = await db
     .prepare(
-      `SELECT clip_id, id, state, r2_key, error, duration_s FROM renders
-        WHERE user_id=? AND kind='short' AND clip_id IN (${marks})
-        ORDER BY created_at DESC`,
+      `SELECT r.clip_id, r.id, r.state, r.r2_key, r.error, r.duration_s,
+              (SELECT j.started_at FROM jobs j
+                WHERE j.ref_id = r.id AND j.type='short-render'
+                ORDER BY j.created_at DESC LIMIT 1) AS started_at
+         FROM renders r
+        WHERE r.user_id=? AND r.kind='short' AND r.clip_id IN (${marks})
+        ORDER BY r.created_at DESC`,
     )
     .bind(userId, ...clipIds)
-    .all<{ clip_id: string; id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>();
+    .all<{ clip_id: string; id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
 
-  const out = new Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null }>();
+  const out = new Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
   /* Newest first, so the first one seen for a clip is the one that counts. */
   for (const r of results ?? []) if (!out.has(r.clip_id)) out.set(r.clip_id, r);
   return out;
