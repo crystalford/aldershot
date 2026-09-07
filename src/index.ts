@@ -20,7 +20,7 @@ import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCoo
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
-import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
+import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
@@ -30,7 +30,7 @@ import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from 
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
+import { buildSummary, renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -58,7 +58,7 @@ import { addCuts, fillerCuts, isSegmentCut, isWordCut, parseCuts, pauseCuts, run
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
-import { currentUser, userForEmail } from "./user.ts";
+import { currentUser, userForEmail, repairName } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
@@ -351,7 +351,9 @@ app.get("/", async (c) => {
     );
   }
 
-  const user = visitor;
+  /* A stored name today's rule would refuse is cleared on the way past — see
+     repairName. Home is where it shows, so Home is where it is fixed. */
+  const user = await repairName(c.env.DB, visitor);
 
   /* Signed in, and they asked for Studio on the way. Clear it first, so a
      checkout that fails does not trap them in a redirect loop. */
@@ -420,43 +422,122 @@ app.get("/", async (c) => {
          * ran. A failure is included and named — coming back to a silent gap
          * where a render should be is worse than coming back to bad news.
          */
-        feed: finished.map((j) => {
-          /*
-           * A job's ref_id points at a source for reading and scoring, but at
-           * a PROJECT for passes and renders. Looking only at sources made
-           * every pass read "Ran a pass on a video", which tells the user
-           * nothing about which of their things moved.
-           */
-          const what =
-            byId.get(j.ref_id ?? "")?.title ??
-            projects.find((p) => p.id === j.ref_id)?.title ??
-            "a video";
-          const done: Record<string, string> = {
-            transcribe: `Finished reading ${what}`,
-            score: `Found the moments in ${what}`,
-            shorts: `Cut shorts from ${what}`,
-            render: `Rendered ${what}`,
-            pass: `Ran a pass on ${what}`,
-          };
-          return {
-            text: j.state === "failed" ? (j.error ?? `Couldn't finish ${what}`) : (done[j.type] ?? `Finished ${what}`),
-            at: j.finished_at ?? j.created_at,
-            state: j.state,
-            href: j.ref_id
-              ? projects.some((p) => p.id === j.ref_id)
-                ? `/p/${j.ref_id}/cut`
-                : `/sources/${j.ref_id}`
-              : undefined,
-            link: "Open",
-          };
-        }),
-        motion: projects
-          .filter((p) => !p.archived_at && p.pct > 0 && p.pct < 100)
-          .slice(0, 6)
-          .map((p) => ({
-            id: p.id, title: p.title, pct: p.pct,
-            next_action: p.next_action, poster_r2_key: p.poster_r2_key,
-          })),
+        feed: (
+          await Promise.all(
+            finished.map(async (j) => {
+              /*
+               * WHAT this was about, or nothing.
+               *
+               * ref_id points at a source for reading and scoring, at a
+               * PROJECT for passes and renders, and at a CLIP for a short's
+               * render. The clip case matched neither list, so those rows read
+               * "Rendered a video" and offered an Open that went to
+               * /sources/<clipId> — a link that 404s. A row that cannot name
+               * its subject is dropped rather than shown pointing nowhere.
+               */
+              const src = byId.get(j.ref_id ?? "");
+              const proj = projects.find((p) => p.id === j.ref_id);
+              const clip = !src && !proj && j.ref_id
+                ? await c.env.DB
+                    .prepare(
+                      `SELECT s.title, s.id FROM v2_clips cl JOIN sources s ON s.id = cl.source_id
+                        WHERE cl.id=? AND cl.user_id=?`,
+                    )
+                    .bind(j.ref_id, user.id)
+                    .first<{ title: string; id: string }>()
+                : null;
+
+              const what = src?.title ?? proj?.title ?? clip?.title ?? null;
+              if (!what) return null;
+
+              const href = proj ? `/p/${j.ref_id}/cut` : `/sources/${src?.id ?? clip?.id}`;
+
+              /*
+               * A DECISION where there honestly is one. The design's feed rows
+               * each ask something — "Add it / Skip", "Export / Later" — and
+               * this was a changelog where every row said "Open" whatever had
+               * happened.
+               */
+              if (j.state === "failed") {
+                return { text: j.error ?? `Couldn't finish ${what}`, at: j.finished_at ?? j.created_at, state: j.state, href, link: "Retry" };
+              }
+              const done: Record<string, [string, string]> = {
+                transcribe: [`Finished reading ${what}`, "Start cutting"],
+                score: [`Found the moments in ${what}`, "Review the cut"],
+                shorts: [`Cut shorts from ${what}`, "Open"],
+                render: [`Rendered ${what}`, "Download"],
+                pass: [`Ran a pass on ${what}`, "Review the cut"],
+              };
+              const [text, link] = done[j.type] ?? [`Finished ${what}`, "Open"];
+              return { text, at: j.finished_at ?? j.created_at, state: j.state, href, link };
+            }),
+          )
+        ).filter((f): f is NonNullable<typeof f> => f !== null),
+        /*
+         * WHAT YOU HAVE ON THE GO — computed, not stored.
+         *
+         * This filtered on `pct > 0 && pct < 100`, and nothing anywhere writes
+         * v2_projects.pct: every row is 0, so the filter was always empty and
+         * this section has never once rendered. `next_action`, which its rows
+         * also read, is null on every row too.
+         *
+         * The editor has been computing exactly this all along. buildSummary
+         * gives the line ("2 voiceovers to go."), and whether anything is
+         * outstanding is what decides the state — the prototype's own three.
+         */
+        motion: await Promise.all(
+          projects
+            .filter((p) => !p.archived_at)
+            .slice(0, 6)
+            .map(async (p) => {
+              /*
+               * The line has to describe THIS cut, and buildSummary only
+               * knows about beats — so an unassisted cut of a 24-line
+               * transcript read "nothing laid down yet." while sitting next to
+               * "ready to render". A cut made by striking text has no beats
+               * and is still full of content; what it has is blocks.
+               */
+              const { blocks, cuts, beats } = await blocksForProject(c.env.DB, p, user.id);
+              const outstanding = buildSummary(beats);
+              const unfilled = beats.length > 0 && outstanding !== "every beat is filled.";
+              const kept = blocks.filter((b) => !b.struck).length;
+              /*
+               * "Ready to render" has to mean a cut EXISTS. Every state but
+               * needs-you fell through to it, so a transcript nobody had
+               * touched sat on Home claiming it was ready — true in the sense
+               * that the button works, and misleading in every sense that
+               * matters. What makes it an edit is that someone cut something
+               * (cuts) or put something in (beats); otherwise it is the
+               * source read back at you, and the honest word is "not started".
+               */
+              const touched = cuts.length > 0 || beats.length > 0;
+
+              return {
+                id: p.id,
+                title: p.title,
+                poster_r2_key: p.poster_r2_key ?? (p.source_id ? (byId.get(p.source_id)?.poster_r2_key ?? null) : null),
+                /* What still wants you, what is already there, or where to start. */
+                needs: unfilled
+                  ? outstanding
+                  : touched
+                    ? `${kept} kept · ${hms(runtimeMs(blocks, cuts) / 1000)}`
+                    : `${blocks.length} lines · nothing cut yet`,
+                state: unfilled
+                  ? ("needsyou" as const)
+                  : touched && kept > 0
+                    ? ("ready" as const)
+                    : ("idle" as const),
+              };
+            }),
+        ),
+        /* Recent videos, so a cut can be started from Home. listSources is
+           already loaded above for the feed's title lookups. */
+        footage: sources.slice(0, 8).map((sv) => ({
+          id: sv.id,
+          title: sv.cut_title || sv.title,
+          poster_r2_key: sv.poster_r2_key,
+          duration_s: sv.duration_s,
+        })),
       }),
       "nav",
       user.email,
