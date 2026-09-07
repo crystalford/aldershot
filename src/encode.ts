@@ -49,6 +49,15 @@ const MAX_POLLS = 400;
 export class EncodeError extends Error {}
 
 /**
+ * Not a failure — a decision.
+ *
+ * Separate from EncodeError so the caller does not overwrite the reason the
+ * user is already looking at. Stop has already written "You stopped this."
+ * onto both rows; the job must not then report that the encoder broke.
+ */
+export class Cancelled extends Error {}
+
+/**
  * Runs one encode and hands back the response holding the mp4.
  *
  * `onProgress` is called with the container's own measured fraction, and only
@@ -66,6 +75,15 @@ export async function encode(
   opts: {
     deadlineMs: number;
     onProgress?: (status: EncodeStatus) => void | Promise<void>;
+    /*
+     * Has the user given up on this?
+     *
+     * Asked between polls rather than watched, because there is nothing to
+     * watch — the Stop route writes to D1 from a different request. Returning
+     * true here ends the conversation immediately, so the queue consumer stops
+     * holding an invocation open for work nobody wants.
+     */
+    cancelled?: () => Promise<boolean>;
     /* Both injectable so the deadline can be tested without waiting for it. */
     sleep?: (ms: number) => Promise<void>;
     now?: () => number;
@@ -112,6 +130,7 @@ export async function encode(
 
     const status = (await res.json()) as EncodeStatus;
     if (status.error) throw new EncodeError(`Couldn't put it together: ${String(status.error).slice(0, 200)}`);
+    if (await opts.cancelled?.()) throw new Cancelled("You stopped this.");
     if (status.pct !== lastPct) {
       lastPct = status.pct;
       await opts.onProgress?.(status);

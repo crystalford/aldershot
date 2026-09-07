@@ -16,7 +16,7 @@ import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
-import { encode, EncodeError, encoderFor } from "./encode.ts";
+import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
@@ -283,6 +283,12 @@ export async function runRender(
      */
     const res = await encode(encoder, withUrls, {
       deadlineMs: 25 * 60 * 1000,
+      /* Stop writes 'failed' onto the job from another request; this is where
+         a render in flight finds out. */
+      cancelled: async () => {
+        const row = await env.DB.prepare(`SELECT state FROM jobs WHERE id=?`).bind(jobId).first<{ state: string }>();
+        return !row || row.state === "failed";
+      },
       onProgress: (st) =>
         advance(
           env.DB,
@@ -342,6 +348,9 @@ export async function runRender(
   } catch (err) {
     /* EncodeError already reads as a sentence a person can act on — encode.ts
        writes them that way — so it is not wrapped in another one. */
+    /* Stopped is not broken: the rows already say "You stopped this." and
+       overwriting that with an encoder error would lose the true reason. */
+    if (err instanceof Cancelled) return;
     if (err instanceof EncodeError) return void (await fail(err.message));
     const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
     await fail(

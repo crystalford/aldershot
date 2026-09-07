@@ -237,16 +237,25 @@ function render(plan, res) {
     bytes: 0,
     dir,
     at: Date.now(),
+    stopped: false,
+    running: new Set(),
   };
   RENDERS.set(id, job);
 
+  /* Held so a stop can kill them. A part that is already encoding would
+     otherwise run to completion after the user gave up on it. */
   const runFfmpeg = (args) =>
     new Promise((resolve, reject) => {
       const ff = spawn("ffmpeg", args);
+      job.running.add(ff);
       let err = "";
       ff.stderr.on("data", (d) => (err += d));
-      ff.on("error", reject);
-      ff.on("close", (code) => (code === 0 ? resolve() : reject(new Error(err.slice(-800)))));
+      ff.on("error", (e) => { job.running.delete(ff); reject(e); });
+      ff.on("close", (code) => {
+        job.running.delete(ff);
+        if (job.stopped) return reject(new Error("stopped"));
+        code === 0 ? resolve() : reject(new Error(err.slice(-800)));
+      });
     });
 
   (async () => {
@@ -454,6 +463,37 @@ function renderStatus(id, res) {
   }));
 }
 
+/**
+ * Drops a render nobody wants any more.
+ *
+ * A container grinding on an export the user stopped is the expensive half of
+ * a stopped export — the rows say failed instantly, but four vCPUs would keep
+ * encoding until they were done. ffmpeg is killed, the files go, and the poll
+ * that would have collected the result gets a 404 it already knows how to
+ * read as "this one is gone".
+ */
+function renderStop(id, res) {
+  /*
+   * With no id, everything here.
+   *
+   * The Worker does not know the id this container gave the render — that
+   * lives in the queue consumer that started it, which is exactly the thing
+   * that may be wedged. It does know the instance: a container is addressed
+   * as render-<renderId>, one per render, so stopping the lot of them stops
+   * that render and nothing else.
+   */
+  const targets = id ? [id].filter((k) => RENDERS.has(k)) : [...RENDERS.keys()];
+  for (const key of targets) {
+    const job = RENDERS.get(key);
+    job.stopped = true;
+    for (const ff of job.running) { try { ff.kill("SIGKILL"); } catch { /* already gone */ } }
+    RENDERS.delete(key);
+    rm(job.dir, { recursive: true, force: true }).catch(() => {});
+  }
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify({ ok: true, stopped: targets.length }));
+}
+
 /** Hands the finished file over, then forgets it. */
 function renderResult(id, res) {
   const job = RENDERS.get(id);
@@ -605,6 +645,10 @@ createServer(async (req, res) => {
     if (path === "/render/result") return renderResult(id, res);
     res.writeHead(404).end();
     return;
+  }
+
+  if (req.method === "DELETE") {
+    return renderStop(url.searchParams.get("id") || "", res);
   }
 
   if (req.method !== "POST") { res.writeHead(405).end(); return; }

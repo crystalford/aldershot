@@ -125,6 +125,11 @@ export function exportsStrip(d: { projectId: string; renders?: RenderRow[] }): s
      * renders to learn from — roughly how long is left, from the rate its own
      * renders actually ran at. The stripe says "working" without claiming a
      * fraction.
+     *
+     * AND A WAY OUT. There was none, anywhere in this product, for any kind
+     * of work. When an export wedged the owner could watch it or ask someone
+     * to edit the database, and he had to do both. A row that can only be
+     * waited on is a row that can trap you.
      */
     const started = r.started_at ?? r.created_at;
     return `<div class="job-row" data-render="${esc(r.id)}" data-started="${started}"${r.eta_ms ? ` data-eta="${r.eta_ms}"` : ""}
@@ -134,6 +139,7 @@ export function exportsStrip(d: { projectId: string; renders?: RenderRow[] }): s
         <span style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45}">${esc(label)} — <span data-stage data-content>${esc(r.stage_label ?? "putting it together")}</span></span>
         <span class="job-left" data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono};font-variant-numeric:tabular-nums"></span>
         <span class="job-clock" data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono};font-variant-numeric:tabular-nums">0:00</span>
+        <button class="job-stop" data-render="${esc(r.id)}" style="flex:none;font-size:${SIZE.meta};color:${C.ink45};background:none;border:0;padding:4px 8px;border-radius:${RADIUS.button};cursor:pointer">Stop</button>
       </div>
       <div style="margin-top:9px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">
         <div class="job-stripe" style="height:100%;width:34%;background:${ACCENT.gold};border-radius:99px"></div>

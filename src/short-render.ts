@@ -19,7 +19,7 @@
 
 import type { Env } from "./env.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
-import { encode, EncodeError, encoderFor } from "./encode.ts";
+import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { captionCues, type RenderPlan } from "./edl.ts";
 import { presignGet } from "./r2sign.ts";
 import { getSegments } from "./sources.ts";
@@ -109,6 +109,10 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     const res = await encode(container, plan, {
       deadlineMs: 15 * 60 * 1000,
+      cancelled: async () => {
+        const row = await env.DB.prepare(`SELECT state FROM jobs WHERE id=?`).bind(jobId).first<{ state: string }>();
+        return !row || row.state === "failed";
+      },
       onProgress: (st) => advance(env.DB, jobId, 40 + Math.round((st.pct / 100) * 38), st.stage),
     });
 
@@ -137,6 +141,8 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     await finishJob(env.DB, jobId);
   } catch (err) {
+    /* Stopped is not broken — the rows already carry the true reason. */
+    if (err instanceof Cancelled) return;
     /* Already a sentence a person can act on. */
     if (err instanceof EncodeError) return void (await fail(err.message));
     await fail(`Couldn't make that short: ${err instanceof Error ? err.message : String(err)}`);

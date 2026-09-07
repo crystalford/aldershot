@@ -3220,6 +3220,45 @@ if (exportsEl && exportsEl.getAttribute("data-working") === "1") {
   }, 4000);
 }
 
+/*
+ * STOP.
+ *
+ * There was no way to stop anything in this product — not an export, not a
+ * pass. When one wedged, the only way out was to edit the database, and the
+ * owner had to ask for that. A row you can only wait on is a row that can
+ * trap you.
+ *
+ * Delegated from the document rather than bound per row, because the export
+ * strip repaints itself as renders finish and a handler bound to a row that
+ * has been replaced is a dead button.
+ *
+ * The reload is the point: the server has written the failure and its reason,
+ * so the page re-reads it rather than this inventing a state to draw.
+ */
+document.addEventListener("click", async (e) => {
+  const stop = e.target && e.target.closest && e.target.closest(".job-stop, .pass-stop");
+  if (!stop) return;
+  e.preventDefault();
+  if (stop.disabled) return;
+  stop.disabled = true;
+  stop.textContent = "Stopping";
+
+  const render = stop.getAttribute("data-render");
+  const project = stop.getAttribute("data-project");
+  const url = render
+    ? "/api/renders/" + render + "/stop"
+    : "/api/projects/" + project + "/pass/stop";
+  try {
+    const res = await fetch(url, { method: "POST" });
+    if (!res.ok) throw new Error("stop failed");
+    location.reload();
+  } catch (err) {
+    /* It is still running, so say so rather than leaving a dead control. */
+    stop.disabled = false;
+    stop.textContent = "Stop";
+  }
+});
+
 /* Subscribe, or manage an existing subscription. Both are a redirect to
    Stripe's own hosted page — no card fields ever live on this origin. */
 const planAction = document.querySelector("#planAction");

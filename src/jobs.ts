@@ -89,7 +89,22 @@ export async function startJob(db: D1Database, id: string, label?: string): Prom
 export async function advance(db: D1Database, id: string, pct: number, label?: string): Promise<void> {
   const clamped = Math.max(0, Math.min(99, Math.round(pct)));
   await db
-    .prepare(`UPDATE jobs SET pct=?, stage_label=COALESCE(?,stage_label), state='running' WHERE id=?`)
+    .prepare(
+      /*
+       * A JOB THAT HAS FINISHED STAYS FINISHED.
+       *
+       * `state='running'` was unconditional, which made Stop a race it could
+       * lose: the user stops a render, the row says failed, and the encode's
+       * next progress write — already in flight — sets it back to running. The
+       * poll that was about to notice then sees a live job and carries on
+       * encoding a video nobody wants.
+       *
+       * The same guard matters for the reaper: a job declared dead must not be
+       * quietly resurrected by whatever was still running when it was reaped.
+       */
+      `UPDATE jobs SET pct=?, stage_label=COALESCE(?,stage_label), state='running'
+        WHERE id=? AND state NOT IN ('failed','ready')`,
+    )
     .bind(clamped, label ?? null, id)
     .run();
 }
@@ -292,6 +307,29 @@ export async function reapStaleJobs(db: D1Database, userId: string): Promise<voi
           AND id IN (SELECT ref_id FROM jobs WHERE user_id=? AND state='failed' AND ref_id IS NOT NULL)`,
     )
     .bind(userId, userId)
+    .run();
+
+  /*
+   * AND ON ITS OWN AGE, when there is no job to ask.
+   *
+   * The statement above needs a job whose ref_id is this render. For most of
+   * this product's life no such job existed — a render's job carried the
+   * PROJECT id — so it matched nothing, and an export that died stayed on
+   * "putting it together" for ever. The owner watched one do it for hours
+   * while every reaper in the system ran past it.
+   *
+   * That join is fixed now, but a row is not allowed to depend on a join to
+   * stop lying. A render older than the deadline for a render is finished,
+   * whatever the jobs table does or does not say about it — including the
+   * rows written before the fix, which have nothing pointing at them at all.
+   */
+  await db
+    .prepare(
+      `UPDATE renders SET state='failed',
+              error=COALESCE(error,'That stopped partway and didn''t report why. Try it again.')
+        WHERE user_id=? AND state IN ('queued','running') AND created_at < ?`,
+    )
+    .bind(userId, now - STALE_BY_TYPE.render)
     .run();
 
   await db
