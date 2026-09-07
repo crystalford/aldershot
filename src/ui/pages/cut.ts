@@ -172,12 +172,22 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
    * rendered, so the control is complete and legible before any of that runs
    * and stays so if it never does.
    */
-  const thumb = `<button class="blk-play" data-start="${b.start_ms}" data-media="${esc(b.mediaKey ?? "")}"
+  /*
+   * data-media is the PREVIEW key, not the render key.
+   *
+   * A block pulled in from another video is a different file, and both the
+   * frame and the play button have to know that. The canvas did not carry it
+   * at all, so paintMoments fell through to the main player's src and drew a
+   * frame of THIS project's video at the other video's timecode; the button
+   * carried it and the handler ignored it, so pressing play seeked the main
+   * player. Same bug twice, in opposite directions.
+   */
+  const thumb = `<button class="blk-play" data-start="${b.start_ms}" data-media="${esc(b.previewKey ?? "")}"
       aria-label="Play from ${tc(b.start_ms / 1000)}"
       style="flex:none;width:78px;aspect-ratio:16/9;border-radius:5px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);background:#0B0B0E;cursor:pointer;padding:0;border:none">
     ${
       b.origin === "footage"
-        ? `<canvas class="blk-frame" data-at="${b.start_ms}" width="156" height="88" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>`
+        ? `<canvas class="blk-frame" data-at="${b.start_ms}" data-media="${esc(b.previewKey ?? "")}" width="156" height="88" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>`
         : ""
     }
     <span style="position:absolute;left:4px;top:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center">${iconPlay(8)}</span>

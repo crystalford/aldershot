@@ -40,6 +40,7 @@ const carried = (origin: Block["origin"], durMs: number, mediaKey: string | null
   score: null,
   why: null,
   mediaKey,
+  previewKey: mediaKey,
   posterKey: null,
 });
 

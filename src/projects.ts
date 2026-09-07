@@ -654,20 +654,26 @@ export async function pulledClips(
   const marks = ids.map(() => "?").join(",");
   const { results } = await db
     .prepare(
-      `SELECT c.id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key, s.title
+      /* BOTH keys. r2_key is the master the export is cut from; the editing
+         copy is what the editor plays. They are different files and a block
+         that pulls in another video needs to know both — see Block.previewKey
+         in src/blocks.ts. */
+      `SELECT c.id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key,
+              COALESCE(s.proxy_r2_key, s.r2_key) AS preview_key, s.title
          FROM v2_clips c JOIN sources s ON s.id = c.source_id
         WHERE c.id IN (${marks}) AND c.user_id=? AND c.deleted_at IS NULL AND s.deleted_at IS NULL`,
     )
     .bind(...ids, userId)
     .all<{
       id: string; start_ms: number; end_ms: number; quote: string;
-      frame_r2_key: string | null; r2_key: string; title: string;
+      frame_r2_key: string | null; r2_key: string; preview_key: string; title: string;
     }>();
 
   const out = new Map<string, PulledClip>();
   for (const r of results ?? []) {
     out.set(r.id, {
       sourceKey: r.r2_key,
+      previewKey: r.preview_key,
       sourceTitle: r.title,
       start_ms: r.start_ms,
       end_ms: r.end_ms,

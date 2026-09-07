@@ -633,9 +633,43 @@ if (blocksEl) {
   let observeFrames = () => {};
   let reindexWords = () => {};
 
-  /* The editor's blocks all come out of one file, so its canvases carry only
-     a time and the source is passed in. */
+  /* Most of the editor's blocks come out of ONE file, so their canvases carry
+     no media and this is what they fall back to. A block pulled in from
+     another video carries its own — see data-media on .blk-frame. */
   observeFrames = paintMoments(blocksEl.querySelectorAll(".blk-frame"), video?.getAttribute("src") || "");
+
+  /*
+   * PLAY THIS BLOCK, from whichever file it actually belongs to.
+   *
+   * Nearly every block is a range of this project's own video, and for those
+   * this is a seek. But a clip pulled in from ANOTHER video is a different
+   * file, and the editor did not know: the play button carried data-media and
+   * the handler read only data-start, so pressing play on a pulled clip seeked
+   * this project's video to the other video's timecode and played whatever
+   * happened to be there.
+   *
+   * One player, not two. The src is swapped and swapped back, so wirePlayer's
+   * scrub bar, the keyboard shortcuts and the follow-along all keep working on
+   * the same element rather than being duplicated for a second one.
+   *
+   * homeSrc is captured once, before anything can have moved it.
+   */
+  const homeSrc = video ? video.getAttribute("src") || "" : "";
+  const playFrom = (mediaKey, atMs) => {
+    if (!video) return;
+    const want = mediaKey ? "/media/" + mediaKey : homeSrc;
+    const seek = () => {
+      video.currentTime = atMs / 1000;
+      video.play().catch(() => {});
+    };
+    if (video.getAttribute("src") === want) return seek();
+
+    /* A fresh file has no duration yet, and seeking before metadata arrives
+       does nothing at all — which would look exactly like a dead button. */
+    video.setAttribute("src", want);
+    video.addEventListener("loadedmetadata", seek, { once: true });
+    video.load();
+  };
 
   /*
    * The word being spoken lights up, and a selection can be cut.
@@ -1127,8 +1161,7 @@ if (blocksEl) {
     /* Play from here. Reading and watching are the same gesture, which is the
        whole claim — so the timecode is the control. */
     if (play && video) {
-      video.currentTime = Number(play.getAttribute("data-start") || 0) / 1000;
-      video.play().catch(() => {});
+      playFrom(play.getAttribute("data-media"), Number(play.getAttribute("data-start") || 0));
       return;
     }
 
@@ -1144,8 +1177,9 @@ if (blocksEl) {
     if (word && video) {
       const at = Number(word.getAttribute("data-s") || 0);
       if (at || word.getAttribute("data-s")) {
-        video.currentTime = at / 1000;
-        video.play().catch(() => {});
+        /* Null media: a word belongs to THIS video's transcript, so this also
+           brings the player home if a pulled clip left it on another file. */
+        playFrom(null, at);
       }
       return;
     }
@@ -2851,10 +2885,9 @@ function frameInterest(canvas) {
    SEVERAL frames, and the best of them. This took one, a quarter of the way
    in, and on footage that opens dark that is a black card — which is what both
    of the owner's videos showed in Footage, on Home and in Clipping's picker,
-   because they all read the same key. The repair path, healPoster, only ever
-   runs in the editor, so a bad poster on a video you never open stayed bad for
-   ever. Trying four points costs four seeks on a file the browser already has
-   open, once, at upload. */
+   because they all read the same key, and there was no repair path that ever
+   actually ran. Trying four points costs four seeks on a file the browser
+   already has open, once, at upload. */
 function grabPoster(file, atSeconds) {
   return new Promise((resolve, reject) => {
     const el = document.createElement("video");
@@ -2915,53 +2948,15 @@ function grabPoster(file, atSeconds) {
   });
 }
 
-/**
- * Heals a missing poster from the video that is already on screen.
- *
- * A poster is only ever grabbed in the browser at upload time. If that failed
- * — a codec the browser could not decode, a tab closed before it ran, a file
- * picked on a phone — the source had no poster and no way to ever get one, so
- * it stayed a black rectangle in Footage for good. There is no server-side
- * frame extractor to fall back on.
- *
- * The editor has the actual video loaded, which is a frame grabber we are
- * already paying for. So a source with no poster gets one the first time
- * anybody opens it, using the same endpoint the upload path uses.
+/*
+ * There was a healPoster here — a repair path for a black poster, which had
+ * ZERO call sites for its whole life. Deleted rather than wired up: it seeked
+ * the visible player to a quarter in and then restored it to 0 rather than to
+ * where the user actually was, so wiring it up would have yanked the playhead
+ * out from under somebody. grabPoster already samples four points and scores
+ * them (frameInterest), which is the real fix for a dark frame.
  */
-async function healPoster(video, sourceId) {
-  try {
-    const at = Math.max(1, (video.duration || 8) * 0.25);
-    await new Promise((resolve, reject) => {
-      const onSeek = () => { video.removeEventListener("seeked", onSeek); resolve(); };
-      video.addEventListener("seeked", onSeek);
-      video.addEventListener("error", reject, { once: true });
-      video.currentTime = Math.min(at, Math.max(0, (video.duration || 1) - 0.1));
-      setTimeout(reject, 8000);
-    });
 
-    const c = document.createElement("canvas");
-    const w = 640;
-    c.width = w;
-    c.height = Math.round((video.videoHeight / video.videoWidth) * w) || 360;
-    c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
-
-    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
-    if (!blob) return;
-    await fetch("/api/sources/" + sourceId + "/poster", {
-      method: "POST",
-      headers: { "content-type": "image/jpeg" },
-      body: blob,
-    });
-  } catch (err) {
-    /* Cross-origin taint, a codec the browser will not decode, a seek that
-       never lands. A missing poster is cosmetic; failing to fix it must not
-       be louder than the thing it was fixing. */
-  } finally {
-    /* Put the playhead back wherever it was, so healing a poster does not
-       silently scrub the video the user is about to watch. */
-    try { video.currentTime = 0; } catch (e) {}
-  }
-}
 
 /* Reads a video's real duration without uploading it first. */
 function readDuration(file) {

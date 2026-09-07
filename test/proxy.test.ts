@@ -93,3 +93,80 @@ test("THE EXPORT STILL COMES OFF THE MASTER", async () => {
     );
   }
 });
+
+
+/**
+ * A CLIP PULLED IN FROM ANOTHER VIDEO.
+ *
+ * This is the path that would actually regress. A pulled block carries its own
+ * file, and since the editing copy exists that is two files: the master the
+ * export is cut from, and the 480p copy the editor plays. buildEdl reads
+ * mediaKey; the editor reads previewKey. If those ever collapse back into one
+ * field, either the export splices 480p footage into a 4K render or the editor
+ * goes back to scrubbing gigabytes — and neither announces itself.
+ */
+test("a pulled clip renders from the master and previews from the copy", async () => {
+  const { buildBlocks } = await import("../src/blocks.ts");
+  const { buildEdl } = await import("../src/edl.ts");
+
+  const blocks = buildBlocks({
+    segments: [{ idx: 0, start_ms: 0, end_ms: 4000, text: "our own line", words: null }],
+    cuts: [],
+    beats: [{
+      id: "b1", idx: 0, kind: "clip", text: null, dur_ms: null,
+      media_r2_key: null, clip_id: "c9", struck: 0,
+      pulled: {
+        sourceKey: "u/u1/sources/OTHER/original.mp4",
+        previewKey: "u/u1/sources/OTHER/original.edit.mp4",
+        sourceTitle: "Another video",
+        start_ms: 10_000,
+        end_ms: 14_000,
+        quote: "a line from elsewhere",
+        frameKey: null,
+      },
+    }],
+  } as never);
+
+  const pulled = blocks.find((b) => b.mediaKey);
+  assert.ok(pulled, "the pulled clip did not become a block");
+  assert.equal(pulled.mediaKey, "u/u1/sources/OTHER/original.mp4", "it would render from the wrong file");
+  assert.equal(pulled.previewKey, "u/u1/sources/OTHER/original.edit.mp4", "the editor would play the wrong file");
+  assert.notEqual(pulled.mediaKey, pulled.previewKey, "the two keys collapsed back into one");
+
+  const edl = buildEdl("u/u1/sources/MINE/original.mp4", blocks, []);
+  for (const cut of edl.cuts) {
+    assert.doesNotMatch(
+      cut.sourceKey,
+      /\.edit\.mp4$/,
+      "a 480p editing copy reached the EDL — the export would be an upscale",
+    );
+  }
+  assert.ok(
+    edl.cuts.some((c) => c.sourceKey === "u/u1/sources/OTHER/original.mp4"),
+    "the pulled clip was not rendered from the other video's master",
+  );
+});
+
+test("a pulled clip with no editing copy yet still previews", async () => {
+  /* Old footage has no copy, and falling back to the master is correct — what
+     must never happen is falling back to THIS project's video. */
+  const { buildBlocks } = await import("../src/blocks.ts");
+  const blocks = buildBlocks({
+    segments: [{ idx: 0, start_ms: 0, end_ms: 4000, text: "our own line", words: null }],
+    cuts: [],
+    beats: [{
+      id: "b1", idx: 0, kind: "clip", text: null, dur_ms: null,
+      media_r2_key: null, clip_id: "c9", struck: 0,
+      pulled: {
+        sourceKey: "u/u1/sources/OTHER/original.mp4",
+        previewKey: null,
+        sourceTitle: "Another video",
+        start_ms: 10_000, end_ms: 14_000, quote: "elsewhere", frameKey: null,
+      },
+    }],
+  } as never);
+
+  const pulled = blocks.find((b) => b.mediaKey);
+  assert.ok(pulled, "the pulled clip did not become a block");
+  assert.equal(pulled.previewKey, "u/u1/sources/OTHER/original.mp4");
+});
