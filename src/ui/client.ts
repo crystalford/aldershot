@@ -2602,32 +2602,106 @@ async function uploadResumable(file, durationS, onProgress, started) {
   }
 }
 
+/*
+ * How much is going on in a frame — brightness, and how varied it is.
+ *
+ * A frame can be bright and empty (a white flash) or dark and interesting, so
+ * neither number decides alone. Sampled sparsely because this runs several
+ * times per upload and the answer does not need every pixel.
+ */
+function frameInterest(canvas) {
+  try {
+    const d = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let sum = 0;
+    let sumSq = 0;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 64) {
+      const lum = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      sum += lum;
+      sumSq += lum * lum;
+      n++;
+    }
+    if (!n) return 0;
+    const mean = sum / n;
+    const variance = Math.max(0, sumSq / n - mean * mean);
+    /* A frame nobody could see anything in is worth nothing, however varied
+       the noise in it happens to be. */
+    if (mean < 6) return 0;
+    return mean + Math.sqrt(variance) * 2;
+  } catch (err) {
+    return 0;
+  }
+}
+
 /* Grabs a real frame from the video, client-side.
    "Real frames only — no gradients, no coloured blocks, no generated art
    placeholders." Extracting frames server-side needs ffmpeg in a container;
    the browser already has the file in hand, so the poster costs nothing and is
    a genuine frame of the actual video. Server-side frame extraction (one every
-   5s, for clip thumbnails) still belongs in the container. */
+   5s, for clip thumbnails) still belongs in the container.
+
+   SEVERAL frames, and the best of them. This took one, a quarter of the way
+   in, and on footage that opens dark that is a black card — which is what both
+   of the owner's videos showed in Footage, on Home and in Clipping's picker,
+   because they all read the same key. The repair path, healPoster, only ever
+   runs in the editor, so a bad poster on a video you never open stayed bad for
+   ever. Trying four points costs four seeks on a file the browser already has
+   open, once, at upload. */
 function grabPoster(file, atSeconds) {
   return new Promise((resolve, reject) => {
     const el = document.createElement("video");
     el.preload = "metadata";
     el.muted = true;
     el.playsInline = true;
-    const done = (v) => { URL.revokeObjectURL(el.src); resolve(v); };
-    el.onloadedmetadata = () => {
-      el.currentTime = Math.min(atSeconds, Math.max(0, (el.duration || 1) - 0.1));
+
+    const canvas = document.createElement("canvas");
+    const draw = () => canvas.getContext("2d").drawImage(el, 0, 0, canvas.width, canvas.height);
+
+    let points = [];
+    let at = 0;
+    let bestAt = -1;
+    let bestScore = -1;
+    /* The last pass seeks back to the winner and encodes THAT, rather than
+       whichever frame happened to be current when the loop ended. */
+    let encoding = false;
+
+    const finish = (blob) => { URL.revokeObjectURL(el.src); resolve(blob); };
+
+    const next = () => {
+      if (at < points.length) return void (el.currentTime = points[at++]);
+      if (bestAt < 0) return finish(null);
+      encoding = true;
+      el.currentTime = bestAt;
     };
+
+    el.onloadedmetadata = () => {
+      const dur = el.duration || 1;
+      const w = 640;
+      canvas.width = w;
+      canvas.height = Math.round((el.videoHeight / el.videoWidth) * w) || 360;
+
+      /* Spread across the video, and never the very first frame: a fade-in
+         from black is the single most likely thing to be there. The caller's
+         own point stays as one of the candidates. */
+      const cap = (t) => Math.min(Math.max(0.05, t), Math.max(0.05, dur - 0.1));
+      points = [...new Set([atSeconds, dur * 0.15, dur * 0.45, dur * 0.7].map(cap))];
+      next();
+    };
+
     el.onseeked = () => {
       try {
-        const c = document.createElement("canvas");
-        const w = 640;
-        c.width = w;
-        c.height = Math.round((el.videoHeight / el.videoWidth) * w) || 360;
-        c.getContext("2d").drawImage(el, 0, 0, c.width, c.height);
-        c.toBlob((b) => done(b), "image/jpeg", 0.82);
-      } catch { done(null); }
+        draw();
+      } catch (err) {
+        /* This one gave us nothing. The others still might. */
+        return next();
+      }
+      if (encoding) return void canvas.toBlob((b) => finish(b), "image/jpeg", 0.82);
+
+      const score = frameInterest(canvas);
+      if (score > bestScore) { bestScore = score; bestAt = el.currentTime; }
+      next();
     };
+
     el.onerror = () => { URL.revokeObjectURL(el.src); reject(new Error("unreadable")); };
     el.src = URL.createObjectURL(file);
   });
@@ -3365,10 +3439,11 @@ if (clipDrop) {
  * CLIPPING'S CARDS.
  *
  * Each paints its own moment rather than wearing the source's first frame,
- * and each rendered short gets its own player — the same two pieces the editor
- * uses, called per card.
+ * and each gets its own player — the same two pieces the editor uses, called
+ * per card. Footage's clip grid carries exactly the same three parts, so it is
+ * the same block rather than a second copy of it.
  */
-const shortCards = document.querySelectorAll("[data-short]");
+const shortCards = document.querySelectorAll("[data-short], [data-moment]");
 if (shortCards.length) {
   paintMoments(document.querySelectorAll(".short-frame"), "");
   shortCards.forEach((card) => {

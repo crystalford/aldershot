@@ -10,7 +10,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
-import { iconSearch } from "../icons.ts";
+import { iconPause, iconPlay, iconSearch } from "../icons.ts";
 import { itemMenu } from "../item-menu.ts";
 import { selectBar, selectBox } from "../select-bar.ts";
 
@@ -26,6 +26,9 @@ export interface SourceRow {
   created_at: number;
   /** Live read progress, so the row shows a bar rather than a bare label. */
   pct?: number;
+  /** What has come out of this video, and what is being made from it. */
+  clip_count?: number;
+  edit_count?: number;
 }
 
 /**
@@ -99,7 +102,16 @@ function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string
      * thread, it comes back on its own. Same rule as a clean-up chip that
      * shows no count when it has nothing to count.
      */
-    .filter(([id]) => id !== "threads" || (counts.threads ?? 0) > 0 || active === "threads");
+    .filter(([id]) => id !== "threads" || (counts.threads ?? 0) > 0 || active === "threads")
+    /*
+     * And Find, by the same rule, which it had somehow escaped.
+     *
+     * Its whole content is a disabled field and the sentence "Reading captions
+     * from a link isn't switched on yet." — a top-level tab that has never
+     * been able to do anything. The panel and the route stay exactly where
+     * they are, so the day it works this is one condition to flip.
+     */
+    .filter(([id]) => id !== "find" || active === "find");
 
   return `<div style="margin-top:18px;display:flex;gap:4px;border-bottom:1px solid ${C.hairline}">${items
     .map(([id, label]) => {
@@ -159,7 +171,29 @@ function threadChips(threads: ThreadRow[], total: number, active: string | null)
 function sourceCard(s: SourceRow): string {
   /* The duration is stamped on the poster, so repeating it here printed
      "0:20 · test · 0:20 · 30 Aug" across every card. */
-  const meta = new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const added = new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  /*
+   * WHAT IS IN IT, which is the whole subject of this page.
+   *
+   * A card said its title and the date. Clipping's little picker strip says
+   * "11 clips found"; the library page said less than the picker did — and
+   * with sixteen clips across two videos there was no way to tell which came
+   * from where without leaving. The edits count is the footage/edit
+   * relationship this product is built on, and Footage was the one surface
+   * that never mentioned it.
+   *
+   * A zero is not shown. "0 clips" on a video nobody has scanned reads as a
+   * verdict on the video rather than as the absence of a pass — the same rule
+   * the score badge follows.
+   */
+  const meta = [
+    added,
+    s.clip_count ? `${s.clip_count} clip${s.clip_count === 1 ? "" : "s"}` : "",
+    s.edit_count ? `${s.edit_count} edit${s.edit_count === 1 ? "" : "s"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const ready = s.transcript_state === "ready";
   const working = s.transcript_state === "running" || s.transcript_state === "pending";
@@ -302,14 +336,40 @@ function momentCard(m: MomentRow): string {
   const from = m.start_ms / 1000;
   const to = m.end_ms / 1000;
 
-  /* The short if there is one, otherwise the moment itself. Both are real
-     video; neither is a still pretending to be a player. */
-  const media = m.short_key
-    ? `<video preload="none" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.short_key)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`
-    /* preload="none": a grid of clips is a grid of VIDEOS, and asking each
-       one for its metadata on page load is one range request per card before
-       anybody has pressed anything. The browser fetches when you play. */
-    : `<video preload="none" playsinline controls${m.frame_r2_key ? ` poster="/media/${esc(m.frame_r2_key)}"` : ""} src="/media/${esc(m.source_key)}#t=${from},${to}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>`;
+  /*
+   * ITS OWN MOMENT, and our own player.
+   *
+   * frame_r2_key is the SOURCE's poster, so every clip of one video wore the
+   * same image — black, on footage that opens dark. The canvas underneath is
+   * painted by seeking to this moment's own time, the same seek-and-draw the
+   * editor uses for block rows and Clipping for short cards; one definition,
+   * called from three places.
+   *
+   * And `controls` was Chrome's own player, the last one left in the product
+   * after the editor's and Clipping's were replaced today.
+   *
+   * preload="none": a grid of clips is a grid of VIDEOS, and asking each one
+   * for its metadata on page load is a range request per card before anybody
+   * has pressed anything. The browser fetches when you play.
+   */
+  const src = m.short_key ? `/media/${esc(m.short_key)}` : `/media/${esc(m.source_key)}#t=${from},${to}`;
+
+  const media = `<canvas class="short-frame" data-media="${esc(m.source_key)}" data-at="${m.start_ms}" width="320" height="180"
+      style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+    <video class="short-video" preload="none" playsinline src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent"></video>
+    <div class="player" style="position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:7px;padding:6px 8px;background:linear-gradient(to top,rgba(8,8,10,.86),rgba(8,8,10,0))">
+      <button class="pl-play" aria-label="Play" style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:${RADIUS.button};background:transparent;border:none;cursor:pointer">
+        <span class="pl-i-play" style="display:grid">${iconPlay(11, C.ink)}</span>
+        <span class="pl-i-pause" hidden>${iconPause(11, C.ink)}</span>
+      </button>
+      <div class="pl-track" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+        style="position:relative;flex:1;height:14px;cursor:pointer;touch-action:none">
+        <div style="position:absolute;left:0;right:0;top:6px;height:2px;background:rgba(255,255,255,0.22)"></div>
+        <div class="pl-played" style="position:absolute;left:0;top:6px;width:0;height:2px;background:${C.ink}"></div>
+      </div>
+      <span class="pl-now" data-content style="flex:none;font-size:${SIZE.pill};font-family:${FONT.mono};color:${C.ink};font-variant-numeric:tabular-nums">0:00</span>
+      <button class="pl-full" aria-label="Fullscreen" style="flex:none;font-size:${SIZE.pill};font-weight:600;padding:0 4px;background:transparent;border:none;color:${C.ink};cursor:pointer;font-family:${FONT.ui}">Full</button>
+    </div>`;
 
   return `<div data-moment="${esc(m.id)}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
     <div style="position:relative;aspect-ratio:16/9;background:#0B0B0E">
@@ -319,7 +379,8 @@ function momentCard(m: MomentRow): string {
           ? `<span data-content style="position:absolute;left:6px;top:6px;font-size:${SIZE.pill};font-weight:600;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};pointer-events:none">Short</span>`
           : ""
       }
-      <span data-content style="position:absolute;right:3px;bottom:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(255,255,255,0.8);background:rgba(0,0,0,0.55);padding:1px 5px;border-radius:3px;pointer-events:none">${hms((m.end_ms - m.start_ms) / 1000)}</span>
+      <!-- Above the player bar, not on top of its Fullscreen button. -->
+      <span data-content style="position:absolute;right:6px;bottom:34px;font-size:${SIZE.meta};font-family:${FONT.mono};color:rgba(255,255,255,0.8);background:rgba(0,0,0,0.55);padding:1px 5px;border-radius:3px;pointer-events:none">${hms((m.end_ms - m.start_ms) / 1000)}</span>
     </div>
     <div style="padding:12px 14px;display:flex;flex-direction:column;gap:5px;flex:1">
       ${m.thread_name ? `<div data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${ACCENT.cyan}">${esc(m.thread_name)}</div>` : ""}
@@ -455,7 +516,7 @@ export function renderFootageFull(d: FootageData): string {
     return (
       head +
       sortBar(d.sort ?? "newest", d.q, d.mode) +
-      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(200px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
+      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),240px));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
     );
   }
 
@@ -489,6 +550,6 @@ export function renderFootageFull(d: FootageData): string {
     chips +
     notice +
     `<div data-content style="margin-top:26px;font-size:${SIZE.body};font-weight:600;color:${C.ink45}">${esc(heading)}</div>
-     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
+     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),300px));gap:14px">${d.moments.map(momentCard).join("")}</div>`
   );
 }

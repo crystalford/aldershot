@@ -62,7 +62,7 @@ import { currentUser, userForEmail, repairName } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
-import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
+import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
@@ -635,6 +635,14 @@ app.get("/footage", async (c) => {
   const sources = await listSources(c.env.DB, user.id, sort);
   const threads = await listThreads(c.env.DB, user.id);
 
+  /* What each video has yielded, and what is being made from it. Two grouped
+     queries rather than two per row — the same shape Clipping's picker and the
+     editor's intake already use. */
+  const [clipsPer, editsPer] = await Promise.all([
+    clipCountsBySource(c.env.DB, user.id),
+    editCountsBySource(c.env.DB, user.id),
+  ]);
+
   /* Live read progress per source, so a row that is being read shows a moving
      bar instead of a static word. The jobs are already being loaded for the
      nav; this just joins them up. */
@@ -677,7 +685,12 @@ app.get("/footage", async (c) => {
       "Footage — Aldershot",
       renderFootageFull({
         tab,
-        sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
+        sources: sources.map((s) => ({
+          ...s,
+          pct: pctFor.get(s.id),
+          clip_count: clipsPer.get(s.id) ?? 0,
+          edit_count: editsPer.get(s.id) ?? 0,
+        })),
         moments, momentCount, threads, mode, q: query, meaningUnavailable, canMean, thread, sort,
       }),
       "nav",
