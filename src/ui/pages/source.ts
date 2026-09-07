@@ -46,7 +46,7 @@ export interface SourceViewData {
    * the object key. Widened here rather than pushing r2_key onto SourceRow,
    * which every card in a grid would then have to carry.
    */
-  source: SourceRow & { r2_key: string };
+  source: SourceRow & { r2_key: string; proxy_r2_key?: string | null };
   segments: SegmentRow[];
   /** Live job for this source, when it is still being read. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
@@ -138,7 +138,7 @@ export function renderSource(d: SourceViewData): string {
   const player = `<div style="max-width:520px;margin-top:18px">
     <video id="src-video" playsinline preload="metadata"${
       s.poster_r2_key ? ` poster="/media/${esc(s.poster_r2_key)}"` : ""
-    } src="/media/${esc(s.r2_key)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+    } src="/media/${esc(s.proxy_r2_key || s.r2_key)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
     <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
       <button class="pl-play" aria-label="Play" style="flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:${RADIUS.button};background:transparent;border:none;cursor:pointer">
         <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>

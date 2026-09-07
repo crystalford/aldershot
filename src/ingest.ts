@@ -179,6 +179,33 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
       .bind(Math.round(result.duration), src.id)
       .run();
 
+    /*
+     * AND THE EDITING COPY, behind the transcript rather than in front of it.
+     *
+     * The editor plays the original — 45 to 180 minutes of it, gigabytes,
+     * scrubbed by clicking words. A 480p copy with a keyframe every two
+     * seconds is what makes that feel like an editor instead of a download.
+     *
+     * Its own job, dispatched here, because making it is a full pass over the
+     * video and the transcript must not wait behind it: the words are ready,
+     * so the cut opens now and plays the original until the copy exists. See
+     * src/proxy.ts.
+     *
+     * Failure is not fatal to anything, here or in the consumer.
+     */
+    if (opts.ctx && !src.r2_key.endsWith(".edit.mp4")) {
+      try {
+        const proxyJob = await createJob(env.DB, {
+          user_id: src.user_id, type: "proxy", ref_id: src.id,
+        });
+        await dispatch(env, opts.ctx, {
+          type: "proxy", jobId: proxyJob.id, userId: src.user_id, sourceId: src.id,
+        });
+      } catch (err) {
+        console.log(`[ingest] couldn't queue the editing copy: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Meter with what was ACTUALLY billed — the response reports its own
     // neuron count, so this is not an estimate.
     await meter(env.DB, {

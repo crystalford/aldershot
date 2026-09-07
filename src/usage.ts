@@ -57,6 +57,7 @@ export type JobType =
   | "pass"
   | "render"
   | "shorts"
+  | "proxy"
   | "tts";
 
 export interface UsageInput {

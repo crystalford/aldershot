@@ -39,6 +39,7 @@ export const STAGES: Record<string, string> = {
   embed: "filing what it found",
   score: "reading it for meaning",
   render: "putting it together",
+  proxy: "making an editing copy",
   shorts: "burning captions",
   tts: "speaking it",
 };
@@ -243,6 +244,7 @@ const STALE_BY_TYPE: Record<string, number> = {
   score: 30 * 60 * 1000,
   pass: 30 * 60 * 1000,
   shorts: 30 * 60 * 1000,
+  proxy: 45 * 60 * 1000,
   tts: 10 * 60 * 1000,
 };
 

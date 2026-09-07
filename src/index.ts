@@ -64,7 +64,8 @@ import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
-import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
+import { backfillProxies } from "./proxy.ts";
+import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
@@ -1106,7 +1107,8 @@ app.get("/clipping", async (c) => {
   /* Which file each short lives in. A card paints its OWN moment rather than
      the video's first frame, and on the library view the shorts come from
      several videos, so the key travels with the row. */
-  const fileOf = new Map(sources.map((sv) => [sv.id, { key: sv.r2_key, title: sv.title }]));
+  /* playableKey, not r2_key: the picker's cards decode frames out of this. */
+  const fileOf = new Map(sources.map((sv) => [sv.id, { key: playableKey(sv), title: sv.title }]));
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
@@ -1242,7 +1244,9 @@ app.get("/p/:id/:stagePath", async (c) => {
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,
-        sourceKey: source?.r2_key ?? null,
+        /* The editing copy when there is one — see playableKey. The RENDER
+           still reads r2_key; this is only what you watch. */
+        sourceKey: source ? playableKey(source) : null,
         posterKey: source?.poster_r2_key ?? null,
         blocks,
         beats,
@@ -2291,7 +2295,7 @@ app.get("/api/clips/:id", async (c) => {
 
   const clip = await c.env.DB
     .prepare(
-      `SELECT c.*, s.r2_key AS source_key, s.title AS source_title, s.duration_s
+      `SELECT c.*, COALESCE(s.proxy_r2_key, s.r2_key) AS source_key, s.title AS source_title, s.duration_s
          FROM v2_clips c JOIN sources s ON s.id = c.source_id
         WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
     )
@@ -3439,6 +3443,16 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (freed) console.log(`[sweep] freed ${Math.round(freed / 1e6)}MB of used audio`);
   } catch (err) {
     console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /* Footage read before the editing copy existed. Two per sweep, so a large
+     backlog works itself off over hours rather than claiming every container
+     at once. See src/proxy.ts. */
+  try {
+    const made = await backfillProxies(env);
+    if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);
+  } catch (err) {
+    console.log(`[sweep] proxy: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   /* Videos that failed because a container slot was busy rather than because

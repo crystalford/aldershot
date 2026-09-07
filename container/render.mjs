@@ -2,6 +2,7 @@
 // driven by the Worker:
 //
 //   POST /extract-full   { url }       -> audio/mpeg (the whole track, 32kbps mono 16kHz)
+//   POST /proxy          { url }       -> video/mp4  (480p editing copy, + x-width/x-height)
 //   POST /render         { plan }      -> { id }     (starts a cut, per the EDL)
 //   GET  /render/status  ?id=          -> { stage, pct, done, total, error, ready }
 //   GET  /render/result  ?id=          -> video/mp4
@@ -528,6 +529,102 @@ setInterval(() => {
     }
   }
 }, 60_000).unref?.();
+/**
+ * The EDITING COPY.
+ *
+ * The editor plays and scrubs the ORIGINAL — a 45-to-180-minute file that is
+ * routinely gigabytes. Every seek is a range request into it, the editor opens
+ * it twice (the visible player and the thumbnail decoder), and clicking a
+ * transcript line to hear it is meant to be instant. It is the heaviest thing
+ * in the product and the one the design never accounted for.
+ *
+ * The design's answer was Cloudflare Stream. Stream bills per minute stored
+ * REGARDLESS OF FILE SIZE, so a small copy costs exactly what the 4K master
+ * costs, and this product promises permanence — that is rent, for ever, on
+ * every minute anybody ever uploads. 05-INFRA-AND-COSTS.md calls it "the
+ * single easiest way to make this product unprofitable" and it is right.
+ *
+ * The same copy as an mp4 in R2 is about 4.5 MB a minute and has no egress
+ * charge at all — roughly seventy times cheaper for the same job.
+ *
+ * `-g 48` is the point of the whole thing. A keyframe every two seconds is
+ * what makes scrubbing land immediately; a camera's own keyframe interval is
+ * whatever it felt like, often ten seconds or more, and every seek in between
+ * decodes forward from the last one.
+ *
+ * The dimensions come back in the headers because NOTHING IN THIS PRODUCT HAS
+ * EVER KNOWN THEM. sources.width and sources.height are declared, written as
+ * null, and never updated anywhere — which is why vertical footage is drawn
+ * into a landscape box and stretched.
+ */
+function proxy(url, res) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const outPath = `/tmp/proxy-${id}.mp4`;
+
+  const probe = () =>
+    new Promise((resolve) => {
+      const pr = spawn("ffprobe", [
+        "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height:format=duration",
+        "-of", "default=noprint_wrappers=1", url,
+      ]);
+      let out = "";
+      pr.stdout.on("data", (d) => { out += d; });
+      pr.on("close", () => {
+        const read = (k) => Number((new RegExp(k + "=([0-9.]+)").exec(out) || [])[1]) || 0;
+        resolve({ width: read("width"), height: read("height"), duration: read("duration") });
+      });
+      pr.on("error", () => resolve({ width: 0, height: 0, duration: 0 }));
+    });
+
+  (async () => {
+    const t0 = Date.now();
+    /*
+     * Probed BEFORE the encode, from the source, because the proxy is scaled
+     * and would report the copy's shape rather than the video's. -2 keeps the
+     * aspect ratio, so a vertical source comes out vertical.
+     */
+    const shape = await probe();
+
+    const args = [
+      "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS * LANES),
+      "-i", url,
+      "-vf", "scale=-2:480",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-g", "48",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "96k", "-ac", "2",
+      "-movflags", "+faststart", "-y", outPath,
+    ];
+    const ff = spawn("ffmpeg", args);
+    let err = "";
+    ff.stderr.on("data", (d) => (err += d));
+    ff.on("error", (e) => jsonError(res, 500, { error: String(e) }));
+    ff.on("close", async (code) => {
+      if (code !== 0) {
+        await unlink(outPath).catch(() => {});
+        return jsonError(res, 500, { error: err.slice(-1500) || "ffmpeg failed" });
+      }
+      try {
+        const st = await stat(outPath);
+        console.log(`proxy: ${st.size} bytes, ${shape.width}x${shape.height}, ${Date.now() - t0}ms`);
+        res.writeHead(200, {
+          "content-type": "video/mp4",
+          "content-length": String(st.size),
+          "x-width": String(shape.width),
+          "x-height": String(shape.height),
+          "x-duration-s": String(Math.round(shape.duration)),
+        });
+        const rs = createReadStream(outPath);
+        rs.pipe(res);
+        rs.on("close", () => { unlink(outPath).catch(() => {}); });
+        rs.on("error", () => { unlink(outPath).catch(() => {}); });
+      } catch (e) {
+        jsonError(res, 500, { error: String(e) });
+      }
+    });
+  })();
+}
+
 function readJson(req) {
   return new Promise((resolve) => {
     let body = "";
@@ -661,6 +758,7 @@ createServer(async (req, res) => {
 
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);
+  if (path === "/proxy") return proxy(body.url, res);
   if (path === "/enhance-audio") return enhanceAudio(body.url, res);
   res.writeHead(404).end();
 /* 8080 is what the Container binding expects (defaultPort in src/render.ts).

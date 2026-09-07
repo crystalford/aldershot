@@ -35,8 +35,12 @@ const SELECT_MOMENTS = `
          /* The footage this came from, so a clip can PLAY. A moment is a range
             of a video, and a video element given #t=start,end plays exactly
             that range — no render, no second file. Without this the cards were
-            stills you could not click. */
-         s.r2_key AS source_key,
+            stills you could not click.
+            The EDITING COPY when there is one: a grid of these is a range
+            request per card into the original, which is the worst version of
+            the problem src/proxy.ts exists to solve. A short is still RENDERED
+            from the master — see short-render.ts, which reads r2_key. */
+         COALESCE(s.proxy_r2_key, s.r2_key) AS source_key,
          /* Whether it has already been made into a short, so the card can show
             the finished thing rather than offering to make it twice. */
          (SELECT r.r2_key FROM renders r
