@@ -188,8 +188,22 @@ p,div{text-wrap:pretty}
    always-visible action cluster on every row the words themselves were left
    about 180px — wrapping every three or four words in a product whose whole
    claim is editing by text. */
-.editor-aside{flex:0 1 300px;min-width:min(280px,100%);max-width:min(320px,100%);position:sticky;top:88px}
-@media (max-width: 760px){ .editor-aside{position:static;max-width:100%} }
+/* The editor's left column.
+   Sticky, so the player and the AI controls stay with you while you read down
+   a long transcript. But a sticky element TALLER than the space it is stuck
+   in has an unreachable bottom: it pins at top:88px and the overflow simply
+   sits below the viewport, because a stuck element no longer moves with the
+   page. On a long video the clean-up chips were off the bottom of the screen
+   and the only way to see them was to scroll the whole transcript to its end
+   and let the column come unstuck.
+   So it is bounded by what is actually visible — the nav above it and the
+   export bar below — and scrolls itself when it needs to. Shorter than that
+   and nothing changes, which is the common case. overscroll-behavior stops
+   reaching its end from grabbing the page and carrying on. */
+.editor-aside{flex:0 1 300px;min-width:min(280px,100%);max-width:min(320px,100%);
+  position:sticky;top:88px;max-height:calc(100vh - 88px - 84px);
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:2px}
+@media (max-width: 760px){ .editor-aside{position:static;max-width:100%;max-height:none;overflow:visible} }
 /* Export chips. Radio labels, so the selected one is styled by :has() rather
    than by the client setting colours it would have to hardcode. */
 .exp-chip{display:flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:${RADIUS.button};background:${C.pill};cursor:pointer;white-space:nowrap}
