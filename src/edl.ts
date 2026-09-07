@@ -91,7 +91,13 @@ export function buildEdl(sourceKey: string, blocks: Block[], cuts: Cut[]): Edl {
     for (const range of blockRanges(block, cuts)) {
       if (range.end_ms <= range.start_ms) continue;
       out.push({
-        sourceKey,
+        /*
+         * A footage block usually plays from THIS project's video — but a clip
+         * pulled from another one carries its own key, and cutting its
+         * timecodes out of this file would splice a stranger's range from your
+         * own footage.
+         */
+        sourceKey: block.mediaKey || sourceKey,
         start_ms: range.start_ms,
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),

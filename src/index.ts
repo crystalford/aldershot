@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -951,14 +951,13 @@ app.get("/p/:id/:stagePath", async (c) => {
   ]);
 
   const cuts = parseCuts(project.cuts);
-  const blocks = buildBlocks({
-    segments,
-    beats,
-    cuts,
-    order: parseOrder(project.block_order ?? null),
-    scores: clips.map((cl) => ({ start_ms: cl.start_ms, end_ms: cl.end_ms, score: cl.score, why: cl.why })),
-    posterKey: source?.poster_r2_key ?? null,
-  });
+  const blocks = (
+    await blocksForProject(c.env.DB, project, user.id, {
+      segments,
+      posterKey: source?.poster_r2_key ?? null,
+      scores: clips.map((cl) => ({ start_ms: cl.start_ms, end_ms: cl.end_ms, score: cl.score, why: cl.why })),
+    })
+  ).blocks;
 
   const renders = await listRenders(c.env.DB, project.id);
 
@@ -1039,12 +1038,7 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
     getSegments(c.env.DB, project.source_id),
     getBeats(c.env.DB, project.id),
   ]);
-  const blocks = buildBlocks({
-    segments,
-    beats,
-    cuts: parseCuts(project.cuts),
-    order: parseOrder(project.block_order ?? null),
-  });
+  const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
   const order = moveBlock(blocks, b.block, dir);
   await c.env.DB
@@ -1109,13 +1103,7 @@ app.get("/api/projects/:id/blocks", async (c) => {
     getBeats(c.env.DB, project.id),
   ]);
   const cuts = parseCuts(project.cuts);
-  const blocks = buildBlocks({
-    segments,
-    beats,
-    cuts,
-    order: parseOrder(project.block_order ?? null),
-    posterKey: source?.poster_r2_key ?? null,
-  });
+  const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const from = Math.max(0, Number(c.req.query("from")) || 0);
   const to = from + BLOCK_WINDOW;
@@ -1125,6 +1113,32 @@ app.get("/api/projects/:id/blocks", async (c) => {
     to: Math.min(to, blocks.length),
     total: blocks.length,
     more: to < blocks.length,
+  });
+});
+
+/**
+ * Moments from the whole library, for the seam's clip picker.
+ *
+ * Distinct from /api/projects/:id/clips, which is this project's own source:
+ * pulling a clip in is only interesting when it comes from ANOTHER video —
+ * a moment from this one is already a block you can just move.
+ */
+app.get("/api/moments", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const exclude = c.req.query("not") || "";
+  const moments = await listMoments(c.env.DB, user.id, 60);
+  return c.json({
+    moments: moments
+      .filter((m) => m.source_id !== exclude)
+      .map((m) => ({
+        id: m.id,
+        quote: m.quote,
+        source: m.source_title,
+        ms: m.end_ms - m.start_ms,
+        at: m.start_ms,
+        frame: m.frame_r2_key,
+      })),
   });
 });
 
@@ -1145,13 +1159,7 @@ app.post("/api/projects/:id/blocks/short", async (c) => {
     getBeats(c.env.DB, project.id),
   ]);
   const cuts = parseCuts(project.cuts);
-  const blocks = buildBlocks({
-    segments,
-    beats,
-    cuts,
-    order: parseOrder(project.block_order ?? null),
-    posterKey: source.poster_r2_key,
-  });
+  const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const block = blocks.find((x) => x.id === b.block);
   if (!block) return c.json({ error: "that block is gone" }, 404);
@@ -1209,20 +1217,28 @@ app.post("/api/projects/:id/blocks/insert", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project?.source_id) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ at: number; kind?: string }>(c);
-  const kind = (["vo", "react"] as const).find((k) => k === b.kind) ?? "vo";
+  const b = await body<{ at: number; kind?: string; clipId?: string }>(c);
+  const kind = (["vo", "react", "clip"] as const).find((k) => k === b.kind) ?? "vo";
+
+  /*
+   * A clip has to come from somewhere. The seam offers "A clip" as a way to
+   * pull a moment out of your library into this cut, so the moment is named
+   * up front — an empty clip block would be a slot with no way to fill it,
+   * which is what the whole seam used to be.
+   */
+  if (kind === "clip" && !b.clipId) return c.json({ error: "which clip?" }, 400);
 
   const existing = await getBeats(c.env.DB, project.id);
-  const beats = await insertBeat(c.env.DB, project.id, existing.length, { kind, act: null, text: null, clip_id: null });
+  const beats = await insertBeat(c.env.DB, project.id, existing.length, {
+    kind,
+    act: null,
+    text: null,
+    clip_id: kind === "clip" ? (b.clipId ?? null) : null,
+  });
   const made = beats[beats.length - 1];
 
   const segments = await getSegments(c.env.DB, project.source_id);
-  const before = buildBlocks({
-    segments,
-    beats: existing,
-    cuts: parseCuts(project.cuts),
-    order: parseOrder(project.block_order ?? null),
-  });
+  const before = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
   /* Insert at the seam, not at the end — the position is the whole point of
      clicking a particular one. */
@@ -1314,13 +1330,9 @@ app.post("/api/projects/:id/cuts", async (c) => {
    * nothing to the figure in the footer and striking one changed nothing —
    * even once the strike itself worked.
    */
-  const beats = await getBeats(c.env.DB, project.id);
-  const blocks = buildBlocks({
-    segments,
-    beats,
-    cuts,
-    order: parseOrder(project.block_order ?? null),
-  });
+  /* Re-read the project so the cuts just saved are the ones counted. */
+  const after = (await getProject(c.env.DB, project.id, user.id)) ?? project;
+  const blocks = (await blocksForProject(c.env.DB, after, user.id, { segments })).blocks;
   return c.json({
     cuts,
     afterS: runtimeMs(blocks, cuts) / 1000,
@@ -1920,14 +1932,8 @@ app.get("/editor", async (c) => {
        * which is what Footage's Clips shelf and Clipping both read it as.
        */
       const segs = p.source_id ? (segsBySource.get(p.source_id) ?? []) : [];
-      const beats = await getBeats(c.env.DB, p.id);
       const cuts = parseCuts(p.cuts);
-      const blocks = buildBlocks({
-        segments: segs,
-        beats,
-        cuts,
-        order: parseOrder(p.block_order ?? null),
-      });
+      const blocks = (await blocksForProject(c.env.DB, p, user.id, { segments: segs })).blocks;
 
       return {
         id: p.id,

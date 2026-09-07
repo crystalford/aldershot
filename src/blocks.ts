@@ -56,6 +56,8 @@ export interface BeatLike {
   dur_ms: number | null;
   media_r2_key: string | null;
   clip_id: string | null;
+  /** Set when this beat is a clip pulled from a DIFFERENT video. */
+  pulled?: PulledClip;
   /**
    * Struck, as stored. Anything truthy counts — the column is TEXT and has
    * held 1, '1' and null over its life.
@@ -64,6 +66,16 @@ export interface BeatLike {
    * inserted could be cut on screen and was never cut in the render.
    */
   struck?: unknown;
+}
+
+/** A moment from another video, resolved for insertion into this cut. */
+export interface PulledClip {
+  sourceKey: string;
+  sourceTitle: string;
+  start_ms: number;
+  end_ms: number;
+  quote: string;
+  frameKey: string | null;
 }
 
 export interface ScoreLike {
@@ -120,6 +132,28 @@ export function buildBlocks(opts: {
     posterKey,
   });
 
+  /*
+   * A clip pulled from another video: real footage with its own words, which
+   * happens to live in a different file. A footage block in every way except
+   * which file it plays from — exactly what mediaKey is for, and what the EDL
+   * already reads for inserted blocks.
+   */
+  const fromPulled = (b: BeatLike, p: PulledClip): Block => ({
+    id: beatId(b.id),
+    origin: "footage",
+    start_ms: p.start_ms,
+    end_ms: p.end_ms,
+    text: p.quote,
+    /* No word timings: they belong to the other video's transcript, which is
+       not loaded here. The block plays and strikes whole, which is honest. */
+    words: [],
+    struck: Boolean(b.struck) && b.struck !== "0",
+    score: null,
+    why: p.sourceTitle,
+    mediaKey: p.sourceKey,
+    posterKey: p.frameKey || posterKey,
+  });
+
   const fromBeat = (b: BeatLike): Block => ({
     id: beatId(b.id),
     origin: b.kind === "generated" || b.kind === "stock" ? "generated" : "voice",
@@ -136,10 +170,17 @@ export function buildBlocks(opts: {
 
   const byId = new Map<string, Block>();
   for (const s of segments) byId.set(segmentId(s.idx), fromSegment(s));
-  /* A clip beat is a pointer at footage the segments already cover, so it would
-     render the same range twice. Only beats carrying their OWN material are
-     blocks in their own right. */
-  for (const b of beats) if (b.kind !== "clip") byId.set(beatId(b.id), fromBeat(b));
+  /*
+   * A clip beat is usually a pointer at footage the segments already cover, so
+   * it would render the same range twice. The exception is a clip PULLED from
+   * another video — that material is in no segment here, so dropping it would
+   * mean the seam's "A clip" inserted something the editor never showed and
+   * the render never included.
+   */
+  for (const b of beats) {
+    if (b.kind !== "clip") byId.set(beatId(b.id), fromBeat(b));
+    else if (b.pulled) byId.set(beatId(b.id), fromPulled(b, b.pulled));
+  }
 
   const out: Block[] = [];
   const placed = new Set<string>();

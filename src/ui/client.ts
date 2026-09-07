@@ -343,6 +343,9 @@ document.querySelectorAll(".item-menu").forEach((menu) => {
 const blocksEl = document.querySelector("#blocks");
 if (blocksEl) {
   const projectId = blocksEl.getAttribute("data-project");
+  /* Which footage this cut is made from, so the clip picker can leave it out:
+     a moment from THIS video is already a block and only wants moving. */
+  const sourceId = blocksEl.getAttribute("data-source");
   const video = document.querySelector("#cut-video");
   const footRuntime = document.querySelector("#cut-runtime");
   const headRuntime = document.querySelector("#head-runtime");
@@ -734,6 +737,8 @@ if (blocksEl) {
     const move = e.target.closest(".blk-move");
     const play = e.target.closest(".blk-play");
     const insert = e.target.closest(".blk-insert");
+    const seamOpen = e.target.closest(".seam-open");
+    const seamClose = e.target.closest(".seam-close");
     const row = e.target.closest(".blk");
 
     /* Give this block your voice. record() handles the whole take and only
@@ -871,13 +876,118 @@ if (blocksEl) {
       return;
     }
 
+    /*
+   * Pull a moment out of your library into this cut.
+   *
+   * The seam's third option. A clip from ANOTHER video is material that is in
+   * no segment here, which is why it becomes a block carrying its own file and
+   * range rather than a pointer — a moment from THIS video is already a block
+   * and only wants moving.
+   *
+   * Built here rather than rendered on every page: it is one overlay used by
+   * one gesture, and shipping its markup with every editor load is the kind of
+   * weight the block windowing just removed.
+   */
+  const pickClip = async (insert) => {
+    const at = Number(insert.getAttribute("data-at")) || 0;
+    let box = document.querySelector("#pick-moment");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "pick-moment";
+      box.style.cssText =
+        "position:fixed;inset:0;z-index:70;background:rgba(8,8,10,.72);display:flex;" +
+        "align-items:flex-start;justify-content:center;padding:8vh 20px";
+      box.addEventListener("click", (e) => { if (e.target === box) box.hidden = true; });
+      document.body.appendChild(box);
+    }
+    box.hidden = false;
+    box.innerHTML =
+      '<div style="width:min(560px,100%);max-height:76vh;overflow:auto;border-radius:11px;background:#141418;' +
+      'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.5);padding:16px 18px">' +
+      '<div style="font-size:12.5px;font-weight:600;color:rgba(236,236,241,.45);margin-bottom:10px">Pull from anywhere</div>' +
+      '<div id="pick-moment-list" style="display:flex;flex-direction:column;gap:6px">Looking…</div></div>';
+
+    const list = box.querySelector("#pick-moment-list");
+    try {
+      const res = await fetch("/api/moments?not=" + encodeURIComponent(sourceId || ""));
+      const out = await res.json();
+      const moments = out.moments || [];
+      if (!moments.length) {
+        list.textContent = "Nothing kept from your other videos yet.";
+        return;
+      }
+      const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const clock = (ms) => {
+        const s2 = Math.round(ms / 1000);
+        return Math.floor(s2 / 60) + ":" + String(s2 % 60).padStart(2, "0");
+      };
+      list.innerHTML = moments
+        .map(
+          (m) =>
+            '<button data-clip="' + esc(m.id) + '" style="display:flex;gap:12px;align-items:flex-start;text-align:left;' +
+            'padding:11px 12px;border-radius:8px;background:#17171B;border:none;cursor:pointer;color:#ECECF1;font-family:inherit">' +
+            '<span style="flex:none;width:54px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#0B0B0E">' +
+            (m.frame ? '<img loading="lazy" src="/media/' + esc(m.frame) + '" style="width:100%;height:100%;object-fit:cover"/>' : "") +
+            "</span>" +
+            '<span style="flex:1;min-width:0">' +
+            '<span style="display:block;font-size:13px;line-height:1.45">' + esc(String(m.quote).slice(0, 110)) + "</span>" +
+            '<span style="display:block;margin-top:3px;font-size:11px;color:rgba(236,236,241,.4)">' +
+            esc(m.source) + " · " + clock(m.ms) + "</span></span></button>",
+        )
+        .join("");
+
+      list.querySelectorAll("[data-clip]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          try {
+            const r = await fetch("/api/projects/" + projectId + "/blocks/insert", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ at, kind: "clip", clipId: btn.getAttribute("data-clip") }),
+            });
+            if (!r.ok) throw new Error("Couldn't add that");
+            location.reload();
+          } catch (err) {
+            btn.disabled = false;
+            toast((err && err.message) || "Couldn't add that");
+          }
+        });
+      });
+    } catch {
+      list.textContent = "Couldn't reach your library just now.";
+    }
+  };
+
+  /* The seam ASKS now. It used to insert a voice block silently, with no
+       choice at all, while the design offers several things to put there. */
+    if (seamOpen) {
+      const opts = seamOpen.parentElement.querySelector(".seam-opts");
+      blocksEl.querySelectorAll(".seam-opts").forEach((o) => { if (o !== opts) o.hidden = true; });
+      blocksEl.querySelectorAll(".seam-open").forEach((o) => { o.hidden = false; });
+      opts.hidden = false;
+      seamOpen.hidden = true;
+      return;
+    }
+
+    if (seamClose) {
+      const seam = seamClose.closest(".seam");
+      seam.querySelector(".seam-opts").hidden = true;
+      seam.querySelector(".seam-open").hidden = false;
+      return;
+    }
+
     if (insert) {
+      const kind = insert.getAttribute("data-kind") || "vo";
+      /* A clip comes from somewhere else in your library, so it needs picking
+         before anything is inserted. */
+      if (kind === "clip") { void pickClip(insert); return; }
+
       insert.disabled = true;
       try {
         const res = await fetch("/api/projects/" + projectId + "/blocks/insert", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ at: Number(insert.getAttribute("data-at")), kind: "vo" }),
+          body: JSON.stringify({ at: Number(insert.getAttribute("data-at")), kind }),
         });
         if (!res.ok) throw new Error("Couldn't add that");
         location.reload();

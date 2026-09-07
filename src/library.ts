@@ -46,7 +46,12 @@ const SELECT_MOMENTS = `
            WHERE ct.clip_id = c.id ORDER BY ct.confidence DESC LIMIT 1) AS thread_name
     FROM v2_clips c
     JOIN sources s ON s.id = c.source_id
-   WHERE c.user_id = ? AND c.deleted_at IS NULL AND c.kept = 1`;
+   WHERE c.user_id = ? AND c.deleted_at IS NULL AND c.kept = 1
+     /* AND its video is still here. Deleting footage soft-deletes the source
+        but leaves its clips, so the Clips tab kept offering moments whose
+        video was in the bin — they played nothing, and the seam's clip picker
+        offered them as material that could never be pulled in. */
+     AND s.deleted_at IS NULL`;
 
 /**
  * How many moments there are, without loading them.
@@ -57,7 +62,11 @@ const SELECT_MOMENTS = `
  */
 export async function countMoments(db: D1Database, userId: string): Promise<number> {
   const row = await db
-    .prepare(`SELECT COUNT(*) AS n FROM v2_clips WHERE user_id=? AND deleted_at IS NULL AND kept=1`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM v2_clips c
+         JOIN sources s ON s.id = c.source_id
+        WHERE c.user_id=? AND c.deleted_at IS NULL AND c.kept=1 AND s.deleted_at IS NULL`,
+    )
     .bind(userId)
     .first<{ n: number }>();
   return row?.n ?? 0;

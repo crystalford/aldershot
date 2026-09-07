@@ -8,6 +8,9 @@
  */
 
 import { ulid } from "./id.ts";
+import { buildBlocks, parseOrder, type Block, type PulledClip, type ScoreLike, type SegmentLike } from "./blocks.ts";
+import { parseCuts, type Cut } from "./cuts.ts";
+import { getSegments } from "./sources.ts";
 import type { ScoredClip } from "./grounding.ts";
 
 export type ProjectKind = "cut" | "reaction" | "essay" | "idea";
@@ -556,6 +559,98 @@ export async function toggleBeatStruck(
     .bind(next, beatId, projectId)
     .run();
   return next !== null;
+}
+
+/**
+ * The block sequence for a project — the one way to ask.
+ *
+ * There were eight separate buildBlocks calls, each assembling the same four
+ * ingredients by hand, and every new ingredient had to be remembered in all of
+ * them. Pulled clips are the third such ingredient after cuts and order; the
+ * one that forgets is the one that renders something the editor never showed.
+ */
+export async function blocksForProject(
+  db: D1Database,
+  project: { id: string; source_id: string | null; cuts: string | null; block_order?: string | null },
+  userId: string,
+  opts: { segments?: SegmentLike[]; posterKey?: string | null; scores?: ScoreLike[] } = {},
+): Promise<{ blocks: Block[]; cuts: Cut[]; beats: Beat[] }> {
+  const cuts = parseCuts(project.cuts);
+  const [segments, beats] = await Promise.all([
+    opts.segments ?? (project.source_id ? getSegments(db, project.source_id) : Promise.resolve([])),
+    getBeats(db, project.id),
+  ]);
+
+  const pulled = await pulledClips(
+    db,
+    userId,
+    project.source_id,
+    beats.filter((b) => b.kind === "clip" && b.clip_id).map((b) => b.clip_id as string),
+  );
+
+  const blocks = buildBlocks({
+    segments,
+    beats: beats.map((b) => ({ ...b, pulled: b.clip_id ? pulled.get(b.clip_id) : undefined })),
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+    posterKey: opts.posterKey ?? null,
+    scores: opts.scores,
+  });
+  return { blocks, cuts, beats };
+}
+
+/**
+ * Resolve the clip beats that point at ANOTHER video.
+ *
+ * The seam's "A clip" pulls a moment out of your library and drops it into
+ * this cut. That moment lives in a different file, so the block has to carry
+ * its own key and range — buildBlocks would otherwise drop it as a
+ * same-source pointer and the thing you inserted would appear nowhere.
+ *
+ * Only clips from a DIFFERENT source come back: one from this video is
+ * already a block, and pulling it in would render the same range twice.
+ */
+export async function pulledClips(
+  db: D1Database,
+  userId: string,
+  ownSourceId: string | null,
+  clipIds: string[],
+): Promise<Map<string, PulledClip>> {
+  const ids = clipIds.filter(Boolean);
+  if (!ids.length) return new Map();
+  const marks = ids.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(
+      `SELECT c.id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key, s.title
+         FROM v2_clips c JOIN sources s ON s.id = c.source_id
+        WHERE c.id IN (${marks}) AND c.user_id=? AND c.deleted_at IS NULL AND s.deleted_at IS NULL`,
+    )
+    .bind(...ids, userId)
+    .all<{
+      id: string; start_ms: number; end_ms: number; quote: string;
+      frame_r2_key: string | null; r2_key: string; title: string;
+    }>();
+
+  const out = new Map<string, PulledClip>();
+  for (const r of results ?? []) {
+    out.set(r.id, {
+      sourceKey: r.r2_key,
+      sourceTitle: r.title,
+      start_ms: r.start_ms,
+      end_ms: r.end_ms,
+      quote: r.quote,
+      frameKey: r.frame_r2_key,
+    });
+  }
+  /* A clip from this same video is already on screen as segments. */
+  if (ownSourceId) {
+    const { results: own } = await db
+      .prepare(`SELECT id FROM v2_clips WHERE id IN (${marks}) AND source_id=?`)
+      .bind(...ids, ownSourceId)
+      .all<{ id: string }>();
+    for (const r of own ?? []) out.delete(r.id);
+  }
+  return out;
 }
 
 export async function getBeats(db: D1Database, projectId: string): Promise<Beat[]> {

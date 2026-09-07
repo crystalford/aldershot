@@ -216,3 +216,36 @@ test("overlap is judged against the SMALLER range", async () => {
   assert.equal(overlapFraction({ start_ms: 0, end_ms: 1000 }, { start_ms: 5000, end_ms: 6000 }), 0);
   assert.ok(overlapFraction({ start_ms: 0, end_ms: 10000 }, { start_ms: 9000, end_ms: 19000 }) < 0.2);
 });
+
+/*
+ * A CLIP PULLED FROM ANOTHER VIDEO.
+ *
+ * The seam's "A clip" drops a moment from your library into this cut. That
+ * material is in no segment here, so the block carries the other video's key
+ * and range — and the EDL has to cut from THAT file, not from the one this
+ * project is made of. Getting it wrong would splice a stranger's timecode out
+ * of your own footage.
+ */
+test("a pulled clip renders from its own video, at its own range", () => {
+  const pulled = {
+    ...carried("footage", 0, null),
+    start_ms: 4000,
+    end_ms: 9000,
+    mediaKey: "u/1/sources/other/original.mp4",
+    text: "the bit from the other interview",
+  };
+  const edl = buildEdl(KEY, [pulled], []);
+  assert.equal(edl.cuts.length, 1);
+  assert.equal(edl.cuts[0].sourceKey, "u/1/sources/other/original.mp4", "not this project's file");
+  assert.deepEqual([edl.cuts[0].start_ms, edl.cuts[0].end_ms], [4000, 9000]);
+  assert.equal(edl.cuts[0].audioOnly, undefined, "it is footage, and has a picture");
+});
+
+test("a pulled clip is not trimmed by this transcript's cuts", () => {
+  // The cuts belong to this video's words; the pulled clip's words are in
+  // another transcript entirely and striking here must not shorten it.
+  const cuts = toggleSegment([], 0);
+  const pulled = { ...carried("footage", 0, null), start_ms: 0, end_ms: 5000, mediaKey: "other.mp4" };
+  const edl = buildEdl(KEY, [pulled], cuts);
+  assert.equal(edl.cuts[0].end_ms, 5000);
+});

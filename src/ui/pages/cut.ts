@@ -272,10 +272,30 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 }
 
 /** Where anything gets inserted. The gesture that was stranded inside Build. */
+/**
+ * The seam, and what it will put there.
+ *
+ * The `+` inserted a voice block, silently, with no choice at all — while the
+ * prototype's seam offers six things (A reaction · Your voice · A clip ·
+ * B-roll · A title · Music). This is the gesture the owner keeps asking about
+ * by name, so it has to ask rather than assume.
+ *
+ * Only what is really built is offered. B-roll, titles and music are not, and
+ * a chip that pretends otherwise is the failure this whole session has been
+ * about — they are absent rather than dead.
+ */
 function seam(projectId: string, at: number): string {
-  return `<div style="display:flex;justify-content:center;padding:1px 0">
-    <button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" aria-label="Add something here"
+  const opt = (kind: string, label: string) =>
+    `<button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" data-kind="${kind}"
+      style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${label}</button>`;
+
+  return `<div class="seam" style="display:flex;justify-content:center;padding:1px 0">
+    <button class="seam-open" aria-label="Add something here"
       style="width:22px;height:22px;border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
+    <div class="seam-opts" hidden style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:4px 0">
+      ${opt("vo", "Your voice")}${opt("react", "A reaction")}${opt("clip", "A clip")}
+      <button class="seam-close" style="font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;cursor:pointer;font-family:${FONT.ui};padding:0 4px;white-space:nowrap">never mind</button>
+    </div>
   </div>`;
 }
 
