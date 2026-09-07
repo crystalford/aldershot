@@ -293,6 +293,33 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
+      "\u2190 All videos",
+      "Clipping opens a video rather than listing videos, the way the Editor " +
+        "opens an edit. The prototype's Clipping never named the video it was " +
+        "working on because its demo only ever has one; a real account has " +
+        "nineteen, and arriving on a page headed 'Find clips in this' with no " +
+        "'this' anywhere is the thing the owner reported.",
+    ],
+    ...[
+      "Keep only the strongest points",
+      "Where I actually make the point",
+      "The funniest moments",
+      "Cut the bits where I repeat myself",
+      "Cut the false starts",
+      "Cut anything I said better later",
+      "Just the story, none of the setup",
+      "Every question I ask",
+    ].map((eg) => [
+      eg,
+      "An example instruction for the pass field. The prototype's three are " +
+        "about its own demo — a podcast with a sponsor read and a guest " +
+        "committing logical fallacies — so on a person talking to a camera " +
+        "they are instructions about things that are not there, and an " +
+        "example you cannot use teaches nothing about what the field takes. " +
+        "These are the same gesture against any video, and they show the " +
+        "range: selecting, tightening, and shaping by length or structure.",
+    ]),
+    [
       "Good morning.",
       "The prototype greets 'Good morning, Chris.' because its demo account " +
         "always has a name. A real account may not — an email address with no " +
@@ -602,10 +629,18 @@ function checkConventions() {
       bad.push(rel(file) + ': a <video> with native controls — use the player in client.ts');
     }
 
-    /* auto-fill makes empty tracks, so two cards sit in a four-track grid
-       with two blanks beside them. Five surfaces read as half-empty pages. */
-    for (const m of src.matchAll(/repeat\(\s*auto-fill/g)) {
-      bad.push(rel(file) + ': repeat(auto-fill …) leaves empty tracks — auto-fit collapses them');
+    /*
+     * A PIXEL MAX in a card grid strands the leftover.
+     *
+     * This rule used to ban auto-fill and it was aimed at the wrong half. The
+     * problem is the max: repeat(auto-fit, minmax(200px, 240px)) across a
+     * 960px column fits three cards and leaves 208px dead on every row, which
+     * is what "it looks weird having only 3 and then blank space" was. 1fr
+     * shares the row out instead, and auto-fill keeps the track count stable
+     * so two items do not balloon to half the page each.
+     */
+    for (const m of src.matchAll(/repeat\(\s*auto-(?:fit|fill)\s*,\s*minmax\([^)]*?,\s*\d+px\s*\)/g)) {
+      bad.push(rel(file) + ': a grid capped in px leaves dead space at the end of every row — use 1fr');
     }
 
     /* "A zero is not a verdict, it is the absence of one." saveClips writes

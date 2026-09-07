@@ -57,8 +57,6 @@ export interface ClippingSource {
 export interface ClippingData {
   /** The video being clipped, if one is chosen. */
   source: ClippingSource | null;
-  /** Everything ready to clip, for the picker. */
-  available: ClippingSource[];
   shorts: ShortRow[];
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** Set when reached as an editor stage rather than from the nav. */
@@ -81,45 +79,20 @@ function chipRow(name: string, label: string, options: readonly string[], select
   </div>`;
 }
 
-/** Choosing what to clip, when nothing is chosen yet. */
-function picker(d: ClippingData): string {
-  const ready = d.available.filter((s) => s.transcript_state === "ready");
-  /*
-   * A STRIP, not a list.
-   *
-   * These were full-width rows — poster, title, meta, a button — which made
-   * Clipping the third page in a row showing the same stack of videos, after
-   * Footage and the Editor's intake. Picking which video to clip is a small
-   * act, and it should not be the largest thing on a page whose subject is
-   * the shorts themselves.
-   *
-   * It scrolls sideways on purpose: a library of any size stays one row, and
-   * the shorts below it stay where the eye lands first.
-   */
-  const rows = ready
-    .map(
-      (s) => `<a href="/clipping?source=${esc(s.id)}" style="flex:none;width:132px;display:flex;flex-direction:column;gap:6px">
-      <div style="width:100%;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);position:relative">${
-        s.poster_r2_key
-          ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
-          : ""
-      }${
-        s.duration_s
-          ? `<span style="position:absolute;right:4px;bottom:4px;font-size:${SIZE.pill};font-family:${FONT.mono};background:rgba(0,0,0,.66);border-radius:3px;padding:1px 4px;color:${C.ink}">${hms(s.duration_s)}</span>`
-          : ""
-      }</div>
-      <div data-content style="font-size:${SIZE.meta};color:${C.ink70};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-      ${s.clip_count ? `<div data-content style="font-size:${SIZE.pill};color:${C.ink32}">${s.clip_count} clip${s.clip_count === 1 ? "" : "s"} found</div>` : ""}
-    </a>`,
-    )
-    .join("");
-
-  /*
-   * The drop zone was missing entirely. It matters more than it looks: it is
-   * the only place on this surface that says where a dropped video goes, and
-   * without it Clipping reads as though it can only work on what is already
-   * there.
-   */
+/**
+ * The way in, when there is nothing readable to clip yet.
+ *
+ * This used to be a sideways strip of every video you own — and with nineteen
+ * of them, all named DJI_2026…, it was a row of near-identical thumbnails
+ * scrolling off the edge of the screen. It was also Footage, again: the same
+ * list, fewer features, worse layout, and a Clip it button already sits on
+ * every card there.
+ *
+ * So the list is gone and the route opens a video instead. What is left is
+ * the one thing Footage's own empty state does not offer from here: somewhere
+ * to put a video so there is something to clip.
+ */
+function picker(): string {
   const drop = `<label id="clipDrop" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:22px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);font-size:13px;color:rgba(236,236,241,0.55);cursor:pointer">
     ${iconPlus({ size: 15 })}
     <span>Drop a new video here or <span style="color:${C.ink};text-decoration:underline;text-decoration-color:rgba(236,236,241,0.25)">browse</span> — it lands in Footage, then gets clipped</span>
@@ -127,8 +100,7 @@ function picker(d: ClippingData): string {
   </label>`;
 
   return `<div style="margin-top:24px">
-    <div style="font-size:${SIZE.body};font-weight:600;color:${C.ink45}">Drop a video, or clip one you already have</div>
-    <div style="margin-top:14px;display:flex;gap:12px;overflow-x:auto;padding-bottom:4px">${rows}</div>
+    <div data-content style="padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45};line-height:1.6">Nothing read yet — add a video and it starts reading.</div>
     <div style="margin-top:12px">${drop}</div>
   </div>`;
 }
@@ -472,7 +444,7 @@ export function renderClipping(d: ClippingData): string {
      * is the edit you are in, Footage is everything you have, and this is how
      * you turn a video into shorts. Pick one and it does the rest.
      */
-    return heading + picker(d);
+    return heading + picker();
   }
 
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");

@@ -446,8 +446,37 @@ function assist(d: CutData): string {
       <input name="instruction" placeholder="“also cut the sponsor read”" style="flex:1 1 140px;min-width:min(130px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:8px 0;font-family:${FONT.ui}"/>
       <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Run it</button>
     </form>
-    <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">
-      ${["React to the logical fallacies", "Also cut the sponsor read", "Keep only the ones under 20 seconds"]
+    <div data-content style="margin-top:10px;font-size:${SIZE.meta};color:${C.ink32}">Or one of these — they fill the box, so you can change them.</div>
+    <div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">
+      ${
+        /*
+         * Instructions that mean something on ANY video.
+         *
+         * These were the prototype's, and the prototype's demo is a podcast
+         * with a sponsor read in it: "React to the logical fallacies", "Also
+         * cut the sponsor read". On a person talking to a camera — which is
+         * what this account actually holds — they are instructions about
+         * things that are not there. An example you cannot use teaches
+         * nothing about what the field accepts.
+         *
+         * Each of these is a real instruction against a real transcript, and
+         * they fill the field rather than firing, so one can be edited into
+         * what you actually meant.
+         */
+        [
+          /* Selecting — what a pass is mostly for. */
+          "Keep only the strongest points",
+          "Where I actually make the point",
+          "The funniest moments",
+          /* Tightening — the same engine pointed at what to remove. */
+          "Cut the bits where I repeat myself",
+          "Cut the false starts",
+          "Cut anything I said better later",
+          /* Shape — length and structure, which people do not guess it can do. */
+          "Keep only the ones under 20 seconds",
+          "Just the story, none of the setup",
+          "Every question I ask",
+        ]
         .map(
           (t) =>
             `<button class="pass-eg" style="font-size:12px;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.55);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${t}</button>`,

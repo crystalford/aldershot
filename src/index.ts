@@ -1007,6 +1007,25 @@ app.get("/clipping", async (c) => {
    *
    * With nothing picked the page is the picker, so there is nothing to load.
    */
+  /*
+   * NO LIST HERE. Footage is the list.
+   *
+   * "why not also just have them listed sort of like footage .. but also not
+   * sure about clipping like again feels almost redundant" — and it was.
+   * Turning Clipping into a verb left a picker behind, and a picker of your
+   * videos is Footage with fewer features and a worse layout. Footage already
+   * shows every video with a Clip it button on each one.
+   *
+   * So it behaves like the Editor, which was settled the same way: that opens
+   * the edit you were last in rather than listing edits. This opens the newest
+   * video you can actually clip. With nothing readable yet there is no list to
+   * show either — just the way to add one.
+   */
+  if (!source) {
+    const newest = sources.find((sv) => sv.transcript_state === "ready");
+    if (newest) return c.redirect(`/clipping?source=${newest.id}`);
+  }
+
   const shorts = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
 
   /* Whether each one has actually been made into a video yet. Without this the
@@ -1033,10 +1052,6 @@ app.get("/clipping", async (c) => {
               clip_count: clipCounts.get(source.id) ?? 0,
             }
           : null,
-        available: sources.map((s) => ({
-          id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
-          poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
-        })),
         shorts: shorts.map((cl) => ({
           ...cl,
           render: renders.get(cl.id) ?? null,

@@ -516,7 +516,7 @@ export function renderFootageFull(d: FootageData): string {
     return (
       head +
       sortBar(d.sort ?? "newest", d.q, d.mode) +
-      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),240px));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
+      `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
     );
   }
 
@@ -550,6 +550,6 @@ export function renderFootageFull(d: FootageData): string {
     chips +
     notice +
     `<div data-content style="margin-top:26px;font-size:${SIZE.body};font-weight:600;color:${C.ink45}">${esc(heading)}</div>
-     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),300px));gap:14px">${d.moments.map(momentCard).join("")}</div>`
+     <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
   );
 }
