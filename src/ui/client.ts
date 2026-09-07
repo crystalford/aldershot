@@ -1283,22 +1283,69 @@ async function uploadWorker() {
 /* A single persistent chip, bottom-left, present on every page while an
    upload is in flight. It is deliberately not a toast: a toast implies
    something that has happened, and this is something still happening. */
-function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes, bps, etaS }) {
-  let el = document.querySelector("#uploadChip");
+/**
+ * Turn what the worker reports into something a person can act on.
+ *
+ * The worker's own messages are true and useless: "part 7 failed (503)",
+ * "part 12 gave no etag". They went straight to the user, in a product whose
+ * own rule is that a failure has to read like a sentence and say what to do
+ * next. The raw text is kept for the console, never for the chip.
+ */
+function uploadError(raw) {
+  const t = String(raw || "");
+  if (/\b(4\d\d)\b/.test(t) && !/408|429/.test(t)) {
+    return "That upload was refused. Try adding the video again.";
+  }
+  if (/429/.test(t)) return "Too many at once — give it a minute and carry on.";
+  if (/\b5\d\d\b|etag|no upload URL|couldn't get/i.test(t)) {
+    return "The connection dropped partway. Pick up where it left off.";
+  }
+  if (/abort|timeout|network|failed to fetch/i.test(t)) {
+    return "The connection dropped partway. Pick up where it left off.";
+  }
+  return "That upload stopped before it finished.";
+}
+
+/**
+ * ONE ROW PER UPLOAD.
+ *
+ * There was a single #uploadChip, looked up by id and overwritten by whoever
+ * spoke last — so five files uploading produced one line flickering between
+ * five names with a progress bar jumping between five percentages, and no way
+ * to tell which was which or stop any of them.
+ */
+/* Uploads the user stopped. A cancel removes the row, and the progress
+   messages already in flight would otherwise put it straight back — the
+   worker takes a moment to notice, and every tick calls showUpload. */
+const cancelled = new Set();
+
+function uploadRow(sourceId) {
+  let host = document.querySelector("#uploads");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "uploads";
+    host.style.cssText =
+      "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;flex-direction:column-reverse;gap:8px;" +
+      "max-width:min(420px,calc(100vw - 40px))";
+    document.body.appendChild(host);
+  }
+  let el = host.querySelector('[data-source="' + sourceId + '"]');
   if (!el) {
     el = document.createElement("div");
-    el.id = "uploadChip";
+    el.setAttribute("data-source", sourceId);
     el.style.cssText =
-      "position:fixed;left:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:12px;" +
-      "padding:12px 16px;border-radius:9px;background:#141418;color:#ECECF1;" +
-      "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.45);" +
-      "font-size:12.5px;max-width:min(420px,calc(100vw - 40px))";
-    document.body.appendChild(el);
+      "position:relative;display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-radius:9px;" +
+      "background:#141418;color:#ECECF1;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.45);" +
+      "font-size:12.5px";
+    host.appendChild(el);
   }
-  el.setAttribute("data-source", sourceId);
+  return el;
+}
 
-  const dot =
-    state === "failed" ? "#E06A6A" : state === "done" ? "#5EC98F" : "#5EB8C9";
+function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes, bps, etaS }) {
+  if (cancelled.has(sourceId)) return;
+  const el = uploadRow(sourceId);
+  const dot = state === "failed" ? "#E06A6A" : state === "done" ? "#5EC98F" : "#5EB8C9";
 
   /* A long upload needs to answer "how long is this going to take?", not just
      "is it moving?". Size, rate and time left are all measured from bytes the
@@ -1314,7 +1361,7 @@ function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes,
 
   const line =
     state === "failed"
-      ? error || "The upload stopped"
+      ? uploadError(error)
       : state === "done"
         ? "Reading " + name
         : "Uploading " + name;
@@ -1331,40 +1378,85 @@ function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes,
           .filter(Boolean)
           .join("  ·  ");
 
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
   el.innerHTML =
     '<span style="width:6px;height:6px;border-radius:50%;background:' + dot + ';flex:none;margin-top:3px"></span>' +
     '<span style="flex:1;min-width:0">' +
-    '<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + line + "</span>" +
+    '<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(line) + "</span>" +
     (detail
       ? '<span style="display:block;margin-top:3px;font-size:11px;color:rgba(236,236,241,0.45);font-family:\'IBM Plex Mono\',monospace">' + detail + "</span>"
       : "") +
     "</span>" +
     (state === "done" && href
-      ? '<a href="' + href + '" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1">Open</a>'
+      ? '<a href="' + esc(href) + '" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1">Open</a>'
       : "") +
     (state === "failed"
-      ? '<button id="uploadRetry" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1;border:none;cursor:pointer;font-family:inherit">Retry</button>'
+      ? '<button data-act="retry" style="flex:none;font-weight:600;padding:5px 11px;border-radius:5px;background:#1A1A1F;color:#ECECF1;border:none;cursor:pointer;font-family:inherit">Pick it up</button>'
+      : "") +
+    /* Stopping a 4 GB file you chose by mistake. The worker has handled
+       cancel-upload since it was written and NOTHING ever sent one, so the
+       only way out was to close the tab and leave the parts in R2. */
+    (!state
+      ? '<button data-act="cancel" aria-label="Stop this upload" style="flex:none;padding:2px 6px;border:none;background:none;color:rgba(236,236,241,0.4);cursor:pointer;font-family:inherit;font-size:14px;line-height:1">×</button>'
       : "") +
     (!state
       ? '<div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#232329;border-radius:0 0 9px 9px;overflow:hidden">' +
         '<div style="height:100%;width:' + pct + '%;background:#5EB8C9;transition:width .25s ease"></div></div>'
       : "");
-  el.style.alignItems = "flex-start";
 
-  /* Retry picks up from what the server already holds, so it is a resume and
-     not a restart. */
-  const retry = el.querySelector("#uploadRetry");
-  if (retry) {
-    retry.addEventListener("click", async () => {
-      const job = inFlight.get(sourceId);
+  el.querySelector('[data-act="cancel"]')?.addEventListener("click", async () => {
+    cancelled.add(sourceId);
+    el.remove();
+    inFlight.delete(sourceId);
+    void dropFile(sourceId);
+    const sw = await uploadWorker();
+    sw?.postMessage({ type: "cancel-upload", sourceId });
+    toast("Stopped.");
+  });
+
+  /*
+   * Retry resumes from what the server already holds.
+   *
+   * It used to read inFlight, which is page-local — so after a navigation the
+   * job was gone and it said "Choose the file again to carry on" with no file
+   * picker attached, a dead end on exactly the failure it exists for. It falls
+   * back to the parked copy, which is the whole reason files are parked.
+   */
+  el.querySelector('[data-act="retry"]')?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
       const sw = await uploadWorker();
-      if (!job || !sw) { toast("Choose the file again to carry on"); return; }
-      retry.disabled = true;
-      sw.postMessage({ ...job.msg, doneParts: job.doneParts, resume: true });
+      if (!sw) throw new Error("no worker");
+      const job = inFlight.get(sourceId);
+      if (job) {
+        sw.postMessage({ ...job.msg, doneParts: job.doneParts, resume: true });
+      } else {
+        const parked = await takeFile(sourceId);
+        if (!parked) throw new Error("no parked copy");
+        const pending = await fetch("/api/uploads/pending").then((r) => r.json()).catch(() => ({}));
+        const row = (pending.pending || []).find((p) => p.source_id === sourceId);
+        if (!row) throw new Error("nothing to resume");
+        const msg = {
+          type: "start-upload",
+          file: parked,
+          sourceId,
+          uploadId: row.upload_id,
+          partSize: row.part_size,
+          mode: row.mode,
+          resume: true,
+        };
+        inFlight.set(sourceId, { msg, doneParts: [], timer: null });
+        sw.postMessage(msg);
+      }
       watchUpload(sourceId);
       showUpload({ sourceId, name, pct: 0 });
-    });
-  }
+    } catch {
+      btn.disabled = false;
+      toast("That one can't be picked up here — add the video again.");
+    }
+  });
 }
 
 /* What the page remembers about an upload it started, so it can hand the work
@@ -1588,12 +1680,26 @@ if (composer) {
      that video. Drop several and the first is attached; the rest are not
      thrown away — they start uploading, which is what you meant by dropping
      them. (startUploads is a hoisted function declaration, defined below.) */
+  /*
+   * One file is a request; several are a dump.
+   *
+   * Selecting five uploaded FOUR — the first was parked in the composer strip
+   * waiting for a Begin that might never come, and navigating away lost it
+   * silently. So: one file is attached, because a brief needs something to be
+   * about; more than one goes straight up, because nobody typing a sentence
+   * means it about five videos at once.
+   */
   const takeFiles = (files) => {
     const list = [...(files || [])];
     if (!list.length) return;
-    picked = list[0];
-    attach(picked);
-    if (list.length > 1) startUploads(list.slice(1));
+    if (list.length === 1) {
+      picked = list[0];
+      attach(picked);
+      return;
+    }
+    picked = null;
+    attached.hidden = true;
+    void startUploads(list);
   };
   composer.addEventListener("drop", (e) => takeFiles(e.dataTransfer?.files));
   $("#filePick")?.addEventListener("change", (e) => { takeFiles(e.target.files); e.target.value = ""; });
@@ -1794,7 +1900,15 @@ async function uploadResumable(file, durationS, onProgress, started) {
     (await fetch("/api/uploads", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
+      /* The duration rides along here too, so the minutes cap refuses before
+         the bytes on this path as well — it is the one an old browser and the
+         Clipping drop zone take. */
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type || "video/mp4",
+        bytes: file.size,
+        durationS: await readDuration(file).catch(() => 0),
+      }),
     }).then((r) => r.json()));
 
   const { source, uploadId, partSize } = start;
@@ -2203,7 +2317,7 @@ async function startUpload(file) {
   const start = await fetch("/api/uploads", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
+    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size, durationS }),
   }).then((r) => r.json());
   if (start.error) throw new Error(start.error);
 
@@ -2242,33 +2356,73 @@ async function startUpload(file) {
 }
 
 /**
- * Start several.
+ * Start several — really in sequence this time.
  *
  * You could only ever add one video at a time, because every picker was a bare
- * input with no multiple attribute and every handler read files[0]. Anyone
- * with a shoot to load had to sit through them one by one.
+ * input with no multiple attribute and every handler read files[0].
  *
- * Started in sequence rather than all at once: each one opens an R2 multipart
- * upload and the service worker already runs four parts concurrently, so
- * firing ten together would mean forty parallel connections fighting for the
- * same uplink and every file crawling. They queue, and the worker keeps going
- * across navigation regardless.
+ * The loop said it queued them and did not: await startUpload(file) only
+ * waits as far as sw.postMessage, which returns the instant the message is
+ * posted. All N then ran together in the worker at four parts each — ten files
+ * really was forty parallel connections fighting for one uplink, with every
+ * file crawling and the account's 20-an-hour limit tripped on the way.
+ *
+ * So this waits for each upload to actually FINISH, watching the same
+ * broadcasts the chips do. A failure does not stop the queue: the rest of the
+ * shoot should still go up, and the one that failed keeps its own row with a
+ * way to pick it up.
  */
+const UPLOAD_QUEUE_LIMIT = 2;
+
+function whenSettled(sourceId) {
+  return new Promise((resolve) => {
+    const done = (e) => {
+      const m = e.data || {};
+      if (m.sourceId !== sourceId) return;
+      if (m.type === "upload-done" || m.type === "upload-failed" || m.type === "upload-cancelled") {
+        navigator.serviceWorker.removeEventListener("message", done);
+        resolve(m.type);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", done);
+    /* Never wait for ever: if the worker dies mid-file the watchdog surfaces
+       it, and the queue has to keep moving regardless. */
+    setTimeout(() => {
+      navigator.serviceWorker.removeEventListener("message", done);
+      resolve("timeout");
+    }, 30 * 60 * 1000);
+  });
+}
+
 async function startUploads(files) {
   const list = [...(files || [])].filter((f) => f && f.size > 0);
   if (!list.length) return;
+  if (list.length > 1) toast(list.length + " videos queued — you can carry on browsing");
 
   let failed = 0;
+  const lane = [];
   for (const file of list) {
+    /* A couple at a time: enough to keep the uplink busy while one file is
+       finishing its last part, not enough to starve them all. */
+    while (lane.length >= UPLOAD_QUEUE_LIMIT) await Promise.race(lane);
+    let id;
     try {
-      await startUpload(file);
+      id = await startUpload(file);
     } catch (err) {
       failed += 1;
       toast((err && err.message) || ("Couldn't add " + file.name));
+      continue;
     }
+    const p = whenSettled(id).then((how) => {
+      if (how === "upload-failed") failed += 1;
+      lane.splice(lane.indexOf(p), 1);
+    });
+    lane.push(p);
   }
+  await Promise.allSettled(lane);
+
   const ok = list.length - failed;
-  if (list.length > 1 && ok > 0) toast(ok + " videos uploading — you can carry on browsing");
+  if (list.length > 1) toast(ok + " of " + list.length + " uploaded" + (failed ? " — the rest kept their row" : ""));
 }
 
 /* Footage's Upload button. It was a bare label with a file input and no
@@ -2485,7 +2639,7 @@ if (clipDrop) {
       const start = await fetch("/api/uploads", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size }),
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size, durationS }),
       }).then((r) => r.json());
       if (start.error) throw new Error(start.error);
 

@@ -59,7 +59,7 @@ import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
 import { currentUser, userForEmail } from "./user.ts";
-import { PLANS } from "./plans.ts";
+import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
 import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -2334,7 +2334,7 @@ app.post("/api/sources", async (c) => {
 app.post("/api/uploads", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ filename: string; contentType: string; bytes: number; brief?: string }>(c);
+  const b = await body<{ filename: string; contentType: string; bytes: number; brief?: string; durationS?: number }>(c);
   const filename = b.filename || "upload.mp4";
 
   /*
@@ -2355,6 +2355,31 @@ app.post("/api/uploads", async (c) => {
 
   const room = await checkStorage(c.env.DB, user.id, user.plan, Number(b.bytes) || 0);
   if (!room.ok) return c.json({ error: room.message }, 413);
+
+  /*
+   * IS IT A VIDEO, and is there room in the month for it?
+   *
+   * Neither was asked. The comment above this block is headed "THE CAP, BEFORE
+   * THE BYTES" and only storage was checked — the MINUTES cap ran at
+   * src/ingest.ts, after the whole file was up. A free user with twenty
+   * minutes left could spend forty minutes uploading four gigabytes to be
+   * told no. The browser has already measured the duration; it just was not
+   * being sent.
+   *
+   * Nothing checked the type either, and both drop handlers bypass the
+   * picker's accept="video/*", so a PDF uploaded in full and failed somewhere
+   * downstream where the reason made no sense.
+   */
+  const type = String(b.contentType || "");
+  if (type && !/^(video|audio)\//.test(type)) {
+    return c.json({ error: "That is not a video. Add a video or an audio file." }, 415);
+  }
+
+  const mins = Number(b.durationS) > 0 ? Number(b.durationS) / 60 : 0;
+  if (mins > 0) {
+    const cap = await checkCap(c.env.DB, user.id, user.plan, mins);
+    if (!cap.ok) return c.json({ error: cap.message }, 413);
+  }
 
   /* The sentence rides with the footage. It cannot be acted on until there is
      a transcript, and the page that typed it may be gone by then — see
