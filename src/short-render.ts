@@ -19,6 +19,7 @@
 
 import type { Env } from "./env.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
+import { encode, EncodeError, encoderFor } from "./encode.ts";
 import { captionCues, type RenderPlan } from "./edl.ts";
 import { presignGet } from "./r2sign.ts";
 import { getSegments } from "./sources.ts";
@@ -58,8 +59,6 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       .bind(opts.clipId, opts.userId)
       .first<{ start_ms: number; end_ms: number; quote: string; source_key: string; source_id: string }>();
     if (!clip) return void (await fail("That clip isn't there any more."));
-
-    if (!env.RENDER) return void (await fail("Rendering isn't available yet — the encoder isn't running."));
 
     /* Presigned, like every other container read. /media requires a session
        and the container has none. */
@@ -102,20 +101,16 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       ...(wantsCaptions ? { captions, captionStyle: render.caption_style as string } : {}),
     };
 
-    const container = env.RENDER.get(env.RENDER.idFromName(`short-${opts.clipId}`));
-    /* A deadline, for the same reason the cut render has one: the container
-       either answers or it does not, and without this a wedged one leaves the
-       card saying "making it…" indefinitely. */
-    const res = await container.fetch("http://container/render", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(plan),
-      signal: AbortSignal.timeout(15 * 60 * 1000),
+    /* Same conversation as a full export — see src/encode.ts. A short is one
+       cut, so its part count is 1 and the percentage it reports is the
+       encoder's own stage rather than a count. */
+    const container = encoderFor(env, `short-${opts.clipId}`);
+    if (!container) return void (await fail("Rendering isn't available yet — the encoder isn't running."));
+
+    const res = await encode(container, plan, {
+      deadlineMs: 15 * 60 * 1000,
+      onProgress: (st) => advance(env.DB, jobId, 40 + Math.round((st.pct / 100) * 38), st.stage),
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return void (await fail(detail.slice(0, 200) || `The encoder failed (${res.status})`));
-    }
 
     await advance(env.DB, jobId, 80, "saving it");
 
@@ -142,6 +137,8 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     await finishJob(env.DB, jobId);
   } catch (err) {
+    /* Already a sentence a person can act on. */
+    if (err instanceof EncodeError) return void (await fail(err.message));
     await fail(`Couldn't make that short: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

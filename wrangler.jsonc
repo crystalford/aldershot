@@ -64,7 +64,29 @@
      * A ceiling, not a reservation: containers bill for the seconds they run,
      * so raising it costs nothing until the work is actually there.
      */
-    { "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-ffmpeg", "max_instances": 12 }
+    /*
+     * A MACHINE THAT CAN ENCODE VIDEO.
+     *
+     * There was no instance_type here, so every export in this product ran on
+     * Cloudflare's default: `lite` — 1/16 of a vCPU, 256 MiB of memory and 2 GB
+     * of disk. That is what the export panel's 1080p and 4K were being asked of.
+     * The owner's first export sat on 30% until he gave up, and I told him it
+     * was probably a stale deploy. It was a sixteenth of a core.
+     *
+     * standard-4 is 4 vCPU / 12 GiB / 20 GB. It costs no more for the same
+     * export — containers bill per vCPU-second and the encode is the same
+     * number of them either way — it simply finishes in a quarter of the time,
+     * which makes it CHEAPER on the memory and disk hours it is also billed
+     * for. The disk is what lets the container hold a downloaded source
+     * instead of re-reading it over the wire for every cut.
+     */
+    {
+      "class_name": "RenderContainer",
+      "image": "./container/Dockerfile",
+      "name": "aldershot-ffmpeg",
+      "max_instances": 12,
+      "instance_type": "standard-4"
+    }
   ],
   "durable_objects": {
     "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]

@@ -541,12 +541,22 @@ export function renderCut(d: CutData): string {
    * time, which is the one thing this codebase will not put in a progress bar.
    */
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");
+  /*
+   * ZERO IS NOT A MEASUREMENT.
+   *
+   * A pass over a short transcript is a single window, so there is no fraction
+   * to report until the whole thing is done — and this dutifully printed "0%"
+   * beside a clock ticking past four minutes, which reads as a stalled product
+   * rather than an unmeasurable one. The stage and the clock are both true;
+   * the number was not, so it is simply absent until there is one.
+   */
+  const shownPct = (p: number) => (p > 0 ? `${p}%` : "");
   const strip = running
     ? `<div id="scoring" data-project="${esc(d.projectId)}" style="margin-top:18px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
           <span id="scoring-label" data-content style="flex:1 1 200px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job!.stage_label ?? "reading it for meaning")}</span>
-          <span id="scoring-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${d.job!.pct}%</span>
+          <span id="scoring-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${shownPct(d.job!.pct)}</span>
           <span id="scoring-clock" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums">0:00</span>
         </div>
         <div style="margin-top:10px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">

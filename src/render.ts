@@ -22,8 +22,16 @@ export class RenderContainer extends Container {
    * container instances exceeded", and the cap was being held by instances
    * with nothing left to do.
    *
-   * Two minutes is slack for a retry landing on the same name while the work
-   * is genuinely still in flight, and nothing beyond that.
+   * Two minutes was slack for a retry landing on the same name. Forty-five
+   * seconds is enough for that and no more, because the instance is now
+   * standard-4 and an awake instance bills for its whole size whether it is
+   * encoding or idling — a two-minute tail on four vCPUs, twelve times over,
+   * is most of a month's included compute spent on nothing.
+   *
+   * Shortening it is only safe because a render is POLLED now: every status
+   * check is a request, and sleepAfter counts from the last one, so an encode
+   * that runs for twenty minutes keeps its own instance awake the whole time.
+   * The countdown starts when the finished file has been collected.
    */
-  sleepAfter = "2m";
+  sleepAfter = "45s";
 }

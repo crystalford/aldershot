@@ -16,6 +16,7 @@ import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
+import { encode, EncodeError, encoderFor } from "./encode.ts";
 import { blocksForProject, getProject, type Project } from "./projects.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
@@ -222,27 +223,6 @@ export async function runRender(
     }
 
     /*
-     * The encoder, or a local one.
-     *
-     * RENDER_URL exists so the render can be exercised in development, where
-     * Cloudflare Containers need a Docker daemon that a sandbox usually does
-     * not have. `node container/render.mjs` is a plain HTTP server — point
-     * this at it and the whole path runs for real, which is how the concat,
-     * the burned-in captions, the aspect sizing and the voiceover card were
-     * finally verified instead of reasoned about.
-     *
-     * RENDER_URL WINS when it is set, because the binding can exist and still
-     * not work — wrangler dev declares it whether or not containers are
-     * enabled, and calling it then fails with "Containers have not been
-     * enabled for this Durable Object class". Setting the variable is a
-     * deliberate act; production never does, so the binding is used there.
-     */
-    if (!env.RENDER && !env.RENDER_URL) {
-      // Honest rather than cryptic: the encoder genuinely is not available.
-      return void (await fail("Rendering isn't available yet — the encoder isn't running."));
-    }
-
-    /*
      * The container reads the source over HTTP, so it needs URLs rather than
      * R2 keys. `-ss` before `-i` seeks by range request, which is what makes
      * cutting from a multi-gigabyte source viable without downloading it.
@@ -282,33 +262,35 @@ export async function runRender(
       .bind(Math.max(1, Math.round(plan.durationS)), opts.renderId)
       .run();
 
+    /* One conversation with the encoder, for both kinds of render — see
+       src/encode.ts. Keyed by the RENDER id rather than the project: two
+       exports of one edit used to share an instance, and the second sat
+       behind the first. "one at 30% the others just i guess queued". */
+    const encoder = encoderFor(env, `render-${renderId}`);
+    if (!encoder) {
+      // Honest rather than cryptic: the encoder genuinely is not available.
+      return void (await fail("Rendering isn't available yet — the encoder isn't running."));
+    }
+
     await advance(env.DB, jobId, 30, "putting it together");
 
-    const encoder = env.RENDER_URL
-      ? { fetch: (_u: string, init: RequestInit) => fetch(`${env.RENDER_URL}/render`, init) }
-      : env.RENDER!.get(env.RENDER!.idFromName(`render-${opts.projectId}`));
     /*
-     * A DEADLINE on the encoder.
+     * REAL PROGRESS, from the encoder's own count of finished parts.
      *
-     * There was none. The container either answers or it does not, and when
-     * it does not — no free instance, a wedged process — this waited, the job
-     * stayed at 30%, and nothing noticed for three hours. The owner's first
-     * export sat there.
-     *
-     * Generous enough for a long 4K export and finite, which is the point: a
-     * timeout is a failure with a reason attached, and a reason can be
-     * retried.
+     * 30 to 78 is the encode, 80 onwards is saving it. What the user watches
+     * between those two numbers is measured work now, rather than a bar that
+     * stopped moving because there was nothing behind it.
      */
-    const res = await encoder.fetch("http://container/render", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(withUrls),
-      signal: AbortSignal.timeout(25 * 60 * 1000),
+    const res = await encode(encoder, withUrls, {
+      deadlineMs: 25 * 60 * 1000,
+      onProgress: (st) =>
+        advance(
+          env.DB,
+          jobId,
+          30 + Math.round((st.pct / 100) * 48),
+          st.total > 1 && st.done > 0 ? `${st.stage} — ${st.done} of ${st.total}` : st.stage,
+        ),
     });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return void (await fail(`Couldn't put it together: ${detail.slice(0, 200) || res.statusText}`));
-    }
 
     await advance(env.DB, jobId, 80, "saving it");
 
@@ -358,8 +340,9 @@ export async function runRender(
 
     await finishJob(env.DB, jobId);
   } catch (err) {
-    /* A deadline reached is a TimeoutError, and "Couldn't put it together:
-       signal timed out" tells a person nothing they can act on. */
+    /* EncodeError already reads as a sentence a person can act on — encode.ts
+       writes them that way — so it is not wrapped in another one. */
+    if (err instanceof EncodeError) return void (await fail(err.message));
     const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
     await fail(
       timedOut

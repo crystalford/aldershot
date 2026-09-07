@@ -155,34 +155,33 @@ export function windowSegments(segments: Segment[], max = WINDOW_CHARS): Segment
  */
 export const asked = (brief: string) => brief.trim() || "the moments worth keeping";
 
-export async function scorePass(
-  env: Env,
-  segments: Segment[],
+/**
+ * How long one window may take before we stop waiting for it.
+ *
+ * There was no limit. The owner watched "reading it for meaning · 0%" for four
+ * minutes on a three-minute video — one window, one call, and nothing in the
+ * product able to tell the difference between a model thinking and a model
+ * that was never going to answer. The only thing that would eventually have
+ * noticed was the thirty-minute stale-job reaper.
+ *
+ * Ninety seconds is far longer than this model takes on a window of this size
+ * and short enough that a wedged call is a failure you can retry rather than
+ * an afternoon.
+ */
+const WINDOW_TIMEOUT_MS = 90_000;
+
+/** One window, once, with a deadline and a single retry. */
+async function readWindow(
+  run: (m: string, i: Record<string, unknown>) => Promise<unknown>,
+  modelId: string,
+  window: Segment[],
   brief: string,
-  opts: {
-    upgrade?: boolean;
-    onProgress?: (fraction: number, done: number, total: number) => void;
-  } = {},
-): Promise<ScoreResult> {
-  if (!segments.length) return { clips: [], action: "keep", tokensIn: 0, tokensOut: 0, model: "" };
+  timeoutMs: number,
+): Promise<{ clips: ScoredClip[]; tokensIn: number; tokensOut: number; cutting: boolean }> {
+  const prompt = `What the user asked for: ${asked(brief)}\n\nTranscript:\n${transcriptForPrompt(window)}`;
 
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
-  const windows = windowSegments(segments);
-
-  const clips: ScoredClip[] = [];
-  let tokensIn = 0;
-  let tokensOut = 0;
-  /* A long transcript is read in windows and each one answers separately. One
-     window saying "cut" is enough — an instruction is about the whole video,
-     and treating a cut as a keep would strike everything the user wanted. */
-  let cutting = false;
-
-  for (let i = 0; i < windows.length; i++) {
-    const window = windows[i];
-    const prompt = `What the user asked for: ${asked(brief)}\n\nTranscript:\n${transcriptForPrompt(window)}`;
-
-    const res = await run(model.id, {
+  const once = async () =>
+    await run(modelId, {
       messages: [
         { role: "system", content: SYSTEM },
         { role: "user", content: prompt },
@@ -194,16 +193,107 @@ export async function scorePass(
       max_tokens: 8000,
     });
 
-    const used = usageTokens(res);
-    tokensIn += used.tokensIn;
-    tokensOut += used.tokensOut;
+  /* One retry, because the failure this guards against is a call that hangs,
+     and a hung call is very often the only one that will. */
+  let res: unknown;
+  try {
+    res = await withDeadline(once(), timeoutMs);
+  } catch {
+    res = await withDeadline(once(), timeoutMs);
+  }
 
+  const used = usageTokens(res);
+  return {
     /* Grounded against THIS window, so a model that wanders outside the lines
        it was shown is corrected rather than trusted. */
-    clips.push(...groundClips(parseClips(res), window));
-    if (readAction(res) === "cut") cutting = true;
+    clips: groundClips(parseClips(res), window),
+    tokensIn: used.tokensIn,
+    tokensOut: used.tokensOut,
+    cutting: readAction(res) === "cut",
+  };
+}
 
-    opts.onProgress?.((i + 1) / windows.length, i + 1, windows.length);
+/**
+ * A promise, or a plain refusal to keep waiting for it.
+ *
+ * env.AI.run takes no AbortSignal, so the call itself cannot be cancelled —
+ * this only stops the pass from being held hostage by it. The abandoned call
+ * finishes into nothing, which costs tokens we would have spent anyway.
+ */
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  /* The timer is CLEARED when the call wins. Left dangling it keeps the event
+     loop alive for its full ninety seconds after the work is done — which in a
+     queue consumer is ninety seconds of an invocation that has nothing to do,
+     and in the test runner was a ninety-second suite. */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("the model didn't answer in time")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+export async function scorePass(
+  env: Env,
+  segments: Segment[],
+  brief: string,
+  opts: {
+    upgrade?: boolean;
+    onProgress?: (fraction: number, done: number, total: number) => void;
+    /* Injectable so a stalled window can be tested in milliseconds rather than
+       in three minutes. Nothing in the product passes it. */
+    windowTimeoutMs?: number;
+  } = {},
+): Promise<ScoreResult> {
+  if (!segments.length) return { clips: [], action: "keep", tokensIn: 0, tokensOut: 0, model: "" };
+
+  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
+  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const windows = windowSegments(segments);
+
+  /**
+   * Windows are read AT THE SAME TIME.
+   *
+   * They were read one after another, and they have nothing to say to each
+   * other — each is grounded against its own lines and the merge below is
+   * already order-independent. A three-hour transcript is a dozen windows, so
+   * running them in series made a pass twelve times longer than it had to be
+   * for no gain at all.
+   *
+   * Bounded, because Workers AI is a shared resource and firing fifty calls at
+   * once earns a rate limit rather than an answer.
+   */
+  const LANES = 4;
+  const answers: Array<{ clips: ScoredClip[]; tokensIn: number; tokensOut: number; cutting: boolean }> =
+    new Array(windows.length);
+
+  let finished = 0;
+  let next = 0;
+  const lane = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= windows.length) return;
+      answers[i] = await readWindow(run, model.id, windows[i], brief, opts.windowTimeoutMs ?? WINDOW_TIMEOUT_MS);
+      finished++;
+      opts.onProgress?.(finished / windows.length, finished, windows.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LANES, windows.length) }, lane));
+
+  const clips: ScoredClip[] = [];
+  let tokensIn = 0;
+  let tokensOut = 0;
+  /* A long transcript is read in windows and each one answers separately. One
+     window saying "cut" is enough — an instruction is about the whole video,
+     and treating a cut as a keep would strike everything the user wanted. */
+  let cutting = false;
+
+  for (const a of answers) {
+    clips.push(...a.clips);
+    tokensIn += a.tokensIn;
+    tokensOut += a.tokensOut;
+    if (a.cutting) cutting = true;
   }
 
   /* One window can end mid-thought and the next pick the same thought up, so

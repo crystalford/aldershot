@@ -3097,7 +3097,11 @@ if (scoring) {
       if (label && job.stage_label) label.textContent = job.stage_label;
       if (typeof job.pct === "number") {
         if (bar) bar.style.width = job.pct + "%";
-        if (pctEl) pctEl.textContent = job.pct + "%";
+        /* Zero is not a measurement — see the note beside shownPct in
+           src/ui/pages/cut.ts. A one-window pass has no fraction to give
+           until it is finished, and printing 0 beside a running clock reads
+           as a stalled product. */
+        if (pctEl) pctEl.textContent = job.pct > 0 ? job.pct + "%" : "";
       }
       setTimeout(tick, 2000);
     } catch { setTimeout(tick, 5000); }
@@ -4103,7 +4107,7 @@ if (clipJob) {
       /* The scan reports real progress and this was dropping it on the floor,
          which is the same thing the editor's pass strip used to do. */
       if (typeof job.pct === "number") {
-        if (pct) pct.textContent = job.pct + "%";
+        if (pct) pct.textContent = job.pct > 0 ? job.pct + "%" : "";
         if (bar) bar.style.width = job.pct + "%";
       }
       setTimeout(tick, 2000);

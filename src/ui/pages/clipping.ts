@@ -466,7 +466,7 @@ export function renderClipping(d: ClippingData): string {
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.gold};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
           <span id="clipping-label" data-content style="flex:1 1 180px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(d.job?.stage_label ?? "finding clips")}</span>
-          <span id="clipping-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${d.job?.pct ?? 0}%</span>
+          <span id="clipping-pct" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${(d.job?.pct ?? 0) > 0 ? `${d.job?.pct}%` : ""}</span>
           <span class="job-clock" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums">0:00</span>
         </div>
         <div style="margin-top:10px;height:3px;border-radius:99px;background:rgba(255,255,255,0.06);overflow:hidden">
