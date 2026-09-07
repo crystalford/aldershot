@@ -20,6 +20,7 @@
 import type { Env } from "./env.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
+import { putFromResponse } from "./r2stream.ts";
 import { captionCues, type RenderPlan } from "./edl.ts";
 import { presignGet } from "./r2sign.ts";
 import { getSegments } from "./sources.ts";
@@ -118,14 +119,10 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
 
     await advance(env.DB, jobId, 80, "saving it");
 
-    /* Streamed rather than buffered, for the same reason as the full render:
-       holding a finished mp4 in Worker memory to hand it to R2 is a ceiling
-       reachable from the export panel. See src/render-job.ts. */
+    /* Streamed, and with a length R2 will accept — see src/r2stream.ts. The
+       same line in the cut render failed a finished encode at its last step. */
     const key = `u/${opts.userId}/shorts/${renderId}.mp4`;
-    const stored = await env.MEDIA.put(key, res.body, {
-      httpMetadata: { contentType: "video/mp4" },
-    });
-    const size = stored?.size ?? Number(res.headers.get("content-length")) ?? 0;
+    const size = await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
 
     await env.DB
       .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)

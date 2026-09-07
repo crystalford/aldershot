@@ -252,10 +252,23 @@ function render(plan, res) {
       let err = "";
       ff.stderr.on("data", (d) => (err += d));
       ff.on("error", (e) => { job.running.delete(ff); reject(e); });
-      ff.on("close", (code) => {
+      ff.on("close", (code, signal) => {
         job.running.delete(ff);
         if (job.stopped) return reject(new Error("stopped"));
-        code === 0 ? resolve() : reject(new Error(err.slice(-800)));
+        if (code === 0) return resolve();
+        /*
+         * ALWAYS SAY SOMETHING.
+         *
+         * This rejected with new Error(err.slice(-800)), and ffmpeg killed by
+         * a signal writes nothing to stderr — so the message was the empty
+         * string, String(e.message || e) collapsed to "Error", and the export
+         * panel showed the user {"error":"Error"}. An error that names neither
+         * the cause nor the step is worse than no error, because there is
+         * nothing to act on and nothing to report.
+         */
+        const why = err.trim().slice(-800)
+          || (signal ? "ffmpeg was killed (" + signal + ") — most likely out of memory" : "ffmpeg exited " + code + " with no output");
+        reject(new Error(why));
       });
     });
 
@@ -438,7 +451,7 @@ function render(plan, res) {
       job.at = Date.now();
     } catch (e) {
       console.error("render failed:", e);
-      job.error = String(e?.message || e);
+      job.error = String(e?.message || e) || "the encoder failed without saying why";
       job.stage = "failed";
       job.at = Date.now();
       await rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -632,7 +645,10 @@ function readJson(req) {
     req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { resolve({}); } });
   });
 }
+/* Never an empty reason: an error that names nothing cannot be acted on, and
+   {"error":"Error"} is what the owner was shown for a real failure. */
 function jsonError(res, code, obj) {
+  if (obj && !String(obj.error || "").trim()) obj = { ...obj, error: "the encoder failed without saying why" };
   if (res.headersSent) { res.destroy(); return; }
   res.writeHead(code, { "content-type": "application/json" });
   res.end(JSON.stringify(obj));

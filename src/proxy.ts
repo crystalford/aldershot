@@ -26,6 +26,7 @@
 import type { Env } from "./env.ts";
 import { encoderFor } from "./encode.ts";
 import { presignGet } from "./r2sign.ts";
+import { putFromResponse } from "./r2stream.ts";
 
 /**
  * Derived from the source key rather than stored, so it is idempotent: a retry
@@ -103,27 +104,8 @@ export async function makeProxy(
   const width = Number(res.headers.get("x-width")) || 0;
   const height = Number(res.headers.get("x-height")) || 0;
 
-  /*
-   * Streamed into R2, never held. Same shape and same reasons as
-   * extractAudio: R2 will not take a stream of unknown length, Content-Length
-   * does not survive as a known-length body through the container proxy, and
-   * pipeTo has to run ALONGSIDE the put or the two deadlock waiting on each
-   * other.
-   */
-  const declared = Number(res.headers.get("content-length") || 0);
-  if (declared > 0) {
-    const fixed = new FixedLengthStream(declared);
-    void res.body.pipeTo(fixed.writable);
-    await env.MEDIA.put(key, fixed.readable, { httpMetadata: { contentType: "video/mp4" } });
-  } else {
-    /* Bounded rather than unbounded: a clear refusal beats an out-of-memory
-       crash. A proxy this large means something went wrong upstream anyway. */
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength > 128 * 1024 * 1024) {
-      throw new Error("the editing copy came back too large to handle in one piece");
-    }
-    await env.MEDIA.put(key, buf, { httpMetadata: { contentType: "video/mp4" } });
-  }
+  /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts. */
+  await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
 
   const head = await env.MEDIA.head(key);
   if (!head?.size) throw new Error("the encoder produced no editing copy");
