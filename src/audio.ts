@@ -21,12 +21,59 @@
  * is the wiring.
  */
 
+import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { Env } from "./env.ts";
 import { presignGet } from "./r2sign.ts";
 
 /** Where a source's extracted audio lives. Derived, so it is idempotent. */
 export function audioKeyFor(sourceKey: string): string {
   return `${sourceKey.replace(/\.[a-z0-9]+$/i, "")}.audio.mp3`;
+}
+
+/**
+ * Deletes extracted audio that has already done its job.
+ *
+ * The MP3 exists to hand the speech model 14MB instead of a multi-gigabyte 4K
+ * file, and once a transcript is written it has no further use. Nothing ever
+ * deleted it, so every video read before this leaves one in R2 for the life of
+ * the source — roughly 14MB per hour of footage — and storedBytes does not
+ * count it, so the storage figure the product reports has been short by
+ * exactly that on every account.
+ *
+ * A source whose transcript is READY is one whose audio is finished with. A
+ * delete of a key that is not there is a no-op, so this is safe to run over
+ * and over, and it needs no record of which ones it has already done.
+ *
+ * Bounded per sweep: this walks R2, and an account with a thousand videos
+ * should not turn the hourly cron into a thousand round trips.
+ */
+export async function reapUsedAudio(
+  db: D1Database,
+  media: R2Bucket,
+  limit = 50,
+): Promise<number> {
+  const { results } = await db
+    .prepare(
+      `SELECT r2_key FROM sources
+        WHERE transcript_state='ready' AND deleted_at IS NULL AND r2_key IS NOT NULL
+        ORDER BY created_at DESC LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{ r2_key: string }>();
+
+  let freed = 0;
+  for (const row of results ?? []) {
+    const key = audioKeyFor(row.r2_key);
+    try {
+      const head = await media.head(key);
+      if (!head) continue;
+      await media.delete(key);
+      freed += head.size;
+    } catch {
+      /* Already gone, or never landed. Neither stops the next one. */
+    }
+  }
+  return freed;
 }
 
 /** Already audio? Then there is nothing to extract. */

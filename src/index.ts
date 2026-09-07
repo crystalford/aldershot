@@ -62,6 +62,7 @@ import { currentUser, userForEmail, reconcileUser } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
+import { reapUsedAudio } from "./audio.ts";
 import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -3174,6 +3175,16 @@ async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionC
     await nameUnnamedSources(env);
   } catch (err) {
     console.log(`[sweep] naming: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /* Extracted audio from before it was deleted at the end of a read. Bounded
+     per sweep and idempotent, so it works through the backlog an hour at a
+     time and costs nothing once there is none left. */
+  try {
+    const freed = await reapUsedAudio(env.DB, env.MEDIA);
+    if (freed) console.log(`[sweep] freed ${Math.round(freed / 1e6)}MB of used audio`);
+  } catch (err) {
+    console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   for (const { user_id } of results ?? []) {
