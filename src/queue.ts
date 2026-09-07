@@ -183,6 +183,8 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env): Promis
 
       // `attempts` counts this delivery, so on the last allowed one there is
       // no retry left to wait for and the job has to be closed out honestly.
+      // Whatever was busy has now been busy for four minutes, so this is a
+      // real failure rather than a queue that gave up too early.
       if (message.attempts >= 3) {
         const [job] = await getJobs(env.DB, [message.body.jobId]);
         if (job && job.state !== "ready" && job.state !== "failed") {
@@ -190,7 +192,17 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env): Promis
         }
         message.ack();
       } else {
-        message.retry();
+        /*
+         * BACKOFF, or the retry walks into the same wall.
+         *
+         * These fail almost entirely because something was busy — a container
+         * slot, a rate limit — and retrying at once asks the same question a
+         * millisecond later. The delay grows with the attempt and carries a
+         * little jitter, because twenty videos uploaded together fail together
+         * and would otherwise retry together too, in lockstep, for ever.
+         */
+        const base = [20, 60, 180][Math.min(message.attempts - 1, 2)] ?? 180;
+        message.retry({ delaySeconds: base + Math.floor(Math.random() * base * 0.4) });
       }
     }
   }

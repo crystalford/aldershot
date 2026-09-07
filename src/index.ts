@@ -64,7 +64,7 @@ import { abortMultipart, canPresign, completeMultipart, createMultipart, presign
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
-import { readSource } from "./ingest.ts";
+import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
 import { meter, monthUsage } from "./usage.ts";
@@ -3212,7 +3212,7 @@ app.get("/api/usage/month", async (c) => {
  * Hourly, and it does exactly what the lazy paths do, for everyone. Nothing
  * here is new behaviour; it is the existing behaviour arriving on time.
  */
-async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
   await ensureV2Schema(env.DB);
 
   const { results } = await env.DB
@@ -3242,6 +3242,16 @@ async function scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionC
     if (freed) console.log(`[sweep] freed ${Math.round(freed / 1e6)}MB of used audio`);
   } catch (err) {
     console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /* Videos that failed because a container slot was busy rather than because
+     anything was wrong with them. The queue retries within a job now; this is
+     for the ones that failed before it did. */
+  try {
+    const back = await requeueTransientReads(env, ctx);
+    if (back) console.log(`[sweep] put ${back} video(s) back in the queue`);
+  } catch (err) {
+    console.log(`[sweep] requeue: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   for (const { user_id } of results ?? []) {
