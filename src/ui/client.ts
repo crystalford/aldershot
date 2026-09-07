@@ -2351,9 +2351,95 @@ if (composer) {
   /* Begin: upload the video, then follow it to where it is being read.
      The brief is carried along and stays with the source, so a failed read
      offers a retry that does not make the user retype it. */
+  /*
+   * A BRIEF WITH NO FILE is not nothing — it is a brief about footage you
+   * already have.
+   *
+   * This offers your videos and runs the brief against the one you pick.
+   * /api/begin has taken {sourceId, brief} and read the intent since it was
+   * written; the front door was simply the one place that could not reach it.
+   */
+  const pickSource = async () => {
+    let box = document.querySelector("#pick-source");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "pick-source";
+      box.style.cssText =
+        "position:fixed;inset:0;z-index:70;background:rgba(8,8,10,.72);display:flex;" +
+        "align-items:flex-start;justify-content:center;padding:8vh 20px";
+      box.addEventListener("click", (e) => { if (e.target === box) box.hidden = true; });
+      document.body.appendChild(box);
+    }
+    box.hidden = false;
+    box.innerHTML =
+      '<div style="width:min(520px,100%);max-height:76vh;overflow:auto;border-radius:11px;background:#141418;' +
+      'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 24px 60px rgba(0,0,0,.5);padding:16px 18px">' +
+      '<div style="font-size:12.5px;font-weight:600;color:rgba(236,236,241,.45);margin-bottom:10px">Which video?</div>' +
+      '<div id="pick-source-list" style="display:flex;flex-direction:column;gap:6px">Looking…</div></div>';
+
+    const list = box.querySelector("#pick-source-list");
+    try {
+      const out = await (await fetch("/api/sources")).json();
+      /* Only what can actually be worked on: a brief against a video that has
+         not been read yet has nothing to read. */
+      const ready = (out.sources || []).filter((sv) => sv.transcript_state === "ready");
+      if (!ready.length) {
+        list.textContent = "Nothing read yet — add a video and it starts reading.";
+        return;
+      }
+      list.innerHTML = ready
+        .map(
+          (sv) =>
+            '<button data-source="' + escapeHtml(sv.id) + '" style="display:flex;gap:12px;align-items:center;text-align:left;' +
+            'padding:11px 12px;border-radius:8px;background:#17171B;border:none;cursor:pointer;color:#ECECF1;font-family:inherit">' +
+            '<span style="flex:none;width:54px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#0B0B0E">' +
+            (sv.poster_r2_key ? '<img loading="lazy" src="/media/' + escapeHtml(sv.poster_r2_key) + '" style="width:100%;height:100%;object-fit:cover"/>' : "") +
+            "</span>" +
+            '<span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            escapeHtml(sv.title) + "</span></button>",
+        )
+        .join("");
+
+      list.addEventListener("click", async (e) => {
+        const row = e.target.closest("[data-source]");
+        if (!row) return;
+        row.disabled = true;
+        try {
+          const res = await fetch("/api/begin", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sourceId: row.getAttribute("data-source"), brief: brief.value.trim() }),
+          });
+          const done = await res.json();
+          if (!res.ok) throw new Error(done.error || "That didn't start");
+          location.href = done.href || "/";
+        } catch (err) {
+          row.disabled = false;
+          toast((err && err.message) || "That didn't start");
+        }
+      });
+    } catch (err) {
+      list.textContent = "Couldn't reach your footage.";
+    }
+  };
+
   composer.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!picked) { brief.focus(); return; }
+
+    /*
+     * NEVER SILENTLY NOTHING.
+     *
+     * This was if (!picked) { brief.focus(); return; } — type a sentence,
+     * press the front page's only button, and it moved the cursor. No message,
+     * no explanation, nothing to do next. The placeholder even reads "or drop
+     * a video in first", which says the file is optional.
+     */
+    if (!picked) {
+      if (brief.value.trim()) return void pickSource();
+      toast("Add a video, or say what you want.");
+      brief.focus();
+      return;
+    }
 
     const button = composer.querySelector('button[type="submit"]');
     const original = button.textContent;

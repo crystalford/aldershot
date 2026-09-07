@@ -2534,6 +2534,23 @@ app.post("/webhooks/stripe", async (c) => {
   return c.text("ok");
 });
 
+/**
+ * The signed-out site, while signed in.
+ *
+ * Settings has linked to /landing since it was built and nothing has ever
+ * served it — the marketing page renders at / when there is no session, so
+ * the only way to see it was to sign out. A dead link on a shipped page, and
+ * found by pressing it rather than by reading it.
+ *
+ * No account state reaches it: it renders exactly what a stranger sees, which
+ * is the whole reason to look at it.
+ */
+app.get("/landing", async (c) => {
+  return c.html(
+    renderLanding({ sentTo: null, devLink: null, error: null, google: googleConfigured(c.env) }),
+  );
+});
+
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

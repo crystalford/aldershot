@@ -145,6 +145,42 @@ const UI_FILES = walk(path.join(ROOT, 'src/ui'));
  * Presentational classes are exempt by allowlist, because a styling hook is
  * not a control and there is no way to tell from the markup alone.
  */
+/*
+ * A backtick inside client.ts.
+ *
+ * The file is one String.raw template, so a backtick anywhere in it — in a
+ * string, in a comment, quoting a line of code in prose — closes the template
+ * early and the build fails with an error pointing at whatever follows. It
+ * happened four times in one session, twice in comments, and each time cost a
+ * dead dev server and a confusing esbuild message before the cause was
+ * obvious. It is one line to check and it can never happen again.
+ */
+function checkTemplate() {
+  const file = path.join(ROOT, 'src/ui/client.ts');
+  const src = fs.readFileSync(file, 'utf8');
+  const lines = src.split('\n');
+  const open = lines.findIndex((l) => l.includes('String.raw`'));
+  if (open < 0) {
+    fail('template', 'src/ui/client.ts no longer opens with String.raw` — this check is out of date.');
+    return;
+  }
+  const strays = [];
+  for (let i = open + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '`;') break;
+    if (line.includes('`')) strays.push((i + 1) + ': ' + line.trim().slice(0, 90));
+  }
+  if (strays.length) {
+    fail(
+      'template',
+      'A backtick inside client.ts closes its String.raw template early. Comments count.',
+      strays.join('\n'),
+    );
+  } else {
+    pass('template', 'no backtick escapes the String.raw body of client.ts');
+  }
+}
+
 function checkWiring() {
   const client = fs.readFileSync(path.join(ROOT, 'src/ui/client.ts'), 'utf8');
   const pageFiles = walk(path.join(ROOT, 'src/ui')).filter((f) => !f.endsWith('client.ts'));
@@ -532,6 +568,7 @@ async function checkStrings() {
   }
 }
 
+checkTemplate();
 checkWiring();
 
 checkStrings().then(() => {
