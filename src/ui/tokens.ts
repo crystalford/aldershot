@@ -27,6 +27,8 @@ export const C = {
   hairline: "rgba(255,255,255,0.06)",
 } as const;
 
+
+
 /**
  * Accents. Each means exactly one thing and is never decorative
  * (02-DESIGN-SYSTEM.md). Used for the composition bar, stage pills, and the
@@ -46,6 +48,35 @@ export const ACCENT = {
 } as const;
 
 export type AccentName = keyof typeof ACCENT;
+
+/**
+ * What a surface becomes under the cursor.
+ *
+ * The prototype specifies 161 hover and focus states; the build had 14,
+ * because the product is server-rendered INLINE styles and inline styles
+ * cannot express :hover. They were not dropped by choice — they had nowhere
+ * to live. So the whole product sat inert under the cursor, which is most of
+ * why it read as less finished than the design it was built from.
+ *
+ * These are the prototype's own values, counted from it rather than chosen
+ * here: `background:#2E2E36` appears 78 times, `color:#ECECF1` 65, the row
+ * lift 18, the destructive red 10, the white 4. Six rules for the whole
+ * product, which is why it feels like one thing.
+ */
+export const HOVER = {
+  /** A pill or chip lifts. C.pill -> C.active, the prototype's commonest rule. */
+  pill: C.active,
+  /** Dim text goes to full ink. */
+  ink: C.ink,
+  /** A card or row, barely — between C.surface and C.raised, and neither. */
+  surface: "#1C1C21",
+  /** The one primary button on a page, at its brightest. */
+  primary: "#FFFFFF",
+  /** Delete, remove, sign out. */
+  danger: ACCENT.red,
+  /** Gold, brightened — "your voice", progress, attention. */
+  gold: "#E2C27E",
+} as const;
 
 /** Accent backgrounds are always the accent at 0.14 alpha with the accent as text. */
 export function accentBg(hex: string): string {

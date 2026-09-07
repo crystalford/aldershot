@@ -34,7 +34,7 @@ export function itemMenu(kind: ItemKind, id: string, title: string, noun: string
           ? `<button class="item-duplicate" style="display:block;width:100%;text-align:left;padding:7px 10px;border-radius:6px;background:none;border:none;color:${C.ink};font-size:${SIZE.secondary};cursor:pointer;font-family:${FONT.ui}">Duplicate</button>`
           : ""
       }
-      <button class="item-delete" style="display:block;width:100%;text-align:left;padding:7px 10px;border-radius:6px;background:none;border:none;color:${C.ink};font-size:${SIZE.secondary};cursor:pointer;font-family:${FONT.ui}">Delete</button>
+      <button class="item-delete" data-danger style="display:block;width:100%;text-align:left;padding:7px 10px;border-radius:6px;background:none;border:none;color:${C.ink};font-size:${SIZE.secondary};cursor:pointer;font-family:${FONT.ui}">Delete</button>
     </div>
   </div>`;
 }

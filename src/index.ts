@@ -2581,11 +2581,16 @@ app.get("/settings", async (c) => {
    * to the user and the number enforced against them have to be one number.
    */
   const limits = PLANS[user.plan] ?? PLANS.free;
+  /* The owner is metered and never blocked — checkCap and checkStorage both
+     pass them — so a ceiling here would be a number nothing enforces. What
+     they have used is the point, and it stays. */
+  const uncapped = Boolean(user.is_owner);
   const meters = [
     {
       label: "Processing minutes",
       used: Math.round(roll.source_minutes),
       cap: limits.sourceMinutes,
+      uncapped,
       unit: "",
       color: ACCENT_CYAN,
       note: "Spent reading footage, rendering cuts, and burning captions. Resets on the 1st.",
@@ -2594,6 +2599,7 @@ app.get("/settings", async (c) => {
       label: "Storage",
       used: Math.round((storedNow / 1e9) * 10) / 10,
       cap: limits.storageGb,
+      uncapped,
       unit: "GB",
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
