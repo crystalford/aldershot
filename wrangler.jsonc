@@ -55,7 +55,16 @@
   // Requires the account on Workers Paid with Containers enabled. Built by the
   // GitHub Action (Docker on the runner).
   "containers": [
-    { "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-ffmpeg", "max_instances": 5 }
+    /*
+     * HEADROOM. This was 5, against a queue consumer also set to 5, so every
+     * queue slot wanted a container at once and a render had nowhere to go —
+     * and with sleepAfter at 15m the finished ones held their slots anyway.
+     * Twenty videos uploaded together failed six of them on this ceiling.
+     *
+     * A ceiling, not a reservation: containers bill for the seconds they run,
+     * so raising it costs nothing until the work is actually there.
+     */
+    { "class_name": "RenderContainer", "image": "./container/Dockerfile", "name": "aldershot-ffmpeg", "max_instances": 12 }
   ],
   "durable_objects": {
     "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]
@@ -105,11 +114,13 @@
   // retries, which is the only way a multi-gigabyte read finishes at all.
   //
   // max_batch_size 1 because these are minutes-long jobs, not messages to
-  // amortise; max_concurrency 5 to bound how much work runs at once.
+  // amortise. max_concurrency is deliberately BELOW the container ceiling
+  // above: the queue must not be able to claim every instance, or a render
+  // asked for while a bulk upload is reading has nowhere to run.
   "queues": {
     "producers": [{ "binding": "JOBS", "queue": "aldershot-jobs" }],
     "consumers": [
-      { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 5 }
+      { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 6 }
     ]
   }
 

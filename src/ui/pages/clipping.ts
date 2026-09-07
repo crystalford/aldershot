@@ -489,5 +489,36 @@ export function renderClipping(d: ClippingData): string {
         ? `<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),220px));gap:14px">${d.shorts.map(shortCard).join("")}</div>`
         : "";
 
-  return `${heading}${controls(d)}${askBox(d)}${d.shorts.length ? output() : ""}${body}${d.shorts.length ? adjustSheet() : ""}`;
+  /*
+   * WHICH VIDEO. The page said "Clipping", then "Find clips in this", and
+   * never once named what "this" was — you arrived from a picker and lost the
+   * thing you had just chosen.
+   */
+  const which = `<div style="margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <a href="/clipping" style="font-size:${SIZE.secondary};color:${C.ink45};white-space:nowrap">← All videos</a>
+    <span data-content style="font-size:${SIZE.body};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.source.title)}</span>
+    ${
+      d.source.duration_s
+        ? `<span data-content style="font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono};flex:none">${hms(d.source.duration_s)}</span>`
+        : ""
+    }
+  </div>`;
+
+  /*
+   * Nothing here yet is a STATE, not a void.
+   *
+   * With no clips this rendered the two control boxes and then eight hundred
+   * pixels of nothing — which is what the owner saw, and it was worse than it
+   * looked: the list was filtered to clips this page had made, so a video
+   * with thirteen moments already found showed none of them.
+   */
+  const nothingYet =
+    !running && d.job?.state !== "failed" && !d.shorts.length
+      ? `<div data-content style="margin-top:20px;padding:26px 20px;border-radius:${RADIUS.card};background:${C.surface};text-align:center;font-size:${SIZE.body};color:${C.ink45};line-height:1.6">No moments in this one yet — Find clips reads it through and scores what would stand alone.</div>`
+      : "";
+
+  /* The moments lead. The controls make more of them, which is the second
+     thing you want, not the first — and with a grid on screen the boxes above
+     it were the whole page. */
+  return `${heading}${which}${d.shorts.length ? output() : ""}${body}${nothingYet}${controls(d)}${askBox(d)}${d.shorts.length ? adjustSheet() : ""}`;
 }

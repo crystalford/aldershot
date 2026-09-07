@@ -9,7 +9,7 @@
  */
 
 import type { Env } from "./env.ts";
-import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
+import { advance, createJob, failJob, finishJob, isTransient, startJob } from "./jobs.ts";
 import { begin } from "./begin.ts";
 import { nameSourceCut } from "./naming.ts";
 import { meter } from "./usage.ts";
@@ -17,6 +17,7 @@ import { checkCap, type Plan } from "./plans.ts";
 import { extractAudio, isAudio } from "./audio.ts";
 import { transcribeObject } from "./transcribe.ts";
 import { saveSegments, setTranscriptState, type Source } from "./sources.ts";
+import { dispatch } from "./queue.ts";
 
 export interface IngestOpts {
   plan: Plan;
@@ -193,12 +194,95 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
     return { jobId: job.id };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
+    /*
+     * A BUSY MACHINE IS NOT A BROKEN VIDEO.
+     *
+     * Twenty videos uploaded at once failed six of them with "Maximum number
+     * of running container instances exceeded. Try again later." — and this
+     * catch turned that sentence into a permanently failed video with a Retry
+     * button for a human to press. Cloudflare had asked us to try again.
+     *
+     * Rethrowing hands it back to the queue consumer, which already knows how
+     * to retry three times and only fails the job when the attempts run out.
+     * The job stays running and the transcript state is left alone, because
+     * neither has actually gone wrong yet.
+     */
+    if (isTransient(err)) throw err;
+
     // The retry must keep the user's brief — never make them retype
     // (04-API-AND-JOBS.md §Failure rules).
     await failJob(env.DB, job.id, `Couldn't read that video: ${message}`);
     await setTranscriptState(env.DB, src.id, "failed");
     return { jobId: job.id };
   }
+}
+
+/**
+ * Videos that failed because something was busy, put back in the queue.
+ *
+ * A bulk upload of twenty failed six of them on the container ceiling, and
+ * each was left permanently failed behind a Retry button. The fix upstream —
+ * rethrowing so the queue retries — helps the NEXT upload; it does nothing
+ * for the six already sitting there. A rule is only worth having if it also
+ * reaches the rows written before it.
+ *
+ * Only where the recorded reason is one we would retry today, and only where
+ * the source and its file are still there. Bounded per sweep, and capped per
+ * video: something that has failed this way four times is not being unlucky,
+ * and going round for ever would hide a real problem behind a spinner.
+ */
+export async function requeueTransientReads(
+  env: Env,
+  /* Same shape dispatch takes. It is only used on the no-queue dev path, but
+     a caller that cannot provide one has no business dispatching work. */
+  ctx: { waitUntil(p: Promise<unknown>): void },
+  limit = 10,
+): Promise<number> {
+  const { results } = await env.DB
+    .prepare(
+      /* The plan travels with the message because the cap is checked from it
+         when the job runs, not when it is queued. */
+      `SELECT s.id, s.user_id, s.r2_key, s.brief, s.duration_s, u.plan,
+              (SELECT COUNT(*) FROM jobs j2
+                WHERE j2.ref_id = s.id AND j2.type='transcribe' AND j2.state='failed') AS fails,
+              (SELECT j3.error FROM jobs j3
+                WHERE j3.ref_id = s.id AND j3.type='transcribe' AND j3.state='failed'
+                ORDER BY j3.created_at DESC LIMIT 1) AS reason
+         FROM sources s JOIN v2_users u ON u.id = s.user_id
+        WHERE s.transcript_state='failed' AND s.deleted_at IS NULL
+        ORDER BY s.created_at DESC LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      id: string; user_id: string; r2_key: string; brief: string | null;
+      duration_s: number | null; plan: string; fails: number; reason: string | null;
+    }>();
+
+  let put = 0;
+  for (const row of results ?? []) {
+    if (!row.reason || !isTransient(row.reason)) continue;
+    /* Four goes is not bad luck any more. */
+    if (row.fails >= 4) continue;
+    /* No file, nothing to read — that is a different failure. */
+    const head = await env.MEDIA.head(row.r2_key).catch(() => null);
+    if (!head) continue;
+
+    await setTranscriptState(env.DB, row.id, "pending");
+    const job = await createJob(env.DB, { user_id: row.user_id, type: "transcribe", ref_id: row.id });
+    await dispatch(env, ctx, {
+      type: "transcribe",
+      jobId: job.id,
+      userId: row.user_id,
+      sourceId: row.id,
+      plan: (row.plan as Plan) ?? "free",
+      /* Known from the first read, so the cap check does not fall back to
+         estimating from file size a second time. */
+      ...(row.duration_s ? { knownDurationS: row.duration_s } : {}),
+    });
+    put++;
+  }
+  return put;
 }
 
 /**

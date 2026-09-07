@@ -383,7 +383,7 @@ export function renderLanding(d: LandingData): string {
         <div style="flex:1 1 320px;min-width:min(300px,100%)">
           <div style="${EYEBROW};color:${GREEN}">EDIT BY READING</div>
           <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">Cut a sentence like you'd delete a sentence.</h3>
-          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">The whole video is text. Strike a line and it's out of the cut. Keep a moment and it's saved forever — timestamped, tagged, and searchable by what was said, not what you named the file.</p>
+          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said — the sponsor read, the tangent, the tic — in one go. Nothing is deleted: everything is one undo away.</p>
         </div>
         <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:20px;font-size:13.5px;line-height:2">
           ${TRANSCRIPT.map(
@@ -427,7 +427,7 @@ export function renderLanding(d: LandingData): string {
         <div style="flex:1 1 320px;min-width:min(300px,100%)">
           <div style="${EYEBROW};color:${CYAN}">FOOTAGE THAT REMEMBERS</div>
           <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">Every clip you keep makes the next thing faster.</h3>
-          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Kept clips sort themselves into threads by what's being said. Months later, ask "every time he contradicts himself" and it hands you the receipts — across every video you've ever fed it. That's how a clip becomes a supercut, and a supercut becomes an essay.</p>
+          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Every moment you keep stays in one library — timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.</p>
         </div>
         <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:20px">
           <div style="font-size:12.5px;color:rgba(236,236,241,0.4);font-family:${MONO}">"when someone admits the plan changed"</div>
@@ -449,7 +449,7 @@ export function renderLanding(d: LandingData): string {
     <div style="${WRAP};padding:clamp(48px,7vw,80px) 0;text-align:center">
       <div style="${EYEBROW};color:${GREEN}">THE FINISH LINE</div>
       <h2 style="margin:14px auto 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:560px;line-height:1.15">Done means done.</h2>
-      <p style="margin:14px auto 0;max-width:520px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Every render lands with everything it needs to leave: download it, cut shorts off it, send it to your own webhook, or hand a review link to anyone — they watch and drop timestamped notes, no account needed. Nothing you upload ever expires.</p>
+      <p style="margin:14px auto 0;max-width:520px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it — move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.</p>
       <div style="margin:32px auto 0;max-width:640px;text-align:left;border-radius:11px;overflow:hidden;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,201,143,0.24)">
         <div style="display:flex;gap:18px;padding:18px;flex-wrap:wrap;align-items:center">
           <div style="flex:none;width:min(200px,100%);aspect-ratio:16/9;border-radius:7px;overflow:hidden;background:#07070a;position:relative">
@@ -461,12 +461,12 @@ export function renderLanding(d: LandingData): string {
             <div style="font-size:17px;font-weight:600;margin-top:5px">The Long Way Round</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
               <span style="font-size:12px;font-weight:600;padding:7px 14px;border-radius:5px;background:#ECECF1;color:#131316">Download it</span>
-              <span style="font-size:12px;font-weight:500;padding:7px 12px;border-radius:5px;background:#232329;color:#ECECF1">Share for review</span>
+              
               <span style="font-size:12px;font-weight:500;padding:7px 12px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.7)">Cut shorts from it</span>
             </div>
           </div>
         </div>
-        <div style="padding:11px 18px;background:#111114;font-size:11.5px;color:rgba(236,236,241,0.35)">6 clips from 2 sources · 2 of your own · aldershot.to/r/the-long-way-round-9c2b</div>
+        <div style="padding:11px 18px;background:#111114;font-size:11.5px;color:rgba(236,236,241,0.35)">6 clips from 2 sources · 2 of your own · 1080p MP4 · 9:04</div>
       </div>
     </div>
   </div>

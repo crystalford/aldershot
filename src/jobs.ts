@@ -105,6 +105,40 @@ export async function finishJob(db: D1Database, id: string): Promise<void> {
  * Fails a job with a plain-language reason. The message is shown to the user,
  * so it must read like a sentence, not an exception.
  */
+/**
+ * Is this worth trying again, or is the video actually broken?
+ *
+ * A bulk upload of twenty videos failed six of them with "Failed to start
+ * container: Maximum number of running container instances exceeded. Try
+ * again later." Cloudflare said try again later; the product wrote it down as
+ * a permanently failed video with a Retry button for a human to press.
+ *
+ * readSource catches every error and calls failJob, so nothing ever reaches
+ * the queue consumer, the message is acked, and the three retries the queue
+ * was configured with never happen. The distinction this function makes is
+ * the difference between a busy machine and an unreadable file.
+ *
+ * Deliberately a SHORT list of things known to be temporary. Anything not
+ * recognised fails as before: a wrong guess in this direction retries a job
+ * that can never succeed, three times, and then reports the same error later
+ * and more confusingly.
+ */
+export function isTransient(err: unknown): boolean {
+  const text = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    /maximum number of running container instances/.test(text) ||
+    /container instances exceeded/.test(text) ||
+    /failed to start container/.test(text) ||
+    /try again later/.test(text) ||
+    /\b(429|503|502|504)\b/.test(text) ||
+    /too many requests/.test(text) ||
+    /rate limit/.test(text) ||
+    /temporarily unavailable/.test(text) ||
+    /timed out|timeout/.test(text) ||
+    /network connection lost|connection reset/.test(text)
+  );
+}
+
 export async function failJob(db: D1Database, id: string, error: string): Promise<void> {
   await db
     .prepare(`UPDATE jobs SET state='failed', error=?, finished_at=? WHERE id=?`)
