@@ -54,13 +54,6 @@ export const iconBell = (o?: StrokeOpts) =>
 /** Seam inserts between beats, "add" buttons. Rendered at 13, 15px. */
 export const iconPlus = (o?: StrokeOpts) => stroke('<path d="M12 5v14M5 12h14"/>', o);
 
-/** Skipped stretches, source rows. Rendered at 12px. */
-export const iconFilm = (o?: StrokeOpts) =>
-  stroke(
-    '<rect x="3" y="8" width="18" height="8" rx="2"></rect><line x1="8" y1="8" x2="8" y2="16"></line><line x1="16" y1="8" x2="16" y2="16"></line>',
-    o,
-  );
-
 /** Move a block earlier. Rendered at 10, 11px. */
 export const iconArrowUp = (o?: StrokeOpts) => stroke('<path d="M12 19V5M5 12l7-7 7 7"/>', o);
 
@@ -75,14 +68,3 @@ export const iconPlay = (size = 14, fill = "#fff") => filled('<path d="M8 5l11 7
 export const iconPause = (size = 14, fill = "#fff") =>
   filled('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>', size, fill);
 
-/** Every icon this product has, for the inventory check in scripts/check-fidelity.sh. */
-export const ICON_NAMES = [
-  "search",
-  "bell",
-  "plus",
-  "pause",
-  "play",
-  "film",
-  "arrowUp",
-  "arrowDown",
-] as const;

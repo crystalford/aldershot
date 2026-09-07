@@ -1757,7 +1757,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
 app.post("/api/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ projectId: string; format: Format; aspect: Aspect; captionStyle?: string }>(c);
+  const b = await body<{ projectId: string; format: Format; aspect: Aspect; captionStyle?: string; enhance?: boolean | string }>(c);
   if (!b.projectId) return c.json({ error: "which project?" }, 400);
 
   const project = await getProject(c.env.DB, b.projectId, user.id);
@@ -1788,6 +1788,9 @@ app.post("/api/renders", async (c) => {
     format,
     aspect,
     captionStyle,
+    /* Opt-in, and read as a boolean rather than trusted as one: this arrives
+       from the client like everything else here. */
+    enhance: b.enhance === true || b.enhance === "1",
   });
   /*
    * ref_id IS THE RENDER, and never was.

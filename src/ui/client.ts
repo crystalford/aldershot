@@ -3331,6 +3331,7 @@ if (exportPanel) {
           format: data.get("format"),
           aspect: data.get("aspect"),
           captionStyle: data.get("captionStyle"),
+          enhance: data.get("enhance") === "1",
         }),
       });
       const out = await res.json().catch(() => ({}));

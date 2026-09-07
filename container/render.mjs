@@ -25,7 +25,7 @@
 // docs/decisions/transcription.md.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { createReadStream, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
 
 /**
@@ -122,6 +122,32 @@ const DISK_BUDGET = Number(process.env.SOURCE_DISK_BUDGET) || 12 * 1024 * 1024 *
  * he gave up. So a render is a job here too — started, polled, collected —
  * and the percentage the user watches is parts actually finished.
  */
+/*
+ * The denoiser needs its model, which the Dockerfile downloads at build time.
+ *
+ * If that download ever fails the image still builds, and without this every
+ * enhanced export would die on "Failed to open model file" — a whole feature
+ * lost to one missing asset. Everything else in the chain is built into
+ * ffmpeg, so dropping just the denoise leaves a pass that is still worth
+ * having: de-click, presence, compression and broadcast loudness.
+ */
+const RNNOISE_MODEL = "/app/std.rnnn";
+const HAS_RNNOISE = existsSync(RNNOISE_MODEL);
+if (!HAS_RNNOISE) console.log("enhance: no " + RNNOISE_MODEL + " — denoise is off, the rest of the chain still runs");
+
+const ENHANCE_FILTERS = [
+  "highpass=f=80",
+  "adeclick",
+  "adeclip",
+  HAS_RNNOISE ? "arnndn=m=" + RNNOISE_MODEL + ":mix=0.8" : "",
+  "equalizer=f=3000:t=q:w=1:g=2",
+  "acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
+  "loudnorm=I=-16:TP=-1.5:LRA=11",
+  "alimiter=limit=-1.5dB",
+]
+  .filter((f) => f)
+  .join(",");
+
 const RENDERS = new Map();
 
 /* A finished render waits this long to be collected before its files go. The
@@ -164,6 +190,20 @@ async function fetchOnce(url, dest) {
   const { createWriteStream } = await import("node:fs");
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
   return dest;
+}
+
+/** How long a file runs, in seconds. 0 when it cannot be read. */
+function probeDuration(url) {
+  return new Promise((resolve) => {
+    const pr = spawn("ffprobe", [
+      "-v", "error", "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1", url,
+    ]);
+    let out = "";
+    pr.stdout.on("data", (d) => { out += d; });
+    pr.on("close", () => resolve(Number(out.trim()) || 0));
+    pr.on("error", () => resolve(0));
+  });
 }
 
 /** Runs `work` over `items`, `lanes` at a time, calling `onDone` as each lands. */
@@ -307,21 +347,40 @@ function render(plan, res) {
           // clip's own audio ducks under it rather than competing — sidechain
           // compression, keyed off the voice, which is how this is done for
           // real rather than just lowering a fader.
+          //
+          // THE VOICE DECIDES THE LENGTH.
+          //
+          // This mixed with duration=first, so the CLIP decided and a take
+          // that ran a second longer than the b-roll was cut off mid-word.
+          // That is the wrong way round: chopping what somebody said is worse
+          // than holding a frame. tpad clones the last frame for as long as
+          // the voice keeps going, and duration=longest lets it.
+          /*
+           * How much longer the take runs than the shot, measured rather than
+           * guessed. -shortest does NOT reliably clamp a filtergraph — tried,
+           * and every output came back the length of the tpad window — so the
+           * pad is computed exactly and the video ends where it should.
+           */
+          const clipLen = Math.max(0, cut.end_s - cut.start_s);
+          const voiceLen = await probeDuration(at(cut.voiceUrl));
+          const pad = Math.max(0, voiceLen - clipLen);
+          const held = pad > 0.05 ? vf + ",tpad=stop_mode=clone:stop_duration=" + pad.toFixed(3) : vf;
+
           await runFfmpeg([
             "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS),
             "-ss", String(cut.start_s), "-to", String(cut.end_s), "-i", at(cut.url),
             "-i", at(cut.voiceUrl),
             "-filter_complex",
-            "[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[base];" +
+            "[0:v]" + held + "[v];" +
+              "[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[base];" +
               "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
               // threshold/ratio chosen so speech pulls the bed well down but
               // does not gate it out entirely — the clip should still be
               // audible underneath, just clearly behind.
               "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];" +
-              "[ducked][voice]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
-            "-map", "0:v", "-map", "[a]",
-            "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+              "[ducked][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[a]",
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-avoid_negative_ts", "make_zero", "-y", out,
           ]);
@@ -403,6 +462,25 @@ function render(plan, res) {
           "-vf", `subtitles=${assPath.replace(/'/g, "")}`,
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
           "-c:a", "copy", "-movflags", "+faststart", "-y", outPath,
+        ]);
+      } else if (plan.enhance) {
+        /*
+         * ENHANCE THE AUDIO, once, over the finished timeline.
+         *
+         * The chain below has been in this file since it was written and
+         * nothing ever ran it: /enhance-audio took a whole file and no Worker
+         * code ever called it. Applied HERE it costs almost nothing — the
+         * video is still a stream copy, only the audio is re-encoded — and it
+         * is the only place loudnorm can do its job, because normalising each
+         * part separately makes the whole thing pump between shots.
+         */
+        job.stage = "cleaning up the sound";
+        await runFfmpeg([
+          "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS * LANES),
+          "-f", "concat", "-safe", "0", "-i", listPath,
+          "-af", ENHANCE_FILTERS,
+          "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+          "-movflags", "+faststart", "-y", outPath,
         ]);
       } else {
         await runFfmpeg([
@@ -542,102 +620,6 @@ setInterval(() => {
     }
   }
 }, 60_000).unref?.();
-/**
- * The EDITING COPY.
- *
- * The editor plays and scrubs the ORIGINAL — a 45-to-180-minute file that is
- * routinely gigabytes. Every seek is a range request into it, the editor opens
- * it twice (the visible player and the thumbnail decoder), and clicking a
- * transcript line to hear it is meant to be instant. It is the heaviest thing
- * in the product and the one the design never accounted for.
- *
- * The design's answer was Cloudflare Stream. Stream bills per minute stored
- * REGARDLESS OF FILE SIZE, so a small copy costs exactly what the 4K master
- * costs, and this product promises permanence — that is rent, for ever, on
- * every minute anybody ever uploads. 05-INFRA-AND-COSTS.md calls it "the
- * single easiest way to make this product unprofitable" and it is right.
- *
- * The same copy as an mp4 in R2 is about 4.5 MB a minute and has no egress
- * charge at all — roughly seventy times cheaper for the same job.
- *
- * `-g 48` is the point of the whole thing. A keyframe every two seconds is
- * what makes scrubbing land immediately; a camera's own keyframe interval is
- * whatever it felt like, often ten seconds or more, and every seek in between
- * decodes forward from the last one.
- *
- * The dimensions come back in the headers because NOTHING IN THIS PRODUCT HAS
- * EVER KNOWN THEM. sources.width and sources.height are declared, written as
- * null, and never updated anywhere — which is why vertical footage is drawn
- * into a landscape box and stretched.
- */
-function proxy(url, res) {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const outPath = `/tmp/proxy-${id}.mp4`;
-
-  const probe = () =>
-    new Promise((resolve) => {
-      const pr = spawn("ffprobe", [
-        "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height:format=duration",
-        "-of", "default=noprint_wrappers=1", url,
-      ]);
-      let out = "";
-      pr.stdout.on("data", (d) => { out += d; });
-      pr.on("close", () => {
-        const read = (k) => Number((new RegExp(k + "=([0-9.]+)").exec(out) || [])[1]) || 0;
-        resolve({ width: read("width"), height: read("height"), duration: read("duration") });
-      });
-      pr.on("error", () => resolve({ width: 0, height: 0, duration: 0 }));
-    });
-
-  (async () => {
-    const t0 = Date.now();
-    /*
-     * Probed BEFORE the encode, from the source, because the proxy is scaled
-     * and would report the copy's shape rather than the video's. -2 keeps the
-     * aspect ratio, so a vertical source comes out vertical.
-     */
-    const shape = await probe();
-
-    const args = [
-      "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS * LANES),
-      "-i", url,
-      "-vf", "scale=-2:480",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-g", "48",
-      "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "96k", "-ac", "2",
-      "-movflags", "+faststart", "-y", outPath,
-    ];
-    const ff = spawn("ffmpeg", args);
-    let err = "";
-    ff.stderr.on("data", (d) => (err += d));
-    ff.on("error", (e) => jsonError(res, 500, { error: String(e) }));
-    ff.on("close", async (code) => {
-      if (code !== 0) {
-        await unlink(outPath).catch(() => {});
-        return jsonError(res, 500, { error: err.slice(-1500) || "ffmpeg failed" });
-      }
-      try {
-        const st = await stat(outPath);
-        console.log(`proxy: ${st.size} bytes, ${shape.width}x${shape.height}, ${Date.now() - t0}ms`);
-        res.writeHead(200, {
-          "content-type": "video/mp4",
-          "content-length": String(st.size),
-          "x-width": String(shape.width),
-          "x-height": String(shape.height),
-          "x-duration-s": String(Math.round(shape.duration)),
-        });
-        const rs = createReadStream(outPath);
-        rs.pipe(res);
-        rs.on("close", () => { unlink(outPath).catch(() => {}); });
-        rs.on("error", () => { unlink(outPath).catch(() => {}); });
-      } catch (e) {
-        jsonError(res, 500, { error: String(e) });
-      }
-    });
-  })();
-}
-
 function readJson(req) {
   return new Promise((resolve) => {
     let body = "";
@@ -645,8 +627,7 @@ function readJson(req) {
     req.on("end", () => { try { resolve(JSON.parse(body || "{}")); } catch { resolve({}); } });
   });
 }
-/* Never an empty reason: an error that names nothing cannot be acted on, and
-   {"error":"Error"} is what the owner was shown for a real failure. */
+
 function jsonError(res, code, obj) {
   if (obj && !String(obj.error || "").trim()) obj = { ...obj, error: "the encoder failed without saying why" };
   if (res.headersSent) { res.destroy(); return; }
@@ -689,58 +670,6 @@ function extractFull(url, res) {
   });
 }
 
-// "Enhance audio" — a Studio-Sound-style one-click cleanup pass: rumble/click
-// removal, RNNoise denoise, a touch of presence EQ, leveling, then two-pass-
-// equivalent loudness normalization to a podcast target (-16 LUFS / -1.5dBTP)
-// and a safety limiter. Order matters — denoise before EQ (boosting frequencies
-// before cleanup just makes the noise there louder and harder to remove) and
-// loudness normalization last (it should measure/level the already-cleaned
-// signal, not fight the raw one). Video stream (if any) is copied untouched;
-// -shortest trims the ~5-10ms of trailing padding audio filters add so audio
-// doesn't run long against the copied video track.
-const ENHANCE_FILTERS = [
-  "highpass=f=80",
-  "adeclick",
-  "adeclip",
-  "arnndn=m=/app/std.rnnn:mix=0.8",
-  "equalizer=f=3000:t=q:w=1:g=2",
-  "acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
-  "loudnorm=I=-16:TP=-1.5:LRA=11",
-  "alimiter=limit=-1.5dB",
-].join(",");
-
-function enhanceAudio(url, res) {
-  const outPath = `/tmp/enh-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`;
-  const args = [
-    "-hide_banner", "-loglevel", "error",
-    "-i", url,
-    "-map", "0:v?", "-c:v", "copy",
-    "-map", "0:a", "-af", ENHANCE_FILTERS, "-c:a", "aac", "-b:a", "192k",
-    "-shortest", "-f", "mp4", "-y", outPath,
-  ];
-  console.log("enhance-audio: starting ffmpeg for", url.slice(0, 120));
-  const t0 = Date.now();
-  const ff = spawn("ffmpeg", args);
-  let err = "";
-  ff.stderr.on("data", (d) => (err += d));
-  ff.on("error", (e) => { console.error("enhance-audio: spawn error", e); jsonError(res, 500, { error: String(e) }); });
-  ff.on("close", async (code) => {
-    console.log(`enhance-audio: ffmpeg exited code=${code} after ${Date.now() - t0}ms`);
-    if (code !== 0) return jsonError(res, 500, { error: err.slice(-1500) || "ffmpeg failed" });
-    try {
-      const st = await stat(outPath);
-      console.log(`enhance-audio: wrote ${st.size} bytes, streaming response`);
-      res.writeHead(200, { "content-type": "video/mp4", "content-length": String(st.size) });
-      const rs = createReadStream(outPath);
-      rs.pipe(res);
-      rs.on("close", () => { unlink(outPath).catch(() => {}); });
-      rs.on("error", (e) => { console.error("enhance-audio: read stream error", e); unlink(outPath).catch(() => {}); });
-    } catch (e) {
-      console.error("enhance-audio: post-ffmpeg error", e);
-      jsonError(res, 500, { error: String(e) });
-    }
-  });
-}
 createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://container");
   const path = url.pathname;
@@ -775,7 +704,6 @@ createServer(async (req, res) => {
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);
   if (path === "/proxy") return proxy(body.url, res);
-  if (path === "/enhance-audio") return enhanceAudio(body.url, res);
   res.writeHead(404).end();
 /* 8080 is what the Container binding expects (defaultPort in src/render.ts).
    PORT is only for scripts/bench-render.cjs, which runs this file directly. */

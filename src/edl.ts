@@ -28,6 +28,15 @@ export interface EdlCut {
    * an .edit.mp4 ever reaches a render plan.
    */
   previewKey: string;
+  /**
+   * A recording mixed OVER this range, with this range's own audio ducked
+   * underneath it. B-roll with narration.
+   *
+   * The renderer has been able to do this since the branch was written and
+   * had never been handed one — see container/render.mjs. Absent on almost
+   * every cut.
+   */
+  voiceKey?: string;
   start_ms: number;
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
@@ -119,6 +128,7 @@ export function buildEdl(
          */
         sourceKey: block.mediaKey || sourceKey,
         previewKey: block.previewKey || previewKey || block.mediaKey || sourceKey,
+        ...(block.voiceKey ? { voiceKey: block.voiceKey } : {}),
         start_ms: range.start_ms,
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),
@@ -207,10 +217,18 @@ export function buildSrt(edl: Edl): string {
  * be logged, diffed, and re-run.
  */
 export interface RenderPlan {
-  cuts: Array<{ key: string; start_s: number; end_s: number; audioOnly?: boolean }>;
+  cuts: Array<{ key: string; start_s: number; end_s: number; voiceKey?: string; audioOnly?: boolean }>;
   format: string;
   aspect: string;
   durationS: number;
+  /**
+   * Clean up the sound: denoise, de-click, a presence lift, compression and
+   * broadcast loudness, applied once over the finished timeline.
+   *
+   * Opt-in and absent by default. Changing how somebody's voice sounds
+   * without being asked is worse than making them ask.
+   */
+  enhance?: boolean;
   /*
    * Burned-in captions. The container has had a complete ASS writer with two
    * styles since it was written, and NOTHING EVER SET THESE — so `cues` was
@@ -230,16 +248,21 @@ export function buildRenderPlan(
   format: string,
   aspect: string,
   captionStyle?: string | null,
+  enhance?: boolean,
 ): RenderPlan {
   /* "None" is a real choice the picker offers, not a missing value. */
   const wantsCaptions = Boolean(captionStyle && captionStyle !== "None");
 
   return {
+    ...(enhance ? { enhance: true } : {}),
     ...(wantsCaptions ? { captions: captionCues(edl), captionStyle: captionStyle as string } : {}),
     cuts: edl.cuts.map((c) => ({
       key: c.sourceKey,
       start_s: c.start_ms / 1000,
       end_s: c.end_ms / 1000,
+      /* The KEY, not a url — runRender presigns it, exactly as it does the
+         footage. Nothing here ever holds a credential. */
+      ...(c.voiceKey ? { voiceKey: c.voiceKey } : {}),
       ...(c.audioOnly ? { audioOnly: true } : {}),
     })),
     format,

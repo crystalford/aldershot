@@ -221,6 +221,17 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
   const beatId = esc(b.id.slice(2));
   const took = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
 
+  /*
+   * TWO KINDS OF BLOCK CAN CARRY A RECORDING.
+   *
+   * A voiceover beat IS the recording — its mediaKey is the take. A clip
+   * pulled in as b-roll has a picture of its own and the take goes OVER it,
+   * which is voiceKey. Same recorder either way; only which field holds the
+   * audio differs.
+   */
+  const overBRoll = b.origin === "footage" && b.id.startsWith("b:");
+  const voice = b.origin === "voice" ? b.mediaKey : b.voiceKey;
+
   const bar = (h: number) =>
     `<div class="rec-bar" style="width:3px;height:${h}px;border-radius:99px;background:rgba(236,236,241,0.5);flex:none"></div>`;
 
@@ -228,10 +239,10 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 
     <!-- Idle. Recording is the real answer, so it is the gold one. -->
     <div class="rec-idle" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${b.mediaKey ? "Another take" : "Record it"}</button>
+      <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${voice ? "Another take" : overBRoll ? "Talk over it" : "Record it"}</button>
       <button class="blk-tts" style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
       ${
-        b.mediaKey
+        voice
           ? `<button class="blk-unrecord" style="margin-left:auto;font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;padding:0 4px;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Remove</button>`
           : ""
       }
@@ -249,14 +260,17 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
 
   /* The take you already have, playable. A recording you cannot hear back is
      one you have to re-record to check. */
-  const take = b.mediaKey
+  const take = voice
     ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
-        <audio controls preload="none" src="/media/${esc(b.mediaKey)}" style="flex:1 1 220px;min-width:min(200px,100%);height:32px"></audio>
+        <audio controls preload="none" src="/media/${esc(voice)}" style="flex:1 1 220px;min-width:min(200px,100%);height:32px"></audio>
         ${took ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${ACCENT.green};white-space:nowrap">${took}</span>` : ""}
       </div>`
     : "";
 
-  const fill = b.origin === "voice" && !struck ? take + recorder : "";
+  /* B-roll gets the recorder too — that is the whole point: a shot, and you
+     saying what it means over it. "Generate it" is left to voiceover beats,
+     where a synthetic line stands on its own. */
+  const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder : "";
 
   const meta = [
     b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",

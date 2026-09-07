@@ -145,6 +145,74 @@ const UI_FILES = walk(path.join(ROOT, 'src/ui'));
  * Presentational classes are exempt by allowlist, because a styling hook is
  * not a control and there is no way to tell from the markup alone.
  */
+
+/**
+ * WIRED — a capability that nothing can reach is not a capability.
+ *
+ * Four things in one day turned out to be this: /enhance-audio, the
+ * stream_uid columns, the /edl preview endpoint, and the container's
+ * voice-over-footage branch. Every one was written, tested by hand, committed,
+ * and then never connected to anything — and every one was found by accident,
+ * by a different lens, because somebody happened to ask.
+ *
+ * The other checks compare what we RENDER against the design. `reachable`
+ * covers API routes and tables. Neither can see an endpoint on the container
+ * with no caller, or a function nobody imports, which is where all four hid.
+ */
+function checkWired() {
+  const bad = [];
+  const rel = (f) => path.relative(ROOT, f);
+  /* Comments stripped, so a name surviving only in prose does not read as
+     alive — several of these are discussed at length and called nowhere. */
+  const decomment = (t) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+
+  /* Every container endpoint must have a caller. This is the exact check that
+     would have caught /enhance-audio on the day it was written. */
+  const box = fs.readFileSync(path.join(ROOT, 'container/render.mjs'), 'utf8');
+  const srcAll = walk(path.join(ROOT, 'src')).map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  for (const m of box.matchAll(/path === '"'"'(\/[a-z/-]+)'"'"'/g)) {
+    const route = m[1];
+    if (!srcAll.includes('container' + route)) {
+      bad.push(`container${route} — the container serves it and nothing in src/ calls it`);
+    }
+  }
+
+  /* Every export must be named somewhere other than its own definition. Tests
+     and scripts count as users: a helper only the tests exercise is alive. */
+  const files = [];
+  for (const root of ['src', 'test', 'scripts']) {
+    const d = path.join(ROOT, root);
+    if (fs.existsSync(d)) walkAny(d, files);
+  }
+  const text = Object.fromEntries(files.map((f) => [f, decomment(fs.readFileSync(f, 'utf8'))]));
+  for (const f of files) {
+    if (!f.includes(`${path.sep}src${path.sep}`)) continue;
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)) {
+      const name = m[1];
+      let uses = 0;
+      for (const t of Object.values(text)) uses += (t.match(new RegExp('\\b' + name + '\\b', 'g')) || []).length;
+      if (uses <= 1) bad.push(`${rel(f)}: ${name} — exported and referenced nowhere`);
+    }
+  }
+
+  if (bad.length) {
+    fail('wired', 'Built, and nothing can reach it.', bad.join('\n'));
+  } else {
+    pass('wired', 'every container endpoint has a caller; every export is referenced');
+  }
+}
+
+/** Every .ts/.cjs/.mjs under a directory. */
+function walkAny(dir, out) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walkAny(p, out);
+    else if (/\.(ts|cjs|mjs)$/.test(p)) out.push(p);
+  }
+  return out;
+}
+
 /*
  * A backtick inside client.ts.
  *
@@ -302,6 +370,27 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    ...[
+      "As recorded",
+      "Clean it up",
+    ].map((t) => [
+      t,
+      "The export panel's sound choice. The container has had a full denoise, " +
+        "de-click, presence, compression and broadcast-loudness chain since it " +
+        "was written and NOTHING EVER RAN IT — /enhance-audio had no caller in " +
+        "src/ at all. Off by default, like captions and for the same reason: " +
+        "it changes how somebody's voice sounds and a finished file cannot be " +
+        "un-processed.",
+    ]),
+    [
+      "Talk over it",
+      "B-roll with narration. The renderer has mixed a recording over a clip " +
+        "with the clip's own audio sidechain-ducked underneath since that " +
+        "branch was written, and nothing had ever handed it one \u2014 a beat was " +
+        "either a clip OR a recording, so a voiceover became a flat colour " +
+        "card and the picture was thrown away. On a voiceover beat the button " +
+        "still says \"Record it\"; this is the b-roll wording.",
+    ],
     [
       "Watch the cut",
       "The editor has always played the ORIGINAL: striking a line greys it out " +
@@ -847,6 +936,7 @@ function checkReachable() {
 }
 
 checkTemplate();
+checkWired();
 checkConventions();
 checkReachable();
 checkWiring();

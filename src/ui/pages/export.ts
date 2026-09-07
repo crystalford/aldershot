@@ -47,6 +47,16 @@ export function exportPanel(projectId: string, plan: string): string {
     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${CAPTION_STYLES.map((cs) =>
       chip("captionStyle", cs, cs === "None" ? "Off" : cs, cs === "None" ? "no captions" : "burned in", cs === "None", false),
     ).join("")}</div>
+    <!-- Off by default, for the same reason captions are: it changes how the
+         person's voice sounds and a finished file cannot be un-processed. The
+         chain behind it — denoise, de-click, a presence lift, compression and
+         broadcast loudness — has been in the container since it was written
+         and nothing ever ran it. -->
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:14px">Sound</div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      ${chip("enhance", "0", "As recorded", "no processing", true, false)}
+      ${chip("enhance", "1", "Clean it up", "denoise and level", false, false)}
+    </div>
     <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
       <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>

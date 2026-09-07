@@ -54,6 +54,19 @@ export interface Block {
    * already hands the player a preview key for that case.
    */
   previewKey: string | null;
+  /**
+   * A recording that plays OVER this block's picture.
+   *
+   * B-roll with narration on it. The renderer has mixed voice over footage —
+   * with the footage's own audio sidechain-ducked underneath — since the day
+   * that branch was written, and nothing ever handed it one: a beat was either
+   * a clip OR a recording, so a voiceover became a flat colour card and the
+   * picture was thrown away.
+   *
+   * Null on almost everything. Only a clip beat that has been talked over has
+   * both a picture and a voice.
+   */
+  voiceKey: string | null;
   posterKey: string | null;
 }
 
@@ -165,6 +178,7 @@ export function buildBlocks(opts: {
     why: verdicts.get(s.idx)?.why ?? null,
     mediaKey: null,
     previewKey: null,
+    voiceKey: null,
     posterKey,
   });
 
@@ -191,6 +205,8 @@ export function buildBlocks(opts: {
        renders from that video's master and plays that video's copy. */
     mediaKey: p.sourceKey,
     previewKey: p.previewKey || p.sourceKey,
+    /* The clip's picture, your voice over it. */
+    voiceKey: b.media_r2_key ?? null,
     posterKey: p.frameKey || posterKey,
   });
 
@@ -207,6 +223,10 @@ export function buildBlocks(opts: {
     /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
     previewKey: b.media_r2_key,
+    /* A voiceover with no clip behind it IS its own media, not a voice over
+       something else — it renders as the colour card, which is correct when
+       there is no picture to put it on. */
+    voiceKey: null,
     posterKey,
   });
 

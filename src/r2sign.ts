@@ -32,7 +32,6 @@ async function presign(env: Env, key: string, method: "PUT" | "GET", expires: nu
   return signed.url;
 }
 
-export const presignPut = (env: Env, key: string, expires = 3600) => presign(env, key, "PUT", expires);
 export const presignGet = (env: Env, key: string, expires = 7200) => presign(env, key, "GET", expires);
 
 /* ── Multipart, over the S3 API ────────────────────────────────────────
