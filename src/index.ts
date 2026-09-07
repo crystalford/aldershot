@@ -30,7 +30,7 @@ import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from 
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { renderCut } from "./ui/pages/cut.ts";
+import { renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -975,6 +975,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         blocks,
         beats,
         cuts,
+        windowSize: BLOCK_WINDOW,
         /*
          * What the clean-ups would actually do, counted from THIS transcript.
          *
@@ -1081,6 +1082,52 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
  * short — and origin is exactly what keeps it out of your cut now that `kept`
  * means one thing.
  */
+/**
+ * How many blocks the editor renders before it starts scrolling for more.
+ *
+ * A three-hour podcast is 2,700 blocks and 35,100 word spans — 13.2 MB in one
+ * response, with a canvas each queued for a video seek. 120 fills a tall
+ * screen with room to scroll before the next slice is asked for.
+ */
+const BLOCK_WINDOW = 120;
+
+/**
+ * The next slice of the block list.
+ *
+ * Rendered by the same renderCut markup the first page used, so the client
+ * appends HTML rather than building a block — one definition, no drift.
+ */
+app.get("/api/projects/:id/blocks", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const source = await getSource(c.env.DB, project.source_id, user.id);
+  const [segments, beats] = await Promise.all([
+    getSegments(c.env.DB, project.source_id),
+    getBeats(c.env.DB, project.id),
+  ]);
+  const cuts = parseCuts(project.cuts);
+  const blocks = buildBlocks({
+    segments,
+    beats,
+    cuts,
+    order: parseOrder(project.block_order ?? null),
+    posterKey: source?.poster_r2_key ?? null,
+  });
+
+  const from = Math.max(0, Number(c.req.query("from")) || 0);
+  const to = from + BLOCK_WINDOW;
+  return c.json({
+    html: renderBlockSlice(project.id, blocks, cuts, from, to),
+    from,
+    to: Math.min(to, blocks.length),
+    total: blocks.length,
+    more: to < blocks.length,
+  });
+});
+
 app.post("/api/projects/:id/blocks/short", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

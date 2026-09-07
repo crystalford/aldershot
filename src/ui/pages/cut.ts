@@ -47,6 +47,13 @@ export interface CutData {
    * to, because fillerCuts and pauseCuts find real words and real gaps and
    * timeSaved measures them through the same ranges the render uses.
    */
+  /**
+   * How many blocks to render up front. The rest come in on scroll.
+   *
+   * Enough to fill a tall screen and scroll a little before the next slice is
+   * asked for, small enough that an hour-long source is a normal page.
+   */
+  windowSize: number;
   cleanups: {
     fillers: { found: number; savedMs: number };
     pauses: { found: number; savedMs: number };
@@ -368,6 +375,28 @@ function assist(d: CutData): string {
   </div>`;
 }
 
+/**
+ * A slice of the block list, for scrolling into a long transcript.
+ *
+ * Deliberately the same blockRow the first page uses: the client appends this
+ * HTML verbatim and never constructs a block itself, so there is exactly one
+ * definition of what a block looks like.
+ */
+export function renderBlockSlice(
+  projectId: string,
+  blocks: Block[],
+  cuts: Cut[],
+  from: number,
+  to: number,
+): string {
+  const out: string[] = [];
+  for (let i = from; i < Math.min(to, blocks.length); i++) {
+    out.push(blockRow(blocks[i], cuts, i, blocks.length));
+    out.push(seam(projectId, i + 1));
+  }
+  return out.join("");
+}
+
 export function renderCut(d: CutData): string {
   const [backLabel, backHref] = d.cameFrom;
 
@@ -424,11 +453,30 @@ export function renderCut(d: CutData): string {
     ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" controls style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>`
     : "";
 
+  /*
+   * A WINDOW of blocks, not all of them.
+   *
+   * Measured on a real three-hour podcast: 2,700 blocks and 35,100 word spans
+   * came to 13.2 MB of HTML in one response, plus a canvas per block each
+   * queued for a video seek. The design's own demo is a 48-minute podcast, so
+   * this is the normal case rather than an extreme one.
+   *
+   * The rest arrive from /api/projects/:id/blocks as you scroll, rendered by
+   * this same function on the server — the client never builds a block, so
+   * there is no second copy of this markup to drift.
+   */
+  const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0)];
-  d.blocks.forEach((b, i) => {
+  shown.forEach((b, i) => {
     list.push(blockRow(b, d.cuts, i, d.blocks.length));
     list.push(seam(d.projectId, i + 1));
   });
+  if (d.blocks.length > shown.length) {
+    /* The sentinel says how much is left, so a long transcript admits its
+       length instead of just ending. */
+    list.push(`<div id="more-blocks" data-from="${shown.length}" data-total="${d.blocks.length}"
+      style="padding:14px 0;text-align:center;font-size:${SIZE.meta};color:${C.ink32}"><span data-content>${d.blocks.length - shown.length} more lines</span></div>`);
+  }
 
   return `${head}${strip}${failed}
   <div style="margin-top:20px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">

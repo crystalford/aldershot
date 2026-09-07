@@ -362,6 +362,12 @@ if (blocksEl) {
    * timecode are already on the button, so a row with no frame is still a
    * complete, legible control.
    */
+  /* Assigned by paintFrames and by the word indexer, and called whenever a new
+     window of blocks is appended. Empty until then, so the loader can call
+     them unconditionally. */
+  let observeFrames = () => {};
+  let reindexWords = () => {};
+
   const paintFrames = () => {
     const canvases = [...blocksEl.querySelectorAll(".blk-frame")];
     if (!canvases.length || !video || !video.getAttribute("src")) return;
@@ -418,7 +424,12 @@ if (blocksEl) {
       void drain();
     }, { rootMargin: "300px" });
 
-    shot.addEventListener("loadedmetadata", () => canvases.forEach((c) => watch.observe(c)), { once: true });
+    /* More blocks arrive as you scroll; their canvases have to be taken on by
+       the same observer and the same one-at-a-time queue, or a long transcript
+       would either paint nothing after the first window or start a second
+       video decoding in parallel with this one. */
+    observeFrames = () => blocksEl.querySelectorAll(".blk-frame").forEach((c) => watch.observe(c));
+    shot.addEventListener("loadedmetadata", observeFrames, { once: true });
     shot.load();
   };
   paintFrames();
@@ -431,18 +442,26 @@ if (blocksEl) {
    * existed — you could click one word at a time and nothing on the page ever
    * told you where the video was in the transcript.
    */
-  const words = [...blocksEl.querySelectorAll(".w")];
-  if (words.length && video) {
-    /* Sorted once. A pointer walks it rather than searching every frame,
-       because timeupdate fires several times a second and a 4,000-word
-       transcript scanned each time is a page that stutters while it plays. */
-    const timed = words
-      .map((el) => ({ el, s: Number(el.getAttribute("data-s")), e: Number(el.getAttribute("data-e")) }))
-      .filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e))
-      .sort((a, b) => a.s - b.s);
+  if (blocksEl.querySelector(".w") && video) {
+    /* Sorted, and REBUILT whenever more blocks arrive — a long transcript is
+       loaded a window at a time, and an index captured once would leave the
+       highlight and the selection counter blind to everything after the first
+       screenful. A pointer walks it rather than searching every frame, because
+       timeupdate fires several times a second and 35,000 words rescanned each
+       time is a page that stutters while it plays. */
+    let timed = [];
+    const indexWords = () => {
+      timed = [...blocksEl.querySelectorAll(".w")]
+        .map((el) => ({ el, s: Number(el.getAttribute("data-s")), e: Number(el.getAttribute("data-e")) }))
+        .filter((w) => Number.isFinite(w.s) && Number.isFinite(w.e))
+        .sort((a, b) => a.s - b.s);
+      cursor = 0;
+    };
 
     let lit = null;
     let cursor = 0;
+    indexWords();
+    reindexWords = indexWords;
 
     const light = () => {
       const ms = video.currentTime * 1000;
@@ -550,7 +569,7 @@ if (blocksEl) {
           }
         }
         window.getSelection()?.removeAllRanges();
-        retotal(out.afterS);
+        retotal(out.afterS, out.kept);
       } catch (err) {
         toast((err && err.message) || "That didn't save");
       }
@@ -568,14 +587,29 @@ if (blocksEl) {
   /* Optimistic, from the blocks on screen; corrected by the server's own
      figure when a cut comes back, because a line can carry word-level strikes
      this sum does not know about. */
-  const retotal = (afterS) => {
-    const kept = [...blocksEl.querySelectorAll(".blk")].filter((el) => el.dataset.struck !== "1");
+  /*
+   * The kept count is the WHOLE cut's, not the window's.
+   *
+   * This counted .blk elements in the DOM, which was the whole transcript
+   * until long sources started loading a window at a time — then striking one
+   * line on a three-hour podcast reported "479 kept" instead of "2699",
+   * because 479 was simply how far the reader had scrolled.
+   *
+   * The server's own figure is authoritative and comes back with every cut;
+   * the local step is optimistic and gets corrected a moment later.
+   */
+  let keptTotal = Number((headKept?.textContent || "").replace(/[^0-9]/g, "")) || 0;
+
+  const retotal = (afterS, keptFromServer) => {
+    if (typeof keptFromServer === "number") keptTotal = keptFromServer;
     const ms = typeof afterS === "number"
       ? afterS * 1000
-      : kept.reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
-    if (footRuntime) footRuntime.textContent = kept.length + " kept · " + clock(ms);
+      : [...blocksEl.querySelectorAll(".blk")]
+          .filter((el) => el.dataset.struck !== "1")
+          .reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
+    if (footRuntime) footRuntime.textContent = keptTotal + " kept · " + clock(ms);
     if (headRuntime) headRuntime.textContent = clock(ms);
-    if (headKept) headKept.textContent = kept.length + " kept";
+    if (headKept) headKept.textContent = keptTotal + " kept";
   };
 
   const paintBlock = (el, struck) => {
@@ -632,6 +666,59 @@ if (blocksEl) {
     },
     true,
   );
+
+  /*
+   * More of a long transcript, as you reach it.
+   *
+   * A three-hour podcast is 2,700 blocks and 35,100 word spans — 13.2 MB in
+   * one response, with a canvas each queued for a video seek. The server sends
+   * a window and this fetches the next one just before you get there.
+   *
+   * The HTML comes from the server, rendered by the same blockRow the first
+   * window used, so there is no second copy of a block's markup here to drift
+   * from it. Every gesture is delegated on #blocks, so appended rows are live
+   * with nothing to re-bind — only the two things that keep their own index of
+   * the words and canvases need telling.
+   */
+  const loadMore = async () => {
+    const sentinel = blocksEl.querySelector("#more-blocks");
+    if (!sentinel || sentinel.dataset.busy === "1") return;
+    sentinel.dataset.busy = "1";
+    try {
+      const res = await fetch(
+        "/api/projects/" + projectId + "/blocks?from=" + sentinel.getAttribute("data-from"),
+      );
+      if (!res.ok) throw new Error("Couldn't load the rest");
+      const out = await res.json();
+      sentinel.insertAdjacentHTML("beforebegin", out.html);
+
+      if (out.more) {
+        sentinel.setAttribute("data-from", String(out.to));
+        const left = out.total - out.to;
+        const label = sentinel.querySelector("span");
+        if (label) label.textContent = left + " more line" + (left === 1 ? "" : "s");
+        sentinel.dataset.busy = "0";
+      } else {
+        sentinel.remove();
+      }
+
+      reindexWords();
+      observeFrames();
+    } catch (err) {
+      sentinel.dataset.busy = "0";
+      toast((err && err.message) || "Couldn't load the rest");
+    }
+  };
+
+  if (blocksEl.querySelector("#more-blocks")) {
+    /* A long rootMargin so the next window is already on its way by the time
+       the end of this one is on screen — the scroll should not stop. */
+    const nearEnd = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) void loadMore(); },
+      { rootMargin: "1200px" },
+    );
+    nearEnd.observe(blocksEl.querySelector("#more-blocks"));
+  }
 
   blocksEl.addEventListener("click", async (e) => {
     /* Typing in a block, scrubbing its take, or using the live recorder is not
@@ -719,17 +806,19 @@ if (blocksEl) {
       const next = row.dataset.struck !== "1";
       row.dataset.busy = "1";
       paintBlock(row, next);
-      retotal();
+      /* One block changed, so the total moves by one — recounting the DOM
+         would only ever count what has been scrolled into. */
+      retotal(undefined, keptTotal + (next ? -1 : 1));
       try {
         /* The BLOCK id, not a number parsed out of it. A beat's id is a ULID,
            and Number(ULID) is NaN — which the server accepted and then threw
            away, so striking a block you inserted did nothing. */
         const id = row.getAttribute("data-block");
         const out = await sendCut({ kind: "segment", block: id, seg: Number(id.slice(2)), word: null });
-        retotal(out.afterS);
+        retotal(out.afterS, out.kept);
       } catch (err) {
         paintBlock(row, !next);
-        retotal();
+        retotal(undefined, keptTotal + (next ? 1 : -1));
         toast((err && err.message) || "That didn't save");
       } finally {
         row.dataset.busy = "0";
