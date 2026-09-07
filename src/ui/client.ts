@@ -540,6 +540,82 @@ function wirePlayer(root, video) {
   };
 
   /*
+   * THE NARRATION, played alongside the picture.
+   *
+   * A block of b-roll you talked over renders as the shot with your voice
+   * mixed in and the shot's own audio ducked under it. The preview showed the
+   * picture in SILENCE — so "Watch the cut", which exists on the claim that
+   * what it plays is what you get, was lying about exactly the blocks that
+   * needed it most.
+   *
+   * One element, reused. Created on demand so a cut with no narration in it
+   * never makes one.
+   */
+  let voiceEl = null;
+  let ducked = false;
+
+  const voiceFor = () => {
+    if (!voiceEl) {
+      voiceEl = document.createElement("audio");
+      voiceEl.preload = "metadata";
+      /* IN the document, hidden. A detached element does play, but nothing can
+         see it — not the page, not a test, not me. An audio element that only
+         exists in a closure is the kind of thing that keeps playing after
+         everything else has stopped and nobody can find out why. */
+      voiceEl.hidden = true;
+      voiceEl.setAttribute("data-cut-voice", "1");
+      root.appendChild(voiceEl);
+    }
+    return voiceEl;
+  };
+
+  const stopVoice = () => {
+    if (voiceEl) voiceEl.pause();
+    if (ducked) {
+      /* The bed comes back up, or every later block plays quiet. */
+      video.volume = 1;
+      ducked = false;
+    }
+  };
+
+  /*
+   * Keep the take with the picture.
+   *
+   * Called on the same timeupdate that drives the skip, so it re-seeks rather
+   * than trusting two clocks to stay together — scrubbing, a range change and
+   * a rate change all land here.
+   */
+  const syncVoice = (range) => {
+    if (!cut || !range || !range.voice) return stopVoice();
+
+    const el = voiceFor();
+    const src = "/media/" + range.voice;
+    if (el.getAttribute("src") !== src) {
+      el.setAttribute("src", src);
+      el.load();
+    }
+
+    const want = Math.max(0, video.currentTime - range.start);
+    if (Math.abs(el.currentTime - want) > 0.25) el.currentTime = want;
+    el.playbackRate = video.playbackRate;
+
+    /*
+     * DUCK THE BED, as the render does.
+     *
+     * The export sidechain-compresses the shot's own audio under the voice.
+     * A browser cannot sidechain, but dropping the video's volume while the
+     * take plays is the audible half of it and much closer than leaving both
+     * at full, which is two people talking over each other.
+     */
+    if (!ducked) {
+      video.volume = 0.25;
+      ducked = true;
+    }
+    if (video.paused) el.pause();
+    else el.play().catch(() => {});
+  };
+
+  /*
    * THE WHOLE MECHANIC.
    *
    * Run off the end of a kept range and jump to the start of the next one.
@@ -554,7 +630,13 @@ function wirePlayer(root, video) {
     const here = cut.ranges.findIndex(
       (r) => r.key === key && video.currentTime >= r.start - 0.02 && video.currentTime < r.end,
     );
-    if (here >= 0) return;
+    if (here >= 0) {
+      /* Inside a kept range: this is where the narration lives or does not. */
+      cut.lastIdx = here;
+      syncVoice(cut.ranges[here]);
+      return;
+    }
+    stopVoice();
 
     /* Not inside any kept range. Which one comes next in the cut? */
     const after = cut.ranges.find((r) => r.key === key && r.start > video.currentTime);
@@ -576,8 +658,10 @@ function wirePlayer(root, video) {
   };
 
   video.addEventListener("play", paintFace);
-  video.addEventListener("pause", paintFace);
-  video.addEventListener("ended", paintFace);
+  video.addEventListener("pause", () => { stopVoice(); paintFace(); });
+  /* A take still playing after the picture has stopped is the kind of ghost
+     this codebase keeps finding. */
+  video.addEventListener("ended", () => { stopVoice(); paintFace(); });
   video.addEventListener("timeupdate", () => { if (cut) skip(); paintBar(); });
   video.addEventListener("progress", paintBar);
   video.addEventListener("loadedmetadata", paintDuration);
@@ -642,6 +726,7 @@ function wirePlayer(root, video) {
    * put a player into cut mode is to have a player.
    */
   const setCut = (ranges) => {
+    stopVoice();
     if (!ranges || !ranges.length) {
       cut = null;
       paintDuration();
@@ -649,7 +734,10 @@ function wirePlayer(root, video) {
     }
     let at = 0;
     const list = ranges.map((r) => {
-      const one = { key: r.key, start: r.start, end: r.end, at };
+      /* voice travels with the range. Rebuilding these without it is how the
+         narration got dropped the first time — the fetch carried it and this
+         copied four fields out of five. */
+      const one = { key: r.key, start: r.start, end: r.end, voice: r.voice || null, at };
       at += r.end - r.start;
       return one;
     });
@@ -3420,6 +3508,9 @@ document.addEventListener("click", async (e) => {
       key: c.previewKey || c.sourceKey,
       start: c.start_ms / 1000,
       end: c.end_ms / 1000,
+      /* Narration recorded over this shot. The export mixes it in; a preview
+         that showed the picture in silence would be lying about the file. */
+      voice: c.voiceKey || null,
     }));
     if (!ranges.length) {
       return void toast("There's nothing kept to watch yet.");
