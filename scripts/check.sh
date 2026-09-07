@@ -26,3 +26,8 @@ node scripts/check-fidelity.cjs
 
 echo
 echo "ALL CHECKS PASSED"
+echo
+# The render is the one thing this cannot prove on its own: it needs ffmpeg,
+# the encoder and a fixture host. `npm run check:render` says what is missing
+# and skips cleanly, so it is a pointer here rather than a gate.
+echo "  the export itself:  npm run check:render   (see scripts/check-render.cjs)"
