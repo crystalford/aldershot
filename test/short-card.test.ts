@@ -69,7 +69,11 @@ test("every card paints its own moment, not the video's first frame", () => {
 
 test("a made short plays, and can be downloaded", () => {
   const html = page({ render: ready() });
-  assert.match(html, /class="short-video"/);
+  /* The video and a bar to drive it. The bar finds its video by being next to
+     it, so there is no marker class to assert on any more — which is the
+     point: a fifth surface works without a fifth special case. */
+  assert.match(html, /<video[^>]+\/media\/u\/1\/renders\/r1\.mp4/);
+  assert.match(html, /class="player"/);
   assert.match(html, /Download/);
   /* Scoped to the card's own button: the sheet carries a "Make the video" of
      its own, which is a different control on a different surface. */

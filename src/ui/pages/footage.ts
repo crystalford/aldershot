@@ -356,7 +356,7 @@ function momentCard(m: MomentRow): string {
 
   const media = `<canvas class="short-frame" data-media="${esc(m.source_key)}" data-at="${m.start_ms}" width="320" height="180"
       style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
-    <video class="short-video" preload="none" playsinline src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent"></video>
+    <video preload="none" playsinline src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:transparent"></video>
     <div class="player" style="position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:7px;padding:6px 8px;background:linear-gradient(to top,rgba(8,8,10,.86),rgba(8,8,10,0))">
       <button class="pl-play" aria-label="Play" style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:${RADIUS.button};background:transparent;border:none;cursor:pointer">
         <span class="pl-i-play" style="display:grid">${iconPlay(11, C.ink)}</span>

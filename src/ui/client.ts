@@ -424,9 +424,25 @@ function wirePlayer(root, video) {
     paintBar();
   };
 
-  playBtn?.addEventListener("click", () => {
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
+  playBtn?.addEventListener("click", async () => {
+    if (!video.paused) return void video.pause();
+    try {
+      await video.play();
+    } catch (err) {
+      /* Autoplay policy, usually. A press is a gesture, so this is rare. */
+      return void toast("That won't play here.");
+    }
+    /*
+     * A clip can point past the end of its own file — a source replaced, or
+     * bounds written before trimming clamped them — and then play() resolves,
+     * nothing happens, and the button looks broken. Say so rather than sit
+     * there: silence is the thing this codebase keeps getting wrong.
+     */
+    setTimeout(() => {
+      if (video.paused && !video.ended) {
+        toast(video.error ? "That video wouldn't load." : "There's nothing at that point in the video.");
+      }
+    }, 700);
   });
 
   video.addEventListener("play", paintFace);
@@ -620,11 +636,6 @@ if (blocksEl) {
   /* The editor's blocks all come out of one file, so its canvases carry only
      a time and the source is passed in. */
   observeFrames = paintMoments(blocksEl.querySelectorAll(".blk-frame"), video?.getAttribute("src") || "");
-
-  /* One bar, one video. Clipping puts one on every card, so the wiring takes
-     a root rather than reaching for the page's only player. */
-  const playerEl = document.querySelector(".player");
-  if (playerEl && video) wirePlayer(playerEl, video);
 
   /*
    * The word being spoken lights up, and a selection can be cut.
@@ -3560,14 +3571,29 @@ if (clipDrop) {
  * the same block rather than a second copy of it.
  */
 const shortCards = document.querySelectorAll("[data-short], [data-moment]");
-if (shortCards.length) {
-  paintMoments(document.querySelectorAll(".short-frame"), "");
-  shortCards.forEach((card) => {
-    const v = card.querySelector(".short-video");
-    const bar = card.querySelector(".player");
-    if (v && bar) wirePlayer(bar, v);
-  });
-}
+if (shortCards.length) paintMoments(document.querySelectorAll(".short-frame"), "");
+
+/*
+ * EVERY player bar on the page, wired to the video it belongs to.
+ *
+ * There were three call sites — the editor reached for the page's only
+ * .player, the cards looped their own, and the source page had a bar that
+ * nothing wired at all, so /sources/:id shipped with a player made of dead
+ * buttons. Nobody had opened that page; the conventions check found it.
+ *
+ * A bar belongs to the video nearest it: inside the same wrapper if there is
+ * one, otherwise the page's own. One rule, so a fourth surface that renders
+ * the markup works without anybody remembering to add a fourth case.
+ */
+const allVideos = document.querySelectorAll("video");
+document.querySelectorAll(".player").forEach((bar) => {
+  const own = (bar.parentElement || document).querySelector("video");
+  /* Falling back to the page's first video is only safe when there IS only
+     one. On a grid of cards it would wire one card's bar to another card's
+     video, and pressing play would start something else entirely. */
+  const video = own || (allVideos.length === 1 ? allVideos[0] : null);
+  if (video) wirePlayer(bar, video);
+});
 
 /*
  * ADJUST — the verb the clipper never had.

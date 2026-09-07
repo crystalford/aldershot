@@ -568,7 +568,131 @@ async function checkStrings() {
   }
 }
 
+/*
+ * The rules this codebase already states, enforced instead of described.
+ *
+ * Every bug fixed in the sweep had its own correct rule written in a comment
+ * two functions above it. "A tab you can never fill is a lie" was stated in
+ * the function that renders the tabs, applied to Threads, and not applied to
+ * Find in the same expression. A score of 0 was fixed in the editor with a
+ * paragraph explaining why, and left wrong in Clipping. Prose does not stop
+ * the sixth instance; a grep does.
+ *
+ * Only rules that are genuinely mechanical live here. Anything needing
+ * judgement belongs in review, not in a regex that will one day be wrong.
+ */
+function checkConventions() {
+  const pages = walk(path.join(ROOT, 'src/ui')).filter((f) => !f.endsWith('client.ts'));
+  const client = fs.readFileSync(path.join(ROOT, 'src/ui/client.ts'), 'utf8');
+  const bad = [];
+  const rel = (f) => path.relative(ROOT, f);
+
+  /* Comments are stripped first. Every fix in this codebase explains itself by
+     quoting the code it replaced — "this was ${s.score ?? 0} in green" — and a
+     check that flags the explanation punishes the documentation. */
+  const decomment = (t) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
+
+  for (const file of pages) {
+    const src = decomment(fs.readFileSync(file, 'utf8'));
+
+    /* Chrome's own player in a designed dark page — replaced three times
+       before the last instance went. wirePlayer is the one player. */
+    for (const m of src.matchAll(/<video\b[^>]*\bcontrols\b/g)) {
+      bad.push(rel(file) + ': a <video> with native controls — use the player in client.ts');
+    }
+
+    /* auto-fill makes empty tracks, so two cards sit in a four-track grid
+       with two blanks beside them. Five surfaces read as half-empty pages. */
+    for (const m of src.matchAll(/repeat\(\s*auto-fill/g)) {
+      bad.push(rel(file) + ': repeat(auto-fill …) leaves empty tracks — auto-fit collapses them');
+    }
+
+    /* "A zero is not a verdict, it is the absence of one." saveClips writes
+       score 0 for anything unrated, and rendering it says the model looked
+       and found nothing. */
+    for (const m of src.matchAll(/score\s*\?\?\s*0/g)) {
+      bad.push(rel(file) + ': score ?? 0 renders an unscored item as a verdict of zero');
+    }
+
+    /* A control that is disabled in the markup itself can never become
+       enabled — it is a promise the product cannot keep. Disabled by a
+       condition is fine; that is a control with a reason. */
+    for (const m of src.matchAll(/<(?:button|input|select|textarea)\b[^>]*?\sdisabled(?=[\s>])/g)) {
+      const before = src.slice(Math.max(0, m.index - 200), m.index + m[0].length);
+      if (!/\$\{|\?/.test(before.slice(-120))) {
+        bad.push(rel(file) + ': a control hardcoded disabled — make it conditional or leave it out');
+      }
+    }
+  }
+
+  if (bad.length) fail('conventions', 'A rule this codebase already states, broken again.', [...new Set(bad)].join('\n'));
+  else pass('conventions', 'no native players, empty grid tracks, zero-scores or permanently disabled controls');
+}
+
+/*
+ * THE RECURRING BUG, as a check.
+ *
+ * Not a broken feature — a feature that exists on the server, had a UI built
+ * for it once, and is no longer connected to it. Ten of them this session:
+ * the recorder twice, renderFootage, the AI controls, the clip picker,
+ * buildSummary, the passes log, /api/begin with an existing source.
+ *
+ * Two directions, because the failure has two shapes.
+ */
+function checkReachable() {
+  const index = fs.readFileSync(path.join(ROOT, 'src/index.ts'), 'utf8');
+  const client = fs.readFileSync(path.join(ROOT, 'src/ui/client.ts'), 'utf8');
+  const pages = walk(path.join(ROOT, 'src/ui'))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
+  const server = walk(path.join(ROOT, 'src'))
+    .filter((f) => !f.includes('/ui/'))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
+  const problems = [];
+
+  /* 1. An API route nothing can reach. The client builds most paths by
+        concatenation, so a route is matched on its distinctive literal
+        segments rather than on the whole pattern. */
+  const ROUTE = /app\.(?:get|post|put|delete)\("(\/api\/[^"]+)"/g;
+  for (const m of index.matchAll(ROUTE)) {
+    const route = m[1];
+    /* The pieces between parameters — "/api/projects", "/blocks", "/short". */
+    const parts = route.split('/').filter((seg) => seg && !seg.startsWith(':') && seg !== '*' && seg !== 'api');
+    if (!parts.length) continue;
+    const tail = parts[parts.length - 1];
+    const seen = client.includes('/' + tail) || pages.includes('/' + tail) || server.includes('/' + tail);
+    if (!seen) problems.push('route ' + route + ' — nothing anywhere asks for it');
+  }
+
+  /* 2. A table written and never read. This is the passes log exactly: every
+        pass has written a row since the feature shipped, its own comment says
+        "shown as the Passes log", and the only other statement about it in
+        the codebase was a DELETE. */
+  const schema = fs.readFileSync(path.join(ROOT, 'migrations/0006_v2_core.sql'), 'utf8');
+  const all = fs.readFileSync(path.join(ROOT, 'src/index.ts'), 'utf8') + '\n' + server + '\n' + pages;
+  for (const m of schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
+    const table = m[1];
+    const written = new RegExp('(INSERT INTO|UPDATE)\\s+' + table + '\\b', 'i').test(all);
+    const read = new RegExp('FROM\\s+' + table + '\\b', 'i').test(all.replace(new RegExp('DELETE FROM\\s+' + table + '\\b', 'gi'), ''));
+    if (written && !read) problems.push('table ' + table + ' — written, and nothing ever reads it back');
+  }
+
+  if (problems.length) {
+    fail(
+      'reachable',
+      'Something on the server has no way to reach a person. Either wire it up or take it out.',
+      problems.join('\n'),
+    );
+  } else {
+    pass('reachable', 'every API route is asked for, and every table written is read back');
+  }
+}
+
 checkTemplate();
+checkConventions();
+checkReachable();
 checkWiring();
 
 checkStrings().then(() => {

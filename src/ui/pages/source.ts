@@ -13,6 +13,7 @@ import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { hms, type SourceRow } from "./footage.ts";
 import { emptyState } from "./empty.ts";
+import { iconPause, iconPlay } from "../icons.ts";
 
 export interface SegmentRow {
   idx: number;
@@ -129,10 +130,33 @@ export function renderSource(d: SourceViewData): string {
       : "";
 
   /* The footage, playable. This page is the source; not showing it was the
-     clearest sign that it had stopped being a real destination. */
-  const player = `<video id="src-video" playsinline preload="metadata"${
-    s.poster_r2_key ? ` poster="/media/${esc(s.poster_r2_key)}"` : ""
-  } src="/media/${esc(s.r2_key)}" controls style="width:100%;max-width:520px;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block;margin-top:18px"></video>`;
+     clearest sign that it had stopped being a real destination.
+
+     Our player, not Chrome's — the fourth and last instance, and the one
+     nobody had opened. The check that found it exists because this kept
+     happening. */
+  const player = `<div style="max-width:520px;margin-top:18px">
+    <video id="src-video" playsinline preload="metadata"${
+      s.poster_r2_key ? ` poster="/media/${esc(s.poster_r2_key)}"` : ""
+    } src="/media/${esc(s.r2_key)}" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:${RADIUS.card};display:block"></video>
+    <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
+      <button class="pl-play" aria-label="Play" style="flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:${RADIUS.button};background:transparent;border:none;cursor:pointer">
+        <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
+        <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
+      </button>
+      <span class="pl-now" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">0:00</span>
+      <div class="pl-track" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+        style="position:relative;flex:1 1 60px;min-width:min(50px,100%);height:16px;cursor:pointer;touch-action:none">
+        <div style="position:absolute;left:0;right:0;top:7px;height:2px;background:rgba(255,255,255,0.10)"></div>
+        <div class="pl-buffer" style="position:absolute;left:0;top:7px;width:0;height:2px;background:rgba(255,255,255,0.18)"></div>
+        <div class="pl-played" style="position:absolute;left:0;top:7px;width:0;height:2px;background:${C.ink}"></div>
+        <div class="pl-knob" style="position:absolute;left:0;top:4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:${C.ink}"></div>
+      </div>
+      <span class="pl-dur" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums">${hms(0)}</span>
+      <button class="pl-rate" aria-label="Speed" style="flex:none;padding:0 6px;background:transparent;border:none;color:${C.ink70};cursor:pointer;font-family:${FONT.ui};font-size:${SIZE.meta};font-weight:600"><span data-content>1×</span></button>
+      <button class="pl-full" aria-label="Fullscreen" style="flex:none;padding:0 6px;background:transparent;border:none;color:${C.ink70};cursor:pointer;font-family:${FONT.ui};font-size:${SIZE.meta};font-weight:600">Full</button>
+    </div>
+  </div>`;
 
   const head = `<a href="/footage?tab=sources" style="font-size:${SIZE.secondary};color:${C.ink45}">← Footage</a>
   <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em;line-height:1.2;margin-top:14px" data-content>${esc(s.title)}</div>

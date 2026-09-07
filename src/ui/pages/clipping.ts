@@ -252,7 +252,7 @@ function shortCard(s: ShortRow): string {
    * control bar takes a quarter of the frame.
    */
   const media = playable
-    ? `<video class="short-video" preload="metadata" playsinline src="/media/${esc(r!.r2_key!)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>
+    ? `<video preload="metadata" playsinline src="/media/${esc(r!.r2_key!)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000"></video>
        <div class="player" data-compact="1" style="position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:7px;padding:6px 8px;background:linear-gradient(to top,rgba(8,8,10,.86),rgba(8,8,10,0))">
          <button class="pl-play" aria-label="Play" style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:${RADIUS.button};background:transparent;border:none;cursor:pointer">
            <span class="pl-i-play" style="display:grid">${iconPlay(11, C.ink)}</span>
