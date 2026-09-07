@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -990,9 +990,12 @@ app.get("/clipping", async (c) => {
    * the other half of Footage saying thirteen and Clipping saying two about
    * the same table.
    */
+  /* Only this video's. Clipping is a verb now — with nothing picked the page
+     is the picker, so loading every short in the library was work for a list
+     that is no longer rendered. Footage is where everything you have lives. */
   const shorts = source
     ? (await listClipsForSource(c.env.DB, source.id, user.id)).filter((cl) => cl.origin === "clipping")
-    : await listShorts(c.env.DB, user.id);
+    : [];
 
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */

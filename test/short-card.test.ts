@@ -31,8 +31,19 @@ const short = (over: Partial<ShortRow> = {}): ShortRow => ({
   ...over,
 });
 
+const SOURCE = {
+  id: "s1",
+  title: "Kino Casino #372",
+  duration_s: 2880,
+  transcript_state: "ready",
+  poster_r2_key: "poster.jpg",
+  clip_count: 11,
+};
+
+/* With a video picked. Clipping is a verb: /clipping on its own is the picker,
+   and cards only exist once you have pointed it at something. */
 const page = (over: Partial<ShortRow> = {}) =>
-  renderClipping({ source: null, available: [], shorts: [short(over)], job: null, fromEditor: false });
+  renderClipping({ source: SOURCE, available: [SOURCE], shorts: [short(over)], job: null, fromEditor: false });
 
 const ready = (over: Partial<NonNullable<ShortRow["render"]>> = {}) => ({
   id: "r1",
@@ -123,7 +134,17 @@ test("shape and captions are on the page, so the lede is not a lie", () => {
 });
 
 test("an empty Clipping offers no sheet and no settings to nothing", () => {
-  const html = renderClipping({ source: null, available: [], shorts: [], job: null, fromEditor: false });
+  const html = renderClipping({ source: SOURCE, available: [SOURCE], shorts: [], job: null, fromEditor: false });
   assert.doesNotMatch(html, /id="adjust"/);
   assert.doesNotMatch(html, /class="clip-form"/);
+});
+
+test("with no video picked it is the picker, not a library", () => {
+  /* The third list of clips in the product, after Footage's. Each nav item
+     means one thing: this one is how you turn a video into shorts. */
+  const html = renderClipping({ source: null, available: [SOURCE], shorts: [], job: null, fromEditor: false });
+  assert.match(html, /Pick a video and it does the rest/);
+  assert.match(html, /Drop a video, or clip one you already have/);
+  assert.doesNotMatch(html, /data-short=/);
+  assert.doesNotMatch(html, /id="adjust"/);
 });

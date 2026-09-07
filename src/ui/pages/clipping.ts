@@ -443,7 +443,9 @@ export function renderClipping(d: ClippingData): string {
     ? ""
     : pageHeading(
         "Clipping",
-        d.source || d.shorts.length
+        /* The lede follows what is on the page. With no video picked there is
+           nothing to watch or keep — there is a video to choose. */
+        d.source
           ? "Scored vertical shorts, captions burned in — no brief needed. Watch them, keep the ones that land."
           : "Scored vertical shorts, captions burned in — no brief needed. Pick a video and it does the rest.",
       );
@@ -455,16 +457,22 @@ export function renderClipping(d: ClippingData): string {
    * video they came from. Lead with the work; the picker follows it.
    */
   if (!d.source) {
-    /* No section label: these are every short in the library, so "Shorts from
-       this footage" — the prototype's phrase for one video's shorts — would be
-       a lie here, and the page's own lede already says what they are. */
-    const made = d.shorts.length
-      ? `<div style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),220px));gap:14px">${d.shorts.map(shortCard).join("")}</div>`
-      : "";
-    /* Shorts first: what you have made is the point of the surface, and the
-       picker is how you make another. Leading with the picker made Clipping a
-       third copy of the video list. */
-    return heading + (d.shorts.length ? output() : "") + made + picker(d) + (d.shorts.length ? adjustSheet() : "");
+    /*
+     * CLIPPING IS A VERB.
+     *
+     * This used to lead with every short in the library, and the reasoning was
+     * sound at the time: made shorts were otherwise invisible unless you
+     * remembered which video they came from. That is no longer true — Footage's
+     * clip cards carry a Short badge, a player and Download now — and what was
+     * left was a third list of clips in a product whose owner had already said
+     * "the clipping page, then theres also clips in the footage, like .. and
+     * it's all just kind of not thought out properly as a UX".
+     *
+     * So each nav item means exactly one thing: Home is what needs you, Editor
+     * is the edit you are in, Footage is everything you have, and this is how
+     * you turn a video into shorts. Pick one and it does the rest.
+     */
+    return heading + picker(d);
   }
 
   const running = d.job && (d.job.state === "queued" || d.job.state === "running");
