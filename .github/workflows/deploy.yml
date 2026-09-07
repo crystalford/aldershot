@@ -83,13 +83,33 @@ jobs:
           # which was not true and sent me looking in the wrong place. A guard
           # that cannot tell "unparseable" from "unsafe" wastes the failure it
           # just caused.
+          #
+          # And it has to know what a STRING is. The regex version did not, so
+          # the /* inside "globs": ["**/*.woff2"] read as the start of a block
+          # comment. That was harmless until the file grew a real block comment
+          # later on — then the strip ran from the glob to that comment's */ and
+          # ate the config in between. A valid file failed to parse, the deploy
+          # stopped, and the reason pointed at a comment rather than at the
+          # stripper. Walking the text is a few more lines and cannot do that.
           node -e '
             const fs=require("fs");
-            const src=fs.readFileSync("wrangler.jsonc","utf8")
-              .replace(/\/\*[\s\S]*?\*\//g,"")
-              .replace(/^\s*\/\/.*$/gm,"");
+            const raw=fs.readFileSync("wrangler.jsonc","utf8");
+            let out="", i=0, inStr=false;
+            while (i < raw.length) {
+              const c = raw[i], d = raw[i+1];
+              if (inStr) {
+                out += c;
+                if (c === "\\") { out += raw[i+1] ?? ""; i += 2; continue; }
+                if (c === "\"") inStr = false;
+                i++; continue;
+              }
+              if (c === "\"") { inStr = true; out += c; i++; continue; }
+              if (c === "/" && d === "*") { const e = raw.indexOf("*/", i+2); i = e < 0 ? raw.length : e+2; continue; }
+              if (c === "/" && d === "/") { const e = raw.indexOf("\n", i); i = e < 0 ? raw.length : e; continue; }
+              out += c; i++;
+            }
             let cfg;
-            try { cfg = JSON.parse(src); }
+            try { cfg = JSON.parse(out); }
             catch (e) { console.error("PARSE " + e.message); process.exit(2); }
             if ("DEV_LOGIN_EMAIL" in (cfg.vars||{})) process.exit(1);
           '
