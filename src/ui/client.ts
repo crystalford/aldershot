@@ -2132,7 +2132,7 @@ function showUpload({ sourceId, name, pct, state, href, error, sent, totalBytes,
     state === "failed"
       ? uploadError(error)
       : state === "done"
-        ? "Reading " + name
+        ? "Transcribing " + name
         : "Uploading " + name;
 
   const detail =
@@ -2510,7 +2510,7 @@ if (composer) {
          not been read yet has nothing to read. */
       const ready = (out.sources || []).filter((sv) => sv.transcript_state === "ready");
       if (!ready.length) {
-        list.textContent = "Nothing read yet — add a video and it starts reading.";
+        list.textContent = "Nothing transcribed yet — add a video and it starts.";
         return;
       }
       list.innerHTML = ready

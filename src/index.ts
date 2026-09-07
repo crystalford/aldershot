@@ -55,7 +55,7 @@ import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
-import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -537,7 +537,7 @@ app.get("/", async (c) => {
                 return { text: j.error ?? `Couldn't finish ${what}`, at: j.finished_at ?? j.created_at, state: j.state, href, link: "Retry" };
               }
               const done: Record<string, [string, string]> = {
-                transcribe: [`Finished reading ${what}`, "Start cutting"],
+                transcribe: [`Finished transcribing ${what}`, "Start cutting"],
                 score: [`Found the moments in ${what}`, "Review the cut"],
                 shorts: [`Cut shorts from ${what}`, "Open"],
                 render: [`Rendered ${what}`, "Download"],
@@ -684,7 +684,11 @@ app.get("/footage", async (c) => {
    * deliberate departure from the prototype rather than a slip.
    */
   const tab: FootTab =
-    t === "threads" ? "threads" : t === "moments" ? "moments" : t === "find" ? "find" : "sources";
+    t === "threads" ? "threads"
+    : t === "moments" ? "moments"
+    : t === "exports" ? "exports"
+    : t === "find" ? "find"
+    : "sources";
   /*
    * Default to what actually works.
    *
@@ -752,6 +756,10 @@ app.get("/footage", async (c) => {
     }
   }
 
+  /* Finished cuts. Loaded whatever tab you are on, because the tab bar shows
+     the count and a count that disagrees with its list is worse than none. */
+  const finished = await listFinished(c.env.DB, user.id, "cut");
+
   return c.html(
     surface(
       "archive",
@@ -759,6 +767,12 @@ app.get("/footage", async (c) => {
       "Footage — Aldershot",
       renderFootageFull({
         tab,
+        exports: finished.map((r) => ({
+          id: r.id, r2_key: r.r2_key, duration_s: r.duration_s, bytes: r.bytes,
+          format: r.format, aspect: r.aspect, created_at: r.created_at,
+          title: r.title, href: r.href,
+        })),
+        exportCount: finished.length,
         sources: sources.map((s) => ({
           ...s,
           pct: pctFor.get(s.id),
@@ -1081,23 +1095,25 @@ app.get("/clipping", async (c) => {
    * With nothing picked the page is the picker, so there is nothing to load.
    */
   /*
-   * NO LIST HERE. Footage is the list.
+   * NO LIST OF VIDEOS HERE — but a list of SHORTS, which is a different thing.
    *
    * "why not also just have them listed sort of like footage .. but also not
-   * sure about clipping like again feels almost redundant" — and it was.
-   * Turning Clipping into a verb left a picker behind, and a picker of your
-   * videos is Footage with fewer features and a worse layout. Footage already
-   * shows every video with a Clip it button on each one.
+   * sure about clipping like again feels almost redundant". Half right, and I
+   * acted on the wrong half: a list of your VIDEOS here is Footage with fewer
+   * features, so I removed it — and left a page that could only ever be about
+   * one video, with no way to reach any other. So it GUESSED, redirecting to
+   * the newest readable source, which meant "← All videos" bounced straight
+   * back to the screen you were on and landing here cold showed whatever was
+   * most recent. For the owner that was a nine-second drone clip with nothing
+   * in it.
    *
-   * So it behaves like the Editor, which was settled the same way: that opens
-   * the edit you were last in rather than listing edits. This opens the newest
-   * video you can actually clip. With nothing readable yet there is no list to
-   * show either — just the way to add one.
+   * Footage's Clips tab lists the moments a model FOUND. Nothing listed the
+   * shorts you have actually MADE, which is what this page's own subtitle has
+   * been promising all along: "watch them, keep the ones that land". So that
+   * is what it is. Choosing a video filters the list; it is not a precondition
+   * for the page existing.
    */
-  if (!source) {
-    const newest = sources.find((sv) => sv.transcript_state === "ready");
-    if (newest) return c.redirect(`/clipping?source=${newest.id}`);
-  }
+  const made = await listFinished(c.env.DB, user.id, "short");
 
   const shorts = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
 
@@ -1134,6 +1150,18 @@ app.get("/clipping", async (c) => {
         })),
         job,
         fromEditor: false,
+        made,
+        /* The empty state is the only place naming videos here is right: with
+           nothing made yet there is nothing else to show. */
+        videos: made.length
+          ? []
+          : sources
+              .filter((sv) => sv.transcript_state === "ready")
+              .slice(0, 12)
+              .map((sv) => ({
+                id: sv.id, title: sv.title, duration_s: sv.duration_s,
+                poster_r2_key: sv.poster_r2_key, clip_count: clipCounts.get(sv.id) ?? 0,
+              })),
       }),
       "nav",
       user.email,
@@ -2842,7 +2870,7 @@ app.get("/settings", async (c) => {
       uncapped,
       unit: "",
       color: ACCENT_CYAN,
-      note: "Spent reading footage, rendering cuts, and burning captions. Resets on the 1st.",
+      note: "Spent transcribing footage, rendering cuts, and burning captions. Resets on the 1st.",
     },
     {
       label: "Storage",

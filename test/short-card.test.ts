@@ -43,7 +43,7 @@ const SOURCE = {
 /* With a video picked. Clipping is a verb: /clipping on its own is the picker,
    and cards only exist once you have pointed it at something. */
 const page = (over: Partial<ShortRow> = {}) =>
-  renderClipping({ source: SOURCE, shorts: [short(over)], job: null, fromEditor: false });
+  renderClipping({ source: SOURCE, shorts: [short(over)], job: null, fromEditor: false, made: [], videos: [] });
 
 const ready = (over: Partial<NonNullable<ShortRow["render"]>> = {}) => ({
   id: "r1",
@@ -134,7 +134,7 @@ test("shape and captions are on the page, so the lede is not a lie", () => {
 });
 
 test("an empty Clipping offers no sheet and no settings to nothing", () => {
-  const html = renderClipping({ source: SOURCE, shorts: [], job: null, fromEditor: false });
+  const html = renderClipping({ source: SOURCE, shorts: [], job: null, fromEditor: false, made: [], videos: [] });
   assert.doesNotMatch(html, /id="adjust"/);
   assert.doesNotMatch(html, /class="clip-form"/);
 });
@@ -143,16 +143,52 @@ test("with nothing readable it offers a way in, not a list", () => {
   /* Reached only when there is no video to open — the route redirects into
      one otherwise. It used to list every video you own, which is Footage
      with fewer features, and Footage already has a Clip it button per card. */
-  const html = renderClipping({ source: null, shorts: [], job: null, fromEditor: false });
+  const html = renderClipping({ source: null, shorts: [], job: null, fromEditor: false, made: [], videos: [] });
   assert.match(html, /Pick a video and it does the rest/);
-  assert.match(html, /Nothing read yet/);
+  assert.match(html, /Nothing transcribed yet/);
   assert.match(html, /id="clipDrop"/);
   assert.doesNotMatch(html, /data-short=/);
   assert.doesNotMatch(html, /id="adjust"/);
 });
 
 test("the video being clipped is named, with a way back", () => {
-  const html = renderClipping({ source: SOURCE, shorts: [short()], job: null, fromEditor: false });
+  /*
+   * "All shorts", not "All videos". The link always pointed at /clipping, and
+   * /clipping used to redirect to a guessed video — so it could not move, and
+   * the owner reported exactly that: "I click ← All videos it just stays on
+   * this screen." It now goes to the list of what you have made.
+   */
+  const html = renderClipping({ source: SOURCE, shorts: [short()], job: null, fromEditor: false, made: [], videos: [] });
   assert.match(html, /Kino Casino #372/);
-  assert.match(html, /All videos/);
+  assert.match(html, /All shorts/);
+  assert.match(html, /href="\/clipping"/, "the way back has no destination");
+});
+
+test("with no video chosen, the shorts you made ARE the page", () => {
+  /*
+   * The bug this whole change is about: /clipping with no source used to
+   * redirect to whatever video was newest, so the page could never be a list
+   * and the back link could never move.
+   */
+  const html = renderClipping({
+    source: null, shorts: [], job: null, fromEditor: false,
+    made: [{
+      id: "r1", r2_key: "u/1/shorts/r1.mp4", duration_s: 34, aspect: "9:16",
+      created_at: 1, title: "Kino Casino #372", href: "/clipping?source=s1",
+    }],
+    videos: [],
+  });
+  assert.match(html, /Kino Casino #372/, "the short did not name what it came from");
+  assert.match(html, /u\/1\/shorts\/r1\.mp4\?download=1/, "no way to get the file");
+  assert.doesNotMatch(html, /Find clips in this/, "a verb with no object");
+});
+
+test("with nothing made, it offers the videos you could start from", () => {
+  /* The one case where naming videos here is right: there is nothing else to
+     show, and sending somebody to Footage to come back is a worse answer. */
+  const html = renderClipping({
+    source: null, shorts: [], job: null, fromEditor: false, made: [],
+    videos: [{ id: "s1", title: "Kino Casino #372", duration_s: 900, poster_r2_key: null, clip_count: 0 }],
+  });
+  assert.match(html, /href="\/clipping\?source=s1"/, "no way to start");
 });

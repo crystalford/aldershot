@@ -42,7 +42,7 @@ const JOBS: Job[] = [
   {
     name: "Cuts",
     color: GOLD,
-    body: "An hour becomes nine minutes. It cuts first; you fix anything by reading the text and striking lines.",
+    body: "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
     example: "tighten this webinar down to the actual demo",
   },
   {
@@ -63,12 +63,12 @@ const STEPS = [
   {
     n: "01",
     name: "Drop it",
-    body: "A file or a link, plus one sentence about what you want. It reads the whole thing — every word, timestamped.",
+    body: "A file or a link, plus one sentence about what you want. It transcribes the whole thing — every word, timestamped.",
   },
   {
     n: "02",
     name: "Decide",
-    body: "It shows you what it found and why. You keep, cut, and reorder by reading — Space plays, arrows step through.",
+    body: "It shows you what it found and why. You keep, cut, and reorder in the transcript — Space plays, arrows step through.",
   },
   {
     n: "03",
@@ -120,7 +120,7 @@ const PRO_FEATS = [
 const FAQ = [
   {
     q: "Do I need to know how to edit?",
-    a: "If you can read, you can cut. The editor is the transcript — strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
+    a: "If you can edit a sentence, you can cut a video. The editor is the transcript — strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
   },
   {
     q: "What happens to my footage?",
@@ -132,7 +132,7 @@ const FAQ = [
   },
   {
     q: "What's a processing minute?",
-    a: "A minute of work: reading footage, rendering a cut, burning captions. A one-hour video costs roughly its length to read once — after that, cutting and re-cutting from it is nearly free.",
+    a: "A minute of work: transcribing footage, rendering a cut, burning captions. A one-hour video costs roughly its length to transcribe once — after that, cutting and re-cutting from it is nearly free.",
   },
   {
     q: "Whose videos can I use?",
@@ -282,8 +282,8 @@ export function renderLanding(d: LandingData): string {
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Aldershot — editing is reading now.</title>
-<meta name="description" content="Drop an hour of video and say what you want out of it. Aldershot reads the whole thing and makes the first cut."/>
+<title>Aldershot — the timeline is gone.</title>
+<meta name="description" content="Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut."/>
 <style>${FONT_CSS}</style>
 <style>
   *,*::before,*::after{box-sizing:border-box}
@@ -324,8 +324,8 @@ export function renderLanding(d: LandingData): string {
   <div style="${PAD}">
     <div style="${WRAP};padding:clamp(64px,10vw,110px) 0 clamp(48px,7vw,72px);text-align:center">
       <div style="${EYEBROW};color:${GOLD}">NO TIMELINE · NO SCRUBBING · NO NLE</div>
-      <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">Editing is<br>reading now.</h1>
-      <p style="margin:20px auto 0;max-width:560px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop an hour of video and say what you want out of it. Aldershot reads the whole thing and makes the first cut — you strike what's weak, keep what's good, and it's done.</p>
+      <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">The timeline is gone.<br>Good.</h1>
+      <p style="margin:20px auto 0;max-width:560px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut — you strike what's weak, keep what's good, and it's done.</p>
       <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start cutting — free", true, d.google)}</div>
       <div style="margin-top:10px;font-size:12px;color:rgba(236,236,241,0.3)">No card. 300 processing minutes a month on the house.</div>
       ${notice(d)}
@@ -359,7 +359,7 @@ export function renderLanding(d: LandingData): string {
   <div id="what" style="${PAD}">
     <div style="${WRAP};padding:clamp(40px,6vw,64px) 0">
       <div style="${EYEBROW};color:rgba(236,236,241,0.35)">ONE INTAKE · FOUR THINGS OUT</div>
-      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:640px;line-height:1.15">It reads the sentence and works out the job.</h2>
+      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:640px;line-height:1.15">It takes the sentence and works out the job.</h2>
       <div style="margin-top:32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">${JOBS.map(jobCard).join("")}</div>
       <div style="margin-top:20px;padding:16px 18px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.18);font-size:13.5px;color:rgba(236,236,241,0.6);line-height:1.6">Ask for clips and there's nothing to manage — they land in your footage, tagged. Ask for a cut, a reaction, or an essay and it becomes a project you can put down and pick back up.</div>
     </div>
@@ -368,7 +368,7 @@ export function renderLanding(d: LandingData): string {
   <div id="how" style="${PAD};background:#0C0C0F">
     <div style="${WRAP};padding:clamp(48px,7vw,80px) 0">
       <div style="${EYEBROW};color:rgba(236,236,241,0.35)">HOW IT WORKS</div>
-      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;line-height:1.15">You never scrub a timeline.<br>You read, and you decide.</h2>
+      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;line-height:1.15">You never scrub a timeline.<br>You edit the words instead.</h2>
       <div style="margin-top:36px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px">
         ${STEPS.map(
           (s) => `<div style="padding:22px 20px;border-radius:11px;background:#131317">
@@ -381,8 +381,8 @@ export function renderLanding(d: LandingData): string {
 
       <div style="margin-top:44px;display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap">
         <div style="flex:1 1 320px;min-width:min(300px,100%)">
-          <div style="${EYEBROW};color:${GREEN}">EDIT BY READING</div>
-          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">Cut a sentence like you'd delete a sentence.</h3>
+          <div style="${EYEBROW};color:${GREEN}">CUT BY DELETING WORDS</div>
+          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">Delete a sentence, and the shot goes with it.</h3>
           <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said — the sponsor read, the tangent, the tic — in one go. Nothing is deleted: everything is one undo away.</p>
         </div>
         <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:20px;font-size:13.5px;line-height:2">
@@ -420,6 +420,48 @@ export function renderLanding(d: LandingData): string {
           <div style="${EYEBROW};color:${RED}">REACT WITHOUT OBS</div>
           <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">It makes the room for your reaction.</h3>
           <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Tell it what you're reacting to and it breaks the video into the moments that deserve a response — with a recording slot between each one. No screen capture, no pausing in real time, no sync. Read your take, or go off script.</p>
+        </div>
+      </div>
+
+      <!--
+        THE OTHER HALF OF THE PRODUCT.
+
+        This page sold the editor and only the editor — "editing is reading
+        now", "NO TIMELINE · NO SCRUBBING · NO NLE", "EDIT BY READING". The
+        pitch is Descript AND OpusClip, and somebody arriving because they
+        want a clipper found nothing here they recognised. Clipping is a nav
+        item in the product and was invisible on the way in.
+
+        Deliberately not an anonymous "drop a file, get clips before you sign
+        up" funnel yet: reading a video from a link is not built, and an
+        upload with no account has no plan and therefore no cap on the one
+        cost that can actually hurt. This says what the product does; if
+        people click it, the funnel is worth building properly.
+      -->
+      <div style="margin-top:44px;display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap">
+        <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            ${[0, 1, 2]
+              .map(
+                (i) => `<div style="position:relative;aspect-ratio:9/16;border-radius:7px;overflow:hidden;background:#101014">
+                  <img src="/assets/frame-${i + 1}.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>
+                  <div style="position:absolute;left:0;right:0;bottom:0;padding:8px 6px;background:linear-gradient(transparent,rgba(0,0,0,0.75))">
+                    <div style="font-size:9.5px;font-weight:700;color:#fff;text-align:center;line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,0.8)">${
+                      ["THAT'S THE WHOLE", "POINT THOUGH", "ISN'T IT"][i]
+                    }</div>
+                  </div>
+                  <span style="position:absolute;right:5px;top:5px;font-size:9px;font-family:${MONO};color:rgba(255,255,255,0.7)">${
+                    ["0:34", "0:41", "0:28"][i]
+                  }</span>
+                </div>`,
+              )
+              .join("")}
+          </div>
+        </div>
+        <div style="flex:1 1 320px;min-width:min(300px,100%)">
+          <div style="${EYEBROW};color:${GREEN}">VERTICAL, WITHOUT ASKING</div>
+          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">One long video in. Eight shorts out.</h3>
+          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">It goes through the whole thing and scores what would stand alone — then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.</p>
         </div>
       </div>
 
@@ -476,7 +518,7 @@ export function renderLanding(d: LandingData): string {
       <div style="text-align:center">
         <div style="${EYEBROW};color:rgba(236,236,241,0.35)">PRICING</div>
         <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em">Pay for the minutes it works.</h2>
-        <p style="margin:12px auto 0;max-width:460px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">A processing minute is a minute spent reading footage, rendering cuts, or burning captions. Storage is permanent on every plan.</p>
+        <p style="margin:12px auto 0;max-width:460px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">A processing minute is a minute spent transcribing footage, rendering cuts, or burning captions. Storage is permanent on every plan.</p>
       </div>
       <div style="margin:36px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;max-width:720px">
         <div style="padding:26px 24px;border-radius:12px;background:#131317">
@@ -521,7 +563,7 @@ export function renderLanding(d: LandingData): string {
 
   <div style="${PAD};background:#0C0C0F">
     <div style="${WRAP};padding:clamp(56px,8vw,90px) 0;text-align:center">
-      <h2 style="margin:0 auto;font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-0.03em;max-width:600px;line-height:1.1">The footage is sitting there.<br>Go read it into a video.</h2>
+      <h2 style="margin:0 auto;font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-0.03em;max-width:600px;line-height:1.1">The footage is sitting there.<br>Go cut it into a video.</h2>
       <div style="margin-top:26px">${signInForm("footer-form", "Start cutting — free", true, d.google)}</div>
       <div style="margin-top:52px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px;color:rgba(236,236,241,0.3)">
         <span style="display:flex;align-items:baseline;gap:4px;font-weight:600;color:rgba(236,236,241,0.5)">aldershot${mark(12.5, "rgba(217,179,106,0.85)")}</span>

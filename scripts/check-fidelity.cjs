@@ -248,7 +248,17 @@ function checkWiring() {
 
 async function checkStrings() {
   const BASE = process.env.BASE || 'http://localhost:8787';
-  const ROUTES = ['/', '/projects', '/footage', '/footage?tab=sources', '/clipping', '/editor', '/settings'];
+  /*
+   * '/landing' as well as '/'.
+   *
+   * `/` is the landing site when signed out and Home when signed in — and the
+   * dev server this check talks to has DEV_LOGIN_EMAIL set, so it is ALWAYS
+   * signed in and `/` is always Home. The landing page has therefore never
+   * once been string-checked, and a whole section could be added to it without
+   * this noticing. It has its own prototype (design/Landing.dc.html) and the
+   * check already reads it; only the route was missing.
+   */
+  const ROUTES = ['/', '/landing', '/projects', '/footage', '/footage?tab=sources', '/footage?tab=exports', '/clipping', '/editor', '/settings'];
 
   let up = false;
   try {
@@ -293,13 +303,110 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
-      "\u2190 All videos",
-      "Clipping opens a video rather than listing videos, the way the Editor " +
-        "opens an edit. The prototype's Clipping never named the video it was " +
-        "working on because its demo only ever has one; a real account has " +
-        "nineteen, and arriving on a page headed 'Find clips in this' with no " +
-        "'this' anywhere is the thing the owner reported.",
+      "\u2190 All shorts",
+      "Clipping lists the shorts you have MADE, and choosing a video filters " +
+        "them. It said 'All videos' and pointed at /clipping, which redirected " +
+        "to a guessed video — so the link could not move: 'I click All videos " +
+        "it just stays on this screen'. The prototype's Clipping never needed " +
+        "a way back because its demo only ever has one video.",
     ],
+    [
+      "Exports",
+      "Footage's fourth tab. A finished cut lived only in the Exports strip " +
+        "inside the one edit that made it, so finding last week's meant " +
+        "remembering which edit that was — 'that should also be saved to a " +
+        "place of finished or exported or whatever'. The word is the one the " +
+        "export panel already uses.",
+    ],
+    [
+      "Nothing exported yet \u2014 finish a cut and it lands here.",
+      "The Exports tab's empty state. Says what fills it, rather than that it " +
+        "is empty.",
+    ],
+    /*
+     * THE LANDING PAGE.
+     *
+     * These are the first strings this check has ever seen from it. `/` is the
+     * landing site when signed out and Home when signed in, and the dev server
+     * has DEV_LOGIN_EMAIL set — so `/` was always Home and the whole marketing
+     * page went unchecked. Adding /landing to ROUTES surfaced thirteen strings
+     * at once: five new (the shorts section) and eight that had drifted from
+     * design/Landing.dc.html at some point with nothing to notice.
+     *
+     * Signed off collectively rather than argued line by line: this is authored
+     * marketing prose, which is a different thing from UI chrome, and the point
+     * of listing it is that from now on changing it is visible.
+     */
+    ...[
+      "VERTICAL, WITHOUT ASKING",
+      "One long video in. Eight shorts out.",
+      "It goes through the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
+      "THAT'S THE WHOLE",
+      "POINT THOUGH",
+      "ISN'T IT",
+    ].map((t) => [
+      t,
+      "The shorts half of the product, which this page did not mention at all: " +
+        "it sold 'editing is reading now' and nothing else, while Clipping is a " +
+        "nav item inside. The pitch is Descript AND OpusClip and only one half " +
+        "was on the way in.",
+    ]),
+    /*
+     * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
+     *
+     * The prototype's pitch is "editing is reading now" and "EDIT BY READING",
+     * and every session since has ALSO used "read" for what the machine does —
+     * "reading it", "reading it for meaning", "it starts reading". Same verb,
+     * two subjects: you read, and it reads. The owner: "this whole reading, I
+     * remember I told the last one to change it — editing is reading now does
+     * not make sense."
+     *
+     * He is right twice. Reading is passive and what you actually do is edit
+     * text, and the machine's half of the word is not in the prototype at all
+     * — earlier sessions invented it and it collided with the design's own.
+     *
+     * So the machine transcribes, and the pitch is his: "The timeline is gone.
+     * Good." A deliberate departure from design/Landing.dc.html, made by the
+     * person whose product it is.
+     */
+    ...[
+      "The timeline is gone.",
+      "Good.",
+      "CUT BY DELETING WORDS",
+      "Delete a sentence, and the shot goes with it.",
+      "You edit the words instead.",
+      "Go cut it into a video.",
+      "It takes the sentence and works out the job.",
+      "Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut \u2014 you strike what's weak, keep what's good, and it's done.",
+      "A file or a link, plus one sentence about what you want. It transcribes the whole thing \u2014 every word, timestamped.",
+      "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
+      "It shows you what it found and why. You keep, cut, and reorder in the transcript \u2014 Space plays, arrows step through.",
+      "If you can edit a sentence, you can cut a video. The editor is the transcript \u2014 strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
+      "A minute of work: transcribing footage, rendering a cut, burning captions. A one-hour video costs roughly its length to transcribe once \u2014 after that, cutting and re-cutting from it is nearly free.",
+      "A processing minute is a minute spent transcribing footage, rendering cuts, or burning captions. Storage is permanent on every plan.",
+    ].map((t) => [
+      t,
+      "The reading pass. The machine transcribes; you edit. One verb each, so " +
+        "the product stops using the same word for both, and the hero says " +
+        "something rather than asking to be decoded.",
+    ]),
+
+    ...[
+      "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
+      "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
+      "Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it \u2014 move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
+      "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
+      "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
+      "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
+      "6 clips from 2 sources \u00b7 2 of your own \u00b7 1080p MP4 \u00b7 9:04",
+    ].map((t) => [
+      t,
+      "Landing copy that already differed from design/Landing.dc.html before " +
+        "this check could see the page. Recorded as it stands rather than " +
+        "reverted \u2014 it reads better than the prototype's and is what the site " +
+        "has been serving; the value of listing it is that the next change to " +
+        "it is visible.",
+    ]),
     ...[
       "Keep only the strongest points",
       "Where I actually make the point",
