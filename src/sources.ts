@@ -191,6 +191,35 @@ export async function clipCountsBySource(
   return new Map((results ?? []).map((r) => [r.source_id, r.n]));
 }
 
+/**
+ * How many edits are being made from each source, keyed by source id.
+ *
+ * Footage's whole subject is "everything you have", and a video's card said
+ * its title and the date — not how many clips came out of it and not whether
+ * anything was being made from it. The footage/edit relationship is the thing
+ * this product is built around; the library page was the one place that never
+ * mentioned it.
+ *
+ * Same shape and same cost as clipCountsBySource: one grouped query, not one
+ * per row. TOUCHED is not applied — an edit you opened and have not cut yet is
+ * still an edit made from this video, and the point of the number is to say
+ * where your work is.
+ */
+export async function editCountsBySource(
+  db: D1Database,
+  userId: string,
+): Promise<Map<string, number>> {
+  const { results } = await db
+    .prepare(
+      `SELECT source_id, COUNT(*) AS n FROM v2_projects
+        WHERE user_id=? AND deleted_at IS NULL AND archived_at IS NULL AND source_id IS NOT NULL
+        GROUP BY source_id`,
+    )
+    .bind(userId)
+    .all<{ source_id: string; n: number }>();
+  return new Map((results ?? []).map((r) => [r.source_id, r.n]));
+}
+
 export async function setTranscriptState(db: D1Database, id: string, state: TranscriptState): Promise<void> {
   await db.prepare(`UPDATE sources SET transcript_state=? WHERE id=?`).bind(state, id).run();
 }

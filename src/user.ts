@@ -56,6 +56,30 @@ function nameFromEmail(email: string): string | null {
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
+/**
+ * Clears a stored name today's rule would not have derived.
+ *
+ * nameFromEmail refuses a run-on longer than twelve letters precisely so
+ * nobody is greeted by a mangled surname-mashup — but it only ever runs when
+ * an account is CREATED, so a row made before the rule keeps its bad name for
+ * ever. The owner's own Home read "Good morning, Chrisrobtelford." while the
+ * function that produced it had already been fixed to refuse exactly that.
+ *
+ * Nulling rather than re-deriving: this product never asks for a name, and no
+ * name is better than a wrong one. A name a PROVIDER gave us is left alone —
+ * Google telling us who someone is beats any guess.
+ */
+export async function repairName(db: D1Database, user: User): Promise<User> {
+  if (!user.name) return user;
+  /* Only a name that looks derived from the address is up for review; anything
+     with a space in it came from somewhere that actually knows. */
+  if (user.name.includes(" ")) return user;
+  if (user.name === nameFromEmail(user.email)) return user;
+
+  await db.prepare(`UPDATE v2_users SET name=NULL WHERE id=?`).bind(user.id).run();
+  return { ...user, name: null };
+}
+
 export async function getUserById(db: D1Database, id: string): Promise<User | null> {
   return await db.prepare(`SELECT * FROM v2_users WHERE id=?`).bind(id).first<User>();
 }

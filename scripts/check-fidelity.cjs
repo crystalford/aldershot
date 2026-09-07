@@ -183,7 +183,17 @@ function checkWiring() {
     ...[...client.matchAll(/querySelectorAll?\("\.([a-z][a-z0-9-]*)"/g)].map((m) => m[1]),
     ...[...client.matchAll(/\.closest\("\.([a-z][a-z0-9-]*)"/g)].map((m) => m[1]),
   ])];
-  const orphanHandlers = bound.filter((c) => !new RegExp(`class="[^"]*\\b${c}\\b`).test(pages));
+  /* The same exemption the ids get, one line above: some markup the client
+     builds itself — a search result, a floating action — so no page renders
+     it and it is not orphaned. Anything client.ts puts a class on counts as
+     rendered, exactly as anything it puts an id on does. */
+  const classedInJs = new Set();
+  for (const m of client.matchAll(/class=\\?["']([a-z][a-z0-9 -]*)\\?["']/g)) {
+    for (const cls of m[1].split(/\s+/)) if (cls) classedInJs.add(cls);
+  }
+  const orphanHandlers = bound.filter(
+    (c) => !classedInJs.has(c) && !new RegExp(`class="[^"]*\\b${c}\\b`).test(pages),
+  );
 
   if (orphanIds.length || orphanClasses.length || orphanHandlers.length) {
     fail(

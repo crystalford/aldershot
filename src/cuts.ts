@@ -199,6 +199,83 @@ export function fillerCuts(segments: Segmentish[]): Cut[] {
 }
 
 /**
+ * Every place a phrase is said, with enough around it to recognise.
+ *
+ * The clean-up chips prove the mechanism and hardcode it to two words: walk
+ * the segments, match words, emit ranges. The gesture that actually makes an
+ * hour of footage tractable is the same walk with the words you typed — find
+ * "the sponsor read", see all fourteen, cut them in one go.
+ *
+ * A term matches a word it is CONTAINED in, so the list narrows as you type
+ * and "sponsor" still finds "sponsor," with its comma. Two characters is the
+ * floor: one letter matches most of the English language, and offering to cut
+ * all of it is not a feature.
+ */
+export interface PhraseMatch {
+  seg: number;
+  /** Word indices, inclusive — the same shape a Cut carries. */
+  from: number;
+  to: number;
+  start_ms: number;
+  end_ms: number;
+  /** The line either side of the hit, so a result reads like something said. */
+  before: string;
+  hit: string;
+  after: string;
+}
+
+/** Lowercase, and without the punctuation stuck to a spoken word. */
+const bare = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
+
+const CONTEXT = 6;
+
+export function findPhrase(segments: Segmentish[], phrase: string, limit = 300): PhraseMatch[] {
+  const terms = phrase.split(/\s+/).map(bare).filter(Boolean);
+  if (!terms.length || phrase.trim().length < 2) return [];
+
+  const out: PhraseMatch[] = [];
+  for (const seg of segments) {
+    const words = parseWords(seg.words);
+    if (!words.length) continue;
+    const flat = words.map((w) => bare(w.w));
+
+    for (let i = 0; i + terms.length <= flat.length; i++) {
+      let hit = true;
+      for (let t = 0; t < terms.length; t++) {
+        if (!flat[i + t].includes(terms[t])) { hit = false; break; }
+      }
+      if (!hit) continue;
+
+      const to = i + terms.length - 1;
+      const say = (from: number, until: number) =>
+        words.slice(from, until).map((w) => w.w.trim()).join(" ");
+
+      out.push({
+        seg: seg.idx,
+        from: i,
+        to,
+        start_ms: wordStartMs(words[i]),
+        end_ms: wordEndMs(words[to]),
+        before: say(Math.max(0, i - CONTEXT), i),
+        hit: say(i, to + 1),
+        after: say(to + 1, to + 1 + CONTEXT),
+      });
+      if (out.length >= limit) return out;
+
+      /* Past the match, not into it — "na na" in "na na na" is one hit and
+         then the next, never the same words counted twice. */
+      i = to;
+    }
+  }
+  return out;
+}
+
+/** Those matches as cuts, so finding and cutting share one definition. */
+export function phraseCuts(matches: PhraseMatch[]): Cut[] {
+  return matches.map((m) => ({ seg: m.seg, words: [m.from, m.to] as [number, number] }));
+}
+
+/**
  * Long pauses, as cuts.
  *
  * A gap between two words inside a line, longer than `overMs`. Only the excess

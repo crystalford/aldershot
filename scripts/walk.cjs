@@ -277,9 +277,18 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
         console.log('   short:    ⚠ no block offers one');
       }
 
-      /* Insert a seam — the "building blocks" gesture. */
+      /* Insert a seam — the "building blocks" gesture.
+
+         Through the seam the way a user reaches it: the options are hidden
+         until the + is pressed, so clicking .blk-insert straight off waits
+         thirty seconds for something that was never going to appear. This
+         step had gone stale against the UI it was meant to be driving. */
       const n = await page.locator('.blk').count();
-      const seam = page.locator('.blk-insert').first();
+      const opener = page.locator('.seam-open').first();
+      if (await opener.count()) await opener.click();
+      await page.waitForTimeout(200);
+
+      const seam = page.locator('.blk-insert:visible').first();
       if (await seam.count()) {
         await seam.click();
         await page.waitForTimeout(700);

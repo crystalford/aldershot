@@ -12,10 +12,10 @@ import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
 import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
 import { createProject, putBeats, saveClips, titleFromBrief } from "./projects.ts";
-import { scorePass } from "./score.ts";
+import { asked, scorePass } from "./score.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
-import { ulid } from "./id.ts";
+import { recordPass } from "./passes.ts";
 
 export interface BeginResult {
   intent: Intent;
@@ -250,27 +250,21 @@ export async function runScore(
 
     // The pass log records what was asked and what came back, in a sentence a
     // person can read. A pass that found nothing says so — it never silently
-    // succeeds (04-API-AND-JOBS.md §3).
-    await env.DB
-      .prepare(
-        `INSERT INTO passes (id,project_id,source_id,n,instruction,result,model,tokens_in,tokens_out,created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .bind(
-        ulid(),
-        opts.projectId,
-        opts.sourceId,
-        1,
-        opts.brief,
-        clips.length
-          ? `${clips.length} moment${clips.length === 1 ? "" : "s"} found`
-          : "no matches — try different words",
-        result.model,
-        result.tokensIn,
-        result.tokensOut,
-        Date.now(),
-      )
-      .run();
+    // succeeds (04-API-AND-JOBS.md §3). The number was hardcoded to 1, so an
+    // edit you had asked four things of showed four rows all called 1.
+    await recordPass(env.DB, {
+      projectId: opts.projectId,
+      sourceId: opts.sourceId,
+      /* What was really asked. An edit begun with "Skip the brief" sends the
+         model a fallback, and the log has to say that rather than blank. */
+      instruction: asked(opts.brief),
+      result: clips.length
+        ? `${clips.length} moment${clips.length === 1 ? "" : "s"} found`
+        : "no matches — try different words",
+      model: result.model,
+      tokensIn: result.tokensIn,
+      tokensOut: result.tokensOut,
+    });
 
     // A cut starts as the clips it found, in transcript order, all present so
     // the user can see the whole hour and take things out. Nothing is dropped

@@ -172,7 +172,7 @@ export function renderProjects(projects: ProjectRow[]): string {
     rest.length
       ? `<div style="margin-top:32px">
           <div style="font-size:${SIZE.body};font-weight:600;color:rgba(236,236,241,0.5);padding-left:2px">Everything else</div>
-          <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:8px">${rest.map(card).join("")}</div>
+          <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:8px">${rest.map(card).join("")}</div>
           ${selectBar("edit")}
         </div>`
       : ""

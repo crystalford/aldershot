@@ -20,17 +20,17 @@ import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCoo
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
-import { renderFootageFull, type FootTab, type SearchMode } from "./ui/pages/footage.ts";
+import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, listShorts, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
+import { buildSummary, renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -54,15 +54,15 @@ import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
 import { runShorts } from "./shorts-job.ts";
 import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
-import { addCuts, fillerCuts, isSegmentCut, isWordCut, parseCuts, pauseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
+import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
 import { createRender, edlForProject, isAspect, isFormat, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
-import { currentUser, userForEmail } from "./user.ts";
+import { currentUser, userForEmail, repairName } from "./user.ts";
 import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
-import { clipCountsBySource, createSource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
+import { clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
@@ -70,6 +70,7 @@ import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
+import { passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
 export { RenderContainer } from "./render.ts";
@@ -351,7 +352,9 @@ app.get("/", async (c) => {
     );
   }
 
-  const user = visitor;
+  /* A stored name today's rule would refuse is cleared on the way past — see
+     repairName. Home is where it shows, so Home is where it is fixed. */
+  const user = await repairName(c.env.DB, visitor);
 
   /* Signed in, and they asked for Studio on the way. Clear it first, so a
      checkout that fails does not trap them in a redirect loop. */
@@ -420,43 +423,122 @@ app.get("/", async (c) => {
          * ran. A failure is included and named — coming back to a silent gap
          * where a render should be is worse than coming back to bad news.
          */
-        feed: finished.map((j) => {
-          /*
-           * A job's ref_id points at a source for reading and scoring, but at
-           * a PROJECT for passes and renders. Looking only at sources made
-           * every pass read "Ran a pass on a video", which tells the user
-           * nothing about which of their things moved.
-           */
-          const what =
-            byId.get(j.ref_id ?? "")?.title ??
-            projects.find((p) => p.id === j.ref_id)?.title ??
-            "a video";
-          const done: Record<string, string> = {
-            transcribe: `Finished reading ${what}`,
-            score: `Found the moments in ${what}`,
-            shorts: `Cut shorts from ${what}`,
-            render: `Rendered ${what}`,
-            pass: `Ran a pass on ${what}`,
-          };
-          return {
-            text: j.state === "failed" ? (j.error ?? `Couldn't finish ${what}`) : (done[j.type] ?? `Finished ${what}`),
-            at: j.finished_at ?? j.created_at,
-            state: j.state,
-            href: j.ref_id
-              ? projects.some((p) => p.id === j.ref_id)
-                ? `/p/${j.ref_id}/cut`
-                : `/sources/${j.ref_id}`
-              : undefined,
-            link: "Open",
-          };
-        }),
-        motion: projects
-          .filter((p) => !p.archived_at && p.pct > 0 && p.pct < 100)
-          .slice(0, 6)
-          .map((p) => ({
-            id: p.id, title: p.title, pct: p.pct,
-            next_action: p.next_action, poster_r2_key: p.poster_r2_key,
-          })),
+        feed: (
+          await Promise.all(
+            finished.map(async (j) => {
+              /*
+               * WHAT this was about, or nothing.
+               *
+               * ref_id points at a source for reading and scoring, at a
+               * PROJECT for passes and renders, and at a CLIP for a short's
+               * render. The clip case matched neither list, so those rows read
+               * "Rendered a video" and offered an Open that went to
+               * /sources/<clipId> — a link that 404s. A row that cannot name
+               * its subject is dropped rather than shown pointing nowhere.
+               */
+              const src = byId.get(j.ref_id ?? "");
+              const proj = projects.find((p) => p.id === j.ref_id);
+              const clip = !src && !proj && j.ref_id
+                ? await c.env.DB
+                    .prepare(
+                      `SELECT s.title, s.id FROM v2_clips cl JOIN sources s ON s.id = cl.source_id
+                        WHERE cl.id=? AND cl.user_id=?`,
+                    )
+                    .bind(j.ref_id, user.id)
+                    .first<{ title: string; id: string }>()
+                : null;
+
+              const what = src?.title ?? proj?.title ?? clip?.title ?? null;
+              if (!what) return null;
+
+              const href = proj ? `/p/${j.ref_id}/cut` : `/sources/${src?.id ?? clip?.id}`;
+
+              /*
+               * A DECISION where there honestly is one. The design's feed rows
+               * each ask something — "Add it / Skip", "Export / Later" — and
+               * this was a changelog where every row said "Open" whatever had
+               * happened.
+               */
+              if (j.state === "failed") {
+                return { text: j.error ?? `Couldn't finish ${what}`, at: j.finished_at ?? j.created_at, state: j.state, href, link: "Retry" };
+              }
+              const done: Record<string, [string, string]> = {
+                transcribe: [`Finished reading ${what}`, "Start cutting"],
+                score: [`Found the moments in ${what}`, "Review the cut"],
+                shorts: [`Cut shorts from ${what}`, "Open"],
+                render: [`Rendered ${what}`, "Download"],
+                pass: [`Ran a pass on ${what}`, "Review the cut"],
+              };
+              const [text, link] = done[j.type] ?? [`Finished ${what}`, "Open"];
+              return { text, at: j.finished_at ?? j.created_at, state: j.state, href, link };
+            }),
+          )
+        ).filter((f): f is NonNullable<typeof f> => f !== null),
+        /*
+         * WHAT YOU HAVE ON THE GO — computed, not stored.
+         *
+         * This filtered on `pct > 0 && pct < 100`, and nothing anywhere writes
+         * v2_projects.pct: every row is 0, so the filter was always empty and
+         * this section has never once rendered. `next_action`, which its rows
+         * also read, is null on every row too.
+         *
+         * The editor has been computing exactly this all along. buildSummary
+         * gives the line ("2 voiceovers to go."), and whether anything is
+         * outstanding is what decides the state — the prototype's own three.
+         */
+        motion: await Promise.all(
+          projects
+            .filter((p) => !p.archived_at)
+            .slice(0, 6)
+            .map(async (p) => {
+              /*
+               * The line has to describe THIS cut, and buildSummary only
+               * knows about beats — so an unassisted cut of a 24-line
+               * transcript read "nothing laid down yet." while sitting next to
+               * "ready to render". A cut made by striking text has no beats
+               * and is still full of content; what it has is blocks.
+               */
+              const { blocks, cuts, beats } = await blocksForProject(c.env.DB, p, user.id);
+              const outstanding = buildSummary(beats);
+              const unfilled = beats.length > 0 && outstanding !== "every beat is filled.";
+              const kept = blocks.filter((b) => !b.struck).length;
+              /*
+               * "Ready to render" has to mean a cut EXISTS. Every state but
+               * needs-you fell through to it, so a transcript nobody had
+               * touched sat on Home claiming it was ready — true in the sense
+               * that the button works, and misleading in every sense that
+               * matters. What makes it an edit is that someone cut something
+               * (cuts) or put something in (beats); otherwise it is the
+               * source read back at you, and the honest word is "not started".
+               */
+              const touched = cuts.length > 0 || beats.length > 0;
+
+              return {
+                id: p.id,
+                title: p.title,
+                poster_r2_key: p.poster_r2_key ?? (p.source_id ? (byId.get(p.source_id)?.poster_r2_key ?? null) : null),
+                /* What still wants you, what is already there, or where to start. */
+                needs: unfilled
+                  ? outstanding
+                  : touched
+                    ? `${kept} kept · ${hms(runtimeMs(blocks, cuts) / 1000)}`
+                    : `${blocks.length} lines · nothing cut yet`,
+                state: unfilled
+                  ? ("needsyou" as const)
+                  : touched && kept > 0
+                    ? ("ready" as const)
+                    : ("idle" as const),
+              };
+            }),
+        ),
+        /* Recent videos, so a cut can be started from Home. listSources is
+           already loaded above for the feed's title lookups. */
+        footage: sources.slice(0, 8).map((sv) => ({
+          id: sv.id,
+          title: sv.cut_title || sv.title,
+          poster_r2_key: sv.poster_r2_key,
+          duration_s: sv.duration_s,
+        })),
       }),
       "nav",
       user.email,
@@ -553,6 +635,14 @@ app.get("/footage", async (c) => {
   const sources = await listSources(c.env.DB, user.id, sort);
   const threads = await listThreads(c.env.DB, user.id);
 
+  /* What each video has yielded, and what is being made from it. Two grouped
+     queries rather than two per row — the same shape Clipping's picker and the
+     editor's intake already use. */
+  const [clipsPer, editsPer] = await Promise.all([
+    clipCountsBySource(c.env.DB, user.id),
+    editCountsBySource(c.env.DB, user.id),
+  ]);
+
   /* Live read progress per source, so a row that is being read shows a moving
      bar instead of a static word. The jobs are already being loaded for the
      nav; this just joins them up. */
@@ -595,7 +685,12 @@ app.get("/footage", async (c) => {
       "Footage — Aldershot",
       renderFootageFull({
         tab,
-        sources: sources.map((s) => ({ ...s, pct: pctFor.get(s.id) })),
+        sources: sources.map((s) => ({
+          ...s,
+          pct: pctFor.get(s.id),
+          clip_count: clipsPer.get(s.id) ?? 0,
+          edit_count: editsPer.get(s.id) ?? 0,
+        })),
         moments, momentCount, threads, mode, q: query, meaningUnavailable, canMean, thread, sort,
       }),
       "nav",
@@ -901,6 +996,10 @@ app.get("/clipping", async (c) => {
   /* Whether each one has actually been made into a video yet. Without this the
      cards could only ever show a still and a play button that did nothing. */
   const renders = await shortRendersFor(c.env.DB, user.id, shorts.map((cl) => cl.id));
+  /* Which file each short lives in. A card paints its OWN moment rather than
+     the video's first frame, and on the library view the shorts come from
+     several videos, so the key travels with the row. */
+  const fileOf = new Map(sources.map((sv) => [sv.id, { key: sv.r2_key, title: sv.title }]));
   const jobs = await activeJobs(c.env.DB, user.id);
   const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
   const clipCounts = await clipCountsBySource(c.env.DB, user.id);
@@ -922,7 +1021,12 @@ app.get("/clipping", async (c) => {
           id: s.id, title: s.title, duration_s: s.duration_s, transcript_state: s.transcript_state,
           poster_r2_key: s.poster_r2_key, clip_count: clipCounts.get(s.id) ?? 0,
         })),
-        shorts: shorts.map((cl) => ({ ...cl, render: renders.get(cl.id) ?? null })),
+        shorts: shorts.map((cl) => ({
+          ...cl,
+          render: renders.get(cl.id) ?? null,
+          sourceKey: fileOf.get(cl.source_id)?.key ?? null,
+          sourceTitle: fileOf.get(cl.source_id)?.title ?? null,
+        })),
         job,
         fromEditor: false,
       }),
@@ -1004,13 +1108,16 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
 
-  const [segments, beats, clips, job] = await Promise.all([
+  const [segments, beats, clips, job, passes] = await Promise.all([
     source ? getSegments(c.env.DB, source.id) : Promise.resolve([]),
     getBeats(c.env.DB, project.id),
     /* The model's opinion of this footage, attached to the blocks it covers
        rather than rendered as a separate list of "clips". */
     source ? listClipsForSource(c.env.DB, source.id, user.id) : Promise.resolve([]),
     latestJobFor(c.env.DB, project.id, user.id, ["score", "pass"]),
+    /* What has been asked of this cut and what came of it. Written since the
+       first pass ever ran; read here for the first time. */
+    passLog(c.env.DB, project.id),
   ]);
 
   const cuts = parseCuts(project.cuts);
@@ -1073,6 +1180,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         plan: user.plan,
         cameFrom: cameFrom(c.req.header("referer")),
         job,
+        passes,
       }) +
         exportPanel(project.id, user.plan) +
         exportsStrip({ projectId: project.id, renders }),
@@ -1182,6 +1290,8 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
  * screen with room to scroll before the next slice is asked for.
  */
 const BLOCK_WINDOW = 120;
+/* The most a single request will send, for a jump into a long transcript. */
+const BLOCK_SPAN = 600;
 
 /**
  * The next slice of the block list.
@@ -1204,13 +1314,70 @@ app.get("/api/projects/:id/blocks", async (c) => {
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const from = Math.max(0, Number(c.req.query("from")) || 0);
-  const to = from + BLOCK_WINDOW;
+  /*
+   * Normally one window. `to` is for a jump: find a word 2,000 blocks in and
+   * loading 120 at a time is seventeen round trips before you can read the
+   * line. The span is capped because the reason windowing exists is that the
+   * whole transcript in one response was 13.2 MB.
+   */
+  const asked = Number(c.req.query("to")) || 0;
+  const to = Math.min(Math.max(asked, from + BLOCK_WINDOW), from + BLOCK_SPAN);
   return c.json({
     html: renderBlockSlice(project.id, blocks, cuts, from, to),
     from,
     to: Math.min(to, blocks.length),
     total: blocks.length,
     more: to < blocks.length,
+  });
+});
+
+/**
+ * Every place a phrase is said in this cut.
+ *
+ * The palette (⌘K) searches the whole library and NAVIGATES — which is the
+ * opposite of what you want mid-edit. Inside a 48-minute transcript there was
+ * no way to reach "sponsor" but scrolling, and no way to act on all of them.
+ *
+ * Server-side because the editor holds a window of a long transcript and the
+ * interesting matches are usually past it. Each match carries the index of the
+ * block it is in, so clicking a result can load exactly that far and no
+ * further, and the milliseconds, so the video can seek before it arrives.
+ */
+app.get("/api/projects/:id/find", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+
+  const q = (c.req.query("q") ?? "").trim();
+  const segments = await getSegments(c.env.DB, project.source_id);
+  const matches = findPhrase(segments, q);
+  if (!matches.length) return c.json({ q, matches: [], savedMs: 0 });
+
+  /* Where each match sits in the block list, which is what the reader
+     scrolls through — segment order and block order are not the same thing
+     once anything has been moved or inserted. */
+  const cuts = parseCuts(project.cuts);
+  const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
+  const at = new Map(blocks.map((b, i) => [b.id, i]));
+
+  return c.json({
+    q,
+    /* What cutting every one of them would really take off, by the same rule
+       the clean-up chips follow: counted, or not offered. */
+    savedMs: timeSaved(segments, cuts, phraseCuts(matches)),
+    matches: matches.map((m) => ({
+      seg: m.seg,
+      from: m.from,
+      to: m.to,
+      start_ms: m.start_ms,
+      block: "s:" + m.seg,
+      /* -1 when the line has been struck whole and is not in the list. */
+      index: at.get("s:" + m.seg) ?? -1,
+      before: m.before,
+      hit: m.hit,
+      after: m.after,
+    })),
   });
 });
 
@@ -1902,6 +2069,124 @@ app.post("/api/clips/:id/render", async (c) => {
   return c.json({ ok: true, renderId, jobId: job.id });
 });
 
+/**
+ * One short, and the words in it — everything the Adjust sheet needs.
+ *
+ * The sheet trims by word, which is the gesture the editor already gives you
+ * over a transcript and the thing that makes this ours rather than a copy of
+ * OpusClip. The words come from the segments the clip covers, with a little
+ * either side so the boundaries can be moved OUTWARD as well as in — a clip
+ * that can only ever get shorter is half a trim.
+ */
+app.get("/api/clips/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const clip = await c.env.DB
+    .prepare(
+      `SELECT c.*, s.r2_key AS source_key, s.title AS source_title, s.duration_s
+         FROM v2_clips c JOIN sources s ON s.id = c.source_id
+        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{
+      id: string; source_id: string; start_ms: number; end_ms: number;
+      quote: string; why: string | null; score: number | null; origin: string;
+      source_key: string; source_title: string; duration_s: number | null;
+    }>();
+  if (!clip) return c.json({ error: "not found" }, 404);
+
+  /* A window around the clip, not the whole transcript: an hour of words to
+     trim a thirty-second short is a large response for no benefit. */
+  const AROUND_MS = 20_000;
+  const from = Math.max(0, clip.start_ms - AROUND_MS);
+  const to = clip.end_ms + AROUND_MS;
+
+  const segments = await getSegments(c.env.DB, clip.source_id);
+  const words: Array<{ w: string; s: number; e: number }> = [];
+  for (const seg of segments) {
+    if (seg.end_ms < from || seg.start_ms > to) continue;
+    for (const w of parseWords(seg.words)) {
+      const s0 = wordStartMs(w);
+      const e0 = wordEndMs(w);
+      if (e0 < from || s0 > to) continue;
+      words.push({ w: w.w, s: s0, e: e0 });
+    }
+  }
+
+  return c.json({
+    id: clip.id,
+    start_ms: clip.start_ms,
+    end_ms: clip.end_ms,
+    quote: clip.quote,
+    why: clip.why,
+    score: clip.score,
+    origin: clip.origin,
+    sourceKey: clip.source_key,
+    sourceTitle: clip.source_title,
+    durationMs: clip.duration_s ? clip.duration_s * 1000 : null,
+    words,
+  });
+});
+
+/**
+ * Move a short's in and out points.
+ *
+ * The clipper offered exactly one verb — "Make the video" — so disagreeing
+ * with where the model put a boundary meant spending a render and looking at
+ * what came out. Adjusting the clip is most of what this kind of tool is for.
+ *
+ * Nothing downstream changes: renderShort builds its plan from start_ms and
+ * end_ms, so a trimmed clip renders trimmed the next time it is made.
+ */
+app.post("/api/clips/:id/trim", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const b = await body<{ start_ms?: number | null; end_ms?: number | null }>(c);
+  if (typeof b.start_ms !== "number" && typeof b.end_ms !== "number") {
+    return c.json({ error: "which edge?" }, 400);
+  }
+
+  /* The source's length is the ceiling. Without it a stepper at the tail walks
+     the clip past the end of the video and the encoder is asked for footage
+     that is not there. */
+  const owned = await c.env.DB
+    .prepare(
+      `SELECT c.source_id, s.duration_s FROM v2_clips c
+         JOIN sources s ON s.id = c.source_id
+        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
+    )
+    .bind(c.req.param("id"), user.id)
+    .first<{ source_id: string; duration_s: number | null }>();
+  if (!owned) return c.json({ error: "not found" }, 404);
+
+  const clip = await trimClip(
+    c.env.DB,
+    c.req.param("id"),
+    user.id,
+    { start_ms: b.start_ms, end_ms: b.end_ms },
+    owned.duration_s ? owned.duration_s * 1000 : null,
+  );
+  if (!clip) return c.json({ error: "not found" }, 404);
+
+  /*
+   * Nothing is written to the render.
+   *
+   * A finished file under a clip that no longer matches it must not offer
+   * Download — it is a video of boundaries that no longer exist. The first
+   * attempt marked the row stale, which was wrong twice over: the row is the
+   * cost record for work already paid for, and storage.ts sums the bytes of
+   * READY renders against the user's cap, so a stale row would stop counting
+   * a file that is still sitting in R2.
+   *
+   * The card decides instead, by comparing the length the render actually is
+   * (renders.duration_s, written when it finished) against the length the clip
+   * now claims. No schema, no deletion, and the accounting stays true.
+   */
+  return c.json({ ok: true, start_ms: clip.start_ms, end_ms: clip.end_ms });
+});
+
 app.post("/api/clips/:id/keep", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1993,64 +2278,21 @@ app.get("/editor", async (c) => {
     clipCountsBySource(c.env.DB, user.id),
   ]);
 
-  const byId = new Map(sources.map((s) => [s.id, s]));
-  const live = projects.filter((p) => !p.archived_at).sort((a, b) => b.updated_at - a.updated_at);
-
   /*
-   * An edit's own numbers, not its source's.
+   * Editor means the EDITOR.
    *
-   * Every row read "11 clips kept · 5:00 so far" because every row counted the
-   * clips on the SOURCE — so four different edits of one video reported four
-   * identical figures and the list was impossible to tell apart. A scratch
-   * edit has no clips at all; what it has is its own cuts, and its runtime is
-   * the transcript minus them.
+   * This page was Home again: a composer, then the same footage under "Or open
+   * something already here", then the same edits under "Pick up an edit" —
+   * three lists in different words, with half the screen empty below them.
+   * Home answers "what needs you" and owns picking one up; a nav item called
+   * Editor that shows a list of things is the same failure as Clipping and
+   * Footage both showing clips.
    *
-   * Segments are fetched once per source rather than once per edit, since
-   * several edits of the same video are the normal case here.
+   * So it opens what you were last in. listProjects is already ordered by
+   * updated_at, so the first row is that. With nothing made yet it falls
+   * through to intake, which is what the route was always for.
    */
-  const shown = live.slice(0, 6);
-
-  /* Segments once per SOURCE, not once per edit — several edits of one video
-     is the normal case here. */
-  const editSources = [...new Set(shown.map((p) => p.source_id).filter((x): x is string => !!x))];
-  const segsBySource = new Map(
-    await Promise.all(editSources.map(async (id) => [id, await getSegments(c.env.DB, id)] as const)),
-  );
-
-  const edits = await Promise.all(
-    shown.map(async (p) => {
-      /*
-       * An edit's numbers come from its BLOCKS, which is what a cut is.
-       *
-       * There were two branches here: a scratch edit counted its transcript
-       * minus its cuts, and a briefed one summed the clips whose `kept` was
-       * set. The second was left from before blocks existed, and it made
-       * `kept` decide two unrelated things — so keeping a Clipping short
-       * changed an edit's runtime. It also disagreed with the editor, which
-       * has always computed the runtime from the cut itself.
-       *
-       * One definition now, the same one src/blocks.ts gives the editor and
-       * the renderer. `kept` is left to mean one thing: a moment you want,
-       * which is what Footage's Clips shelf and Clipping both read it as.
-       */
-      const segs = p.source_id ? (segsBySource.get(p.source_id) ?? []) : [];
-      const cuts = parseCuts(p.cuts);
-      const blocks = (await blocksForProject(c.env.DB, p, user.id, { segments: segs })).blocks;
-
-      return {
-        id: p.id,
-        title: p.title,
-        poster_r2_key: p.poster_r2_key ?? (p.source_id ? (byId.get(p.source_id)?.poster_r2_key ?? null) : null),
-        sourceFilename: p.source_id ? (byId.get(p.source_id)?.filename ?? null) : null,
-        kept: blocks.filter((b) => !b.struck).length,
-        runtime_s: blocks.length ? Math.round(runtimeMs(blocks, cuts) / 1000) : null,
-        updated_at: p.updated_at,
-        /* Still reported, because the intake words an unbriefed edit's count
-           as "lines" and a briefed one's as "clips kept". */
-        scratch: !p.brief?.trim(),
-      };
-    }),
-  );
+  if (projects.length) return c.redirect(`/p/${projects[0].id}/cut`);
 
   return c.html(
     surface(
@@ -2063,7 +2305,6 @@ app.get("/editor", async (c) => {
           poster_r2_key: s.poster_r2_key, transcript_state: s.transcript_state,
           clip_count: clipCounts.get(s.id) ?? 0,
         })),
-        edits,
       }),
       "nav",
       user.email,

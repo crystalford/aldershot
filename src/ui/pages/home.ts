@@ -20,6 +20,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { iconPlus } from "../icons.ts";
 import { esc } from "../shell.ts";
+import { hms } from "./footage.ts";
 
 /** The three example sentences shown in a fresh account. Copied verbatim. */
 const TRY_CHIPS = [
@@ -278,7 +279,15 @@ function feedRow(f: FeedItem & { times?: number }): string {
 }
 
 /** In motion — what is part-made, with how far along it is. */
+/** The prototype's three states, with its own words and its own colours. */
+const MOTION_STATE: Record<MotionItem["state"], [string, string]> = {
+  needsyou: ["needs you", ACCENT.gold],
+  ready: ["ready to render", ACCENT.green],
+  idle: ["not started", "rgba(236,236,241,0.4)"],
+};
+
 function motionRow(p: MotionItem): string {
+  const [label, colour] = MOTION_STATE[p.state];
   return `<a href="/p/${esc(p.id)}/cut" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
     <div style="flex:none;width:64px;aspect-ratio:16/9;border-radius:${RADIUS.button};overflow:hidden;background:#0B0B0E">${
       p.poster_r2_key
@@ -287,9 +296,33 @@ function motionRow(p: MotionItem): string {
     }</div>
     <div style="flex:1;min-width:0">
       <div data-content style="font-size:${SIZE.body};font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.title)}</div>
-      <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px">${esc(p.next_action ?? "")}</div>
+      <div data-content style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.needs)}</div>
     </div>
-    <span data-content style="flex:none;font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono}">${p.pct}%</span>
+    <span data-content style="flex:none;font-size:${SIZE.secondary};color:${colour};white-space:nowrap">${label}</span>
+  </a>`;
+}
+
+/**
+ * A video, on Home.
+ *
+ * Goes to the VERB url, the same one Footage's own cards use, so clicking one
+ * lands you in the editor rather than on a page about the file.
+ */
+function footageCard(f: FootageItem): string {
+  return `<a href="/sources/${esc(f.id)}/edit" style="flex:none;width:150px;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;display:block">
+    <div style="width:100%;aspect-ratio:16/9;background:#0B0B0E;position:relative">
+      ${
+        f.poster_r2_key
+          ? `<img loading="lazy" src="/media/${esc(f.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+          : ""
+      }
+      ${
+        f.duration_s
+          ? `<span data-content style="position:absolute;right:4px;bottom:4px;font-size:${SIZE.pill};font-family:${FONT.mono};background:rgba(0,0,0,.6);border-radius:3px;padding:1px 5px;color:${C.ink}">${hms(f.duration_s)}</span>`
+          : ""
+      }
+    </div>
+    <div data-content style="padding:9px 10px;font-size:${SIZE.meta};color:${C.ink70};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.title)}</div>
   </a>`;
 }
 
@@ -301,12 +334,31 @@ export interface FeedItem {
   link?: string;
 }
 
+/**
+ * One edit you have on the go.
+ *
+ * `pct` and `next_action` used to drive this and NOTHING EVER WROTE EITHER —
+ * every project sits at pct 0 with a null next_action, so the filter
+ * `pct > 0 && pct < 100` was always empty and this section has never once
+ * appeared. It is computed from the blocks now, which is where the truth was
+ * all along: the editor has been showing exactly these numbers.
+ */
 export interface MotionItem {
   id: string;
   title: string;
-  pct: number;
-  next_action: string | null;
   poster_r2_key: string | null;
+  /** "2 voiceovers to go." / "every beat is filled." — buildSummary's line. */
+  needs: string;
+  /** The prototype's own three: needs you / ready to render / not started. */
+  state: "needsyou" | "ready" | "idle";
+}
+
+/** One video, for the strip that lets Home start a cut without a detour. */
+export interface FootageItem {
+  id: string;
+  title: string;
+  poster_r2_key: string | null;
+  duration_s: number | null;
 }
 
 export interface HomeData {
@@ -319,6 +371,8 @@ export interface HomeData {
   feed: FeedItem[];
   /** What is part-made. */
   motion: MotionItem[];
+  /** Recent videos, so a cut can be started from here. */
+  footage: FootageItem[];
 }
 
 export function renderHome(d: HomeData): string {
@@ -326,6 +380,21 @@ export function renderHome(d: HomeData): string {
 <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
 ${composer()}
 <div style="margin-top:16px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);padding-left:4px">A full cut, a few shorts, a cleanup — it works out the job and checks with you first.</div>
+${
+  /*
+   * YOUR WORK LEADS.
+   *
+   * The prototype ends the page with this and opens with the feed — but its
+   * feed is three hardcoded demo notifications, laid out against a demo
+   * account. On a real one the log is long and inert, and the edits are what
+   * you came back for. "Pick up where you left off" is the prototype's own
+   * phrase, borrowed from Projects.
+   */
+  d.motion.length
+    ? sectionHead("Pick up where you left off", `${d.motion.length}`) +
+      `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${d.motion.map(motionRow).join("")}</div>`
+    : ""
+}
 ${
   d.isFresh
     ? ""
@@ -338,9 +407,10 @@ ${
       }</div>`
 }
 ${
-  d.motion.length
-    ? sectionHead("In motion", `${d.motion.length}`) +
-      `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${d.motion.map(motionRow).join("")}</div>`
+  /* And the footage, so a cut can start here rather than after a detour. */
+  d.footage.length
+    ? sectionHead("Footage", `${d.footage.length}`) +
+      `<div style="margin-top:16px;display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">${d.footage.map(footageCard).join("")}</div>`
     : ""
 }
 ${d.isFresh ? howThisGoes() : ""}`;
