@@ -82,6 +82,12 @@ export interface Edl {
  * holding minutes of joined text.
  */
 export function buildEdl(
+  /*
+   * The project's OWN video, when it has one. Only ever a fallback — a block
+   * that carries its own mediaKey never reads it (see below) — and empty on a
+   * project assembled from the library, where every block is a clip from
+   * somewhere else and there is no "own" video at all.
+   */
   sourceKey: string,
   blocks: Block[],
   cuts: Cut[],
@@ -117,6 +123,13 @@ export function buildEdl(
     /* blockRanges is the one definition of what a block plays — the same one
        the runtime under the editor is summed from, so the number you were
        shown is the length of the file you get. */
+    /* No key from the block and none from the project means there is no file
+       to cut. It cannot happen on a project with a source, and on a library
+       edit it would mean a clip whose video has gone — skipped rather than
+       emitted as a range of nothing, which the encoder would try to fetch. */
+    const key = block.mediaKey || sourceKey;
+    if (!key) continue;
+
     for (const range of blockRanges(block, cuts)) {
       if (range.end_ms <= range.start_ms) continue;
       out.push({

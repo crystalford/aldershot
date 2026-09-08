@@ -9,7 +9,7 @@
 
 import { ulid } from "./id.ts";
 import { buildBlocks, parseOrder, type Block, type PulledClip, type ScoreLike, type SegmentLike } from "./blocks.ts";
-import { parseCuts, type Cut } from "./cuts.ts";
+import { parseCuts, parseWords, wordsInRange, type Cut, type StoredWord } from "./cuts.ts";
 import { getSegments } from "./sources.ts";
 import type { ScoredClip } from "./grounding.ts";
 
@@ -397,57 +397,6 @@ export async function setKept(db: D1Database, clipId: string, userId: string, ke
     .run();
 }
 
-/**
- * Move a clip's in and out points.
- *
- * The clipper had exactly one verb — "Make the video" — so the only way to
- * disagree with where the model put the boundaries was to spend a render and
- * look at what came out. This is the whole of what OpusClip is for, and the
- * engine was already downstream of it: renderShort builds its plan straight
- * from these two columns, so nothing below this line has to change.
- *
- * Bounds are clamped rather than rejected, and the order is normalised, so a
- * stepper at the end of a clip cannot walk it past the end of the video or
- * turn it inside out. `null` means the caller is only moving one edge.
- */
-export async function trimClip(
-  db: D1Database,
-  clipId: string,
-  userId: string,
-  bounds: { start_ms?: number | null; end_ms?: number | null },
-  sourceDurationMs: number | null,
-): Promise<Clip | null> {
-  const clip = await db
-    .prepare(`SELECT * FROM v2_clips WHERE id=? AND user_id=? AND deleted_at IS NULL`)
-    .bind(clipId, userId)
-    .first<Clip>();
-  if (!clip) return null;
-
-  const ceiling = sourceDurationMs && sourceDurationMs > 0 ? sourceDurationMs : Infinity;
-  const want = (v: number | null | undefined, fallback: number) =>
-    typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(v, ceiling)) : fallback;
-
-  let start = want(bounds.start_ms, clip.start_ms);
-  let end = want(bounds.end_ms, clip.end_ms);
-  if (end < start) [start, end] = [end, start];
-  /* A clip of nothing renders a file of nothing. Half a second is the floor. */
-  if (end - start < 500) end = Math.min(ceiling, start + 500);
-  if (end - start < 500) start = Math.max(0, end - 500);
-
-  await db
-    .prepare(`UPDATE v2_clips SET start_ms=?, end_ms=? WHERE id=? AND user_id=?`)
-    .bind(Math.round(start), Math.round(end), clipId, userId)
-    .run();
-
-  return { ...clip, start_ms: Math.round(start), end_ms: Math.round(end) };
-}
-
-/**
- * Replaces a project's beats wholesale. Idempotent by design
- * (04-API-AND-JOBS.md: "whole-array write") — the client owns the order and
- * sends the whole list, so a dropped request cannot leave a half-reordered
- * edit behind.
- */
 export async function putBeats(
   db: D1Database,
   projectId: string,
@@ -666,14 +615,14 @@ export async function pulledClips(
          copy is what the editor plays. They are different files and a block
          that pulls in another video needs to know both — see Block.previewKey
          in src/blocks.ts. */
-      `SELECT c.id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key,
+      `SELECT c.id, c.source_id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key,
               COALESCE(s.proxy_r2_key, s.r2_key) AS preview_key, s.title
          FROM v2_clips c JOIN sources s ON s.id = c.source_id
         WHERE c.id IN (${marks}) AND c.user_id=? AND c.deleted_at IS NULL AND s.deleted_at IS NULL`,
     )
     .bind(...ids, userId)
     .all<{
-      id: string; start_ms: number; end_ms: number; quote: string;
+      id: string; source_id: string; start_ms: number; end_ms: number; quote: string;
       frame_r2_key: string | null; r2_key: string; preview_key: string; title: string;
     }>();
 
@@ -689,6 +638,50 @@ export async function pulledClips(
       frameKey: r.frame_r2_key,
     });
   }
+  /*
+   * THE OTHER VIDEO'S WORDS, so an assembled cut can be READ.
+   *
+   * A pulled clip carried its quote and nothing finer, so a cut made from the
+   * library had no words to highlight, to click, or for the script view to
+   * flow. They come from the other source's own transcript, sliced to the
+   * clip's range.
+   *
+   * Bounded by range, not by source: getSegments reads a whole video, and a
+   * three-hour podcast is the 13MB problem the editor's windowing exists to
+   * avoid. Only the segments that overlap a clip are asked for.
+   *
+   * Failure here is silent and harmless — the block falls back to its stored
+   * quote, which is what it always had.
+   */
+  const rows = results ?? [];
+  if (rows.length) {
+    try {
+      const spans = rows.map((r) => `(source_id=? AND end_ms>? AND start_ms<?)`).join(" OR ");
+      const binds = rows.flatMap((r) => [r.source_id, r.start_ms, r.end_ms]);
+      const { results: segs } = await db
+        .prepare(`SELECT source_id, start_ms, end_ms, words FROM segments WHERE ${spans}`)
+        .bind(...binds)
+        .all<{ source_id: string; start_ms: number; end_ms: number; words: string | null }>();
+
+      const bySource = new Map<string, Array<{ start_ms: number; words: StoredWord[] }>>();
+      for (const sg of segs ?? []) {
+        const list = bySource.get(sg.source_id) ?? [];
+        list.push({ start_ms: sg.start_ms, words: parseWords(sg.words) });
+        bySource.set(sg.source_id, list);
+      }
+      for (const [, list] of bySource) list.sort((a, b) => a.start_ms - b.start_ms);
+
+      for (const r of rows) {
+        const clip = out.get(r.id);
+        if (!clip) continue;
+        const all = (bySource.get(r.source_id) ?? []).flatMap((sg) => sg.words);
+        clip.words = wordsInRange(all, r.start_ms, r.end_ms);
+      }
+    } catch {
+      /* No words is the state this has always been in. */
+    }
+  }
+
   /* A clip from this same video is already on screen as segments. */
   if (ownSourceId) {
     const { results: own } = await db

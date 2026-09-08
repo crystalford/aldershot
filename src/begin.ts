@@ -11,12 +11,15 @@ import type { Env } from "./env.ts";
 import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
 import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
-import { createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief, TOUCHED } from "./projects.ts";
+import { blocksForProject, createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief, TOUCHED } from "./projects.ts";
 import { asked, scorePass } from "./score.ts";
 import { applyMoments, parseCuts, serialiseCuts } from "./cuts.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { recordPass } from "./passes.ts";
+import { ARRANGE_MAX, runArrange, wantsArrange } from "./arrange.ts";
+import { serialiseOrder, type Block } from "./blocks.ts";
+import type { Segment } from "./sources.ts";
 
 export interface BeginResult {
   intent: Intent;
@@ -182,9 +185,7 @@ export async function begin(
    */
   const work: JobMessage | null =
     skipScore || !project
-      ? intent === "shorts" && !skipScore
-        ? { type: "shorts", jobId: "", userId: opts.userId, sourceId: opts.sourceId, length: "30-60", count: 8, query: "" }
-        : null
+      ? null
       : intent === "react"
         ? { type: "reactions", jobId: "", userId: opts.userId, projectId: project.id, about: opts.brief }
         : intent === "essay"
@@ -203,8 +204,8 @@ export async function begin(
     ? await createJob(env.DB, {
         user_id: opts.userId,
         /* A reaction and an outline are both "a pass over the transcript" to
-           the metering and the job list; only a shorts run is its own type. */
-        type: work.type === "shorts" ? "shorts" : work.type === "score" ? "score" : "pass",
+           the metering and the job list. */
+        type: work.type === "score" ? "score" : "pass",
         ref_id: project?.id ?? opts.sourceId,
       })
     : null;
@@ -215,10 +216,93 @@ export async function begin(
     intent,
     projectId: project?.id ?? null,
     jobId: job?.id ?? null,
-    // extract and shorts produce no project: the clips land in Footage, and
-    // there is nothing to assemble.
-    href: project ? `/p/${project.id}/cut` : intent === "shorts" ? "/clipping" : "/footage?tab=moments",
+    // extract produces no project: the clips land in Footage, and there is
+    // nothing to assemble. Everything else opens the edit it just made.
+    href: project ? `/p/${project.id}/cut` : "/footage?tab=moments",
   };
+}
+
+/**
+ * REORDERING, as a pass.
+ *
+ * Writes `block_order` — the same column the two arrows on a row write, and
+ * the same one the pass snapshot restores — so a reorder is undone by exactly
+ * the mechanism every other pass already has. Nothing is re-encoded and
+ * nothing is lost: the blocks are the same blocks in a different sequence.
+ */
+async function arrangePass(
+  env: Env,
+  jobId: string,
+  opts: { userId: string; projectId: string | null; brief: string },
+  segments: Segment[],
+): Promise<void> {
+  await startJob(env.DB, jobId, "working out a better order");
+
+  const project = opts.projectId ? await getProject(env.DB, opts.projectId, opts.userId) : null;
+  if (!project) return void (await failJob(env.DB, jobId, "That edit isn't there any more."));
+
+  const undo = { cuts: project.cuts ?? null, order: project.block_order ?? null };
+  const all = (await blocksForProject(env.DB, project, opts.userId, { segments })).blocks;
+  /* Only what is KEPT. Reordering lines you have already cut would change an
+     order nobody can see, and it is the struck ones that make a long cut too
+     big to arrange at all. */
+  const kept = all.filter((b: Block) => !b.struck);
+
+  await advance(env.DB, jobId, 40, "working out a better order");
+
+  const out = kept.length > ARRANGE_MAX
+    ? { order: null, moved: 0, tokensIn: 0, tokensOut: 0 }
+    : await runArrange(env, opts.brief, kept);
+
+  await advance(env.DB, jobId, 90, "putting them in order");
+
+  if (out.order) {
+    /* The struck lines keep their places around the ones that moved, so
+       putting a line back later does not drop it at the end. */
+    const moved = new Set(out.order);
+    let next = 0;
+    const full = all.map((b: Block) => (moved.has(b.id) ? out.order![next++] : b.id));
+    await env.DB
+      .prepare(`UPDATE v2_projects SET block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+      .bind(serialiseOrder(full), Date.now(), project.id, opts.userId)
+      .run();
+  }
+
+  await recordPass(env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: opts.brief,
+    result: out.order
+      ? out.moved
+        ? `${out.moved} line${out.moved === 1 ? "" : "s"} moved`
+        : "already in that order"
+      : kept.length > ARRANGE_MAX
+        ? `too many lines to reorder at once — cut it down below ${ARRANGE_MAX} first`
+        : "couldn't work out an order — try naming the line",
+    /* Only when something actually moved: a turn offering to undo nothing is
+       a button that lies. */
+    undo: out.order && out.moved ? undo : null,
+    /* The first line that changed place — the same question "Show me" asks of
+       a scoring pass, answered in the terms a reorder works in. */
+    firstChange: out.order ? (out.order.find((id, i) => kept[i] && kept[i].id !== id) ?? null) : null,
+    tokensIn: out.tokensIn,
+    tokensOut: out.tokensOut,
+  });
+
+  /* A reorder burns real tokens and this metered NOTHING when it was written
+     this morning — against the rule at the top of src/usage.ts, "a job that
+     does not meter is a bug". Typed "pass", like every other instruction that
+     is not the first scoring run. */
+  await meter(env.DB, {
+    user_id: opts.userId,
+    job_id: jobId,
+    job_type: "pass",
+    tokens_in: out.tokensIn,
+    tokens_out: out.tokensOut,
+    outcome: out.order && out.moved ? "found" : "empty",
+  });
+
+  await finishJob(env.DB, jobId);
 }
 
 /** The score pass itself. Runs after the response; reports real progress. */
@@ -227,8 +311,33 @@ export async function runScore(
   opts: { userId: string; sourceId: string; projectId: string | null; brief: string; jobId: string; upgrade?: boolean },
 ): Promise<void> {
   const { jobId } = opts;
+  /* What the model call cost, held OUTSIDE the try so the catch can still say
+     what was already bought. failJob writes only the jobs row, so tokens spent
+     on a pass that died after the model answered vanished from the ledger. */
+  const spent = { tokensIn: 0, tokensOut: 0 };
+
   try {
-    const src = await getSource(env.DB, opts.sourceId, opts.userId);
+    /*
+     * WHICH VERB DID THEY MEAN? — and this is answered FIRST, before any video
+     * is looked up.
+     *
+     * Everything below picks spans and keeps or cuts them, which was the only
+     * thing a pass could ever do, and it needs a transcript. Reordering does
+     * not: it works on the blocks themselves. So it has to be decided before
+     * the source lookup, or a cut assembled from the LIBRARY — which has no
+     * source of its own — would fail with "That video isn't there any more"
+     * about a video it never had.
+     *
+     * The sentence decides, in code, before any model is asked. See
+     * wantsArrange for why that is not the model's job.
+     */
+    if (opts.projectId && wantsArrange(opts.brief)) {
+      const segments = opts.sourceId ? await getSegments(env.DB, opts.sourceId) : [];
+      return void (await arrangePass(env, jobId, opts, segments));
+    }
+
+    /* Selecting needs words, and words come from a video. */
+    const src = opts.sourceId ? await getSource(env.DB, opts.sourceId, opts.userId) : null;
     if (!src) return void (await failJob(env.DB, jobId, "That video isn't there any more."));
 
     const segments = await getSegments(env.DB, opts.sourceId);
@@ -259,6 +368,9 @@ export async function runScore(
       },
     });
 
+    spent.tokensIn = result.tokensIn;
+    spent.tokensOut = result.tokensOut;
+
     await advance(env.DB, jobId, 90, "picking out the moments");
     const clips = await saveClips(
       env.DB,
@@ -283,9 +395,15 @@ export async function runScore(
      * the editor so one ⌘Z puts the whole pass back.
      */
     let struck = 0;
+    /* What the cut looked like before this pass touched it, so the turn in the
+       conversation can offer a way back. Captured here rather than in the
+       route because this is the only place that knows whether anything was
+       actually rewritten. */
+    let undo: { cuts: string | null; order: string | null } | null = null;
     if (opts.projectId && result.clips.length) {
       const project = await getProject(env.DB, opts.projectId, opts.userId);
       if (project) {
+        undo = { cuts: project.cuts ?? null, order: project.block_order ?? null };
         const existing = parseCuts(project.cuts);
         /* Word-level work elsewhere in the transcript is somebody's deliberate
            edit and is not touched — only whole lines are decided here. */
@@ -319,6 +437,19 @@ export async function runScore(
         ? `${result.clips.length} moment${result.clips.length === 1 ? "" : "s"} found` +
           (struck ? ` · ${struck} line${struck === 1 ? "" : "s"} cut` : "")
         : "no matches — try different words",
+      undo,
+      /*
+       * WHERE TO LOOK. The earliest moment the model found, resolved to the
+       * line covering it — honest for both directions, because a keep pass and
+       * a cut pass are both ABOUT the moments it picked. The first applied cut
+       * would point at line 0 on every keep pass, which is true and useless.
+       */
+      firstChange: (() => {
+        const first = [...result.clips].sort((a, b) => a.start_ms - b.start_ms)[0];
+        if (!first) return null;
+        const seg = segments.find((sg) => sg.end_ms > first.start_ms) ?? segments[0];
+        return seg ? `s:${seg.idx}` : null;
+      })(),
       model: result.model,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
@@ -354,11 +485,27 @@ export async function runScore(
       job_type: "score",
       tokens_in: result.tokensIn,
       tokens_out: result.tokensOut,
+      /* The neurons cost the same whether it found eight moments or none, and
+         the ledger could not tell those apart. Recorded, not discounted. */
+      outcome: result.clips.length ? "found" : "empty",
     });
 
     await finishJob(env.DB, jobId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    /* Bill what was actually bought before giving up. meter() sat on the happy
+       path, so a pass that died after the model call recorded nothing and the
+       cost panel understated every failure. */
+    if (spent.tokensIn || spent.tokensOut) {
+      await meter(env.DB, {
+        user_id: opts.userId,
+        job_id: jobId,
+        job_type: "score",
+        tokens_in: spent.tokensIn,
+        tokens_out: spent.tokensOut,
+        outcome: "failed",
+      }).catch(() => {});
+    }
     await failJob(env.DB, jobId, `Couldn't work out what to keep: ${message}`);
   }
 }

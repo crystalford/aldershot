@@ -95,8 +95,14 @@ export interface TranscribeOpts {
   onProgress?: (fraction: number, done: number, total: number) => void;
 }
 
-/** One call. Used directly for short audio, and per-chunk for long audio. */
-async function transcribeOnce(
+/**
+ * One call. Used directly for short audio, and per-chunk for long audio.
+ *
+ * Exported because a spoken INSTRUCTION is short audio and wants exactly this
+ * and nothing else — no chunking, no job, no queue, no segments table. A few
+ * seconds of somebody saying "cut the bits where I ramble" is one call.
+ */
+export async function transcribeOnce(
   env: Env,
   media: Uint8Array | ArrayBuffer,
   opts: TranscribeOpts,

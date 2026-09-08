@@ -49,7 +49,10 @@ test("begin dispatches a reaction for a reaction, and an outline for an essay", 
   const src = beginSource();
   assert.match(src, /intent === "react"[\s\S]{0,200}type: "reactions"/, "a reaction must run runReactions");
   assert.match(src, /intent === "essay"[\s\S]{0,200}type: "outline"/, "an essay must run runOutline");
-  assert.match(src, /intent === "shorts"[\s\S]{0,200}type: "shorts"/, "a shorts run must run runShorts");
+  assert.ok(
+    !/type: "shorts"/.test(src),
+    "a shorts run is an edit now, not its own job type — Clipping is gone",
+  );
 });
 
 test("begin dispatches its own work, so no caller can forget or override it", () => {
@@ -65,10 +68,13 @@ test("begin dispatches its own work, so no caller can forget or override it", ()
 });
 
 test("every intent maps to a kind, or deliberately to none", () => {
-  // extract and shorts produce no project: the clips land in Footage and there
-  // is nothing to assemble. That is a decision, not a gap.
+  // extract produces no project: the clips land in Footage and there is
+  // nothing to assemble. That is a decision, not a gap.
   assert.equal(INTENT_KIND.extract, null);
-  assert.equal(INTENT_KIND.shorts, null);
+  // Shorts DOES make one. It used to make nothing — a one-off batch whose
+  // results waited on Clipping — and Clipping is gone, so asking for shorts
+  // now opens an edit where every line carries "Make a short".
+  assert.equal(INTENT_KIND.shorts, "cut");
   assert.equal(INTENT_KIND.react, "reaction");
   assert.equal(INTENT_KIND.essay, "essay");
   for (const k of Object.keys(INTENT_KIND)) {

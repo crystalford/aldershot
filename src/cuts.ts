@@ -412,6 +412,19 @@ export function applyMoments(
   return out;
 }
 
+/**
+ * The words spoken inside a span, from a longer list.
+ *
+ * The overlap test — ends after the span starts, starts before it ends — was
+ * written twice: once inside edl.ts's textForRange and once, by hand, wherever
+ * else a range needed its words. It lives here now, next to wordStartMs and
+ * wordEndMs, which are the only two functions that know a stored word carries
+ * SECONDS while everything else in this codebase talks in milliseconds.
+ */
+export function wordsInRange(words: StoredWord[], startMs: number, endMs: number): StoredWord[] {
+  return words.filter((w) => wordEndMs(w) > startMs && wordStartMs(w) < endMs);
+}
+
 /** What a set of cuts would remove, in milliseconds. */
 export function timeSaved(segments: Segmentish[], existing: Cut[], added: Cut[]): number {
   const before = playableRanges(segments, existing).reduce((n, r) => n + (r.end_ms - r.start_ms), 0);

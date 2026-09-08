@@ -28,6 +28,14 @@ echo "$out" | grep -E '^# (tests|pass|fail) '
 echo "── container"
 node scripts/check-container.cjs
 
+# client.ts is 4,000 lines inside a String.raw template: not typechecked, not
+# imported by any test, and `node --check` cannot parse a string. Three defects
+# shipped out of it in one day and every one was found by driving a browser.
+# This drives it. Skips cleanly when there is no dev server, like the string
+# check below.
+echo "── editor"
+node scripts/check-editor.cjs
+
 echo "── fidelity"
 node scripts/check-fidelity.cjs
 
@@ -38,3 +46,9 @@ echo
 # the encoder and a fixture host. `npm run check:render` says what is missing
 # and skips cleanly, so it is a pointer here rather than a gate.
 echo "  the export itself:  npm run check:render   (see scripts/check-render.cjs)"
+# Two real renders and two ffmpeg fixture builds — minutes, not seconds, so it
+# is a pointer like the one above rather than a stage. It is the only check in
+# this repo that looks at a PIXEL: everything else reasons about the EDL, the
+# plan or the DOM, which is how a 9:16 short shipped with the picture filling a
+# third of the frame and the rest black.
+echo "  what it looks like: npm run check:frame    (see scripts/check-frame.cjs)"

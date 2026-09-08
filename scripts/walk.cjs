@@ -139,7 +139,12 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
      * control being honest, and reporting it on every single run trains the
      * reader to skip the warnings that matter.
      */
-    const EXPECTED_OFF = ['Move earlier', 'Move later'];
+    /* Deliberately off, and each for a stated reason. The arrows: the first block
+   cannot move earlier and the last cannot move later. The clean-ups: a
+   clean-up with nothing to clean has nothing to do, and the rule in this
+   product is that a count is real or it is not shown — so it goes quiet
+   rather than offering a button that would find nothing. */
+const EXPECTED_OFF = ['Move earlier', 'Move later', 'Remove \u201Cum\u201D and \u201Cuh\u201D', 'Tighten silences'];
     const off = d.controls.filter((c) => c.disabled && !EXPECTED_OFF.includes(c.name));
     if (off.length) console.log(`   ⚠ disabled: ${off.map((c) => c.name).join(', ')}`);
     return d;
@@ -169,7 +174,6 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
   const surfaces = [...editorSurfaces, 
     ['Home', '/'],
     ['Editor', '/editor'],
-    ['Clipping', '/clipping'],
     ['Footage', '/footage'],
     ['Footage · Clips', '/footage?tab=moments'],
     ['Projects', '/projects'],

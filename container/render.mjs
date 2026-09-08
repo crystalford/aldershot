@@ -25,7 +25,7 @@
 // docs/decisions/transcription.md.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
 
 /**
@@ -175,12 +175,23 @@ const COLLECT_WINDOW_MS = 30 * 60 * 1000;
  *
  * Returns null when the file will not fit, and the caller keeps the URL.
  */
-async function fetchOnce(url, dest) {
+async function fetchOnce(url, dest, budget) {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`couldn't read the source (${res.status})`);
 
+  /*
+   * The budget is what is LEFT, not what one file may be.
+   *
+   * This compared each file against the whole allowance on its own, which was
+   * right while an edit came from one video: there was only ever one master.
+   * A cut assembled from the library is ten different videos, and ten 2 GB
+   * masters each passed a 12 GB test and together filled the disk. The caller
+   * spends the allowance down as it goes; anything that no longer fits keeps
+   * its URL and is read over the network instead, which is slower and always
+   * works.
+   */
   const declared = Number(res.headers.get("content-length")) || 0;
-  if (declared > DISK_BUDGET) {
+  if (declared > (typeof budget === "number" ? budget : DISK_BUDGET)) {
     await res.body.cancel().catch(() => {});
     return null;
   }
@@ -203,6 +214,30 @@ function probeDuration(url) {
     pr.stdout.on("data", (d) => { out += d; });
     pr.on("close", () => resolve(Number(out.trim()) || 0));
     pr.on("error", () => resolve(0));
+  });
+}
+
+/**
+ * The shape of a file's picture, for deciding whether to crop or letterbox.
+ *
+ * Null when it cannot be read — a voiceover take has no video stream, and an
+ * unreadable source falls back to letterboxing, which is never wrong, only
+ * ugly.
+ */
+function probeShape(url) {
+  return new Promise((resolve) => {
+    const pr = spawn("ffprobe", [
+      "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x", url,
+    ]);
+    let out = "";
+    pr.stdout.on("data", (d) => { out += d; });
+    pr.on("close", () => {
+      const m = /^(\d+)x(\d+)/.exec(out.trim());
+      resolve(m && Number(m[2]) ? { w: Number(m[1]), h: Number(m[2]) } : null);
+    });
+    pr.on("error", () => resolve(null));
   });
 }
 
@@ -324,23 +359,71 @@ function render(plan, res) {
       const wanted = [...new Set(cuts.flatMap((c) => [c.url, c.voiceUrl]).filter(Boolean))];
       const local = new Map();
       let fetched = 0;
+      /* Spent down as each source lands, so ten videos share one disk rather
+         than each being measured against the whole of it. */
+      let left = DISK_BUDGET;
       for (const url of wanted) {
         const ext = (String(url).split("?")[0].match(/\.[a-z0-9]{2,4}$/i) || [".mp4"])[0];
         const dest = `${dir}/source-${local.size}${ext}`;
-        const got = await fetchOnce(url, dest).catch(() => null);
-        if (got) local.set(url, got);
+        const got = await fetchOnce(url, dest, left).catch(() => null);
+        if (got) {
+          local.set(url, got);
+          try { left -= statSync(got).size; } catch { /* unreadable size: assume it took its share */ }
+        }
         fetched++;
         job.pct = Math.round((fetched / wanted.length) * 15);
       }
       /* Anything too big for the disk keeps its URL and takes the old path. */
       const at = (url) => (url ? local.get(url) || url : url);
 
+      /*
+       * WHAT SHAPE EACH SOURCE IS, so a cut can be filled rather than boxed.
+       *
+       * One ffprobe per distinct video, not per cut — a forty-cut edit from
+       * one video asks once. Voice takes are skipped: they have no picture.
+       */
+      const shapes = new Map();
+      for (const url of new Set(cuts.map((c) => c.url).filter(Boolean))) {
+        shapes.set(url, await probeShape(at(url)));
+      }
+
       job.stage = "cutting";
       const parts = new Array(cuts.length);
 
+      /*
+       * FILL THE FRAME, OR BOX IT — and which one depends on the source.
+       *
+       * Every cut used to be scaled down until it fit inside the frame and the
+       * remainder filled with black. For the thing this product exists to make
+       * that is close to a bug: a 16:9 source in a 9:16 short came out 1080x608
+       * in a 1080x1920 box, so the picture was about a THIRD of the frame and
+       * the rest was bars. OpusClip's whole visual signature is that it fills.
+       *
+       * CROP when the source is WIDER than the frame: the sides go and the
+       * middle stays, and the middle is where a person talking to a camera is.
+       *
+       * PAD when the source is TALLER: cropping a vertical source into a
+       * landscape frame takes a band across the middle and removes the
+       * speaker's head. Pillarboxing looks boxed; that one looks broken.
+       *
+       * Either way the output is exactly w x h, which everything downstream
+       * depends on — the concat below is a stream copy and will not join parts
+       * that differ, the voice branch appends tpad to this same string, and the
+       * caption geometry is measured off w and h.
+       */
+      const CROP = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
+      const PAD = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+      const fillFor = (url) => {
+        const shape = shapes.get(url);
+        if (!shape) return PAD;
+        /* Equal shapes make both a no-op; the tolerance keeps a 1919x1080
+           master from being treated as taller than 16:9 and boxed. */
+        return shape.w / shape.h >= w / h - 0.005 ? CROP : PAD;
+      };
+
       const encode = async (cut, i) => {
         const out = `${dir}/part-${String(i).padStart(4, "0")}.mp4`;
-        const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+        const vf = fillFor(cut.url);
 
         if (cut.voiceUrl) {
           // The user talking over the clip. Their voice is the point, so the

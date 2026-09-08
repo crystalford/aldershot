@@ -120,12 +120,17 @@ export function renderSource(d: SourceViewData): string {
    * transcript, and had no way to do anything with it. Getting to the editor
    * meant knowing to go somewhere else entirely. Same three the design puts on
    * every source — Edit, Clip it, React to it.
+   *
+   * "Clip it" used to open Clipping. Clipping is gone, and the gesture it
+   * stood for is a brief like any other: it makes an edit, and every line in
+   * that edit carries "Make a short". So it goes through the same source-go
+   * button "React to it" already uses rather than being a link to nowhere.
    */
   const actions =
     s.transcript_state === "ready"
       ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">
           <a href="/sources/${esc(s.id)}/edit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Edit</a>
-          <a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70}">Clip it</a>
+          <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="Cut shorts from it" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;border:none;font-family:${FONT.ui}">Clip it</button>
           <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;border:none;font-family:${FONT.ui}">React to it</button>
         </div>`
       : "";

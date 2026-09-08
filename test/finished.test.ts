@@ -54,7 +54,7 @@ test("a finished short is named after the video its clip came from", async () =>
   render(w.db, "r2", { kind: "short", clip: "c1" });
   const [row] = await listFinished(w.d1, "u1", "short");
   assert.equal(row.title, "A video");
-  assert.equal(row.href, "/clipping?source=s1");
+  assert.equal(row.href, "/sources/s1", "Clipping is gone; a short points back at its footage");
 });
 
 test("the two kinds do not see each other", async () => {
@@ -65,6 +65,25 @@ test("the two kinds do not see each other", async () => {
   render(w.db, "r2", { kind: "short", clip: "c1" });
   assert.deepEqual((await listFinished(w.d1, "u1", "cut")).map((r) => r.id), ["r1"]);
   assert.deepEqual((await listFinished(w.d1, "u1", "short")).map((r) => r.id), ["r2"]);
+});
+
+test("asking for both kinds returns both", async () => {
+  /* Exports asks for both, and it is the ONLY surface that lists a finished
+     short now. If this narrows to one kind again, every short you rendered
+     goes unreachable while still paying for its storage — which is exactly
+     what deleting Clipping would have done on its own. */
+  const w = world();
+  render(w.db, "r1", { kind: "cut", project: "p1" });
+  render(w.db, "r2", { kind: "short", clip: "c1" });
+  const both = await listFinished(w.d1, "u1", ["cut", "short"]);
+  assert.deepEqual(both.map((r) => r.id).sort(), ["r1", "r2"]);
+});
+
+test("asking for no kinds returns nothing rather than everything", async () => {
+  /* An empty list must not fall through to an unfiltered query. */
+  const w = world();
+  render(w.db, "r1", { kind: "cut", project: "p1" });
+  assert.deepEqual(await listFinished(w.d1, "u1", []), []);
 });
 
 test("only what actually finished", async () => {

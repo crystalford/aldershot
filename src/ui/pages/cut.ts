@@ -20,14 +20,32 @@
 
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
-import { iconArrowDown, iconArrowUp, iconPause, iconPlay, iconPlus } from "../icons.ts";
+import { iconArrowDown, iconArrowUp, iconPause, iconPlay, iconPlus, iconSearch } from "../icons.ts";
 import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 
+/**
+ * TWO WAYS TO READ THE SAME EDIT.
+ *
+ * "blocks" is the card list — a thing per line, with its frame, its verbs and
+ * a + between each. "script" is the same edit as something you read: the words
+ * flowing, everything else out of the way until you are on a line.
+ *
+ * They render the SAME dom — the same .blk wrappers, the same .w spans, the
+ * same data attributes, the same seams. Only styling and the thumbnail differ.
+ * That is not tidiness: paintBlock, here(), retotal and every strike, move and
+ * short branch in the client key off .blk, so a view that dropped it would
+ * silently lose half the editor. One contract, two readings, nothing in
+ * src/ui/client.ts changed at all.
+ */
+export type CutView = "blocks" | "script";
+
 export interface CutData {
   projectId: string;
+  /** Which reading. Defaults to blocks everywhere it is not asked for. */
+  view?: CutView;
   title: string;
   sourceId: string | null;
   /** What the footage is called, for the line that links back to it. */
@@ -66,7 +84,7 @@ export interface CutData {
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** Every instruction given to the model on this cut, and what came of it. */
-  passes: Array<{ id: string; n: number; instruction: string; result: string }>;
+  passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
 }
 
 /**
@@ -77,16 +95,28 @@ export interface CutData {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
-function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
+function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView = "blocks"): string {
+  const script = view === "script";
   const struck = b.struck;
 
   /* A footage block shows its words so each can be struck. A recording has no
      transcript of its own, so it shows what it is instead. */
+  /*
+   * A PULLED CLIP'S WORDS ARE ITS OWN VIDEO'S.
+   *
+   * They live in displayWords rather than words, because a cut can never be
+   * stored against them (see fromPulled), so they are shown and clickable but
+   * not strikeable — the block strikes whole, which is what its Cut button has
+   * always done. data-cut is never set on them for the same reason.
+   */
+  const shown = b.words.length ? b.words : (b.displayWords ?? []);
+  const readOnly = !b.words.length && shown.length > 0;
+
   const body =
-    b.origin === "footage" && b.words.length
-      ? b.words
+    b.origin === "footage" && shown.length
+      ? shown
           .map((w, wi) => {
-            const gone = struck || wordStruck(cuts, b, wi);
+            const gone = struck || (!readOnly && wordStruck(cuts, b, wi));
             /* The word's own timings, in milliseconds, on the word.
                This is what makes the transcript a scrub bar: clicking a word
                seeks to it, and the word being spoken lights up as it plays.
@@ -272,28 +302,45 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
      where a synthetic line stands on its own. */
   const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder : "";
 
-  const meta = [
-    b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",
-    b.why ?? "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /*
+   * THE MODEL'S REASON, CLAMPED.
+   *
+   * `why` has no length cap anywhere, and it rendered in full under every
+   * scored block — routinely longer than the line it was explaining. A
+   * three-line quote carrying a four-line justification means the explanation
+   * outweighs the words you are trying to read, on the surface whose whole
+   * job is reading them.
+   *
+   * One line, and the rest on press. -webkit-line-clamp rather than a server
+   * truncation because the full text has to still be there to expand to, and
+   * because where it runs out depends on the column width.
+   */
+  const dur = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
+  const why = (b.why ?? "").trim();
+  const meta = why
+    ? `<div class="blk-why" data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</div>`
+    : dur
+      ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(dur)}</div>`
+      : "";
+
+  /* Reading, not managing: no card, no frame, no rule between lines. The
+     score's green ring goes too — it is a property of the line you are
+     reading, and a page of ringed paragraphs is a form again. */
+  const shell = script
+    ? `display:flex;gap:10px;align-items:flex-start;padding:3px 0;background:none;box-shadow:none;${struck ? "opacity:.5;" : ""}`
+    : `display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
+        b.score != null ? `inset 0 0 0 1px ${accentBg(ACCENT.green)}` : "none"
+      };${struck ? "opacity:.5;" : ""}`;
 
   return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
-      style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
-        b.score != null ? `inset 0 0 0 1px ${accentBg(ACCENT.green)}` : "none"
-      };${struck ? "opacity:.5;" : ""}">
-    ${thumb}
+      style="${shell}">
+    ${script ? "" : thumb}
     <div style="flex:1;min-width:0">
       <div style="font-size:${SIZE.quote};line-height:1.5;color:rgba(236,236,241,0.92)">${originTag}${body}</div>
-      ${
-        meta
-          ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(meta)}</div>`
-          : ""
-      }
+      ${meta}
       ${fill}
     </div>
-    <div style="flex:none;display:flex;align-items:center;gap:4px">
+    <div class="blk-actions" style="flex:none;display:flex;align-items:center;gap:4px">
       ${judged}
       ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
       ${short}
@@ -316,14 +363,33 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
  * a chip that pretends otherwise is the failure this whole session has been
  * about — they are absent rather than dead.
  */
-function seam(projectId: string, at: number): string {
+function seam(projectId: string, at: number, view: CutView = "blocks"): string {
   const opt = (kind: string, label: string) =>
     `<button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" data-kind="${kind}"
       style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${label}</button>`;
 
-  return `<div class="seam" style="display:flex;justify-content:center;padding:1px 0">
+  /*
+   * ONE SEAM AT A TIME.
+   *
+   * There was a + between every block — up to 120 identical circles down the
+   * page, each for a gesture used a handful of times in an edit. The row of
+   * them read as decoration and made the transcript look like a form.
+   *
+   * The opener is invisible until its block is the current one, and the block
+   * you clicked, played or struck IS the current one — which also gives the
+   * editor a notion of "where I am" that it has never had. Not hover: hover
+   * does not exist on a touch screen, and this product was invisible there
+   * once already.
+   */
+  /* Kept in the dom in BOTH views even when it draws nothing: here() finds the
+     seams either side of the current block by element sibling, so removing
+     them would take the + away everywhere and not just here. */
+  return `<div class="seam" style="display:flex;justify-content:center;padding:${view === "script" ? "0" : "1px 0"}">
+    <!-- Size lives in CSS, not here: the script view collapses this to nothing
+         between lines and restores it on the line you are on, and an inline
+         height would beat any rule that tried. -->
     <button class="seam-open" aria-label="Add something here"
-      style="width:22px;height:22px;border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
+      style="border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
     <div class="seam-opts" hidden style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:4px 0">
       ${opt("vo", "Your voice")}${opt("react", "A reaction")}${opt("clip", "A clip")}
       <button class="seam-close" style="font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;cursor:pointer;font-family:${FONT.ui};padding:0 4px;white-space:nowrap">never mind</button>
@@ -419,102 +485,148 @@ function passLogPanel(passes: CutData["passes"]): string {
 }
 
 /**
- * Find a word in this cut, and cut every place it is said.
+ * FIND, ON THE DOCUMENT WHERE IT BELONGS.
  *
- * The palette searches the whole library and navigates away, which is the
- * opposite of what you want mid-edit — so inside a 48-minute transcript there
- * was no way to reach "sponsor" except scrolling, and no way to act on all of
- * them at once. This is most of what "editing via text" means in practice.
+ * This was merged into the assistant yesterday, on the argument that find and
+ * ask are the same gesture at different precision. That is true and it was
+ * still wrong: it made the one control the product is about look like a
+ * search box, and the owner said so — "the chat, it's not very pronounced...
+ * I don't think people would actually even understand what that was".
  *
- * The count and the saving are the same rule as the clean-up chips: real, or
- * not shown. Neither exists until a search comes back, so the button is here
- * and empty rather than promising a number it has not measured.
+ * So find comes back to the transcript. It is a document tool: it searches
+ * the words in front of you, it costs nothing, and it belongs at the top of
+ * the thing it searches. Asking costs minutes and money and belongs in the
+ * conversation.
  */
-function findPanel(projectId: string): string {
-  /* A field, not a card. Boxed like the panel below it, with no heading of its
-     own, it read as an empty container waiting for something. */
-  return `<div class="find" data-project="${esc(projectId)}" style="margin-top:12px">
-    <div style="display:flex;gap:8px;align-items:center;background:${C.surface};border-radius:7px;padding:4px 4px 4px 12px;flex-wrap:wrap">
-      <input class="find-q" placeholder="Find a word in this cut" style="flex:1 1 120px;min-width:min(110px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};padding:7px 0;font-family:${FONT.ui}"/>
+function findBar(projectId: string): string {
+  /* The hits list is INSIDE .find. The client looks its parts up from that
+     one element, so a sibling is a null it will happily crash on. */
+  return `<div class="find" data-project="${esc(projectId)}" style="margin-bottom:10px">
+    <div style="display:flex;gap:8px;align-items:center;background:${C.surface};border-radius:7px;padding:3px 4px 3px 12px">
+      <span style="flex:none;display:grid;place-items:center;color:${C.ink32}">${iconSearch({ size: 13 })}</span>
+      <input class="find-q" autocomplete="off" placeholder="Find a word in this cut"
+        style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};padding:8px 0;font-family:${FONT.ui}"/>
       <span class="find-count" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums"></span>
+      <button class="find-cut" hidden style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.85);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"></button>
     </div>
-    <button class="find-cut" hidden style="margin-top:8px;width:100%;display:flex;align-items:baseline;justify-content:center;gap:6px;font-size:${SIZE.secondary};font-weight:600;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.75);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"></button>
     <div class="find-hits" style="margin-top:8px;display:flex;flex-direction:column;gap:1px;max-height:230px;overflow-y:auto"></div>
   </div>`;
 }
 
-function assist(d: CutData): string {
-  /*
-   * `note` is the honest count, and it is also what decides whether the chip
-   * is live: a clean-up with nothing to clean has nothing to do, so it is
-   * disabled and says so by being quiet rather than by lying about a number.
-   *
-   * `always` is for the one chip whose work is a model call — there is no
-   * count to take beforehand, and it is always worth offering.
-   */
-  const chip = (cls: string, label: string, note: string, opts: { gold?: boolean; always?: boolean } = {}) => {
-    const live = opts.always || note !== "";
-    return `<button class="${cls}"${live ? "" : " disabled"} style="flex:1 1 auto;display:flex;align-items:baseline;justify-content:center;gap:6px;font-size:${SIZE.secondary};font-weight:500;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${
-      opts.gold ? ACCENT.gold : "rgba(236,236,241,0.75)"
-    };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};white-space:nowrap;${live ? "" : "opacity:.4;"}">
-      <span>${label}</span>
-      ${note ? `<span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(note)}</span>` : ""}
-    </button>`;
-  };
-
-  /* "47 · −0:31". Nothing here is shown unless it was counted. */
+/**
+ * THE ASSISTANT.
+ *
+ * "It's like a chatbot LLM powered video editing system that also is like
+ * blocks — blocking instead of non-linear video editing."
+ *
+ * That is the product, and until now it looked like a footnote: a grey field
+ * with a magnifier in it, a dropdown you had to open, and a pass that ran by
+ * reloading the page and never saying what it had done.
+ *
+ * This is a column that reads as what it is — the video you are both looking
+ * at, the conversation about it, and a box to type in at the bottom. That
+ * shape needs no explaining to anybody who has used software in the last
+ * three years, which was the entire problem.
+ *
+ * The composer is Home's composer (src/ui/pages/home.ts) — the same raised
+ * box, the same RADIUS.composer that exists in the tokens for nothing else.
+ * One object for telling Aldershot what you want, on the way in and while you
+ * work, rather than a designed box on the marketing page and a search field
+ * where the work happens.
+ */
+function assistant(d: CutData, player: string): string {
+  /* "47 · −0:31". Nothing is shown unless it was counted — the rule the chips
+     have always followed. A clean-up with nothing to clean has nothing to do,
+     so it is quiet rather than lying about a number. */
   const note = (n: { found: number; savedMs: number }) =>
     n.found ? `${n.found} · −${hms(n.savedMs / 1000)}` : "";
 
-  return `<div class="assist" data-project="${esc(d.projectId)}" style="margin-top:12px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface}">
-    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45};margin-bottom:9px">Ask for another pass</div>
-    <form class="pass-form" style="display:flex;gap:8px;align-items:center;background:#131316;border-radius:7px;padding:4px 4px 4px 12px;flex-wrap:wrap">
-      <input name="instruction" placeholder="“also cut the sponsor read”" style="flex:1 1 140px;min-width:min(130px,100%);background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:8px 0;font-family:${FONT.ui}"/>
-      <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Run it</button>
-    </form>
-    <div data-content style="margin-top:10px;font-size:${SIZE.meta};color:${C.ink32}">Or one of these — they fill the box, so you can change them.</div>
-    <div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">
-      ${
-        /*
-         * Instructions that mean something on ANY video.
-         *
-         * These were the prototype's, and the prototype's demo is a podcast
-         * with a sponsor read in it: "React to the logical fallacies", "Also
-         * cut the sponsor read". On a person talking to a camera — which is
-         * what this account actually holds — they are instructions about
-         * things that are not there. An example you cannot use teaches
-         * nothing about what the field accepts.
-         *
-         * Each of these is a real instruction against a real transcript, and
-         * they fill the field rather than firing, so one can be edited into
-         * what you actually meant.
-         */
-        [
-          /* Selecting — what a pass is mostly for. */
-          "Keep only the strongest points",
-          "Where I actually make the point",
-          "The funniest moments",
-          /* Tightening — the same engine pointed at what to remove. */
-          "Cut the bits where I repeat myself",
-          "Cut the false starts",
-          "Cut anything I said better later",
-          /* Shape — length and structure, which people do not guess it can do. */
-          "Keep only the ones under 20 seconds",
-          "Just the story, none of the setup",
-          "Every question I ask",
-        ]
-        .map(
-          (t) =>
-            `<button class="pass-eg" style="font-size:12px;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.55);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${t}</button>`,
-        )
-        .join("")}
+  const quick = (cls: string, label: string, n: string, live: boolean, gold = false) =>
+    `<button class="${cls}"${live ? "" : " disabled"} style="display:flex;align-items:baseline;gap:6px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${
+      gold ? ACCENT.gold : "rgba(236,236,241,0.7)"
+    };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};white-space:nowrap;${live ? "" : "opacity:.4;"}">
+      <span>${label}</span>${n ? `<span data-content style="font-family:${FONT.mono};color:${C.ink32}">${esc(n)}</span>` : ""}
+    </button>`;
+
+  /*
+   * A TURN, and what it actually did.
+   *
+   * A pass used to reload the page and leave you to notice that some blocks
+   * had changed colour. It says what it did now, and offers the way back for
+   * as long as the turn is on screen — the old undo was a toast that expired
+   * in six seconds or a keyboard shortcut the owner does not use, which made
+   * the one action that rewrites the whole cut effectively permanent.
+   */
+  const turn = (p: CutData["passes"][number]) => {
+    const empty = /^no matches/.test(p.result);
+    return `<div class="turn" data-pass="${esc(p.id)}" style="display:flex;flex-direction:column;gap:6px">
+      <div data-content style="align-self:flex-end;max-width:92%;font-size:${SIZE.secondary};line-height:1.5;padding:8px 11px;border-radius:9px;background:${C.pill};color:rgba(236,236,241,0.9)">${esc(p.instruction)}</div>
+      <div style="max-width:92%;display:flex;flex-direction:column;gap:6px">
+        <div data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</div>
+        ${
+          p.undoable || p.first_change
+            ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${
+                  /* Where to look. The research on this whole category lands on
+                     one point: the question is not whether the model can do
+                     more, it is whether a person can check what it chose faster
+                     than doing it themselves. */
+                  p.first_change
+                    ? `<button class="turn-show" data-block="${esc(p.first_change)}" style="font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Show me</button>`
+                    : ""
+                }
+                ${
+                  p.undoable
+                    ? `<button class="turn-undo" data-pass="${esc(p.id)}" data-project="${esc(d.projectId)}" style="font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Undo this</button>`
+                    : ""
+                }
+              </div>`
+            : ""
+        }
+      </div>
+    </div>`;
+  };
+
+  /* Nothing said yet. The opening line does the job the nine example chips
+     were doing, in one sentence, without being a wall. */
+  const talk = d.passes.length
+    ? d.passes.map(turn).join("")
+    : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Tell me what to change and I'll go through the whole transcript. Try “cut the bits where I repeat myself”, “keep only the strongest points”, or “put the punchline first”.</div>`;
+
+  return `<div class="asst" data-project="${esc(d.projectId)}">
+    <div class="asst-top">${player}</div>
+
+    <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+      ${talk}
     </div>
-    <div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap">
-      ${chip("find-good", "Find the strong bits", "", { gold: true, always: true })}
-      ${chip("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers))}
-      ${chip("clean-pauses", "Tighten silences", note(d.cleanups.pauses))}
+
+    <div class="asst-foot" style="flex:none;padding-top:10px">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
+        ${quick("find-good", "Find the strong bits", "", true, true)}
+        ${quick("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers), d.cleanups.fillers.found > 0)}
+        ${quick("clean-pauses", "Tighten silences", note(d.cleanups.pauses), d.cleanups.pauses.found > 0)}
+      </div>
+      <form class="pass-form" style="position:relative;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
+        <textarea name="instruction" rows="2" placeholder="Ask for a change…"
+          style="display:block;width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:9px 10px 4px;color:${C.ink};font-size:${SIZE.body};line-height:1.5;font-family:${FONT.ui}"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;padding:0 4px 2px">
+          <!--
+            SAY IT INSTEAD OF TYPING IT. The words land in the box above for
+            you to read and fix before anything runs — voice is the fast way
+            in, not a way to spend a pass on a sentence nobody checked.
+
+            Type and a coloured dot, not a ninth icon: src/ui/icons.ts says
+            outright that if a feature seems to need one, it does not. The
+            blinking red dot is the recorder's, because it means the same
+            thing in both places.
+          -->
+          <button type="button" class="asst-mic"
+            style="flex:none;display:flex;align-items:center;gap:5px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"><span class="asst-mic-dot" hidden style="width:6px;height:6px;border-radius:50%;background:${ACCENT.red};animation:blip 1.1s ease-in-out infinite"></span><span class="asst-mic-label">Say it</span></button>
+          <span class="asst-hint" style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
+          <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Run it</button>
+        </div>
+      </form>
     </div>
-    ${passLogPanel(d.passes)}
   </div>`;
 }
 
@@ -531,11 +643,12 @@ export function renderBlockSlice(
   cuts: Cut[],
   from: number,
   to: number,
+  view: CutView = "blocks",
 ): string {
   const out: string[] = [];
   for (let i = from; i < Math.min(to, blocks.length); i++) {
-    out.push(blockRow(blocks[i], cuts, i, blocks.length));
-    out.push(seam(projectId, i + 1));
+    out.push(blockRow(blocks[i], cuts, i, blocks.length, view));
+    out.push(seam(projectId, i + 1, view));
   }
   return out.join("");
 }
@@ -547,10 +660,28 @@ export function renderCut(d: CutData): string {
     <a href="${esc(backHref)}" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← ${esc(backLabel)}</a>
     <span style="margin-left:auto">${itemMenu("projects", d.projectId, d.title, "cut")}</span>
   </div>
-  <div style="margin-top:14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+  <!-- The runtime and the kept count were here AND in the bottom bar: the
+       same two numbers twice on one screen. The bar is the one that stays
+       with you as you scroll, so it is the one that keeps them. The ids
+       remain because the client retotals by id and a second display that
+       could disagree is worse than none. -->
+  <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.title)}</div>
-    <span id="head-runtime" style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(d.runtimeMs / 1000)}</span>
-    <span id="head-kept" style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${d.keptCount} kept</span>
+    <!--
+      TWO READINGS OF THE SAME EDIT.
+
+      Blocks is a thing per line, with its frame and its verbs. Script is the
+      words, flowing, with everything else quiet until you are on a line. Same
+      dom, same handlers, same cuts — only the styling differs, so neither can
+      drift from the other.
+
+      Two urls rather than a toggle in the page, because /p/:id/script already
+      existed as a legacy alias and this is what it always should have meant.
+    -->
+    <div class="view-swap" style="margin-left:auto">
+      <a href="/p/${esc(d.projectId)}/cut"${(d.view ?? "blocks") === "blocks" ? ' aria-current="page"' : ""}>Blocks</a>
+      <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Script</a>
+    </div>
   </div>`;
 
   /*
@@ -621,9 +752,24 @@ export function renderCut(d: CutData): string {
   const ctl = `flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:${RADIUS.button};background:transparent;border:none;color:${C.ink70};cursor:pointer;font-family:${FONT.ui};font-size:${SIZE.meta};font-weight:600`;
   const clockStyle = `flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums`;
 
-  const player = d.sourceKey
-    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
-      <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
+  /*
+   * THE PLAYER EXISTS EVEN WHEN THE EDIT HAS NO VIDEO OF ITS OWN.
+   *
+   * A cut assembled from the library has no project source, and this used to
+   * render nothing at all in that case — so #cut-video did not exist, and
+   * every block's play button, "Watch the cut" and the follow-along highlight
+   * had nothing to play into. Each block carries its own file and playFrom
+   * swaps the element's src to it, so the element is what has to be there; the
+   * src is not.
+   *
+   * It starts empty and fills the moment you press a block, which is the only
+   * honest first frame for a cut with no single video behind it.
+   */
+  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
+      <!-- Wraps. Seven controls in a 320px column ran "Full" off the edge;
+           the bar is narrower now that it lives with the assistant, so it
+           takes a second line rather than losing its last button. -->
+      <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
         <button class="pl-play" aria-label="Play" style="${ctl}">
           <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
           <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
@@ -640,8 +786,32 @@ export function renderCut(d: CutData): string {
         <span class="pl-dur" data-content style="${clockStyle}">${hms(0)}</span>
         <button class="pl-rate" aria-label="Speed" style="${ctl};width:auto;padding:0 6px"><span data-content>1×</span></button>
         <button class="pl-full" aria-label="Fullscreen" style="${ctl};width:auto;padding:0 6px">Full</button>
-      </div>`
-    : "";
+      </div>`;
+
+  /*
+   * WHICH FOOTAGE this cut is made from, and a way back to it.
+   *
+   * An edit never changes its footage — cuts live on the project and a render
+   * writes a new file — but the editor gave no sign of that, so the footage
+   * was effectively consumed by the first edit made from it.
+   */
+  /*
+   * WHERE THIS IS MADE OF.
+   *
+   * One video gets its name and a way back to it. A cut assembled from the
+   * library has no single video and used to say nothing at all — six lines
+   * from six places with no account of where they came from, which is the
+   * review gap this product is supposed to be better at than anyone else's.
+   * It says how many videos, and points at the library.
+   */
+  const fromCount = new Set(
+    d.blocks.filter((b) => b.origin === "footage" && b.previewKey).map((b) => b.previewKey),
+  ).size;
+  const sourceLine = d.sourceId
+    ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
+    : fromCount
+      ? `<a href="/footage?tab=moments" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${fromCount} video${fromCount === 1 ? "" : "s"}</span> in your library →</a>`
+      : "";
 
   /*
    * A WINDOW of blocks, not all of them.
@@ -655,11 +825,12 @@ export function renderCut(d: CutData): string {
    * this same function on the server — the client never builds a block, so
    * there is no second copy of this markup to drift.
    */
+  const view: CutView = d.view ?? "blocks";
   const shown = d.blocks.slice(0, d.windowSize);
-  const list: string[] = [seam(d.projectId, 0)];
+  const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length));
-    list.push(seam(d.projectId, i + 1));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view));
+    list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
     /* The sentinel says how much is left, so a long transcript admits its
@@ -669,34 +840,32 @@ export function renderCut(d: CutData): string {
   }
 
   return `${head}${strip}${failed}
-  <div style="margin-top:20px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-    <div class="editor-aside">
-      ${player}
-      ${
-        /*
-         * WHICH FOOTAGE this cut is made from, and a way back to it.
-         *
-         * An edit never changes its footage — cuts live on the project and a
-         * render writes a new file — but the editor gave no sign of that, and
-         * /sources/:id used to redirect straight back here, so the footage was
-         * genuinely unreachable. Naming it and linking to it is the difference
-         * between "this edit consumed my video" and "this edit is one of
-         * several I can make from it".
-         */
-        d.sourceId
-          ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
-          : ""
-      }
-      <div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.55">Strike a line or a word to cut it. Move a block to change the order. The + adds your voice between them.</div>
-      ${findPanel(d.projectId)}
-      ${assist(d)}
+  <div style="margin-top:16px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+
+    <!--
+      THE DOCUMENT, and it goes first because it is what you are reading.
+      Left and wide: the transcript is the work, and it used to be whatever
+      was left over after a rail of controls took its 300px.
+    -->
+    <div class="editor-doc">
+      ${findBar(d.projectId)}
+      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
+        ${list.join("")}
+      </div>
     </div>
-    <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:1px">
-      ${list.join("")}
-    </div>
+
+    <!--
+      THE ASSISTANT. Video at the top because it is what you are both looking
+      at, the conversation under it, the composer pinned at the bottom.
+    -->
+    ${assistant(d, player + sourceLine)}
   </div>
   <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
     <span id="cut-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${d.keptCount} kept · ${hms(d.runtimeMs / 1000)}</span>
+    <!-- Every gesture writes immediately and the page never said so, on a
+         product where each click alters a video. Quiet until there is
+         something true to report. -->
+    <span id="saved-state" data-content hidden style="font-size:${SIZE.meta};color:${C.ink32};white-space:nowrap"></span>
     ${
       /* Only when something IS outstanding. "every beat is filled." on a cut
          with nothing in it is noise, and on a finished one it is a pat on the

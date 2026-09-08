@@ -54,6 +54,16 @@ export interface Block {
    * already hands the player a preview key for that case.
    */
   previewKey: string | null;
+  /*
+   * Words to SHOW, for a block whose words are not its own.
+   *
+   * A clip pulled from another video has no word timings in `words`, on
+   * purpose (see fromPulled) — but an assembled cut still has to be readable,
+   * and the script view has nothing to flow without them. These are read by
+   * the page and by nothing else: no cut is stored against them, no range is
+   * built from them, and the render never sees them.
+   */
+  displayWords?: StoredWord[];
   /**
    * A recording that plays OVER this block's picture.
    *
@@ -109,6 +119,13 @@ export interface PulledClip {
   end_ms: number;
   quote: string;
   frameKey: string | null;
+  /*
+   * The other video's words inside this clip's range, when they were loaded.
+   *
+   * For READING. See displayWords on Block for why they must not become
+   * Block.words.
+   */
+  words?: StoredWord[];
 }
 
 export interface ScoreLike {
@@ -194,9 +211,19 @@ export function buildBlocks(opts: {
     start_ms: p.start_ms,
     end_ms: p.end_ms,
     text: p.quote,
-    /* No word timings: they belong to the other video's transcript, which is
-       not loaded here. The block plays and strikes whole, which is honest. */
+    /*
+     * STILL EMPTY, AND DELIBERATELY.
+     *
+     * blockRanges takes a whole-block fast path when a block has no words, and
+     * builds ranges from word timings when it has them. A pulled block's word
+     * cuts can never be addressed — wordStruck does Number(id.slice(2)) and a
+     * beat id is a ulid, so that is NaN and no word here can ever be marked —
+     * so giving this real words would change what the RENDER produces while
+     * leaving no way to affect it. The words go in displayWords instead, where
+     * only the page reads them.
+     */
     words: [],
+    displayWords: p.words ?? [],
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: p.sourceTitle,

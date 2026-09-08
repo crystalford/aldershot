@@ -406,12 +406,96 @@ async function checkStrings() {
         "doing, like every other control in this product.",
     ],
     [
-      "\u2190 All shorts",
-      "Clipping lists the shorts you have MADE, and choosing a video filters " +
-        "them. It said 'All videos' and pointed at /clipping, which redirected " +
-        "to a guessed video — so the link could not move: 'I click All videos " +
-        "it just stays on this screen'. The prototype's Clipping never needed " +
-        "a way back because its demo only ever has one video.",
+      "Tell me what to change and I'll go through the whole transcript. Try \u201Ccut the bits where I repeat myself\u201D, \u201Ckeep only the strongest points\u201D, or \u201Cput the punchline first\u201D.",
+      "What the assistant says before you have said anything. It replaces " +
+        "nine example chips that sat in a wall down a 300px column — nine of " +
+        "anything is a list you skip rather than read — and it names the two " +
+        "verbs a pass has: selecting (keep or cut) and, now, ordering. The " +
+        "prototype has no such control, because its assistant is one input " +
+        "with no conversation behind it.",
+    ],
+    [
+      "It reads the whole transcript.",
+      "Under the composer, because a pass is not a search: it costs minutes " +
+        "and money and reads every window of the source, and the field it " +
+        "sits under looks exactly like a box you might expect to filter " +
+        "something. Saying what it does is cheaper than a surprised bill.",
+    ],
+    [
+      "Undo this",
+      "A pass rewrites the whole cut at once, and the only way back was a toast " +
+        "that expired in six seconds or Cmd-Z — which the owner does not press, " +
+        "so in practice the one action that changes everything was permanent " +
+        "the moment you looked away. Each pass now keeps the cut as it stood " +
+        "before it ran and the turn spends that snapshot once. The prototype " +
+        "has no such control because its assistant is a single input with no " +
+        "conversation behind it and nothing to take back.",
+    ],
+    ...[
+      "Empty the bin",
+      "Put it back",
+      "Delete for good",
+    ].map((t) => [
+      t,
+      "The deleted pile in Settings. Delete is a soft delete here — an edit or " +
+        "a video goes to a bin you can take it back out of — and the " +
+        "prototype has no bin at all, because nothing in it can be deleted. " +
+        "These have been shipped for a long time and were never CHECKED: the " +
+        "controls only render when the bin has something in it, and no check " +
+        "had ever put anything there. The editor gate now makes a library edit " +
+        "and deletes it again, which is what finally rendered them.",
+    ]),
+    [
+      "THEY CALLED IT NON-LINEAR \u00B7 THEN GAVE YOU A LINE",
+      "Replaces the prototype's 'NO TIMELINE \u00B7 NO SCRUBBING \u00B7 NO NLE', " +
+        "which sat directly above the headline 'The timeline is gone. Good.' " +
+        "and said the same thing twice \u2014 an eyebrow should earn the headline, " +
+        "not restate it. The replacement is the owner's own observation: " +
+        "'non-linear never made sense, now we make it make sense'. Non-linear " +
+        "editing meant random access rather than cutting tape in sequence, and " +
+        "the interface the industry shipped for it is a literal horizontal " +
+        "line you drag along. Naming that is a sharper claim than listing what " +
+        "we left out.",
+    ],
+    ...[
+      "In this cut",
+      "Ask the model",
+      "More like these",
+    ].map((t) => [
+      t,
+      "The command bar's three groups. The editor had TWO text boxes — 'Find " +
+        "a word in this cut' and 'Ask for another pass' — plus nine example " +
+        "chips and three counted clean-ups, all stacked down a 300px column " +
+        "under a video taking 62vh of it, so the two most powerful things in " +
+        "the product were below the fold behind a scrollbar at the narrowest " +
+        "width on the page: 'scrollbars to see all the options and shit... " +
+        "even without the scroll it wasn't the most elegant solution to begin " +
+        "with'. Find and Ask are the same gesture at different precision — " +
+        "'sponsor' means the twelve places it is said, 'cut the sponsor read' " +
+        "means the model decides — so they are one field, and these name what " +
+        "each answer is. The prototype has no such control because it has one " +
+        "box and a wall of chips.",
+    ]),
+    ...[
+      "Shorts",
+      "Full videos",
+    ].map((t) => [
+      t,
+      "Exports lists both kinds now, under two headings. Clipping was the " +
+        "ONLY surface that listed a finished short, so scrapping it while " +
+        "Exports asked for cuts alone would have left every short unreachable " +
+        "and still paying for its storage. Two headings rather than two tabs, " +
+        "because two tabs means two counts, and a count that disagrees with " +
+        "its list is the bug this page has already had twice.",
+    ]),
+    [
+      "Drop",
+      "Keeping a clip, where the clips are. src/projects.ts has always said " +
+        "kept 'means ONE thing: I want this moment. That is what Footage's " +
+        "Clips tab shows' — and the only place you could say so was Clipping. " +
+        "The handler and the route both outlived it with nothing rendering a " +
+        "button. The list is filtered to kept clips, so this always drops and " +
+        "undo puts it back.",
     ],
     [
       "Exports",
@@ -442,17 +526,21 @@ async function checkStrings() {
      */
     ...[
       "VERTICAL, WITHOUT ASKING",
-      "One long video in. Eight shorts out.",
-      "It goes through the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
+      "Any line in it becomes a vertical short.",
+      "It reads the whole thing and scores what would stand alone. Press one and it cuts vertical with the captions burned in, ready to post. No brief, no timeline, no second tool \u2014 the same page you edit in.",
       "THAT'S THE WHOLE",
       "POINT THOUGH",
       "ISN'T IT",
     ].map((t) => [
       t,
       "The shorts half of the product, which this page did not mention at all: " +
-        "it sold 'editing is reading now' and nothing else, while Clipping is a " +
-        "nav item inside. The pitch is Descript AND OpusClip and only one half " +
-        "was on the way in.",
+        "it sold 'editing is reading now' and nothing else. The pitch is " +
+        "Descript AND OpusClip and only one half was on the way in. The claim " +
+        "was rewritten when Clipping was scrapped: it used to promise 'One " +
+        "long video in. Eight shorts out.' and describe a batch that cut every " +
+        "winner unasked. That batch is gone — shorts are made one at a time " +
+        "off any line in the editor — and a landing page must not sell a " +
+        "surface that no longer exists.",
     ]),
     /*
      * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
@@ -497,7 +585,12 @@ async function checkStrings() {
     ...[
       "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
       "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
-      "Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it \u2014 move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
+      /* Trimmed when the Adjust sheet went with Clipping. It used to promise
+         "A short is never take-it-or-leave-it — move its in and out points by
+         pointing at the words, and see the frame it opens on before you spend
+         a render", which was Clipping's trim-by-word sheet and exists nowhere
+         now. Shortening a short means striking words in the editor first. */
+      "Every render lands ready to leave: download it, or cut a short straight off any line in it at whatever shape the platform wants, captions burned in. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
       "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
       "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
       "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
@@ -588,14 +681,6 @@ async function checkStrings() {
         "while editing. Making it an assist INSIDE the editor is the point of " +
         "docs/decisions/blocks.md: the model marking what is strong is a " +
         "property of the blocks you are already reading, not a destination.",
-    ],
-    [
-      "Make the video",
-      "Clipping's lede promises 'scored vertical shorts, captions burned in' " +
-        "and the prototype shows them as if they already exist — it never had " +
-        "to name the act of producing one, because its data was fixtures. The " +
-        "real product cannot render eight videos nobody asked for, so making " +
-        "one is a deliberate action and needs a label the prototype has none of.",
     ],
     [
       "Duplicate",

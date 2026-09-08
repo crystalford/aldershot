@@ -21,7 +21,7 @@ export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive
  * feels like one place — preserve it.
  */
 export type ShortsCtx = "editor" | "nav";
-type NavItem = "home" | "editor" | "clipping" | "footage" | null;
+type NavItem = "home" | "editor" | "footage" | null;
 
 export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
   switch (view) {
@@ -32,7 +32,7 @@ export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
     case "transcript":
       return "editor";
     case "shorts":
-      return shortsCtx === "editor" ? "editor" : "clipping";
+      return "editor";
     case "archive":
       return "footage";
     // Projects and Settings deliberately light nothing — the nav holds verbs,
@@ -84,7 +84,6 @@ function nav(view: View, shortsCtx: ShortsCtx, email?: string | null): string {
     <div style="display:flex;align-items:center;gap:clamp(14px,2.4vw,26px);font-size:${SIZE.body};flex-wrap:wrap;justify-content:flex-end">
       ${link("/", "Home", "home")}
       ${link("/editor", "Editor", "editor")}
-      ${link("/clipping", "Clipping", "clipping")}
       ${link("/footage", "Footage", "footage")}
       <span tabindex="0" role="button" id="navSearch" style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border-radius:6px;background:${C.surface}">
         ${iconSearch({ size: 14, stroke: "rgba(236,236,241,0.5)" })}
@@ -188,22 +187,79 @@ p,div{text-wrap:pretty}
    always-visible action cluster on every row the words themselves were left
    about 180px — wrapping every three or four words in a product whose whole
    claim is editing by text. */
-/* The editor's left column.
-   Sticky, so the player and the AI controls stay with you while you read down
-   a long transcript. But a sticky element TALLER than the space it is stuck
-   in has an unreachable bottom: it pins at top:88px and the overflow simply
-   sits below the viewport, because a stuck element no longer moves with the
-   page. On a long video the clean-up chips were off the bottom of the screen
-   and the only way to see them was to scroll the whole transcript to its end
-   and let the column come unstuck.
-   So it is bounded by what is actually visible — the nav above it and the
-   export bar below — and scrolls itself when it needs to. Shorter than that
-   and nothing changes, which is the common case. overscroll-behavior stops
-   reaching its end from grabbing the page and carrying on. */
-.editor-aside{flex:0 1 300px;min-width:min(280px,100%);max-width:min(320px,100%);
-  position:sticky;top:88px;max-height:calc(100vh - 88px - 84px);
-  overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:2px}
-@media (max-width: 760px){ .editor-aside{position:static;max-width:100%;max-height:none;overflow:visible} }
+/* ── The script view ──────────────────────────────────────────────────────
+   The same dom as the block view, read differently. Everything the client
+   needs is still here — .blk, .w, .blk-strike, the seams — because paintBlock,
+   here() and every strike and move branch key off them; what changes is that
+   the chrome goes quiet until you are on a line.
+
+   Opacity rather than display, because .blk-actions carries an inline
+   display:flex and a rule that fought it would need !important. Quiet is also
+   the better behaviour: the controls keep their space, so nothing reflows
+   under the cursor when a line becomes the current one.
+
+   Not :hover. A touch screen has none, and this product has already shipped
+   controls that did not exist on a phone once. */
+#blocks[data-view="script"] .blk-actions,
+#blocks[data-view="script"] .blk-why,
+#blocks[data-view="script"] .blk-rec { opacity:0; transition:opacity .12s ease }
+#blocks[data-view="script"] .blk[data-here="1"] .blk-actions,
+#blocks[data-view="script"] .blk[data-here="1"] .blk-why,
+#blocks[data-view="script"] .blk[data-here="1"] .blk-rec { opacity:1 }
+/* The + collapses to nothing between lines you are only reading. It stays in
+   the dom — here() finds the seams either side of the current block by element
+   sibling — and comes back to full height on the line you are on. Without this
+   every line is 22px apart and the page reads as a list again, which is the
+   whole thing the script view exists not to be. */
+#blocks[data-view="script"] .seam-open{height:0;overflow:hidden;transition:height .12s ease,opacity .12s ease}
+#blocks[data-view="script"] .seam[data-here="1"] .seam-open{height:22px}
+
+/* The line you are on, marked by the one thing a reading view can spare. */
+#blocks[data-view="script"] .blk[data-here="1"] { box-shadow:inset 2px 0 0 ${accentBg(ACCENT.green)} }
+#blocks[data-view="script"] .blk[data-here="1"] { padding-left:10px }
+
+/* The toggle between the two readings. */
+.view-swap{display:flex;gap:2px;padding:2px;border-radius:${RADIUS.button};background:${C.surface}}
+.view-swap a{font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:4px;color:${C.ink45};white-space:nowrap}
+.view-swap a[aria-current="page"]{background:${C.pill};color:${C.ink}}
+
+/* ── The editor: a document, and an assistant ──────────────────────────────
+   The page used to be a 300px rail of six unrelated controls beside whatever
+   space the transcript had left. It is two things now, and each is one thing:
+   the words on the left, and on the right the video, the conversation about
+   it, and a box to type in.
+
+   The assistant is a full-height column so the composer can sit at its foot
+   the way every chat does — that shape is why nobody has to be told what it
+   is, which was the whole problem with the search-looking field it replaces.
+   Bounded by what is visible (the nav above, the export bar below) and the
+   CONVERSATION is the part that scrolls, which is correct: a transcript of
+   what you asked is supposed to grow. */
+.editor-doc{flex:1 1 520px;min-width:min(320px,100%)}
+/* The + between blocks, shown on the seams either side of the block you are
+   on. data-here is set by the client when you click, play or strike a row. */
+.seam-open{width:22px;height:22px;opacity:0;transition:opacity .12s ease}
+.seam[data-here="1"] .seam-open,.seam-open:focus-visible{opacity:1}
+.seam-opts:not([hidden]){opacity:1}
+.asst{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);
+  /* Sized so the composer clears the export bar in BOTH scroll states. A
+     sticky top only applies once the page has scrolled: before that the
+     column starts below the page header, so a height measured from the nav
+     alone runs the composer straight under the bar. This is measured from the
+     header instead, and check-editor.cjs asserts the two never overlap. */
+  position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
+  display:flex;flex-direction:column;overflow:hidden}
+.asst-top{flex:none}
+/* The newest turn sits nearest the box you typed it into, the way every
+   conversation does — and it means one opening line does not float in the
+   middle of a column of nothing. */
+.asst-talk{justify-content:flex-end}
+/* On a narrow screen the columns stack, and a column pinned to the viewport
+   height in a stack is a scroll trap. It becomes an ordinary block. */
+@media (max-width: 860px){
+  .asst{position:static;max-width:100%;height:auto}
+  .asst-talk{max-height:340px}
+}
 /* Export chips. Radio labels, so the selected one is styled by :has() rather
    than by the client setting colours it would have to hardcode. */
 .exp-chip{display:flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:${RADIUS.button};background:${C.pill};cursor:pointer;white-space:nowrap}
@@ -218,17 +274,24 @@ p,div{text-wrap:pretty}
    lifts on hover. */
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};white-space:nowrap;background:${C.pill};color:${C.ink70};transition:background-color .12s ease,color .12s ease}
 .seg-pill:hover{background:${C.active};color:${C.ink}}
-/* "Cut" stays quiet until you are on its row: 24 loud Cut buttons is a wall,
+/* QUIET-UNTIL-HOVER IS A POINTER IDEA, so it is behind a pointer query.
+   "Cut" stays quiet until you are on its row: 24 loud Cut buttons is a wall,
    and the gesture you reach for most should not be the loudest thing on the
-   page. It still reads as a control, which is what was actually wrong. */
-.seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
-.blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
-/* "Make a short" is a secondary gesture on a line you are reading, and one
-   per row held about 110px of the text column open at all times. It keeps its
-   space so nothing reflows under the cursor, and shows itself on the row you
-   are actually on. */
-.blk-short{opacity:0;transition:opacity .12s ease}
-.blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
+   page. "Make a short" is secondary on a line you are reading, and one per
+   row held about 110px of the text column open at all times, so it keeps its
+   space and shows itself on the row you are actually on.
+
+   Both were unconditional, and a touch screen has no hover at all — so on a
+   phone or an iPad the two main verbs on every block were invisible and
+   there was no gesture that could reveal them. On a product whose output is
+   vertical shorts, that is not a detail. Where there is no hover to wait
+   for, they are simply shown. */
+@media (hover: hover) {
+  .seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
+  .blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
+  .blk-short{opacity:0;transition:opacity .12s ease}
+  .blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
+}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
 /* ── The hover layer ───────────────────────────────────────────────────────
    The prototype specifies 161 hover and focus states. The build had 14, and
@@ -405,7 +468,6 @@ function overlays(editing: boolean): string {
         ${key("⌘K", "Ask for anything")}
         ${key("G then H", "Home")}
         ${key("G then P", "Projects")}
-        ${key("G then C", "Clipping")}
         ${key("G then F", "Footage")}
         ${key("G then S", "Settings")}
         ${key("⌘Z", "Undo the last change")}

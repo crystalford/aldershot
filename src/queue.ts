@@ -30,7 +30,6 @@ import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
-import { runShorts } from "./shorts-job.ts";
 import { runShortRender } from "./short-render.ts";
 import { runRender } from "./render-job.ts";
 import { runScore } from "./begin.ts";
@@ -59,15 +58,6 @@ export type JobMessage =
       projectId: string | null;
       brief: string;
       upgrade?: boolean;
-    }
-  | {
-      type: "shorts";
-      jobId: string;
-      userId: string;
-      sourceId: string;
-      length: string;
-      count: number;
-      query?: string;
     }
   | { type: "render"; jobId: string; userId: string; projectId: string; renderId: string }
   /* A short is one clip from the library, with no project behind it. */
@@ -126,15 +116,6 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         brief: msg.brief,
         jobId: msg.jobId,
         upgrade: msg.upgrade,
-      });
-    case "shorts":
-      return await runShorts(env, {
-        userId: msg.userId,
-        sourceId: msg.sourceId,
-        jobId: msg.jobId,
-        length: msg.length as never,
-        count: msg.count,
-        query: msg.query,
       });
     case "short-render":
       return await runShortRender(env, {
