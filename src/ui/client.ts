@@ -1208,7 +1208,19 @@ if (blocksEl) {
     });
     const text = el.querySelector("[data-content]");
     if (text) text.style.textDecoration = struck ? "line-through" : "";
-    const pill = el.querySelector(".seg-pill");
+    /*
+     * THE STRIKE BUTTON'S pill, not whichever one comes first.
+     *
+     * This asked for ".seg-pill" and there are two on a footage block: "Make
+     * a short" is rendered before "Cut". So striking a line renamed the Make
+     * a short button to "Add back" and left the button you had just pressed
+     * still saying "Cut" — the row told you nothing had happened, on the
+     * single most-used gesture in the product. It only showed on footage
+     * blocks (a voiceover beat has no Make a short) and only after a strike,
+     * and "Make a short" is invisible until hover on a pointer device, so
+     * what you actually saw was a Cut button that would not change its mind.
+     */
+    const pill = el.querySelector(".blk-strike .seg-pill");
     if (pill) {
       pill.textContent = struck ? "Add back" : "Cut";
       pill.setAttribute("data-kept", struck ? "0" : "1");
@@ -1651,7 +1663,7 @@ if (blocksEl) {
    * the interesting matches are usually past it. A hit carries the index of
    * its block, so jumping loads exactly that far and no further.
    */
-  const findEl = document.querySelector(".find");
+  const findEl = document.querySelector(".cmd");
   if (findEl) {
     const q = findEl.querySelector(".find-q");
     const countEl = findEl.querySelector(".find-count");
@@ -1667,8 +1679,13 @@ if (blocksEl) {
       "display:block;width:100%;text-align:left;border:none;background:transparent;cursor:pointer;" +
       "padding:7px 9px;border-radius:5px;font-family:inherit;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.55)";
 
+    /* The Matches group is only a group when there are matches. An empty
+       "In this cut" heading over nothing reads as a broken panel. */
+    const matchGroup = findEl.querySelector('[data-group="matches"]');
+
     const paint = (savedMs) => {
       countEl.textContent = hits.length ? hits.length + " found" : "";
+      if (matchGroup) matchGroup.hidden = hits.length === 0;
       hitsEl.innerHTML = hits
         .map(
           (h, i) =>
@@ -1717,9 +1734,64 @@ if (blocksEl) {
       }
     };
 
+    /*
+     * THE PANEL IS THE ANSWER TO WHAT YOU TYPED.
+     *
+     * Matches are literal, free and local, so they come as you type. The
+     * model costs minutes and money, so it never fires on its own — the Ask
+     * row simply shows what it WOULD be asked, and you press it.
+     */
+    const askRow = findEl.querySelector(".cmd-ask");
+    const panel = findEl.querySelector(".cmd-panel");
+
+    const openPanel = () => { if (panel) panel.hidden = false; };
+    const shutPanel = () => { if (panel) panel.hidden = true; sel = -1; mark(); };
+
+    const reflectAsk = () => {
+      const text = q.value.trim();
+      if (!askRow) return;
+      askRow.hidden = text.length < 2;
+      askRow.textContent = text ? "“" + text + "”" : "";
+    };
+
+    q.addEventListener("focus", openPanel);
     q.addEventListener("input", () => {
+      openPanel();
+      reflectAsk();
       clearTimeout(timer);
       timer = setTimeout(search, 160);
+    });
+
+    /* Clicking away shuts it; clicking INSIDE it must not, or every row would
+       close the panel before its own handler ran. */
+    document.addEventListener("mousedown", (e) => {
+      if (!findEl.contains(e.target)) shutPanel();
+    });
+
+    /*
+     * ARROWS MOVE, ENTER TAKES THE MARKED ROW.
+     *
+     * Every actionable row in the panel, in the order they are painted, so
+     * the keyboard walks exactly what the eye sees. aria-selected rather than
+     * a class, because it is the same fact the screen reader needs.
+     */
+    let sel = -1;
+    const rows = () =>
+      [...findEl.querySelectorAll(".cmd-panel button")].filter((b) => !b.hidden && !b.disabled && b.offsetParent !== null);
+    const mark = () => {
+      const list = rows();
+      list.forEach((b, i) => b.setAttribute("aria-selected", i === sel ? "true" : "false"));
+      if (sel >= 0 && list[sel]) list[sel].scrollIntoView({ block: "nearest" });
+    };
+    q.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { shutPanel(); q.blur(); return; }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const list = rows();
+      if (!list.length) return;
+      e.preventDefault();
+      openPanel();
+      sel = e.key === "ArrowDown" ? (sel + 1) % list.length : (sel <= 0 ? list.length : sel) - 1;
+      mark();
     });
 
     /* Go to one, loading as far as it if the reader has not scrolled there.
@@ -1753,11 +1825,30 @@ if (blocksEl) {
       if (row) void goTo(Number(row.getAttribute("data-hit")));
     });
 
+    /*
+     * WHAT ENTER DOES, and why it is not always the same thing.
+     *
+     * With a row marked by the arrows, Enter takes that row — the palette
+     * rule, and unambiguous.
+     *
+     * With nothing marked it does the cheap, safe, obvious thing: if the word
+     * you typed is IN the transcript, Enter walks the places it is said, the
+     * same as every find field there has ever been. Only when there is
+     * nothing to find does it mean the other thing and ask the model, because
+     * a sentence that matches no words is not a search.
+     *
+     * Enter never cuts. "Cut all 12" is one keystroke from destroying a
+     * minute of somebody's video and it is a button you press on purpose.
+     */
     q.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" || !hits.length) return;
-      e.preventDefault();
-      /* Enter walks them, wrapping — the same as every find field. */
-      void goTo((atHit + 1) % hits.length);
+      if (e.key !== "Enter") return;
+      const list = rows();
+      if (sel >= 0 && list[sel]) { e.preventDefault(); list[sel].click(); return; }
+      if (hits.length) {
+        e.preventDefault();
+        void goTo((atHit + 1) % hits.length);
+      }
+      /* No matches: the form submits, which runs the pass. */
     });
 
     cutAll.addEventListener("click", async () => {
@@ -1798,7 +1889,7 @@ if (blocksEl) {
  * any sentence, and the cuts route has understood "fillers" and "pauses"
  * since it was written.
  */
-const assist = document.querySelector(".assist");
+const assist = document.querySelector(".cmd");
 if (assist) {
   const projectId = assist.getAttribute("data-project");
   const form = assist.querySelector(".pass-form");
@@ -1847,13 +1938,34 @@ if (assist) {
   });
 
   /* The examples fill the field rather than firing, so you can edit one into
-     what you actually meant — which is usually the point of an example. */
+     what you actually meant — which is usually the point of an example.
+     They also have to wake the panel up, or filling the box would leave the
+     Ask row still showing the last thing you typed. */
   assist.querySelectorAll(".pass-eg").forEach((eg) => {
     eg.addEventListener("click", () => {
       if (!field) return;
       field.value = eg.textContent.trim();
       field.focus();
+      field.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  });
+
+  /* Six of the nine start hidden. Nine at once is a wall you skip rather than
+     a list you read, and they are examples — three is enough to show what the
+     field accepts. */
+  const more = assist.querySelector(".cmd-more");
+  more?.addEventListener("click", () => {
+    assist.querySelectorAll('.pass-eg[data-more="1"]').forEach((eg) => { eg.hidden = false; });
+    more.hidden = true;
+  });
+
+  /* Ask the model what is in the box. This is the ONLY thing that spends a
+     pass, and it is always a press — never a keystroke on its own. */
+  const askRow = assist.querySelector(".cmd-ask");
+  askRow?.addEventListener("click", () => {
+    const instruction = (field?.value || "").trim();
+    if (!instruction) { toast("Say what you want."); field?.focus(); return; }
+    void runPass(instruction, askRow);
   });
 
   const findGood = assist.querySelector(".find-good");

@@ -406,6 +406,25 @@ async function checkStrings() {
         "doing, like every other control in this product.",
     ],
     ...[
+      "In this cut",
+      "Ask the model",
+      "More like these",
+    ].map((t) => [
+      t,
+      "The command bar's three groups. The editor had TWO text boxes — 'Find " +
+        "a word in this cut' and 'Ask for another pass' — plus nine example " +
+        "chips and three counted clean-ups, all stacked down a 300px column " +
+        "under a video taking 62vh of it, so the two most powerful things in " +
+        "the product were below the fold behind a scrollbar at the narrowest " +
+        "width on the page: 'scrollbars to see all the options and shit... " +
+        "even without the scroll it wasn't the most elegant solution to begin " +
+        "with'. Find and Ask are the same gesture at different precision — " +
+        "'sponsor' means the twelve places it is said, 'cut the sponsor read' " +
+        "means the model decides — so they are one field, and these name what " +
+        "each answer is. The prototype has no such control because it has one " +
+        "box and a wall of chips.",
+    ]),
+    ...[
       "Shorts",
       "Full videos",
     ].map((t) => [

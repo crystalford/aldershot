@@ -28,6 +28,14 @@ echo "$out" | grep -E '^# (tests|pass|fail) '
 echo "── container"
 node scripts/check-container.cjs
 
+# client.ts is 4,000 lines inside a String.raw template: not typechecked, not
+# imported by any test, and `node --check` cannot parse a string. Three defects
+# shipped out of it in one day and every one was found by driving a browser.
+# This drives it. Skips cleanly when there is no dev server, like the string
+# check below.
+echo "── editor"
+node scripts/check-editor.cjs
+
 echo "── fidelity"
 node scripts/check-fidelity.cjs
 
