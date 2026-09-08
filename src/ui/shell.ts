@@ -235,13 +235,19 @@ p,div{text-wrap:pretty}
    Bounded by what is visible (the nav above, the export bar below) and the
    CONVERSATION is the part that scrolls, which is correct: a transcript of
    what you asked is supposed to grow. */
-.editor-doc{flex:1 1 520px;min-width:min(320px,100%)}
+.editor-doc{flex:1 1 440px;min-width:min(320px,100%)}
 /* The + between blocks, shown on the seams either side of the block you are
    on. data-here is set by the client when you click, play or strike a row. */
 .seam-open{width:22px;height:22px;opacity:0;transition:opacity .12s ease}
 .seam[data-here="1"] .seam-open,.seam-open:focus-visible{opacity:1}
 .seam-opts:not([hidden]){opacity:1}
-.asst{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);
+/* WIDER THAN FIND, BECAUSE IT MATTERS MORE THAN FIND.
+   It was 320px against a 620px document, and the owner's measurement of that
+   was the right one: "it is more important than the search, and the search
+   gets more real estate". Find is a 45px bar you use when you already know
+   the word; this is the thing you edit with. So the column takes 400 and the
+   document gives it up — a transcript reads perfectly well at 540. */
+.asst{flex:0 1 400px;min-width:min(280px,100%);max-width:min(420px,100%);
   /* Sized so the composer clears the export bar in BOTH scroll states. A
      sticky top only applies once the page has scrolled: before that the
      column starts below the page header, so a height measured from the nav
@@ -250,6 +256,29 @@ p,div{text-wrap:pretty}
   position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
   display:flex;flex-direction:column;overflow:hidden}
 .asst-top{flex:none}
+/*
+ * THE PLAYER IS A BAND, NOT A RECTANGLE.
+ *
+ * At its own aspect ratio the video took 283px of a 660px column and the
+ * CONVERSATION got 97 — the control this product is about, given less room
+ * than the poster above it and less than the buttons below it. Measured, not
+ * guessed: the numbers come from check-editor.cjs driving the real page.
+ *
+ * So the player has a fixed height and the conversation gets what that frees
+ * (97 to 205 at this size). Idle it CROPS, because a poster with black bars
+ * down both sides reads as a broken image and is the same wasted column by
+ * another name. The moment it plays it stops cropping and shows the whole
+ * frame — what the footage actually looks like is the one thing here that
+ * must never be quietly wrong.
+ *
+ * Nothing moves between those two states: same height, same place, only the
+ * fit changes. An earlier version grew the video on play and ate the
+ * conversation back down to 88px, which is the bug this rule exists to fix,
+ * committed a second time. Anyone who wants the picture big presses Full, in
+ * the bar directly underneath. The column is for editing.
+ */
+.asst-top video{height:clamp(96px,12vh,140px);object-fit:cover}
+.asst-top[data-watching="1"] video{object-fit:contain}
 /* The newest turn sits nearest the box you typed it into, the way every
    conversation does — and it means one opening line does not float in the
    middle of a column of nothing. */
@@ -259,6 +288,17 @@ p,div{text-wrap:pretty}
 @media (max-width: 860px){
   .asst{position:static;max-width:100%;height:auto}
   .asst-talk{max-height:340px}
+}
+/* A SHORT WINDOW, which is the same trap by the other axis.
+   Pinned to the viewport a 720px-tall screen leaves the column 480px, and the
+   verbs and the composer want 280 of it — the conversation measured 37px,
+   which is not a conversation. So below that the column stops being pinned
+   and becomes an ordinary block the PAGE scrolls, exactly what it already
+   does when the columns stack. Losing the pinned composer is much the cheaper
+   of the two prices. */
+@media (min-width: 861px) and (max-height: 820px){
+  .asst{position:static;height:auto}
+  .asst-talk{max-height:300px}
 }
 /* Export chips. Radio labels, so the selected one is styled by :has() rather
    than by the client setting colours it would have to hardcode. */

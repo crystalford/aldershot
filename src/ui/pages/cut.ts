@@ -52,8 +52,6 @@ export interface CutData {
   sourceTitle: string | null;
   sourceKey: string | null;
   posterKey: string | null;
-  /** The video's own shape, so the player is not a hardcoded 16/9 box. */
-  aspect?: string;
   blocks: Block[];
   cuts: Cut[];
   runtimeMs: number;
@@ -541,8 +539,19 @@ function assistant(d: CutData, player: string): string {
   const note = (n: { found: number; savedMs: number }) =>
     n.found ? `${n.found} · −${hms(n.savedMs / 1000)}` : "";
 
+  /*
+   * A verb that is only a sentence.
+   *
+   * It carries the instruction it would type, so pressing it and typing it
+   * are the same act and the button teaches the box. Nothing here is a
+   * special path through the code: every one of these ends up in the same
+   * pass the composer sends.
+   */
+  const ask = (label: string, instruction: string) =>
+    `<button type="button" class="verb-ask" data-ask="${esc(instruction)}" style="display:flex;align-items:baseline;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.7);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${label}</button>`;
+
   const quick = (cls: string, label: string, n: string, live: boolean, gold = false) =>
-    `<button class="${cls}"${live ? "" : " disabled"} style="display:flex;align-items:baseline;gap:6px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${
+    `<button type="button" class="${cls}"${live ? "" : " disabled"} style="display:flex;align-items:baseline;gap:6px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${
       gold ? ACCENT.gold : "rgba(236,236,241,0.7)"
     };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};white-space:nowrap;${live ? "" : "opacity:.4;"}">
       <span>${label}</span>${n ? `<span data-content style="font-family:${FONT.mono};color:${C.ink32}">${esc(n)}</span>` : ""}
@@ -587,11 +596,11 @@ function assistant(d: CutData, player: string): string {
     </div>`;
   };
 
-  /* Nothing said yet. The opening line does the job the nine example chips
-     were doing, in one sentence, without being a wall. */
+  /* Nothing said yet. The verbs below say what this can do far better than a
+     sentence could — that was the mistake this replaces. */
   const talk = d.passes.length
     ? d.passes.map(turn).join("")
-    : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Tell me what to change and I'll go through the whole transcript. Try “cut the bits where I repeat myself”, “keep only the strongest points”, or “put the punchline first”.</div>`;
+    : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Press one, or say it in your own words.</div>`;
 
   return `<div class="asst" data-project="${esc(d.projectId)}">
     <div class="asst-top">${player}</div>
@@ -601,10 +610,60 @@ function assistant(d: CutData, player: string): string {
     </div>
 
     <div class="asst-foot" style="flex:none;padding-top:10px">
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
-        ${quick("find-good", "Find the strong bits", "", true, true)}
+      <!--
+        THE VERBS, VISIBLE.
+
+        These were nine chips. I replaced them with one sentence and called
+        nine "a wall you skip rather than read", which was optimising for
+        tidiness on the control this product is supposed to be about. They are
+        back, chosen from what the category actually ships and what it does
+        not.
+
+        SIX VISIBLE, the rest one press away. Products converge on three to
+        six in front and everything else a layer down — Descript removed its
+        always-visible action bar once it had fifteen; Vidocu keeps eleven
+        categories behind three presets; Submagic collapsed to one. And a chat
+        with no suggested prompts is a discoverability failure: after two years
+        of Underlord there is no community prompt library for it, only the
+        vendor's own copy. Even the chat-first product sells itself with chips.
+
+        TWO ROWS, because they are two different promises. Clean up is
+        subtractive and reversible and mostly counted — press it and you know
+        what happens. Shape asks the model to make a judgement, costs a pass,
+        and might come back with nothing.
+
+        Labels are imperative verb plus concrete noun, in the words a person
+        would use. "Cut the tangents" over "Edit for Clarity"; "Start where I
+        start" over "Auto Trim Intro". A destructive button whose name does
+        not say what disappears is the thing people are frightened of.
+      -->
+      <div style="font-size:${SIZE.meta};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${C.ink32};margin-bottom:6px">Clean up</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">
         ${quick("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers), d.cleanups.fillers.found > 0)}
         ${quick("clean-pauses", "Tighten silences", note(d.cleanups.pauses), d.cleanups.pauses.found > 0)}
+        ${ask("Start where I start", "cut everything before the first real sentence — the mic check, the throat clearing, the false start")}
+      </div>
+
+      <div style="font-size:${SIZE.meta};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${C.ink32};margin-bottom:6px">Shape it</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">
+        ${quick("find-good", "Keep only the good bits", "", true, true)}
+        ${ask("Cut the tangents", "cut the tangents and the bits that go nowhere")}
+        ${ask("Lead with the best line", "put the strongest line first")}
+        <button type="button" class="verb-more" style="display:flex;align-items:baseline;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:transparent;color:${C.ink32};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">More</button>
+      </div>
+
+      <!--
+        The long tail. Every one is a sentence you could have typed, which is
+        the rule: no button does anything the box cannot, so learning the
+        buttons teaches you the box.
+      -->
+      <div class="verb-rest" hidden style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">
+        ${ask("Cut the hedges", "cut the hedging — “I think”, “kind of”, “sort of”, “if that makes sense”")}
+        ${ask("Cut the meta", "cut the bits about the video itself — “sorry about the audio”, “like and subscribe”, “as I said last time”")}
+        ${ask("Remove the sponsor read", "cut the sponsor read")}
+        ${ask("Say it once", "I say the same thing more than once — keep the best telling and cut the rest")}
+        ${ask("Make it half as long", "cut this down to about half as long, keeping what matters")}
+        ${ask("Cut where I asked", "cut the bits where I said to cut it — “can we cut that”, “strike that”, “let’s do that again”")}
       </div>
       <form class="pass-form" style="position:relative;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
         <textarea name="instruction" rows="2" placeholder="Ask for a change…"
@@ -765,10 +824,9 @@ export function renderCut(d: CutData): string {
    * It starts empty and fills the moment you press a block, which is the only
    * honest first frame for a cut with no single video behind it.
    */
-  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
-      <!-- Wraps. Seven controls in a 320px column ran "Full" off the edge;
-           the bar is narrower now that it lives with the assistant, so it
-           takes a second line rather than losing its last button. -->
+  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="width:100%;background:#000;border-radius:${RADIUS.card};display:block"></video>
+      <!-- Wraps. Seven controls ran "Full" off the edge of the column, so the
+           bar takes a second line rather than losing its last button. -->
       <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
         <button class="pl-play" aria-label="Play" style="${ctl}">
           <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
