@@ -187,6 +187,41 @@ p,div{text-wrap:pretty}
    always-visible action cluster on every row the words themselves were left
    about 180px — wrapping every three or four words in a product whose whole
    claim is editing by text. */
+/* ── The script view ──────────────────────────────────────────────────────
+   The same dom as the block view, read differently. Everything the client
+   needs is still here — .blk, .w, .blk-strike, the seams — because paintBlock,
+   here() and every strike and move branch key off them; what changes is that
+   the chrome goes quiet until you are on a line.
+
+   Opacity rather than display, because .blk-actions carries an inline
+   display:flex and a rule that fought it would need !important. Quiet is also
+   the better behaviour: the controls keep their space, so nothing reflows
+   under the cursor when a line becomes the current one.
+
+   Not :hover. A touch screen has none, and this product has already shipped
+   controls that did not exist on a phone once. */
+#blocks[data-view="script"] .blk-actions,
+#blocks[data-view="script"] .blk-why,
+#blocks[data-view="script"] .blk .blk-actions ~ * { opacity:0; transition:opacity .12s ease }
+#blocks[data-view="script"] .blk[data-here="1"] .blk-actions,
+#blocks[data-view="script"] .blk[data-here="1"] .blk-why { opacity:1 }
+/* The + collapses to nothing between lines you are only reading. It stays in
+   the dom — here() finds the seams either side of the current block by element
+   sibling — and comes back to full height on the line you are on. Without this
+   every line is 22px apart and the page reads as a list again, which is the
+   whole thing the script view exists not to be. */
+#blocks[data-view="script"] .seam-open{height:0;overflow:hidden;transition:height .12s ease,opacity .12s ease}
+#blocks[data-view="script"] .seam[data-here="1"] .seam-open{height:22px}
+
+/* The line you are on, marked by the one thing a reading view can spare. */
+#blocks[data-view="script"] .blk[data-here="1"] { box-shadow:inset 2px 0 0 ${accentBg(ACCENT.green)} }
+#blocks[data-view="script"] .blk[data-here="1"] { padding-left:10px }
+
+/* The toggle between the two readings. */
+.view-swap{display:flex;gap:2px;padding:2px;border-radius:${RADIUS.button};background:${C.surface}}
+.view-swap a{font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:4px;color:${C.ink45};white-space:nowrap}
+.view-swap a[aria-current="page"]{background:${C.pill};color:${C.ink}}
+
 /* ── The editor: a document, and an assistant ──────────────────────────────
    The page used to be a 300px rail of six unrelated controls beside whatever
    space the transcript had left. It is two things now, and each is one thing:
@@ -202,7 +237,7 @@ p,div{text-wrap:pretty}
 .editor-doc{flex:1 1 520px;min-width:min(320px,100%)}
 /* The + between blocks, shown on the seams either side of the block you are
    on. data-here is set by the client when you click, play or strike a row. */
-.seam-open{opacity:0;transition:opacity .12s ease}
+.seam-open{width:22px;height:22px;opacity:0;transition:opacity .12s ease}
 .seam[data-here="1"] .seam-open,.seam-open:focus-visible{opacity:1}
 .seam-opts:not([hidden]){opacity:1}
 .asst{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);

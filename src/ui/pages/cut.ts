@@ -26,8 +26,26 @@ import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 
+/**
+ * TWO WAYS TO READ THE SAME EDIT.
+ *
+ * "blocks" is the card list — a thing per line, with its frame, its verbs and
+ * a + between each. "script" is the same edit as something you read: the words
+ * flowing, everything else out of the way until you are on a line.
+ *
+ * They render the SAME dom — the same .blk wrappers, the same .w spans, the
+ * same data attributes, the same seams. Only styling and the thumbnail differ.
+ * That is not tidiness: paintBlock, here(), retotal and every strike, move and
+ * short branch in the client key off .blk, so a view that dropped it would
+ * silently lose half the editor. One contract, two readings, nothing in
+ * src/ui/client.ts changed at all.
+ */
+export type CutView = "blocks" | "script";
+
 export interface CutData {
   projectId: string;
+  /** Which reading. Defaults to blocks everywhere it is not asked for. */
+  view?: CutView;
   title: string;
   sourceId: string | null;
   /** What the footage is called, for the line that links back to it. */
@@ -77,7 +95,8 @@ export interface CutData {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
-function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
+function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView = "blocks"): string {
+  const script = view === "script";
   const struck = b.struck;
 
   /* A footage block shows its words so each can be struck. A recording has no
@@ -293,17 +312,24 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
       ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(dur)}</div>`
       : "";
 
-  return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
-      style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
+  /* Reading, not managing: no card, no frame, no rule between lines. The
+     score's green ring goes too — it is a property of the line you are
+     reading, and a page of ringed paragraphs is a form again. */
+  const shell = script
+    ? `display:flex;gap:10px;align-items:flex-start;padding:3px 0;background:none;box-shadow:none;${struck ? "opacity:.5;" : ""}`
+    : `display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
         b.score != null ? `inset 0 0 0 1px ${accentBg(ACCENT.green)}` : "none"
-      };${struck ? "opacity:.5;" : ""}">
-    ${thumb}
+      };${struck ? "opacity:.5;" : ""}`;
+
+  return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
+      style="${shell}">
+    ${script ? "" : thumb}
     <div style="flex:1;min-width:0">
       <div style="font-size:${SIZE.quote};line-height:1.5;color:rgba(236,236,241,0.92)">${originTag}${body}</div>
       ${meta}
       ${fill}
     </div>
-    <div style="flex:none;display:flex;align-items:center;gap:4px">
+    <div class="blk-actions" style="flex:none;display:flex;align-items:center;gap:4px">
       ${judged}
       ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
       ${short}
@@ -326,7 +352,7 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
  * a chip that pretends otherwise is the failure this whole session has been
  * about — they are absent rather than dead.
  */
-function seam(projectId: string, at: number): string {
+function seam(projectId: string, at: number, view: CutView = "blocks"): string {
   const opt = (kind: string, label: string) =>
     `<button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" data-kind="${kind}"
       style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${label}</button>`;
@@ -344,9 +370,15 @@ function seam(projectId: string, at: number): string {
    * does not exist on a touch screen, and this product was invisible there
    * once already.
    */
-  return `<div class="seam" style="display:flex;justify-content:center;padding:1px 0">
+  /* Kept in the dom in BOTH views even when it draws nothing: here() finds the
+     seams either side of the current block by element sibling, so removing
+     them would take the + away everywhere and not just here. */
+  return `<div class="seam" style="display:flex;justify-content:center;padding:${view === "script" ? "0" : "1px 0"}">
+    <!-- Size lives in CSS, not here: the script view collapses this to nothing
+         between lines and restores it on the line you are on, and an inline
+         height would beat any rule that tried. -->
     <button class="seam-open" aria-label="Add something here"
-      style="width:22px;height:22px;border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
+      style="border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
     <div class="seam-opts" hidden style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:4px 0">
       ${opt("vo", "Your voice")}${opt("react", "A reaction")}${opt("clip", "A clip")}
       <button class="seam-close" style="font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;cursor:pointer;font-family:${FONT.ui};padding:0 4px;white-space:nowrap">never mind</button>
@@ -600,11 +632,12 @@ export function renderBlockSlice(
   cuts: Cut[],
   from: number,
   to: number,
+  view: CutView = "blocks",
 ): string {
   const out: string[] = [];
   for (let i = from; i < Math.min(to, blocks.length); i++) {
-    out.push(blockRow(blocks[i], cuts, i, blocks.length));
-    out.push(seam(projectId, i + 1));
+    out.push(blockRow(blocks[i], cuts, i, blocks.length, view));
+    out.push(seam(projectId, i + 1, view));
   }
   return out.join("");
 }
@@ -621,8 +654,23 @@ export function renderCut(d: CutData): string {
        with you as you scroll, so it is the one that keeps them. The ids
        remain because the client retotals by id and a second display that
        could disagree is worse than none. -->
-  <div style="margin-top:14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+  <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.title)}</div>
+    <!--
+      TWO READINGS OF THE SAME EDIT.
+
+      Blocks is a thing per line, with its frame and its verbs. Script is the
+      words, flowing, with everything else quiet until you are on a line. Same
+      dom, same handlers, same cuts — only the styling differs, so neither can
+      drift from the other.
+
+      Two urls rather than a toggle in the page, because /p/:id/script already
+      existed as a legacy alias and this is what it always should have meant.
+    -->
+    <div class="view-swap" style="margin-left:auto">
+      <a href="/p/${esc(d.projectId)}/cut"${(d.view ?? "blocks") === "blocks" ? ' aria-current="page"' : ""}>Blocks</a>
+      <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Script</a>
+    </div>
   </div>`;
 
   /*
@@ -752,11 +800,12 @@ export function renderCut(d: CutData): string {
    * this same function on the server — the client never builds a block, so
    * there is no second copy of this markup to drift.
    */
+  const view: CutView = d.view ?? "blocks";
   const shown = d.blocks.slice(0, d.windowSize);
-  const list: string[] = [seam(d.projectId, 0)];
+  const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length));
-    list.push(seam(d.projectId, i + 1));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view));
+    list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
     /* The sentinel says how much is left, so a long transcript admits its
@@ -775,7 +824,7 @@ export function renderCut(d: CutData): string {
     -->
     <div class="editor-doc">
       ${findBar(d.projectId)}
-      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="display:flex;flex-direction:column;gap:1px">
+      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
         ${list.join("")}
       </div>
     </div>

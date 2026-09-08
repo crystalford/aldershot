@@ -30,7 +30,7 @@ import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from 
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { buildSummary, renderBlockSlice, renderCut } from "./ui/pages/cut.ts";
+import { buildSummary, renderBlockSlice, renderCut, type CutView } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -1134,7 +1134,16 @@ const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts"]);
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  if (!EDITOR_PATHS.has(c.req.param("stagePath"))) return c.notFound();
+  const stage = c.req.param("stagePath");
+  if (!EDITOR_PATHS.has(stage)) return c.notFound();
+
+  /*
+   * WHICH READING. /p/:id/script was one of four legacy stage aliases that all
+   * rendered the same block view; it is the script view now, which is what the
+   * word always meant. ?view= is honoured too, the same shape Footage's ?tab=
+   * uses, so the blocks endpoint can ask for a matching slice.
+   */
+  const view: CutView = stage === "script" || c.req.query("view") === "script" ? "script" : "blocks";
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.notFound();
@@ -1188,6 +1197,7 @@ app.get("/p/:id/:stagePath", async (c) => {
         blocks,
         beats,
         cuts,
+        view,
         windowSize: BLOCK_WINDOW,
         /*
          * What the clean-ups would actually do, counted from THIS transcript.
@@ -1411,7 +1421,10 @@ app.get("/api/projects/:id/blocks", async (c) => {
   const asked = Number(c.req.query("to")) || 0;
   const to = Math.min(Math.max(asked, from + BLOCK_WINDOW), from + BLOCK_SPAN);
   return c.json({
-    html: renderBlockSlice(project.id, blocks, cuts, from, to),
+    /* The slice has to match the reading it is being appended into, or a long
+       transcript turns into cards halfway down. */
+    html: renderBlockSlice(project.id, blocks, cuts, from, to,
+      c.req.query("view") === "script" ? "script" : "blocks"),
     from,
     to: Math.min(to, blocks.length),
     total: blocks.length,

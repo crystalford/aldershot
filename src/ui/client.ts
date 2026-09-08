@@ -1433,9 +1433,12 @@ if (blocksEl) {
       /* until is a jump: find a word two thousand blocks in and asking for
          120 at a time is seventeen round trips before the line is readable.
          The server caps the span, so this is a hint and not a demand. */
+      /* The slice must come back in the reading it is being appended into, or
+         a long transcript turns into cards halfway down. #blocks says which. */
+      const view = blocksEl.getAttribute("data-view") === "script" ? "script" : "blocks";
       const res = await fetch(
         "/api/projects/" + projectId + "/blocks?from=" + sentinel.getAttribute("data-from") +
-          (until ? "&to=" + until : ""),
+          (until ? "&to=" + until : "") + "&view=" + view,
       );
       if (!res.ok) throw new Error("Couldn't load the rest");
       const out = await res.json();

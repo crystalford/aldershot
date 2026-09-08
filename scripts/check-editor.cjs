@@ -449,6 +449,92 @@ async function main() {
     }
   }
 
+  /*
+   * THE SAME EDIT, READ TWO WAYS.
+   *
+   * The script view is the block view restyled — the same .blk wrappers, the
+   * same .w spans, the same data attributes, the same seams — because
+   * paintBlock, here(), retotal and every strike, move and short branch in the
+   * client key off them. A view that dropped .blk would silently lose half the
+   * editor, so what is checked here is that BOTH readings still carry the
+   * contract, and that the reading actually differs.
+   */
+  {
+    await page.goto(BASE + "/p/" + project.id + "/script", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(700);
+
+    const shape = await $(() => {
+      const bs = [...document.querySelectorAll(".blk")];
+      const words = document.querySelectorAll(".w").length;
+      return {
+        blocks: bs.length,
+        words,
+        view: document.querySelector("#blocks").getAttribute("data-view"),
+        thumbs: document.querySelectorAll(".blk-play").length,
+        gap: bs.length > 1
+          ? Math.round(bs[1].getBoundingClientRect().top - bs[0].getBoundingClientRect().bottom)
+          : 0,
+        strikeButtons: document.querySelectorAll(".blk-strike .seg-pill").length,
+      };
+    });
+
+    say(shape.view === "script", "the script view says which reading it is");
+    say(shape.blocks > 0 && shape.words > 0, "the words are all still there", JSON.stringify(shape));
+    say(
+      shape.strikeButtons === shape.blocks,
+      "and every line still carries its Cut control",
+      "paintBlock looks it up by .blk-strike .seg-pill; without it a strike repaints nothing",
+    );
+    say(shape.thumbs === 0, "no frames — this is for reading, not managing");
+    say(shape.gap <= 6, "the lines run together rather than sitting apart", "gap " + shape.gap + "px");
+
+    /* The chrome is quiet until you are on a line, and by attribute rather
+       than :hover, which does not exist on a touch screen. */
+    const blk = await page.$('.blk[data-struck="0"]');
+    if (blk) {
+      await blk.click({ position: { x: 200, y: 6 } });
+      await page.waitForTimeout(300);
+      say(
+        await $(() => {
+          const cur = document.querySelector('.blk[data-here="1"]');
+          const other = [...document.querySelectorAll(".blk")].find((b) => b !== cur);
+          const op = (b) => (b ? getComputedStyle(b.querySelector(".blk-actions")).opacity : null);
+          return !!cur && op(cur) === "1" && op(other) === "0";
+        }),
+        "the verbs appear on the line you are on, and nowhere else",
+      );
+    }
+
+    /* And striking still works here, which is the whole point of keeping the
+       dom the same — this is the block view's own assertion, on the other
+       reading. */
+    const was = await $(() => document.querySelector("#cut-runtime").textContent.trim());
+    const target = await $(() => {
+      const b = [...document.querySelectorAll('.blk[data-struck="0"]')][0];
+      return b ? b.getAttribute("data-block") : null;
+    });
+    if (target) {
+      await page.click('.blk[data-block="' + target + '"] .blk-strike');
+      await page.waitForTimeout(900);
+      const now = await $(() => document.querySelector("#cut-runtime").textContent.trim());
+      say(now !== was, "striking a line works in the script view too", was + " -> " + now);
+      const undo = page.locator('#toasts [role="button"]', { hasText: "Undo" }).first();
+      if (await undo.count()) {
+        await undo.click();
+        await page.waitForLoadState("domcontentloaded");
+        await page.waitForTimeout(800);
+      }
+    }
+
+    await page.goto(BASE + "/p/" + project.id + "/cut", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(600);
+    say(
+      await $(() => document.querySelectorAll(".blk-play").length > 0
+        && document.querySelector("#blocks").getAttribute("data-view") === "blocks"),
+      "and the block view is untouched by any of it",
+    );
+  }
+
   /* ── Narrow ─────────────────────────────────────────────────────────── */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);
