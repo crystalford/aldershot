@@ -202,9 +202,10 @@ p,div{text-wrap:pretty}
    controls that did not exist on a phone once. */
 #blocks[data-view="script"] .blk-actions,
 #blocks[data-view="script"] .blk-why,
-#blocks[data-view="script"] .blk .blk-actions ~ * { opacity:0; transition:opacity .12s ease }
+#blocks[data-view="script"] .blk-rec { opacity:0; transition:opacity .12s ease }
 #blocks[data-view="script"] .blk[data-here="1"] .blk-actions,
-#blocks[data-view="script"] .blk[data-here="1"] .blk-why { opacity:1 }
+#blocks[data-view="script"] .blk[data-here="1"] .blk-why,
+#blocks[data-view="script"] .blk[data-here="1"] .blk-rec { opacity:1 }
 /* The + collapses to nothing between lines you are only reading. It stays in
    the dom — here() finds the seams either side of the current block by element
    sibling — and comes back to full height on the line you are on. Without this

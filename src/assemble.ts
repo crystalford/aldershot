@@ -57,7 +57,7 @@ export async function findMaterial(
   if (!q) return { moments: await listMoments(env.DB, userId, limit), how: "recent" };
 
   const meant = await searchMeaning(env, userId, q, limit);
-  if (meant && meant.length) return { moments: meant, how: "meaning" };
+  if (meant && meant.length) return { moments: dedupe(meant), how: "meaning" };
 
   /*
    * A BRIEF IS NOT A SEARCH BOX QUERY.
@@ -72,9 +72,34 @@ export async function findMaterial(
    * transcripts, and it degrades to "the most recent" rather than to nothing.
    */
   const ranked = rankByWords(await listMoments(env.DB, userId, 200), q);
-  if (ranked.length) return { moments: ranked.slice(0, limit), how: "words" };
+  if (ranked.length) return { moments: dedupe(ranked).slice(0, limit), how: "words" };
 
   return { moments: [], how: "words" };
+}
+
+/**
+ * One moment per piece of footage, not three overlapping ones.
+ *
+ * The clip library holds moments found by different passes over the same
+ * video, and they overlap freely — two clips covering the same forty seconds
+ * are both real rows. Assembling them produced a cut that said the same thing
+ * twice in a row, which reads as a bug even though every row is honest.
+ *
+ * Best-ranked wins the ground it covers. Kept here rather than in the library:
+ * overlap is fine in a list you are BROWSING and wrong in a sequence you are
+ * about to watch.
+ */
+export function dedupe<T extends { source_id: string; start_ms: number; end_ms: number }>(
+  moments: T[],
+): T[] {
+  const taken: T[] = [];
+  for (const m of moments) {
+    const clash = taken.some(
+      (t) => t.source_id === m.source_id && m.start_ms < t.end_ms && m.end_ms > t.start_ms,
+    );
+    if (!clash) taken.push(m);
+  }
+  return taken;
 }
 
 /* Words that appear in every sentence and mean nothing about the footage. */

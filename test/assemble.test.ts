@@ -15,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildEdl } from "../src/edl.ts";
+import { dedupe } from "../src/assemble.ts";
 import type { Block } from "../src/blocks.ts";
 
 /** A clip pulled in from another video: its own file, its own range. */
@@ -128,4 +129,35 @@ test("showing a pulled clip's words does not change what gets rendered", () => {
   );
   assert.equal(after.durationMs, before.durationMs);
   assert.equal(readable.words.length, 0, "displayWords must never be promoted to words");
+});
+
+test("an assembly does not say the same thing twice in a row", () => {
+  /*
+   * The clip library holds moments found by different passes over the same
+   * video and they overlap freely — two rows covering the same forty seconds
+   * are both honest. Put both in a sequence and the cut repeats itself, which
+   * reads as a bug however true each row is.
+   *
+   * Overlap is fine in a list you are browsing and wrong in one you are about
+   * to watch, so this is done at assembly rather than in the library.
+   */
+  const m = (id: string, src: string, a: number, b: number) => ({ id, source_id: src, start_ms: a, end_ms: b });
+
+  assert.deepEqual(
+    dedupe([m("1", "A", 0, 5000), m("2", "A", 3000, 8000), m("3", "A", 9000, 12000)]).map((x) => x.id),
+    ["1", "3"],
+    "the overlapping one goes; the best-ranked keeps the ground it covers",
+  );
+
+  /* Same timecodes in DIFFERENT videos are different footage. */
+  assert.deepEqual(
+    dedupe([m("1", "A", 0, 5000), m("2", "B", 0, 5000)]).map((x) => x.id),
+    ["1", "2"],
+  );
+
+  /* Touching is not overlapping: one ends exactly where the next begins. */
+  assert.deepEqual(
+    dedupe([m("1", "A", 0, 5000), m("2", "A", 5000, 9000)]).map((x) => x.id),
+    ["1", "2"],
+  );
 });
