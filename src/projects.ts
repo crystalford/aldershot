@@ -9,7 +9,7 @@
 
 import { ulid } from "./id.ts";
 import { buildBlocks, parseOrder, type Block, type PulledClip, type ScoreLike, type SegmentLike } from "./blocks.ts";
-import { parseCuts, type Cut } from "./cuts.ts";
+import { parseCuts, parseWords, wordsInRange, type Cut, type StoredWord } from "./cuts.ts";
 import { getSegments } from "./sources.ts";
 import type { ScoredClip } from "./grounding.ts";
 
@@ -615,14 +615,14 @@ export async function pulledClips(
          copy is what the editor plays. They are different files and a block
          that pulls in another video needs to know both — see Block.previewKey
          in src/blocks.ts. */
-      `SELECT c.id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key,
+      `SELECT c.id, c.source_id, c.start_ms, c.end_ms, c.quote, c.frame_r2_key, s.r2_key,
               COALESCE(s.proxy_r2_key, s.r2_key) AS preview_key, s.title
          FROM v2_clips c JOIN sources s ON s.id = c.source_id
         WHERE c.id IN (${marks}) AND c.user_id=? AND c.deleted_at IS NULL AND s.deleted_at IS NULL`,
     )
     .bind(...ids, userId)
     .all<{
-      id: string; start_ms: number; end_ms: number; quote: string;
+      id: string; source_id: string; start_ms: number; end_ms: number; quote: string;
       frame_r2_key: string | null; r2_key: string; preview_key: string; title: string;
     }>();
 
@@ -638,6 +638,50 @@ export async function pulledClips(
       frameKey: r.frame_r2_key,
     });
   }
+  /*
+   * THE OTHER VIDEO'S WORDS, so an assembled cut can be READ.
+   *
+   * A pulled clip carried its quote and nothing finer, so a cut made from the
+   * library had no words to highlight, to click, or for the script view to
+   * flow. They come from the other source's own transcript, sliced to the
+   * clip's range.
+   *
+   * Bounded by range, not by source: getSegments reads a whole video, and a
+   * three-hour podcast is the 13MB problem the editor's windowing exists to
+   * avoid. Only the segments that overlap a clip are asked for.
+   *
+   * Failure here is silent and harmless — the block falls back to its stored
+   * quote, which is what it always had.
+   */
+  const rows = results ?? [];
+  if (rows.length) {
+    try {
+      const spans = rows.map((r) => `(source_id=? AND end_ms>? AND start_ms<?)`).join(" OR ");
+      const binds = rows.flatMap((r) => [r.source_id, r.start_ms, r.end_ms]);
+      const { results: segs } = await db
+        .prepare(`SELECT source_id, start_ms, end_ms, words FROM segments WHERE ${spans}`)
+        .bind(...binds)
+        .all<{ source_id: string; start_ms: number; end_ms: number; words: string | null }>();
+
+      const bySource = new Map<string, Array<{ start_ms: number; words: StoredWord[] }>>();
+      for (const sg of segs ?? []) {
+        const list = bySource.get(sg.source_id) ?? [];
+        list.push({ start_ms: sg.start_ms, words: parseWords(sg.words) });
+        bySource.set(sg.source_id, list);
+      }
+      for (const [, list] of bySource) list.sort((a, b) => a.start_ms - b.start_ms);
+
+      for (const r of rows) {
+        const clip = out.get(r.id);
+        if (!clip) continue;
+        const all = (bySource.get(r.source_id) ?? []).flatMap((sg) => sg.words);
+        clip.words = wordsInRange(all, r.start_ms, r.end_ms);
+      }
+    } catch {
+      /* No words is the state this has always been in. */
+    }
+  }
+
   /* A clip from this same video is already on screen as segments. */
   if (ownSourceId) {
     const { results: own } = await db

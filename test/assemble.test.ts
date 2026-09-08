@@ -96,3 +96,36 @@ test("the project's own video is still the fallback when there is one", () => {
   assert.equal(edl.cuts.length, 1);
   assert.equal(edl.cuts[0].sourceKey, "u/u1/sources/OWN/original.mp4");
 });
+
+test("showing a pulled clip's words does not change what gets rendered", () => {
+  /*
+   * THE INVARIANT THIS WHOLE SPLIT EXISTS FOR.
+   *
+   * blockRanges takes a whole-block fast path when a block has no words, and
+   * builds ranges out of word timings when it has them. A pulled clip's word
+   * cuts can never be addressed — wordStruck does Number(id.slice(2)) and a
+   * beat id is a ulid, so that is NaN — so putting real words on `words` would
+   * change what the render produces while leaving no way to affect it.
+   *
+   * The words go on displayWords, which only the page reads. If someone ever
+   * moves them onto `words` to make striking work, this fails and says why.
+   */
+  const words = [
+    { w: "one", s: 1.0, e: 1.4 },
+    { w: "two", s: 1.4, e: 1.9 },
+    { w: "three", s: 1.9, e: 2.6 },
+  ];
+  const bare = pulled("a", "u/u1/sources/A/original.mp4", 1000, 4000);
+  const readable = { ...bare, displayWords: words };
+
+  const before = buildEdl("", [bare], []);
+  const after = buildEdl("", [readable], []);
+
+  assert.deepEqual(
+    after.cuts.map((c) => [c.start_ms, c.end_ms, c.sourceKey]),
+    before.cuts.map((c) => [c.start_ms, c.end_ms, c.sourceKey]),
+    "the words are for reading; the render must not notice them",
+  );
+  assert.equal(after.durationMs, before.durationMs);
+  assert.equal(readable.words.length, 0, "displayWords must never be promoted to words");
+});

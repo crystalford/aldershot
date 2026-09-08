@@ -101,11 +101,22 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView
 
   /* A footage block shows its words so each can be struck. A recording has no
      transcript of its own, so it shows what it is instead. */
+  /*
+   * A PULLED CLIP'S WORDS ARE ITS OWN VIDEO'S.
+   *
+   * They live in displayWords rather than words, because a cut can never be
+   * stored against them (see fromPulled), so they are shown and clickable but
+   * not strikeable — the block strikes whole, which is what its Cut button has
+   * always done. data-cut is never set on them for the same reason.
+   */
+  const shown = b.words.length ? b.words : (b.displayWords ?? []);
+  const readOnly = !b.words.length && shown.length > 0;
+
   const body =
-    b.origin === "footage" && b.words.length
-      ? b.words
+    b.origin === "footage" && shown.length
+      ? shown
           .map((w, wi) => {
-            const gone = struck || wordStruck(cuts, b, wi);
+            const gone = struck || (!readOnly && wordStruck(cuts, b, wi));
             /* The word's own timings, in milliseconds, on the word.
                This is what makes the transcript a scrub bar: clicking a word
                seeks to it, and the word being spoken lights up as it plays.
