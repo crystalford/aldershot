@@ -308,6 +308,54 @@ async function main() {
     }
   }
 
+  /* ── Density: the things that made the column read as a form ─────────── */
+  say(
+    await $(() => {
+      const seams = [...document.querySelectorAll(".seam-open")];
+      if (seams.length < 2) return true;
+      /* None lit until you are on a block. There used to be one between every
+         pair — up to 120 identical circles down the page. */
+      return seams.every((b) => getComputedStyle(b).opacity === "0");
+    }),
+    "no + is shown until you are on a block",
+  );
+  {
+    const blk = await page.$('.blk[data-struck="0"]');
+    if (blk) {
+      await blk.click({ position: { x: 200, y: 8 } });
+      await page.waitForTimeout(200);
+      say(
+        await $(() => document.querySelectorAll('.blk[data-here="1"]').length === 1),
+        "pressing a block makes it the one you are on",
+      );
+      say(
+        await $(() => {
+          const lit = [...document.querySelectorAll(".seam-open")]
+            .filter((b) => getComputedStyle(b).opacity !== "0");
+          /* The seams either side of the current block, and no others. */
+          return lit.length > 0 && lit.length <= 2;
+        }),
+        "and only the seams touching it offer a +",
+      );
+    }
+  }
+  say(
+    await $(() => {
+      /* The reason is clamped to one line. Unclamped it routinely ran longer
+         than the quote it was explaining. */
+      const w = document.querySelector(".blk-why");
+      return !w || getComputedStyle(w).webkitLineClamp === "1";
+    }),
+    "the model's reason is one line until you ask for the rest",
+  );
+  say(
+    await $(() => {
+      /* The header used to repeat the bar's two numbers. */
+      return !document.querySelector("#head-runtime") && !document.querySelector("#head-kept");
+    }),
+    "the runtime and kept count are shown once, not twice",
+  );
+
   /* ── Narrow ─────────────────────────────────────────────────────────── */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);

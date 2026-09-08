@@ -49,6 +49,36 @@ export function toast(message, onUndo) {
 }
 window.toast = toast;
 
+/*
+ * SAYING SO WHEN IT SAVED.
+ *
+ * Every gesture in the editor writes immediately — there is no Save button
+ * and adding one would be wrong — and the page said nothing at all about it,
+ * on a product where each click alters a video. Quiet, in the bar you are
+ * already watching the runtime in, and only when there is something true to
+ * report.
+ */
+let savedTimer = null;
+function saved(state) {
+  const el = document.querySelector("#saved-state");
+  if (!el) return;
+  clearTimeout(savedTimer);
+  if (state === "saving") {
+    el.hidden = false;
+    el.textContent = "saving…";
+    return;
+  }
+  if (state === "failed") {
+    el.hidden = false;
+    el.textContent = "not saved";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = "saved";
+  savedTimer = setTimeout(() => { el.hidden = true; }, 2200);
+}
+window.saved = saved;
+
 /* ── Undo stack ───────────────────────────────────────────────────────────
    Every mutation goes through here so ⌘Z reverts all of them, not half. */
 const undoStack = [];
@@ -866,8 +896,6 @@ if (blocksEl) {
   const sourceId = blocksEl.getAttribute("data-source");
   const video = document.querySelector("#cut-video");
   const footRuntime = document.querySelector("#cut-runtime");
-  const headRuntime = document.querySelector("#head-runtime");
-  const headKept = document.querySelector("#head-kept");
 
   /*
    * Paint each block its own frame.
@@ -1182,7 +1210,10 @@ if (blocksEl) {
    * The server's own figure is authoritative and comes back with every cut;
    * the local step is optimistic and gets corrected a moment later.
    */
-  let keptTotal = Number((headKept?.textContent || "").replace(/[^0-9]/g, "")) || 0;
+  /* Seeded from the bar, which is now the only place these numbers are
+     shown. They used to be in the header too — the same two figures twice on
+     one screen — and this read the header's copy. */
+  let keptTotal = Number((footRuntime?.textContent || "").split("kept")[0].replace(/[^0-9]/g, "")) || 0;
 
   const retotal = (afterS, keptFromServer) => {
     if (typeof keptFromServer === "number") keptTotal = keptFromServer;
@@ -1192,8 +1223,29 @@ if (blocksEl) {
           .filter((el) => el.dataset.struck !== "1")
           .reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
     if (footRuntime) footRuntime.textContent = keptTotal + " kept · " + clock(ms);
-    if (headRuntime) headRuntime.textContent = clock(ms);
-    if (headKept) headKept.textContent = keptTotal + " kept";
+  };
+
+  /*
+   * WHERE YOU ARE.
+   *
+   * The editor has never had a notion of a current block, which is why the +
+   * had to be on all 120 seams at once and why nothing on the page could tell
+   * you what you were working on. The block you click, play or strike is the
+   * one you are on, and the seams either side of it show their +.
+   *
+   * By attribute, not :hover — a touch screen has no hover, and this product
+   * has already shipped controls that did not exist on a phone once.
+   */
+  const here = (blk) => {
+    if (!blocksEl) return;
+    blocksEl.querySelectorAll('.blk[data-here="1"]').forEach((b) => b.removeAttribute("data-here"));
+    blocksEl.querySelectorAll('.seam[data-here="1"]').forEach((sm) => sm.removeAttribute("data-here"));
+    if (!blk) return;
+    blk.setAttribute("data-here", "1");
+    /* The seams that touch this block: the one before it and the one after. */
+    for (const sm of [blk.previousElementSibling, blk.nextElementSibling]) {
+      if (sm && sm.classList.contains("seam")) sm.setAttribute("data-here", "1");
+    }
   };
 
   const paintBlock = (el, struck) => {
@@ -1278,13 +1330,27 @@ if (blocksEl) {
     });
   };
 
+  /* Every cut in the editor goes through here — striking a line, a word
+     selection, cut-all, the clean-ups — so it is the one honest place to say
+     whether the work is on the server yet. */
   const sendCut = async (payload) => {
-    const res = await fetch("/api/projects/" + projectId + "/cuts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error("That didn't save");
+    window.saved("saving");
+    let res;
+    try {
+      res = await fetch("/api/projects/" + projectId + "/cuts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      window.saved("failed");
+      throw new Error("That didn't save — check your connection");
+    }
+    if (!res.ok) {
+      window.saved("failed");
+      throw new Error("That didn't save");
+    }
+    window.saved("ok");
     return await res.json().catch(() => ({}));
   };
 
@@ -1375,6 +1441,20 @@ if (blocksEl) {
     /* Typing in a block, scrubbing its take, or using the live recorder is not
        clicking the row. Without this the delegation below treats all three as
        a press on the block itself. */
+    /* Whatever you pressed, you are now on that block. Before the dispatch
+       below, so it is true even for a press this handler ignores. */
+    here(e.target.closest(".blk"));
+
+    /* The model's reason is clamped to one line; pressing it shows the rest.
+       Before the dispatch so it does not also seek or strike. */
+    const whyEl = e.target.closest(".blk-why");
+    if (whyEl) {
+      const open = whyEl.style.webkitLineClamp === "unset";
+      whyEl.style.webkitLineClamp = open ? "1" : "unset";
+      whyEl.title = open ? "Show the whole reason" : "";
+      return;
+    }
+
     if (e.target.closest(".blk-text, .rec-live, audio")) return;
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");

@@ -200,6 +200,11 @@ p,div{text-wrap:pretty}
    CONVERSATION is the part that scrolls, which is correct: a transcript of
    what you asked is supposed to grow. */
 .editor-doc{flex:1 1 520px;min-width:min(320px,100%)}
+/* The + between blocks, shown on the seams either side of the block you are
+   on. data-here is set by the client when you click, play or strike a row. */
+.seam-open{opacity:0;transition:opacity .12s ease}
+.seam[data-here="1"] .seam-open,.seam-open:focus-visible{opacity:1}
+.seam-opts:not([hidden]){opacity:1}
 .asst{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);
   /* Sized so the composer clears the export bar in BOTH scroll states. A
      sticky top only applies once the page has scrolled: before that the

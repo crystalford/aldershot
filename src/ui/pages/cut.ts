@@ -272,12 +272,26 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
      where a synthetic line stands on its own. */
   const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder : "";
 
-  const meta = [
-    b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "",
-    b.why ?? "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /*
+   * THE MODEL'S REASON, CLAMPED.
+   *
+   * `why` has no length cap anywhere, and it rendered in full under every
+   * scored block — routinely longer than the line it was explaining. A
+   * three-line quote carrying a four-line justification means the explanation
+   * outweighs the words you are trying to read, on the surface whose whole
+   * job is reading them.
+   *
+   * One line, and the rest on press. -webkit-line-clamp rather than a server
+   * truncation because the full text has to still be there to expand to, and
+   * because where it runs out depends on the column width.
+   */
+  const dur = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
+  const why = (b.why ?? "").trim();
+  const meta = why
+    ? `<div class="blk-why" data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</div>`
+    : dur
+      ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(dur)}</div>`
+      : "";
 
   return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
       style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
@@ -286,11 +300,7 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number): string {
     ${thumb}
     <div style="flex:1;min-width:0">
       <div style="font-size:${SIZE.quote};line-height:1.5;color:rgba(236,236,241,0.92)">${originTag}${body}</div>
-      ${
-        meta
-          ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(meta)}</div>`
-          : ""
-      }
+      ${meta}
       ${fill}
     </div>
     <div style="flex:none;display:flex;align-items:center;gap:4px">
@@ -321,6 +331,19 @@ function seam(projectId: string, at: number): string {
     `<button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" data-kind="${kind}"
       style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${label}</button>`;
 
+  /*
+   * ONE SEAM AT A TIME.
+   *
+   * There was a + between every block — up to 120 identical circles down the
+   * page, each for a gesture used a handful of times in an edit. The row of
+   * them read as decoration and made the transcript look like a form.
+   *
+   * The opener is invisible until its block is the current one, and the block
+   * you clicked, played or struck IS the current one — which also gives the
+   * editor a notion of "where I am" that it has never had. Not hover: hover
+   * does not exist on a touch screen, and this product was invisible there
+   * once already.
+   */
   return `<div class="seam" style="display:flex;justify-content:center;padding:1px 0">
     <button class="seam-open" aria-label="Add something here"
       style="width:22px;height:22px;border-radius:50%;background:transparent;border:none;color:${C.ink32};cursor:pointer;display:grid;place-items:center">${iconPlus({ size: 12 })}</button>
@@ -566,10 +589,13 @@ export function renderCut(d: CutData): string {
     <a href="${esc(backHref)}" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← ${esc(backLabel)}</a>
     <span style="margin-left:auto">${itemMenu("projects", d.projectId, d.title, "cut")}</span>
   </div>
+  <!-- The runtime and the kept count were here AND in the bottom bar: the
+       same two numbers twice on one screen. The bar is the one that stays
+       with you as you scroll, so it is the one that keeps them. The ids
+       remain because the client retotals by id and a second display that
+       could disagree is worse than none. -->
   <div style="margin-top:14px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
     <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.title)}</div>
-    <span id="head-runtime" style="margin-left:auto;font-size:${SIZE.body};font-weight:600;font-family:${FONT.mono};white-space:nowrap">${hms(d.runtimeMs / 1000)}</span>
-    <span id="head-kept" style="font-size:${SIZE.secondary};color:${C.ink45};font-family:${FONT.mono};white-space:nowrap">${d.keptCount} kept</span>
   </div>`;
 
   /*
