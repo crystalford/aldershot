@@ -187,30 +187,38 @@ p,div{text-wrap:pretty}
    always-visible action cluster on every row the words themselves were left
    about 180px — wrapping every three or four words in a product whose whole
    claim is editing by text. */
-/* The editor's rail holds THREE things: the player, its bar, and a line back
-   to the footage. It used to hold six — the video, the bar, the provenance
-   line, a help paragraph, Find a word, and the whole assist panel with nine
-   examples and a pass log under it — inside 300px with a max-height and
-   overflow-y, under a video that took 62vh of the ~728px available. So every
-   control was behind a scrollbar in the narrowest column on the page.
+/* ── The editor: a document, and an assistant ──────────────────────────────
+   The page used to be a 300px rail of six unrelated controls beside whatever
+   space the transcript had left. It is two things now, and each is one thing:
+   the words on the left, and on the right the video, the conversation about
+   it, and a box to type in.
 
-   Those controls are a full-width command bar above this now, and what is
-   left is short enough that the column simply ends. No max-height, no
-   overflow, no scrollbar to hide — the reason for it is gone.
-
-   Still sticky, so the video stays with you down a long transcript. */
-.editor-aside{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);
-  position:sticky;top:88px;align-self:flex-start}
-@media (max-width: 760px){ .editor-aside{position:static;max-width:100%} }
-
-/* ── The command bar ───────────────────────────────────────────────────────
-   Find and Ask are one gesture at two precisions, so they are one field. The
-   panel below it is a list you move through with the arrow keys, which is why
-   the highlight is an attribute rather than :hover — a keyboard and a mouse
-   must not disagree about which row is current. */
-.cmd-panel [aria-selected="true"]{background:${C.pill};color:${C.ink}}
-.cmd-panel button:hover{background:${C.pill}}
-.cmd-group[hidden]{display:none}
+   The assistant is a full-height column so the composer can sit at its foot
+   the way every chat does — that shape is why nobody has to be told what it
+   is, which was the whole problem with the search-looking field it replaces.
+   Bounded by what is visible (the nav above, the export bar below) and the
+   CONVERSATION is the part that scrolls, which is correct: a transcript of
+   what you asked is supposed to grow. */
+.editor-doc{flex:1 1 520px;min-width:min(320px,100%)}
+.asst{flex:0 1 320px;min-width:min(280px,100%);max-width:min(340px,100%);
+  /* Sized so the composer clears the export bar in BOTH scroll states. A
+     sticky top only applies once the page has scrolled: before that the
+     column starts below the page header, so a height measured from the nav
+     alone runs the composer straight under the bar. This is measured from the
+     header instead, and check-editor.cjs asserts the two never overlap. */
+  position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
+  display:flex;flex-direction:column;overflow:hidden}
+.asst-top{flex:none}
+/* The newest turn sits nearest the box you typed it into, the way every
+   conversation does — and it means one opening line does not float in the
+   middle of a column of nothing. */
+.asst-talk{justify-content:flex-end}
+/* On a narrow screen the columns stack, and a column pinned to the viewport
+   height in a stack is a scroll trap. It becomes an ordinary block. */
+@media (max-width: 860px){
+  .asst{position:static;max-width:100%;height:auto}
+  .asst-talk{max-height:340px}
+}
 /* Export chips. Radio labels, so the selected one is styled by :has() rather
    than by the client setting colours it would have to hardcode. */
 .exp-chip{display:flex;flex-direction:column;gap:1px;padding:7px 11px;border-radius:${RADIUS.button};background:${C.pill};cursor:pointer;white-space:nowrap}

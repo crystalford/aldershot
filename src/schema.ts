@@ -336,6 +336,27 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * and caption style for exactly that reason.
    */
   { table: "renders", column: "enhance", ddl: "ALTER TABLE renders ADD COLUMN enhance INTEGER DEFAULT 0" },
+
+  /*
+   * WHAT THE CUT LOOKED LIKE BEFORE THIS PASS RAN.
+   *
+   * A pass rewrites the whole cut, and the only way back was a toast that
+   * expired after six seconds or a keyboard shortcut. The owner does not use
+   * keyboard shortcuts, so in practice a pass was irreversible the moment you
+   * looked away — on the one action in the product that changes everything at
+   * once.
+   *
+   * Held as the same {cuts, order} shape POST /restore already takes, so the
+   * conversation's Undo and the toast's Undo end in the same call. Null on
+   * every pass recorded before this existed; those turns simply do not offer
+   * one, which is honest.
+   */
+  { table: "passes", column: "undo", ddl: "ALTER TABLE passes ADD COLUMN undo TEXT" },
+
+  /* Set when that snapshot has been spent, so a turn offers Undo once. Going
+     back twice would restore a state from before an edit you made in between
+     and silently throw it away. */
+  { table: "passes", column: "undone_at", ddl: "ALTER TABLE passes ADD COLUMN undone_at INTEGER" },
 ];
 
 let ensured = false;

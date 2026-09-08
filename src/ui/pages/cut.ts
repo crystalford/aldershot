@@ -66,7 +66,7 @@ export interface CutData {
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** Every instruction given to the model on this cut, and what came of it. */
-  passes: Array<{ id: string; n: number; instruction: string; result: string }>;
+  passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean }>;
 }
 
 /**
@@ -419,137 +419,120 @@ function passLogPanel(passes: CutData["passes"]): string {
 }
 
 /**
- * ONE PLACE TO SAY WHAT YOU WANT.
+ * FIND, ON THE DOCUMENT WHERE IT BELONGS.
  *
- * There were two text boxes and twelve buttons, stacked down a 300px column
- * under a video that took two thirds of its height — so the two most powerful
- * things in the product were below the fold, behind a scrollbar, at the
- * narrowest width on the page. The owner: "scrollbars to see all the options
- * and shit... even without the scroll it wasn't the most elegant solution to
- * begin with".
+ * This was merged into the assistant yesterday, on the argument that find and
+ * ask are the same gesture at different precision. That is true and it was
+ * still wrong: it made the one control the product is about look like a
+ * search box, and the owner said so — "the chat, it's not very pronounced...
+ * I don't think people would actually even understand what that was".
  *
- * The insight that collapses it: FIND AND ASK ARE THE SAME GESTURE AT
- * DIFFERENT PRECISION. Type "sponsor" and you mean the twelve places it is
- * said; type "cut the sponsor read" and you mean the model should decide.
- * Both are you telling the editor what to act on, so both belong in one box —
- * and for a product whose whole claim is that editing is text, the primary
- * control being a single text field is the argument, not a convenience.
- *
- * What you type decides what is offered. Matches are literal and free and
- * appear as you type; the model is one row below them; the clean-ups are
- * pre-written instructions that carry a real count. The pass log lands inside
- * the thing that produced it rather than at the bottom of a scroll.
- *
- * Every class name here is the one the old panels used, deliberately: the
- * handlers, their POST shapes and their counting were all correct and none of
- * them are rewritten. This is where the controls live, not what they do.
+ * So find comes back to the transcript. It is a document tool: it searches
+ * the words in front of you, it costs nothing, and it belongs at the top of
+ * the thing it searches. Asking costs minutes and money and belongs in the
+ * conversation.
  */
-function commandBar(d: CutData): string {
-  const label = (t: string) =>
-    `<div style="font-size:${SIZE.meta};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${C.ink32};margin-bottom:8px">${t}</div>`;
+function findBar(projectId: string): string {
+  /* The hits list is INSIDE .find. The client looks its parts up from that
+     one element, so a sibling is a null it will happily crash on. */
+  return `<div class="find" data-project="${esc(projectId)}" style="margin-bottom:10px">
+    <div style="display:flex;gap:8px;align-items:center;background:${C.surface};border-radius:7px;padding:3px 4px 3px 12px">
+      <span style="flex:none;display:grid;place-items:center;color:${C.ink32}">${iconSearch({ size: 13 })}</span>
+      <input class="find-q" autocomplete="off" placeholder="Find a word in this cut"
+        style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};padding:8px 0;font-family:${FONT.ui}"/>
+      <span class="find-count" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums"></span>
+      <button class="find-cut" hidden style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.85);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"></button>
+    </div>
+    <div class="find-hits" style="margin-top:8px;display:flex;flex-direction:column;gap:1px;max-height:230px;overflow-y:auto"></div>
+  </div>`;
+}
 
-  const row = (cls: string, text: string, note: string, opts: { gold?: boolean; live?: boolean } = {}) => {
-    const live = opts.live !== false;
-    return `<button class="${cls}"${live ? "" : " disabled"} style="display:flex;width:100%;align-items:baseline;gap:10px;text-align:left;font-size:${SIZE.secondary};font-weight:500;padding:8px 10px;border-radius:${RADIUS.button};background:transparent;color:${
-      opts.gold ? ACCENT.gold : "rgba(236,236,241,0.8)"
-    };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};${live ? "" : "opacity:.4;"}">
-      <span style="flex:1;min-width:0">${text}</span>
-      ${note ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums">${esc(note)}</span>` : ""}
-    </button>`;
-  };
-
-  /* "47 · −0:31". Nothing here is shown unless it was counted — the same rule
-     the chips followed, kept verbatim. A clean-up with nothing to clean has
-     nothing to do, so it is quiet rather than lying about a number. */
+/**
+ * THE ASSISTANT.
+ *
+ * "It's like a chatbot LLM powered video editing system that also is like
+ * blocks — blocking instead of non-linear video editing."
+ *
+ * That is the product, and until now it looked like a footnote: a grey field
+ * with a magnifier in it, a dropdown you had to open, and a pass that ran by
+ * reloading the page and never saying what it had done.
+ *
+ * This is a column that reads as what it is — the video you are both looking
+ * at, the conversation about it, and a box to type in at the bottom. That
+ * shape needs no explaining to anybody who has used software in the last
+ * three years, which was the entire problem.
+ *
+ * The composer is Home's composer (src/ui/pages/home.ts) — the same raised
+ * box, the same RADIUS.composer that exists in the tokens for nothing else.
+ * One object for telling Aldershot what you want, on the way in and while you
+ * work, rather than a designed box on the marketing page and a search field
+ * where the work happens.
+ */
+function assistant(d: CutData, player: string): string {
+  /* "47 · −0:31". Nothing is shown unless it was counted — the rule the chips
+     have always followed. A clean-up with nothing to clean has nothing to do,
+     so it is quiet rather than lying about a number. */
   const note = (n: { found: number; savedMs: number }) =>
     n.found ? `${n.found} · −${hms(n.savedMs / 1000)}` : "";
 
-  const group = (name: string, body: string, hidden = false) =>
-    `<div class="cmd-group" data-group="${name}"${hidden ? " hidden" : ""} style="padding:12px 8px;border-top:1px solid rgba(255,255,255,0.05)">${body}</div>`;
+  const quick = (cls: string, label: string, n: string, live: boolean, gold = false) =>
+    `<button class="${cls}"${live ? "" : " disabled"} style="display:flex;align-items:baseline;gap:6px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${
+      gold ? ACCENT.gold : "rgba(236,236,241,0.7)"
+    };border:none;cursor:${live ? "pointer" : "default"};font-family:${FONT.ui};white-space:nowrap;${live ? "" : "opacity:.4;"}">
+      <span>${label}</span>${n ? `<span data-content style="font-family:${FONT.mono};color:${C.ink32}">${esc(n)}</span>` : ""}
+    </button>`;
 
   /*
-   * Instructions that mean something on ANY video.
+   * A TURN, and what it actually did.
    *
-   * These were the prototype's, and the prototype's demo is a podcast with a
-   * sponsor read in it. On a person talking to a camera — which is what this
-   * account actually holds — those are instructions about things that are not
-   * there. Each of these is real against a real transcript, and they FILL the
-   * field rather than firing, so one can be edited into what you meant.
-   *
-   * Three at a time now instead of nine at once: as a flat wall of chips they
-   * read as equals to the clean-ups, which act and carry counts, and nine of
-   * anything is a list you skip rather than read.
+   * A pass used to reload the page and leave you to notice that some blocks
+   * had changed colour. It says what it did now, and offers the way back for
+   * as long as the turn is on screen — the old undo was a toast that expired
+   * in six seconds or a keyboard shortcut the owner does not use, which made
+   * the one action that rewrites the whole cut effectively permanent.
    */
-  const egs = [
-    "Keep only the strongest points",
-    "Where I actually make the point",
-    "The funniest moments",
-    "Cut the bits where I repeat myself",
-    "Cut the false starts",
-    "Cut anything I said better later",
-    "Keep only the ones under 20 seconds",
-    "Just the story, none of the setup",
-    "Every question I ask",
-  ];
-  const eg = (t: string, i: number) =>
-    `<button class="pass-eg"${i > 2 ? " data-more=\"1\" hidden" : ""} style="display:block;width:100%;text-align:left;font-size:${SIZE.secondary};padding:7px 10px;border-radius:${RADIUS.button};background:transparent;color:rgba(236,236,241,0.55);border:none;cursor:pointer;font-family:${FONT.ui}">${t}</button>`;
+  const turn = (p: CutData["passes"][number]) => {
+    const empty = /^no matches/.test(p.result);
+    return `<div class="turn" data-pass="${esc(p.id)}" style="display:flex;flex-direction:column;gap:6px">
+      <div data-content style="align-self:flex-end;max-width:92%;font-size:${SIZE.secondary};line-height:1.5;padding:8px 11px;border-radius:9px;background:${C.pill};color:rgba(236,236,241,0.9)">${esc(p.instruction)}</div>
+      <div style="max-width:92%;display:flex;flex-direction:column;gap:6px">
+        <div data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</div>
+        ${
+          p.undoable
+            ? `<button class="turn-undo" data-pass="${esc(p.id)}" data-project="${esc(d.projectId)}" style="align-self:flex-start;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Undo this</button>`
+            : ""
+        }
+      </div>
+    </div>`;
+  };
 
-  const passes = d.passes.length
-    ? group(
-        "log",
-        label("You've asked") +
-          d.passes
-            .map((p) => {
-              /* The result sentence says which it was. Nothing here re-judges
-                 a pass; it colours what the job already recorded. */
-              const empty = /^no matches/.test(p.result);
-              return `<div style="display:flex;gap:10px;align-items:baseline;padding:5px 10px">
-                <span data-content style="flex:none;width:14px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${p.n}</span>
-                <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:rgba(236,236,241,0.7)">${esc(p.instruction)}</span>
-                <span data-content style="flex:none;font-size:${SIZE.meta};color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</span>
-              </div>`;
-            })
-            .join(""),
-      )
-    : "";
+  /* Nothing said yet. The opening line does the job the nine example chips
+     were doing, in one sentence, without being a wall. */
+  const talk = d.passes.length
+    ? d.passes.map(turn).join("")
+    : `<div data-content style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Tell me what to change and I'll go through the whole transcript. Try “cut the bits where I repeat myself” or “keep only the strongest points”.</div>`;
 
-  return `<div class="cmd" data-project="${esc(d.projectId)}" style="margin-top:18px;position:relative">
-    <form class="pass-form" style="display:flex;gap:10px;align-items:center;background:${C.surface};border-radius:9px;padding:4px 10px 4px 13px">
-      <span style="flex:none;display:grid;place-items:center;color:${C.ink32}">${iconSearch({ size: 14 })}</span>
-      <input class="find-q" name="instruction" autocomplete="off" placeholder="Tell it what to cut, or find a word"
-        style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.body};padding:10px 0;font-family:${FONT.ui}"/>
-      <span class="find-count" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};font-variant-numeric:tabular-nums"></span>
-      <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};padding:3px 6px;border-radius:4px;background:${C.pill}">⌘K</span>
-    </form>
+  return `<div class="asst" data-project="${esc(d.projectId)}">
+    <div class="asst-top">${player}</div>
 
-    <div class="cmd-panel" hidden style="position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;border-radius:9px;background:#141418;box-shadow:0 18px 40px rgba(0,0,0,0.5),inset 0 0 0 1px rgba(255,255,255,0.07);max-height:min(60vh,520px);overflow-y:auto;overscroll-behavior:contain">
+    <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+      ${talk}
+    </div>
 
-      ${group(
-        "matches",
-        label("In this cut") +
-          `<button class="find-cut" hidden style="display:flex;width:100%;align-items:baseline;gap:10px;text-align:left;font-size:${SIZE.secondary};font-weight:600;padding:8px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.85);border:none;cursor:pointer;font-family:${FONT.ui}"></button>
-           <div class="find-hits" style="margin-top:6px;display:flex;flex-direction:column;gap:1px"></div>`,
-        true,
-      )}
-
-      ${group(
-        "ask",
-        label("Ask the model") +
-          `<button class="cmd-ask" hidden style="display:flex;width:100%;align-items:baseline;gap:10px;text-align:left;font-size:${SIZE.secondary};font-weight:600;padding:8px 10px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.85);border:none;cursor:pointer;font-family:${FONT.ui}"></button>
-           <div class="cmd-egs" style="margin-top:2px">${egs.map(eg).join("")}
-             <button class="cmd-more" style="display:block;font-size:${SIZE.meta};padding:6px 10px;background:none;border:none;color:${C.ink32};cursor:pointer;font-family:${FONT.ui}">More like these</button>
-           </div>`,
-      )}
-
-      ${group(
-        "clean",
-        label("Clean up") +
-          row("find-good", "Find the strong bits", "", { gold: true }) +
-          row("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers), { live: d.cleanups.fillers.found > 0 }) +
-          row("clean-pauses", "Tighten silences", note(d.cleanups.pauses), { live: d.cleanups.pauses.found > 0 }),
-      )}
-
-      ${passes}
+    <div class="asst-foot" style="flex:none;padding-top:10px">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
+        ${quick("find-good", "Find the strong bits", "", true, true)}
+        ${quick("clean-fillers", "Remove “um” and “uh”", note(d.cleanups.fillers), d.cleanups.fillers.found > 0)}
+        ${quick("clean-pauses", "Tighten silences", note(d.cleanups.pauses), d.cleanups.pauses.found > 0)}
+      </div>
+      <form class="pass-form" style="position:relative;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
+        <textarea name="instruction" rows="2" placeholder="Ask for a change…"
+          style="display:block;width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:9px 10px 4px;color:${C.ink};font-size:${SIZE.body};line-height:1.5;font-family:${FONT.ui}"></textarea>
+        <div style="display:flex;align-items:center;gap:8px;padding:0 4px 2px">
+          <span data-content style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
+          <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Run it</button>
+        </div>
+      </form>
     </div>
   </div>`;
 }
@@ -659,7 +642,10 @@ export function renderCut(d: CutData): string {
 
   const player = d.sourceKey
     ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
-      <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
+      <!-- Wraps. Seven controls in a 320px column ran "Full" off the edge;
+           the bar is narrower now that it lives with the assistant, so it
+           takes a second line rather than losing its last button. -->
+      <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">
         <button class="pl-play" aria-label="Play" style="${ctl}">
           <span class="pl-i-play" style="display:grid">${iconPlay(12, C.ink)}</span>
           <span class="pl-i-pause" hidden>${iconPause(12, C.ink)}</span>
@@ -677,6 +663,17 @@ export function renderCut(d: CutData): string {
         <button class="pl-rate" aria-label="Speed" style="${ctl};width:auto;padding:0 6px"><span data-content>1×</span></button>
         <button class="pl-full" aria-label="Fullscreen" style="${ctl};width:auto;padding:0 6px">Full</button>
       </div>`
+    : "";
+
+  /*
+   * WHICH FOOTAGE this cut is made from, and a way back to it.
+   *
+   * An edit never changes its footage — cuts live on the project and a render
+   * writes a new file — but the editor gave no sign of that, so the footage
+   * was effectively consumed by the first edit made from it.
+   */
+  const sourceLine = d.sourceId
+    ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
     : "";
 
   /*
@@ -705,45 +702,32 @@ export function renderCut(d: CutData): string {
   }
 
   return `${head}${strip}${failed}
-  ${commandBar(d)}
   <div style="margin-top:16px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-    <div class="editor-aside">
-      ${player}
-      ${
-        /*
-         * WHICH FOOTAGE this cut is made from, and a way back to it.
-         *
-         * An edit never changes its footage — cuts live on the project and a
-         * render writes a new file — but the editor gave no sign of that, and
-         * /sources/:id used to redirect straight back here, so the footage was
-         * genuinely unreachable. Naming it and linking to it is the difference
-         * between "this edit consumed my video" and "this edit is one of
-         * several I can make from it".
-         */
-        d.sourceId
-          ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
-          : ""
-      }
-      ${
-        /*
-         * ONBOARDING, NOT FURNITURE.
-         *
-         * Three lines of instructions sat in the narrowest column of the page
-         * for ever, long after anybody knew what a strike does. It is worth
-         * saying once — so it is here until the first cut on this project,
-         * and gone after that.
-         */
-        d.cuts.length === 0
-          ? `<div data-content style="font-size:${SIZE.meta};color:rgba(236,236,241,0.3);margin-top:8px;line-height:1.55">Strike a line or a word to cut it. Move a block to change the order. The + adds your voice between them.</div>`
-          : ""
-      }
+
+    <!--
+      THE DOCUMENT, and it goes first because it is what you are reading.
+      Left and wide: the transcript is the work, and it used to be whatever
+      was left over after a rail of controls took its 300px.
+    -->
+    <div class="editor-doc">
+      ${findBar(d.projectId)}
+      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="display:flex;flex-direction:column;gap:1px">
+        ${list.join("")}
+      </div>
     </div>
-    <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:1px">
-      ${list.join("")}
-    </div>
+
+    <!--
+      THE ASSISTANT. Video at the top because it is what you are both looking
+      at, the conversation under it, the composer pinned at the bottom.
+    -->
+    ${assistant(d, player + sourceLine)}
   </div>
   <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
     <span id="cut-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${d.keptCount} kept · ${hms(d.runtimeMs / 1000)}</span>
+    <!-- Every gesture writes immediately and the page never said so, on a
+         product where each click alters a video. Quiet until there is
+         something true to report. -->
+    <span id="saved-state" data-content hidden style="font-size:${SIZE.meta};color:${C.ink32};white-space:nowrap"></span>
     ${
       /* Only when something IS outstanding. "every beat is filled." on a cut
          with nothing in it is noise, and on a finished one it is a pat on the

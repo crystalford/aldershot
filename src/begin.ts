@@ -281,9 +281,15 @@ export async function runScore(
      * the editor so one ⌘Z puts the whole pass back.
      */
     let struck = 0;
+    /* What the cut looked like before this pass touched it, so the turn in the
+       conversation can offer a way back. Captured here rather than in the
+       route because this is the only place that knows whether anything was
+       actually rewritten. */
+    let undo: { cuts: string | null; order: string | null } | null = null;
     if (opts.projectId && result.clips.length) {
       const project = await getProject(env.DB, opts.projectId, opts.userId);
       if (project) {
+        undo = { cuts: project.cuts ?? null, order: project.block_order ?? null };
         const existing = parseCuts(project.cuts);
         /* Word-level work elsewhere in the transcript is somebody's deliberate
            edit and is not touched — only whole lines are decided here. */
@@ -317,6 +323,7 @@ export async function runScore(
         ? `${result.clips.length} moment${result.clips.length === 1 ? "" : "s"} found` +
           (struck ? ` · ${struck} line${struck === 1 ? "" : "s"} cut` : "")
         : "no matches — try different words",
+      undo,
       model: result.model,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,

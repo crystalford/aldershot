@@ -19,6 +19,8 @@ export interface PassRow {
   instruction: string;
   result: string;
   created_at: number;
+  /** Whether this turn can still be taken back — see the `undo` column. */
+  undoable: boolean;
 }
 
 /**
@@ -50,6 +52,12 @@ export async function recordPass(
     sourceId: string | null;
     instruction: string;
     result: string;
+    /*
+     * The cut as it stood BEFORE this pass, so the turn can offer a way back.
+     * Same {cuts, order} shape POST /restore takes. Optional: a clips-only
+     * pass changes no cut and has nothing to undo.
+     */
+    undo?: { cuts: string | null; order: string | null } | null;
     model?: string;
     tokensIn?: number;
     tokensOut?: number;
@@ -58,8 +66,8 @@ export async function recordPass(
   const n = await nextPassNumber(db, p.projectId, p.sourceId);
   await db
     .prepare(
-      `INSERT INTO passes (id,project_id,source_id,n,instruction,result,model,tokens_in,tokens_out,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO passes (id,project_id,source_id,n,instruction,result,undo,model,tokens_in,tokens_out,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       ulid(),
@@ -68,6 +76,7 @@ export async function recordPass(
       n,
       p.instruction,
       p.result,
+      p.undo ? JSON.stringify(p.undo) : null,
       p.model ?? null,
       p.tokensIn ?? 0,
       p.tokensOut ?? 0,
@@ -85,11 +94,53 @@ export async function recordPass(
  */
 export async function passLog(db: D1Database, projectId: string, limit = 12): Promise<PassRow[]> {
   const res = await db
+    /* A turn offers Undo when it kept a snapshot AND has not spent it. Going
+       back twice would restore a state from before an edit made in between and
+       throw that away without saying so.
+       The comment sits ABOVE the prepare call, not inside it, and names no
+       code: test/passes.test.ts lifts this SQL out of the file by scanning for
+       a prepare call followed immediately by a template string, so anything
+       between the two — or any stray template quote in a comment — hands the
+       test somebody else's query. */
     .prepare(
-      `SELECT id, n, instruction, result, created_at FROM passes
+      `SELECT id, n, instruction, result, created_at,
+              (undo IS NOT NULL AND undone_at IS NULL) AS undoable
+         FROM passes
         WHERE project_id=? ORDER BY created_at DESC LIMIT ?`,
     )
     .bind(projectId, limit)
-    .all<PassRow>();
-  return (res.results ?? []).reverse();
+    .all<Omit<PassRow, "undoable"> & { undoable: number }>();
+  return (res.results ?? []).reverse().map((r) => ({ ...r, undoable: Boolean(r.undoable) }));
+}
+
+/**
+ * The snapshot a turn goes back to, claimed so it can only be spent once.
+ *
+ * Returns null when the pass is not this user's, kept no snapshot, or has
+ * already been undone — the caller cannot tell those apart and does not need
+ * to: in all three cases there is nothing to restore.
+ */
+export async function claimPassUndo(
+  db: D1Database,
+  passId: string,
+  projectId: string,
+): Promise<{ cuts: string | null; order: string | null } | null> {
+  const row = await db
+    .prepare(`SELECT undo FROM passes WHERE id=? AND project_id=? AND undone_at IS NULL`)
+    .bind(passId, projectId)
+    .first<{ undo: string | null }>();
+  if (!row?.undo) return null;
+
+  const claimed = await db
+    .prepare(`UPDATE passes SET undone_at=? WHERE id=? AND project_id=? AND undone_at IS NULL`)
+    .bind(Date.now(), passId, projectId)
+    .run();
+  /* Lost the race with another tab: it already restored this one. */
+  if (!claimed.meta.changes) return null;
+
+  try {
+    return JSON.parse(row.undo);
+  } catch {
+    return null;
+  }
 }

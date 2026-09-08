@@ -70,7 +70,7 @@ import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
-import { passLog } from "./passes.ts";
+import { claimPassUndo, passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
 export { RenderContainer } from "./render.ts";
@@ -1266,6 +1266,48 @@ app.post("/api/projects/:id/restore", async (c) => {
   await c.env.DB
     .prepare(`UPDATE v2_projects SET cuts=?, block_order=?, updated_at=? WHERE id=? AND user_id=?`)
     .bind(cuts, order, Date.now(), project.id, user.id)
+    .run();
+  return c.json({ ok: true });
+});
+
+/**
+ * TAKE BACK ONE PASS, from the conversation.
+ *
+ * Undo for a pass was a toast that expired after six seconds, or a keyboard
+ * shortcut. The owner does not use keyboard shortcuts, so a pass — the one
+ * action that rewrites the whole cut at once — was in practice irreversible
+ * the moment they looked away.
+ *
+ * The turn in the conversation offers it instead, for as long as the turn is
+ * on screen. The snapshot is claimed rather than read, so a turn can only be
+ * spent once: going back twice would restore a state from before an edit made
+ * in between and throw that away silently.
+ */
+app.post("/api/passes/:passId/undo", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ projectId?: string }>(c);
+  if (!b.projectId) return c.json({ error: "which edit?" }, 400);
+
+  /* Ownership is checked on the PROJECT, and the pass must belong to it —
+     a pass row carries no user_id of its own. */
+  const project = await getProject(c.env.DB, b.projectId, user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const snap = await claimPassUndo(c.env.DB, c.req.param("passId"), project.id);
+  if (!snap) return c.json({ error: "that one has already been taken back" }, 409);
+
+  /* Re-serialised rather than trusted, the same as /restore: this writes
+     straight into the columns the render is built from. */
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET cuts=?, block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(
+      serialiseCuts(parseCuts(snap.cuts ?? null)),
+      snap.order ? serialiseOrder(parseOrder(snap.order)) : null,
+      Date.now(),
+      project.id,
+      user.id,
+    )
     .run();
   return c.json({ ok: true });
 });

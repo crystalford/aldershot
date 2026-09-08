@@ -97,45 +97,70 @@ async function main() {
 
   const $ = (fn, arg) => page.evaluate(fn, arg);
 
-  /* ── The layout the controls were moved for ─────────────────────────── */
+  /* ── The shape: a document, and an assistant ───────────────────────────
+     The point of the column is that it needs no explaining. So the things
+     asserted here are the ones that make it legible: a composer you can see
+     without opening anything, under a conversation, under the video. */
   say(
     await $(() => {
-      const a = document.querySelector(".editor-aside");
-      return !!a && a.scrollHeight <= a.clientHeight + 1;
+      const doc = document.querySelector(".editor-doc");
+      const asst = document.querySelector(".asst");
+      if (!doc || !asst) return false;
+      /* Document on the left and wider than the assistant beside it. */
+      const d = doc.getBoundingClientRect();
+      const a = asst.getBoundingClientRect();
+      return d.left < a.left && d.width > a.width;
     }),
-    "the rail does not scroll",
-    "it holds the player, its bar and the source link; anything else belongs in the command bar",
+    "the transcript is the wide column, the assistant the narrow one beside it",
   );
   say(
     await $(() => {
-      const bar = document.querySelector(".cmd");
+      const form = document.querySelector(".asst .pass-form");
+      if (!form) return false;
+      const r = form.getBoundingClientRect();
+      /* Visible on arrival, not behind a focus or a click. THE finding this
+         whole change exists for: "I don't think people would actually even
+         understand what that was". */
+      return r.height > 0 && r.top < window.innerHeight && form.offsetParent !== null;
+    }),
+    "the composer is visible without opening anything",
+  );
+  say(
+    await $(() => {
+      const top = document.querySelector(".asst-top");
+      const talk = document.querySelector(".asst-talk");
+      const foot = document.querySelector(".asst-foot");
+      if (!top || !talk || !foot) return false;
+      /* Video, then conversation, then composer — the order that makes it
+         read as a chat rather than a panel of controls. */
+      return top.getBoundingClientRect().bottom <= talk.getBoundingClientRect().top + 2
+        && talk.getBoundingClientRect().bottom <= foot.getBoundingClientRect().top + 2;
+    }),
+    "video above the conversation, conversation above the composer",
+  );
+  say(
+    await $(() => {
+      const v = document.querySelector(".asst-top #cut-video");
+      return !!v;
+    }),
+    "the video sits with the assistant",
+  );
+  say(
+    await $(() => {
+      const g = document.querySelector(".asst-foot");
+      return !!g && g.querySelectorAll("button").length >= 4;
+    }),
+    "the counted quick actions sit above the composer",
+    "expected three clean-ups plus Run it",
+  );
+  say(
+    await $(() => {
+      const f = document.querySelector(".editor-doc .find .find-q");
       const blocks = document.querySelector("#blocks");
-      return !!bar && !!blocks
-        && bar.getBoundingClientRect().bottom <= blocks.getBoundingClientRect().top + 2
-        && bar.getBoundingClientRect().width > 800;
+      return !!f && !!blocks
+        && f.getBoundingClientRect().bottom <= blocks.getBoundingClientRect().top + 2;
     }),
-    "the command bar spans the page, above the columns",
-  );
-
-  /* ── The panel answers what you type ────────────────────────────────── */
-  say(await $(() => document.querySelector(".cmd-panel").hidden), "the panel is shut until you focus the field");
-  await page.click(".find-q");
-  say(await $(() => !document.querySelector(".cmd-panel").hidden), "focusing opens it");
-  say(
-    await $(() => {
-      const g = document.querySelector('[data-group="clean"]');
-      return !!g && !g.hidden && g.querySelectorAll("button").length === 3;
-    }),
-    "the three clean-ups are offered straight away",
-  );
-  say(
-    await $(() => [...document.querySelectorAll(".pass-eg")].filter((e) => !e.hidden).length === 3),
-    "three examples, not nine",
-  );
-  await page.click(".cmd-more");
-  say(
-    await $(() => [...document.querySelectorAll(".pass-eg")].filter((e) => !e.hidden).length === 9),
-    "and the rest on request",
+    "find is on the document, above the words it searches",
   );
 
   const word = await $(() => {
@@ -156,10 +181,7 @@ async function main() {
     await page.waitForTimeout(900);
 
     say(
-      await $(() => {
-        const g = document.querySelector('[data-group="matches"]');
-        return !!g && !g.hidden && g.querySelectorAll(".find-hit").length > 0;
-      }),
+      await $(() => document.querySelectorAll(".find-hit").length > 0),
       "typing a word that IS in the cut lists where it is said",
     );
     /*
@@ -185,29 +207,43 @@ async function main() {
       }),
       "Cut all says how many and what it costs",
     );
-    say(
-      await $(() => {
-        const a = document.querySelector(".cmd-ask");
-        return !!a && !a.hidden && a.textContent.includes(document.querySelector(".find-q").value);
-      }),
-      "the model is offered the words you actually typed",
-    );
-    await page.keyboard.press("ArrowDown");
-    say(
-      await $(() => document.querySelectorAll('.cmd-panel [aria-selected="true"]').length === 1),
-      "the arrows mark exactly one row",
-    );
   }
 
-  await page.fill(".find-q", "Keep only the strongest points");
+  await page.fill(".find-q", "zzzznotawordzzzz");
   await page.waitForTimeout(900);
   say(
-    await $(() => document.querySelector('[data-group="matches"]').hidden),
-    "a sentence that matches no words shows no matches",
+    await $(() => document.querySelectorAll(".find-hit").length === 0
+      && document.querySelector(".find-cut").hidden),
+    "a word that is not there offers nothing to cut",
   );
-  say(await $(() => !document.querySelector(".cmd-ask").hidden), "and still offers to ask the model");
-  await page.keyboard.press("Escape");
-  say(await $(() => document.querySelector(".cmd-panel").hidden), "Escape shuts the panel");
+  await page.fill(".find-q", "");
+
+  /*
+   * THE COMPOSER IS NEVER UNDER THE EXPORT BAR.
+   *
+   * The bar is sticky-bottom and paints over whatever is beneath it, and the
+   * assistant column is sticky-top — whose offset only applies once the page
+   * has scrolled. Sized from the nav alone, the composer sat under the bar at
+   * the top of the page and was unusable until you scrolled. Checked in both
+   * states because they are genuinely different geometries.
+   */
+  for (const where of ["at the top", "scrolled"]) {
+    if (where === "scrolled") {
+      await page.evaluate(() => window.scrollTo(0, 600));
+      await page.waitForTimeout(250);
+    }
+    say(
+      await $(() => {
+        const foot = document.querySelector(".asst-foot");
+        const bar = document.querySelector("#cut-runtime").closest("div");
+        if (!foot || !bar) return false;
+        return foot.getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1;
+      }),
+      "the composer clears the export bar (" + where + ")",
+    );
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(250);
 
   /* ── Striking, and getting it back ──────────────────────────────────────
      The one round trip that touches data. It reads the runtime, strikes the
@@ -281,10 +317,11 @@ async function main() {
   );
   say(
     await $(() => {
-      const a = document.querySelector(".editor-aside");
-      return !!a && a.scrollHeight <= a.clientHeight + 1;
+      const asst = document.querySelector(".asst");
+      const form = asst && asst.querySelector(".pass-form");
+      return !!form && form.getBoundingClientRect().height > 0;
     }),
-    "the rail still does not scroll at 390px",
+    "the composer survives a narrow window",
   );
 
   for (const e of [...new Set(errs)]) bad.push(e);
@@ -296,7 +333,7 @@ async function main() {
     console.log(bad.map((b) => "    " + b).join("\n"));
     process.exit(1);
   }
-  console.log("✔ editor — the command bar, striking and undo all do what they claim");
+  console.log("✔ editor — the assistant reads as one, find finds, and striking undoes");
 }
 
 main().catch((e) => {
