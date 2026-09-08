@@ -617,10 +617,15 @@ app.get("/", async (c) => {
   );
 });
 
-app.get("/projects", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const projects = (await listProjects(c.env.DB, user.id)).filter((p) => !p.archived_at);
+/**
+ * The edits, shaped for a card.
+ *
+ * Two surfaces need exactly this — /projects and Footage's Edits tab — so it
+ * is one function. Writing it twice is how Footage and Clipping came to
+ * disagree about a count before.
+ */
+async function editRows(db: D1Database, userId: string) {
+  const projects = (await listProjects(db, userId)).filter((p) => !p.archived_at);
 
   /*
    * A project's state pill is derived from its beats, not stored: "needs you"
@@ -629,7 +634,7 @@ app.get("/projects", async (c) => {
    */
   const rows = await Promise.all(
     projects.map(async (p) => {
-      const beats = await getBeats(c.env.DB, p.id);
+      const beats = await getBeats(db, p.id);
 
       /*
        * A project has no poster of its own until it is rendered, so it borrows
@@ -641,7 +646,7 @@ app.get("/projects", async (c) => {
       if (!posterKey) {
         const firstClipId = beats.find((b) => b.clip_id)?.clip_id;
         if (firstClipId) {
-          const clip = await c.env.DB
+          const clip = await db
             .prepare(`SELECT frame_r2_key FROM v2_clips WHERE id=?`)
             .bind(firstClipId)
             .first<{ frame_r2_key: string }>();
@@ -663,6 +668,13 @@ app.get("/projects", async (c) => {
     }),
   );
 
+  return rows;
+}
+
+app.get("/projects", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const rows = await editRows(c.env.DB, user.id);
   return c.html(
     surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows)),
   );
@@ -683,6 +695,7 @@ app.get("/footage", async (c) => {
   const tab: FootTab =
     t === "threads" ? "threads"
     : t === "moments" ? "moments"
+    : t === "edits" ? "edits"
     : t === "exports" ? "exports"
     : t === "find" ? "find"
     : "sources";
@@ -760,6 +773,10 @@ app.get("/footage", async (c) => {
      short: scrapping it while this asked for 'cut' alone would have left every
      short you had rendered unreachable and still paying for its storage. */
   const finished = await listFinished(c.env.DB, user.id, ["cut", "short"]);
+  /* Same rule as the counts above: loaded whatever tab you are on, because
+     the tab bar shows the number and a count that disagrees with its list is
+     worse than no count. */
+  const edits = await editRows(c.env.DB, user.id);
 
   return c.html(
     surface(
@@ -773,6 +790,8 @@ app.get("/footage", async (c) => {
           format: r.format, aspect: r.aspect, created_at: r.created_at,
           title: r.title, href: r.href, kind: r.kind,
         })),
+        edits,
+        editsCount: edits.length,
         exportCount: finished.length,
         sources: sources.map((s) => ({
           ...s,

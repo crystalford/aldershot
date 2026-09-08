@@ -2249,7 +2249,7 @@ document.querySelectorAll(".job-row").forEach((row) => {
 
 /* ── Keyboard map (10-ROUTES-AND-KEYS.md) ─────────────────────────────── */
 let goArmed = false;
-const GO = { h: "/", p: "/projects", f: "/footage", s: "/settings" };
+const GO = { h: "/", p: "/footage?tab=edits", f: "/footage", s: "/settings" };
 
 /*
  * The editor's own keys.

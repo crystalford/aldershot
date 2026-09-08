@@ -13,8 +13,9 @@ import { emptyState, pageHeading } from "./empty.ts";
 import { iconPause, iconPlay, iconSearch } from "../icons.ts";
 import { itemMenu } from "../item-menu.ts";
 import { selectBar, selectBox } from "../select-bar.ts";
+import { editList, type ProjectRow } from "./projects.ts";
 
-export type FootTab = "moments" | "threads" | "sources" | "exports" | "find";
+export type FootTab = "moments" | "threads" | "sources" | "edits" | "exports" | "find";
 
 export interface SourceRow {
   id: string;
@@ -98,6 +99,13 @@ function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string
      * an upload is. Every extra surface has made this product feel MORE
      * redundant, not less.
      */
+    /*
+     * THE EDITS. They lived on /projects, a fourth surface reachable only if
+     * you knew it was there — and once the nav became Home, Editor, Footage
+     * there was no way to it at all. "All footage, clips, shorts, edits,
+     * videos, exports whatever can be found on footage page."
+     */
+    ["edits", "Edits"],
     ["exports", "Exports"],
     ["find", "Find"],
   ];
@@ -535,6 +543,9 @@ export interface FootageData {
    */
   exports: ExportRow[];
   exportCount: number;
+  /** The edits in progress. Only loaded on the Edits tab; counted always. */
+  edits: ProjectRow[];
+  editsCount: number;
 }
 
 /** One finished export — a cut or a short — as Footage lists it. */
@@ -619,7 +630,7 @@ export function renderFootageFull(d: FootageData): string {
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
     searchBox(d.tab, d.mode, d.q, d.canMean) +
-    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length, exports: d.exportCount });
+    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length, edits: d.editsCount, exports: d.exportCount });
 
   if (d.tab === "find") return head + findPanel();
 
@@ -633,6 +644,13 @@ export function renderFootageFull(d: FootageData): string {
       sortBar(d.sort ?? "newest", d.q, d.mode) +
       `<div id="footage-grid" style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(210px,100%),1fr));gap:22px 16px">${d.sources.map(sourceCard).join("")}</div>${selectBar("video")}`
     );
+  }
+
+  if (d.tab === "edits") {
+    if (!d.edits.length) {
+      return head + emptyState("Nothing on the go — ask for a cut and it starts here.");
+    }
+    return head + `<div style="margin-top:20px">${editList(d.edits)}</div>`;
   }
 
   if (d.tab === "exports") {

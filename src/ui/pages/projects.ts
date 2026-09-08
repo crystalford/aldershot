@@ -159,6 +159,20 @@ export function renderProjects(projects: ProjectRow[]): string {
     </div>`;
   }
 
+  return head + editList(projects);
+}
+
+/**
+ * The edits themselves, with no page heading of their own.
+ *
+ * Split out because Footage carries this as a tab now. The nav is Home,
+ * Editor, Footage — "all footage, clips, shorts, edits, videos, exports
+ * whatever can be found on footage page" — and /projects was a fourth surface
+ * you could only reach by knowing it was there. Footage is already
+ * "everything you have"; an edit is something you have.
+ */
+export function editList(projects: ProjectRow[]): string {
+  if (!projects.length) return "";
   /*
    * Most recently touched leads. The rest keep that order too — a project's
    * position should mean "when did I last work on this", not a rank the
@@ -166,8 +180,7 @@ export function renderProjects(projects: ProjectRow[]): string {
    */
   const [first, ...rest] = [...projects].sort((a, b) => b.updated_at - a.updated_at);
 
-  return `${head}
-  ${hero(first)}
+  return `${hero(first)}
   ${
     rest.length
       ? `<div style="margin-top:32px">
