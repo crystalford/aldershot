@@ -182,9 +182,7 @@ export async function begin(
    */
   const work: JobMessage | null =
     skipScore || !project
-      ? intent === "shorts" && !skipScore
-        ? { type: "shorts", jobId: "", userId: opts.userId, sourceId: opts.sourceId, length: "30-60", count: 8, query: "" }
-        : null
+      ? null
       : intent === "react"
         ? { type: "reactions", jobId: "", userId: opts.userId, projectId: project.id, about: opts.brief }
         : intent === "essay"
@@ -203,8 +201,8 @@ export async function begin(
     ? await createJob(env.DB, {
         user_id: opts.userId,
         /* A reaction and an outline are both "a pass over the transcript" to
-           the metering and the job list; only a shorts run is its own type. */
-        type: work.type === "shorts" ? "shorts" : work.type === "score" ? "score" : "pass",
+           the metering and the job list. */
+        type: work.type === "score" ? "score" : "pass",
         ref_id: project?.id ?? opts.sourceId,
       })
     : null;
@@ -215,9 +213,9 @@ export async function begin(
     intent,
     projectId: project?.id ?? null,
     jobId: job?.id ?? null,
-    // extract and shorts produce no project: the clips land in Footage, and
-    // there is nothing to assemble.
-    href: project ? `/p/${project.id}/cut` : intent === "shorts" ? "/clipping" : "/footage?tab=moments",
+    // extract produces no project: the clips land in Footage, and there is
+    // nothing to assemble. Everything else opens the edit it just made.
+    href: project ? `/p/${project.id}/cut` : "/footage?tab=moments",
   };
 }
 

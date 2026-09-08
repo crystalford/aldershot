@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, trimClip } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -35,9 +35,8 @@ import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { nameSourceCut, nameUnnamedSources } from "./naming.ts";
-import { createShortRender, shortRendersFor } from "./short-render.ts";
+import { createShortRender } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
-import { renderClipping } from "./ui/pages/clipping.ts";
 import { renderProjects } from "./ui/pages/projects.ts";
 import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
@@ -52,10 +51,8 @@ const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
-import { runShorts } from "./shorts-job.ts";
-import { ASPECTS, CLIP_LENGTHS, type ClipLength, CAPTION_STYLES } from "./shorts.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
-import { createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -756,9 +753,13 @@ app.get("/footage", async (c) => {
     }
   }
 
-  /* Finished cuts. Loaded whatever tab you are on, because the tab bar shows
-     the count and a count that disagrees with its list is worse than none. */
-  const finished = await listFinished(c.env.DB, user.id, "cut");
+  /* Finished exports — cuts AND shorts. Loaded whatever tab you are on,
+     because the tab bar shows the count and a count that disagrees with its
+     list is worse than none.
+     Both kinds, because Clipping was the only surface that listed a finished
+     short: scrapping it while this asked for 'cut' alone would have left every
+     short you had rendered unreachable and still paying for its storage. */
+  const finished = await listFinished(c.env.DB, user.id, ["cut", "short"]);
 
   return c.html(
     surface(
@@ -770,7 +771,7 @@ app.get("/footage", async (c) => {
         exports: finished.map((r) => ({
           id: r.id, r2_key: r.r2_key, duration_s: r.duration_s, bytes: r.bytes,
           format: r.format, aspect: r.aspect, created_at: r.created_at,
-          title: r.title, href: r.href,
+          title: r.title, href: r.href, kind: r.kind,
         })),
         exportCount: finished.length,
         sources: sources.map((s) => ({
@@ -1056,144 +1057,20 @@ app.post("/api/sources/:id/retry", async (c) => {
   return c.redirect(`/sources/${src.id}`, 303);
 });
 
-app.get("/clipping", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const sources = await listSources(c.env.DB, user.id);
-  const sourceId = c.req.query("source");
-  const source = sourceId ? (sources.find((s) => s.id === sourceId) ?? null) : null;
+/*
+ * CLIPPING IS GONE.
+ *
+ * It was a second, worse door to something the editor already does: every
+ * block carries "Make a short", and docs/decisions/blocks.md settled it long
+ * before this — "Shorts are an export, not a surface." The page outlived the
+ * decision and spent several rounds half-finished, ending as two black boxes
+ * with Download buttons under a heading that told you to pick a video.
+ *
+ * The redirect stays rather than a 404: links to it exist in the wild, and
+ * every short it used to list now lives in Footage's Exports tab.
+ */
+app.get("/clipping", (c) => c.redirect("/footage?tab=exports", 302));
 
-  /*
-   * Only what Clipping produced — the editor's kept clips are a different
-   * thing and belong in Footage, not mixed in here.
-   *
-   * With no video chosen this is every short across the library rather than
-   * an empty list, so landing on Clipping shows what you have made rather than
-   * asking you to remember which video you made it from.
-   */
-  /*
-   * Shorts are moments that have been made into a vertical video, or asked to
-   * be — not "rows a particular surface created". The origin filter here was
-   * the other half of Footage saying thirteen and Clipping saying two about
-   * the same table.
-   */
-  /*
-   * EVERY moment in this video, whatever found it.
-   *
-   * This filtered to origin='clipping', so a video with thirteen moments from
-   * an editor pass showed NOTHING here — you clicked it, and got a blank
-   * screen under a box offering to find some. The filter was added to stop
-   * Footage and Clipping disagreeing about a count, and it fixed that by
-   * making one of them wrong.
-   *
-   * A clip is a moment in a video. Where it was found does not decide whether
-   * this page will show it to you: a moment a scoring pass turned up in the
-   * editor is exactly as good a candidate for a short. The counts still
-   * agree, because Footage is every clip in the library and this is every
-   * clip in one video.
-   *
-   * With nothing picked the page is the picker, so there is nothing to load.
-   */
-  /*
-   * NO LIST OF VIDEOS HERE — but a list of SHORTS, which is a different thing.
-   *
-   * "why not also just have them listed sort of like footage .. but also not
-   * sure about clipping like again feels almost redundant". Half right, and I
-   * acted on the wrong half: a list of your VIDEOS here is Footage with fewer
-   * features, so I removed it — and left a page that could only ever be about
-   * one video, with no way to reach any other. So it GUESSED, redirecting to
-   * the newest readable source, which meant "← All videos" bounced straight
-   * back to the screen you were on and landing here cold showed whatever was
-   * most recent. For the owner that was a nine-second drone clip with nothing
-   * in it.
-   *
-   * Footage's Clips tab lists the moments a model FOUND. Nothing listed the
-   * shorts you have actually MADE, which is what this page's own subtitle has
-   * been promising all along: "watch them, keep the ones that land". So that
-   * is what it is. Choosing a video filters the list; it is not a precondition
-   * for the page existing.
-   */
-  const made = await listFinished(c.env.DB, user.id, "short");
-
-  const shorts = source ? await listClipsForSource(c.env.DB, source.id, user.id) : [];
-
-  /* Whether each one has actually been made into a video yet. Without this the
-     cards could only ever show a still and a play button that did nothing. */
-  const renders = await shortRendersFor(c.env.DB, user.id, shorts.map((cl) => cl.id));
-  /* Which file each short lives in. A card paints its OWN moment rather than
-     the video's first frame, and on the library view the shorts come from
-     several videos, so the key travels with the row. */
-  /* playableKey, not r2_key: the picker's cards decode frames out of this. */
-  const fileOf = new Map(sources.map((sv) => [sv.id, { key: playableKey(sv), title: sv.title }]));
-  const jobs = await activeJobs(c.env.DB, user.id);
-  const job = source ? (jobs.find((j) => j.ref_id === source.id) ?? null) : null;
-  const clipCounts = await clipCountsBySource(c.env.DB, user.id);
-
-  return c.html(
-    surface(
-      "shorts",
-      "Clipping",
-      "Clipping — Aldershot",
-      renderClipping({
-        source: source
-          ? {
-              id: source.id, title: source.title, duration_s: source.duration_s,
-              transcript_state: source.transcript_state, poster_r2_key: source.poster_r2_key,
-              clip_count: clipCounts.get(source.id) ?? 0,
-            }
-          : null,
-        shorts: shorts.map((cl) => ({
-          ...cl,
-          render: renders.get(cl.id) ?? null,
-          sourceKey: fileOf.get(cl.source_id)?.key ?? null,
-          sourceTitle: fileOf.get(cl.source_id)?.title ?? null,
-        })),
-        job,
-        fromEditor: false,
-        made,
-        /* The empty state is the only place naming videos here is right: with
-           nothing made yet there is nothing else to show. */
-        videos: made.length
-          ? []
-          : sources
-              .filter((sv) => sv.transcript_state === "ready")
-              .slice(0, 12)
-              .map((sv) => ({
-                id: sv.id, title: sv.title, duration_s: sv.duration_s,
-                poster_r2_key: sv.poster_r2_key, clip_count: clipCounts.get(sv.id) ?? 0,
-              })),
-      }),
-      "nav",
-      user.email,
-    ),
-  );
-});
-
-/** Start a Clipping batch, or search for one it missed. */
-app.post("/api/shorts", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const b = await body<{ sourceId: string; length: string; count: number; query: string }>(c);
-  if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
-
-  const src = await getSource(c.env.DB, b.sourceId, user.id);
-  if (!src) return c.json({ error: "not found" }, 404);
-
-  // The UI sends the label ("30–60s"); map it back to the id it stands for.
-  const length = (CLIP_LENGTHS.find((l) => l.name === b.length || l.id === b.length)?.id ?? "30-60") as ClipLength;
-
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "shorts", ref_id: src.id });
-  await dispatch(c.env, c.executionCtx, {
-    type: "shorts",
-    jobId: job.id,
-    userId: user.id,
-    sourceId: src.id,
-    length,
-    count: Number(b.count) || 8,
-    query: b.query,
-  });
-  return c.json({ jobId: job.id });
-});
 
 /* ── The editor ────────────────────────────────────────────────────────
  * One surface, four stages, real URLs per 10-ROUTES-AND-KEYS.md.
@@ -1576,7 +1453,12 @@ app.post("/api/projects/:id/blocks/short", async (c) => {
      short is vertical, and no captions because burned-in text cannot be taken
      back out of a finished file. */
   const aspect = ASPECTS.includes(b.aspect as never) ? (b.aspect as string) : "9:16";
-  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "None";
+  /* A SHORT DEFAULTS TO CAPTIONED. The full export panel defaults to None
+     because you choose there and a finished file cannot be un-burned; a short
+     is the one export watched with the sound off, and the landing page has
+     always promised "captions burned in". Both callers used to send "None"
+     and this defaulted to it too, so no short ever got any. */
+  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "Bold";
 
   /* Reuse a clip already covering this range rather than piling up a row per
      press — the same overlap rule saveClips uses. */
@@ -2304,7 +2186,12 @@ app.post("/api/clips/:id/render", async (c) => {
      short is vertical, and no captions because burned-in text cannot be taken
      back out of a finished file. */
   const aspect = ASPECTS.includes(b.aspect as never) ? (b.aspect as string) : "9:16";
-  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "None";
+  /* A SHORT DEFAULTS TO CAPTIONED. The full export panel defaults to None
+     because you choose there and a finished file cannot be un-burned; a short
+     is the one export watched with the sound off, and the landing page has
+     always promised "captions burned in". Both callers used to send "None"
+     and this defaulted to it too, so no short ever got any. */
+  const captionStyle = CAPTION_STYLES.includes(b.captionStyle as never) ? (b.captionStyle as string) : "Bold";
 
   const renderId = await createShortRender(c.env.DB, { userId: user.id, clipId: clip.id, aspect, captionStyle });
   /* The render, not the clip — see the note on the cut export's job. */
@@ -2314,124 +2201,6 @@ app.post("/api/clips/:id/render", async (c) => {
     type: "short-render", jobId: job.id, userId: user.id, clipId: clip.id, renderId,
   });
   return c.json({ ok: true, renderId, jobId: job.id });
-});
-
-/**
- * One short, and the words in it — everything the Adjust sheet needs.
- *
- * The sheet trims by word, which is the gesture the editor already gives you
- * over a transcript and the thing that makes this ours rather than a copy of
- * OpusClip. The words come from the segments the clip covers, with a little
- * either side so the boundaries can be moved OUTWARD as well as in — a clip
- * that can only ever get shorter is half a trim.
- */
-app.get("/api/clips/:id", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-
-  const clip = await c.env.DB
-    .prepare(
-      `SELECT c.*, COALESCE(s.proxy_r2_key, s.r2_key) AS source_key, s.title AS source_title, s.duration_s
-         FROM v2_clips c JOIN sources s ON s.id = c.source_id
-        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
-    )
-    .bind(c.req.param("id"), user.id)
-    .first<{
-      id: string; source_id: string; start_ms: number; end_ms: number;
-      quote: string; why: string | null; score: number | null; origin: string;
-      source_key: string; source_title: string; duration_s: number | null;
-    }>();
-  if (!clip) return c.json({ error: "not found" }, 404);
-
-  /* A window around the clip, not the whole transcript: an hour of words to
-     trim a thirty-second short is a large response for no benefit. */
-  const AROUND_MS = 20_000;
-  const from = Math.max(0, clip.start_ms - AROUND_MS);
-  const to = clip.end_ms + AROUND_MS;
-
-  const segments = await getSegments(c.env.DB, clip.source_id);
-  const words: Array<{ w: string; s: number; e: number }> = [];
-  for (const seg of segments) {
-    if (seg.end_ms < from || seg.start_ms > to) continue;
-    for (const w of parseWords(seg.words)) {
-      const s0 = wordStartMs(w);
-      const e0 = wordEndMs(w);
-      if (e0 < from || s0 > to) continue;
-      words.push({ w: w.w, s: s0, e: e0 });
-    }
-  }
-
-  return c.json({
-    id: clip.id,
-    start_ms: clip.start_ms,
-    end_ms: clip.end_ms,
-    quote: clip.quote,
-    why: clip.why,
-    score: clip.score,
-    origin: clip.origin,
-    sourceKey: clip.source_key,
-    sourceTitle: clip.source_title,
-    durationMs: clip.duration_s ? clip.duration_s * 1000 : null,
-    words,
-  });
-});
-
-/**
- * Move a short's in and out points.
- *
- * The clipper offered exactly one verb — "Make the video" — so disagreeing
- * with where the model put a boundary meant spending a render and looking at
- * what came out. Adjusting the clip is most of what this kind of tool is for.
- *
- * Nothing downstream changes: renderShort builds its plan from start_ms and
- * end_ms, so a trimmed clip renders trimmed the next time it is made.
- */
-app.post("/api/clips/:id/trim", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-
-  const b = await body<{ start_ms?: number | null; end_ms?: number | null }>(c);
-  if (typeof b.start_ms !== "number" && typeof b.end_ms !== "number") {
-    return c.json({ error: "which edge?" }, 400);
-  }
-
-  /* The source's length is the ceiling. Without it a stepper at the tail walks
-     the clip past the end of the video and the encoder is asked for footage
-     that is not there. */
-  const owned = await c.env.DB
-    .prepare(
-      `SELECT c.source_id, s.duration_s FROM v2_clips c
-         JOIN sources s ON s.id = c.source_id
-        WHERE c.id=? AND c.user_id=? AND c.deleted_at IS NULL`,
-    )
-    .bind(c.req.param("id"), user.id)
-    .first<{ source_id: string; duration_s: number | null }>();
-  if (!owned) return c.json({ error: "not found" }, 404);
-
-  const clip = await trimClip(
-    c.env.DB,
-    c.req.param("id"),
-    user.id,
-    { start_ms: b.start_ms, end_ms: b.end_ms },
-    owned.duration_s ? owned.duration_s * 1000 : null,
-  );
-  if (!clip) return c.json({ error: "not found" }, 404);
-
-  /*
-   * Nothing is written to the render.
-   *
-   * A finished file under a clip that no longer matches it must not offer
-   * Download — it is a video of boundaries that no longer exist. The first
-   * attempt marked the row stale, which was wrong twice over: the row is the
-   * cost record for work already paid for, and storage.ts sums the bytes of
-   * READY renders against the user's cap, so a stale row would stop counting
-   * a file that is still sitting in R2.
-   *
-   * The card decides instead, by comparing the length the render actually is
-   * (renders.duration_s, written when it finished) against the length the clip
-   * now claims. No schema, no deletion, and the accounting stays true.
-   */
-  return c.json({ ok: true, start_ms: clip.start_ms, end_ms: clip.end_ms });
 });
 
 app.post("/api/clips/:id/keep", async (c) => {

@@ -429,8 +429,15 @@ export function renderLanding(d: LandingData): string {
         This page sold the editor and only the editor — "editing is reading
         now", "NO TIMELINE · NO SCRUBBING · NO NLE", "EDIT BY READING". The
         pitch is Descript AND OpusClip, and somebody arriving because they
-        want a clipper found nothing here they recognised. Clipping is a nav
-        item in the product and was invisible on the way in.
+        want a clipper found nothing here they recognised.
+
+        The claim is now what the product actually does. It used to say "One
+        long video in. Eight shorts out." and describe a batch that scored a
+        video and cut every winner unasked. That batch, and the separate
+        Clipping page it fed, are gone: shorts are made one at a time off any
+        line in the editor, which is where the deciding was always happening
+        anyway. A landing page must not promise a surface that no longer
+        exists.
 
         Deliberately not an anonymous "drop a file, get clips before you sign
         up" funnel yet: reading a video from a link is not built, and an
@@ -460,8 +467,8 @@ export function renderLanding(d: LandingData): string {
         </div>
         <div style="flex:1 1 320px;min-width:min(300px,100%)">
           <div style="${EYEBROW};color:${GREEN}">VERTICAL, WITHOUT ASKING</div>
-          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">One long video in. Eight shorts out.</h3>
-          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">It goes through the whole thing and scores what would stand alone — then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.</p>
+          <h3 style="margin:12px 0 0;font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">Any line in it becomes a vertical short.</h3>
+          <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">It reads the whole thing and scores what would stand alone. Press one and it cuts vertical with the captions burned in, ready to post. No brief, no timeline, no second tool — the same page you edit in.</p>
         </div>
       </div>
 
@@ -491,7 +498,7 @@ export function renderLanding(d: LandingData): string {
     <div style="${WRAP};padding:clamp(48px,7vw,80px) 0;text-align:center">
       <div style="${EYEBROW};color:${GREEN}">THE FINISH LINE</div>
       <h2 style="margin:14px auto 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:560px;line-height:1.15">Done means done.</h2>
-      <p style="margin:14px auto 0;max-width:520px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it — move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.</p>
+      <p style="margin:14px auto 0;max-width:520px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.65">Every render lands ready to leave: download it, or cut a short straight off any line in it at whatever shape the platform wants, captions burned in. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.</p>
       <div style="margin:32px auto 0;max-width:640px;text-align:left;border-radius:11px;overflow:hidden;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,201,143,0.24)">
         <div style="display:flex;gap:18px;padding:18px;flex-wrap:wrap;align-items:center">
           <div style="flex:none;width:min(200px,100%);aspect-ratio:16/9;border-radius:7px;overflow:hidden;background:#07070a;position:relative">

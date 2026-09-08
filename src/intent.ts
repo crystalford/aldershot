@@ -42,7 +42,7 @@ export function intentLabel(brief: string): string {
     case "extract":
       return "Reads as a clip job — the clips land in Footage, tagged. Nothing to assemble.";
     case "shorts":
-      return "Reads as a shorts run — vertical and captioned, waiting in Clipping.";
+      return "Reads as a shorts run — an edit to cut down, and a short off any line in it.";
     case "react":
       return "Reads as a reaction — a project with room between the blocks for your voice.";
     case "essay":
@@ -58,9 +58,17 @@ export function intentLabel(brief: string): string {
  * What an intent produces. `extract` deliberately makes no project — the clips
  * land in Footage and there is nothing to assemble (01-PRODUCT.md's table).
  */
+/*
+ * A shorts run makes a CUT, like any other edit.
+ *
+ * It used to make nothing: no project, a one-off batch job, and the results
+ * waiting on a separate Clipping page. That page is gone, and the gesture it
+ * existed for lives on every block in the editor. So asking for shorts now
+ * opens an edit, and you make a short off whichever line earns one.
+ */
 export const INTENT_KIND: Record<Intent, "cut" | "reaction" | "essay" | null> = {
   extract: null,
-  shorts: null,
+  shorts: "cut",
   tighten: "cut",
   compose: "cut",
   react: "reaction",

@@ -26,6 +26,18 @@ import { ulid } from "./id.ts";
 export type Format = "mp4_720" | "mp4_1080" | "mp4_4k";
 export type Aspect = "16:9" | "9:16" | "1:1" | "4:5";
 
+/*
+ * The shapes and caption styles a SHORT can take.
+ *
+ * These lived in shorts.ts beside Clipping's scoring pass. That page is gone
+ * and its pass with it, but these two are render vocabulary and always were —
+ * the editor's export panel reads CAPTION_STYLES, and the per-block "Make a
+ * short" reads ASPECTS. They belong next to FORMATS and RENDER_ASPECTS rather
+ * than in a module named after a deleted surface.
+ */
+export const ASPECTS = ["9:16", "1:1", "4:5"] as const;
+export const CAPTION_STYLES = ["Bold", "Clean", "None"] as const;
+
 /**
  * What you can actually export as, and what each one is for.
  *
@@ -171,9 +183,11 @@ export async function listRenders(
  * was. The owner said it the moment his first export worked — "that should
  * also be saved to a place of finished or exported or whatever".
  *
- * Two surfaces need exactly this list and differ only by `kind`, so it is one
- * function: 'cut' is Footage's Exports tab, 'short' is Clipping. Writing it
- * twice is how Footage and Clipping came to disagree about a count before.
+ * ONE list, both kinds. This took a `kind` and served two surfaces — 'cut' for
+ * Footage's Exports tab and 'short' for Clipping — and when Clipping was
+ * scrapped that made every finished short unreachable: its files stayed in R2,
+ * kept counting against storage, and had no page that listed them. So it now
+ * takes one kind or several, and Exports asks for both.
  *
  * Finished only. A render that failed is not something you have, and one still
  * running belongs on the surface that started it, where there is a Stop.
@@ -185,12 +199,17 @@ export interface FinishedRender extends RenderRow {
   href: string | null;
 }
 
+export type FinishedKind = "cut" | "short";
+
 export async function listFinished(
   db: D1Database,
   userId: string,
-  kind: "cut" | "short",
+  kind: FinishedKind | FinishedKind[],
   limit = 60,
 ): Promise<FinishedRender[]> {
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  if (!kinds.length) return [];
+  const slots = kinds.map(() => "?").join(",");
   const { results } = await db
     .prepare(
       /* A cut is named by its edit; a short by the video its clip came from,
@@ -205,10 +224,10 @@ export async function listFinished(
          LEFT JOIN v2_projects p ON p.id = r.project_id AND p.deleted_at IS NULL
          LEFT JOIN v2_clips cl ON cl.id = r.clip_id
          LEFT JOIN sources s ON s.id = cl.source_id AND s.deleted_at IS NULL
-        WHERE r.user_id=? AND r.kind=? AND r.state='ready' AND r.r2_key IS NOT NULL
+        WHERE r.user_id=? AND r.kind IN (${slots}) AND r.state='ready' AND r.r2_key IS NOT NULL
         ORDER BY r.created_at DESC LIMIT ?`,
     )
-    .bind(userId, kind, limit)
+    .bind(userId, ...kinds, limit)
     .all<RenderRow & { title: string | null; project_id_for_link: string | null; source_id_for_link: string | null }>();
 
   return (results ?? []).map((r) => ({
@@ -217,7 +236,7 @@ export async function listFinished(
     href: r.project_id_for_link
       ? `/p/${r.project_id_for_link}/cut`
       : r.source_id_for_link
-        ? `/clipping?source=${r.source_id_for_link}`
+        ? `/sources/${r.source_id_for_link}`
         : null,
   }));
 }

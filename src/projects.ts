@@ -397,57 +397,6 @@ export async function setKept(db: D1Database, clipId: string, userId: string, ke
     .run();
 }
 
-/**
- * Move a clip's in and out points.
- *
- * The clipper had exactly one verb — "Make the video" — so the only way to
- * disagree with where the model put the boundaries was to spend a render and
- * look at what came out. This is the whole of what OpusClip is for, and the
- * engine was already downstream of it: renderShort builds its plan straight
- * from these two columns, so nothing below this line has to change.
- *
- * Bounds are clamped rather than rejected, and the order is normalised, so a
- * stepper at the end of a clip cannot walk it past the end of the video or
- * turn it inside out. `null` means the caller is only moving one edge.
- */
-export async function trimClip(
-  db: D1Database,
-  clipId: string,
-  userId: string,
-  bounds: { start_ms?: number | null; end_ms?: number | null },
-  sourceDurationMs: number | null,
-): Promise<Clip | null> {
-  const clip = await db
-    .prepare(`SELECT * FROM v2_clips WHERE id=? AND user_id=? AND deleted_at IS NULL`)
-    .bind(clipId, userId)
-    .first<Clip>();
-  if (!clip) return null;
-
-  const ceiling = sourceDurationMs && sourceDurationMs > 0 ? sourceDurationMs : Infinity;
-  const want = (v: number | null | undefined, fallback: number) =>
-    typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(v, ceiling)) : fallback;
-
-  let start = want(bounds.start_ms, clip.start_ms);
-  let end = want(bounds.end_ms, clip.end_ms);
-  if (end < start) [start, end] = [end, start];
-  /* A clip of nothing renders a file of nothing. Half a second is the floor. */
-  if (end - start < 500) end = Math.min(ceiling, start + 500);
-  if (end - start < 500) start = Math.max(0, end - 500);
-
-  await db
-    .prepare(`UPDATE v2_clips SET start_ms=?, end_ms=? WHERE id=? AND user_id=?`)
-    .bind(Math.round(start), Math.round(end), clipId, userId)
-    .run();
-
-  return { ...clip, start_ms: Math.round(start), end_ms: Math.round(end) };
-}
-
-/**
- * Replaces a project's beats wholesale. Idempotent by design
- * (04-API-AND-JOBS.md: "whole-array write") — the client owns the order and
- * sends the whole list, so a dropped request cannot leave a half-reordered
- * edit behind.
- */
 export async function putBeats(
   db: D1Database,
   projectId: string,

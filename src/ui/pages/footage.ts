@@ -268,7 +268,7 @@ function sourceCard(s: SourceRow): string {
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
       ${
         ready
-          ? `<a href="/clipping?source=${esc(s.id)}" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};white-space:nowrap">Clip it</a>
+          ? `<button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="Cut shorts from it" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Clip it</button>
              <button type="button" class="source-go" data-source="${esc(s.id)}" data-brief="React to it" style="font-size:${SIZE.meta};font-weight:500;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">React to it</button>`
           : ""
       }
@@ -295,6 +295,7 @@ export interface MomentRow {
   /** A finished 9:16 short of this moment, when one has been made. */
   short_key: string | null;
   thread_name: string | null;
+  kept: number;
 }
 
 export interface ThreadRow {
@@ -398,7 +399,7 @@ function momentCard(m: MomentRow): string {
       <button class="pl-full" aria-label="Fullscreen" style="flex:none;font-size:${SIZE.pill};font-weight:600;padding:0 4px;background:transparent;border:none;color:${C.ink};cursor:pointer;font-family:${FONT.ui}">Full</button>
     </div>`;
 
-  return `<div data-moment="${esc(m.id)}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
+  return `<div data-moment="${esc(m.id)}" data-clip="${esc(m.id)}" data-kept="${m.kept ? 1 : 0}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
     <div style="position:relative;aspect-ratio:16/9;background:#0B0B0E">
       ${media}
       ${
@@ -411,7 +412,7 @@ function momentCard(m: MomentRow): string {
     </div>
     <div style="padding:12px 14px;display:flex;flex-direction:column;gap:5px;flex:1">
       ${m.thread_name ? `<div data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${ACCENT.cyan}">${esc(m.thread_name)}</div>` : ""}
-      <div data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${C.ink}">${esc(m.quote.slice(0, 120))}</div>
+      <div class="clip-quote" data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${C.ink}">${esc(m.quote.slice(0, 120))}</div>
       <!-- Where it came from, as a link. A moment belongs to a video and you
            should be able to get to it — that is the whole footage/edit
            relationship in one line. -->
@@ -422,6 +423,16 @@ function momentCard(m: MomentRow): string {
             ? `<a href="/media/${esc(m.short_key)}?download=1" style="font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink}">Download</a>`
             : `<button class="moment-short" data-clip="${esc(m.id)}" style="font-size:${SIZE.meta};font-weight:600;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Make a short</button>`
         }
+        <!--
+          KEEPING, WHERE THE CLIPS ARE.
+          src/projects.ts has always said kept "means ONE thing: I want this
+          moment. That is what Footage's Clips tab shows" — and the only place
+          you could actually say so was Clipping, which is gone. The handler
+          and the route both survived it with nothing rendering the button.
+          The list is filtered to kept clips, so this always drops; undo puts
+          it straight back.
+        -->
+        <button class="keep-toggle" data-clip="${esc(m.id)}" data-kept="${m.kept ? 1 : 0}" style="margin-left:auto;background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}"><span style="display:inline-block;font-size:${SIZE.meta};font-weight:500;padding:6px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink45}">Drop</span></button>
       </div>
     </div>
   </div>`;
@@ -456,11 +467,37 @@ function exportRow(r: ExportRow): string {
     .filter(Boolean)
     .join(" · ");
   const name = `<span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.title ?? "")}</span>`;
-  return `<div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
-    <span style="flex:none;width:6px;height:6px;border-radius:50%;background:${ACCENT.green}"></span>
-    ${r.href ? `<a href="${esc(r.href)}" style="flex:1;min-width:0;display:flex">${name}</a>` : name}
-    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(meta)}</span>
-    <a href="/media/${esc(r.r2_key)}?download=1" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Download</a>
+
+  /*
+   * A FRAME YOU CAN PRESS, because a file you cannot watch is one you have to
+   * download to check.
+   *
+   * Clipping showed finished shorts as a canvas and nothing else — no video
+   * element anywhere in the card — so the only thing you could do with a short
+   * was download it: "there are two videos, that don't play, the only thing
+   * there are download buttons". The canvas was black on top of that, because
+   * the painter was gated on a selector those cards do not carry.
+   *
+   * Both halves are fixed here rather than carried across. The canvas is
+   * painted by the same paintMoments every other frame in this product uses,
+   * and pressing it swaps in a real player on the row.
+   */
+  const thumb = `<button class="exp-play" data-media="${esc(r.r2_key)}"
+      aria-label="Play ${esc(r.title ?? "this export")}"
+      style="flex:none;width:52px;aspect-ratio:16/9;border-radius:5px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);background:#0B0B0E;cursor:pointer;padding:0;border:none">
+    <canvas class="short-frame" data-media="${esc(r.r2_key)}" data-at="0" width="156" height="88"
+      style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+    <span style="position:absolute;inset:0;display:grid;place-items:center">${iconPlay(9)}</span>
+  </button>`;
+
+  return `<div class="exp-item" style="border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:11px 14px">
+      ${thumb}
+      ${r.href ? `<a href="${esc(r.href)}" style="flex:1;min-width:0;display:flex">${name}</a>` : name}
+      <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(meta)}</span>
+      <a href="/media/${esc(r.r2_key)}?download=1" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Download</a>
+    </div>
+    <div class="exp-stage" hidden style="padding:0 14px 14px"></div>
   </div>`;
 }
 
@@ -500,7 +537,7 @@ export interface FootageData {
   exportCount: number;
 }
 
-/** One finished cut, as Footage lists it. */
+/** One finished export — a cut or a short — as Footage lists it. */
 export interface ExportRow {
   id: string;
   r2_key: string | null;
@@ -509,9 +546,11 @@ export interface ExportRow {
   format: string;
   aspect: string;
   created_at: number;
-  /** The edit it came from. */
+  /** The edit it came from, or the video a short was cut out of. */
   title: string | null;
   href: string | null;
+  /** Which it is, so the frame is the right shape when it opens. */
+  kind: string;
 }
 
 /*
@@ -598,19 +637,35 @@ export function renderFootageFull(d: FootageData): string {
 
   if (d.tab === "exports") {
     /*
-     * The videos you have finished.
+     * Everything you have finished, in two named groups.
      *
      * Every one of these was reachable before only by opening the edit that
-     * made it and scrolling to its Exports strip. A file you own should be
-     * findable by looking for it.
+     * made it and scrolling to its Exports strip, and a short was reachable
+     * only from Clipping. A file you own should be findable by looking for it.
+     *
+     * WHY GROUPS AND NOT TABS. A short and a full cut are both finished files
+     * and belong in the same place, but you go looking for them for different
+     * reasons — one gets posted, the other gets uploaded. Two tabs would mean
+     * two counts, and a count that disagrees with its list is the bug this
+     * page has already had twice. One list, two headings, one count.
+     *
+     * The words matter here because they have been muddled: a CLIP is a span
+     * the model found, on the Clips tab, and no file exists for it. A SHORT is
+     * the vertical file you rendered from one. Candidate, then thing.
      */
     if (!d.exports.length) {
       return head + emptyState("Nothing exported yet — finish a cut and it lands here.");
     }
-    return (
-      head +
-      `<div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${d.exports.map(exportRow).join("")}</div>`
-    );
+    const shorts = d.exports.filter((r) => r.kind === "short");
+    const cuts = d.exports.filter((r) => r.kind !== "short");
+    const group = (label: string, rows: ExportRow[]) =>
+      rows.length
+        ? `<div style="margin-top:20px">
+             <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">${label}</div>
+             <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${rows.map(exportRow).join("")}</div>
+           </div>`
+        : "";
+    return head + group("Shorts", shorts) + group("Full videos", cuts);
   }
 
   if (d.tab === "threads") {

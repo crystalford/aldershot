@@ -21,7 +21,7 @@ export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive
  * feels like one place — preserve it.
  */
 export type ShortsCtx = "editor" | "nav";
-type NavItem = "home" | "editor" | "clipping" | "footage" | null;
+type NavItem = "home" | "editor" | "footage" | null;
 
 export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
   switch (view) {
@@ -32,7 +32,7 @@ export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
     case "transcript":
       return "editor";
     case "shorts":
-      return shortsCtx === "editor" ? "editor" : "clipping";
+      return "editor";
     case "archive":
       return "footage";
     // Projects and Settings deliberately light nothing — the nav holds verbs,
@@ -84,7 +84,6 @@ function nav(view: View, shortsCtx: ShortsCtx, email?: string | null): string {
     <div style="display:flex;align-items:center;gap:clamp(14px,2.4vw,26px);font-size:${SIZE.body};flex-wrap:wrap;justify-content:flex-end">
       ${link("/", "Home", "home")}
       ${link("/editor", "Editor", "editor")}
-      ${link("/clipping", "Clipping", "clipping")}
       ${link("/footage", "Footage", "footage")}
       <span tabindex="0" role="button" id="navSearch" style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border-radius:6px;background:${C.surface}">
         ${iconSearch({ size: 14, stroke: "rgba(236,236,241,0.5)" })}
@@ -405,7 +404,6 @@ function overlays(editing: boolean): string {
         ${key("⌘K", "Ask for anything")}
         ${key("G then H", "Home")}
         ${key("G then P", "Projects")}
-        ${key("G then C", "Clipping")}
         ${key("G then F", "Footage")}
         ${key("G then S", "Settings")}
         ${key("⌘Z", "Undo the last change")}

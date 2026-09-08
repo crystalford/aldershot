@@ -26,11 +26,14 @@ export interface Moment {
   source_key: string;
   short_key: string | null;
   thread_name: string | null;
+  /* Always 1 in this list — the query filters on it — but carried so the card
+     can render its own state and put it back after an undo. */
+  kept: number;
 }
 
 const SELECT_MOMENTS = `
   SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.used_count, c.frame_r2_key,
-         c.source_id,
+         c.source_id, c.kept,
          s.title AS source_title,
          /* The footage this came from, so a clip can PLAY. A moment is a range
             of a video, and a video element given #t=start,end plays exactly

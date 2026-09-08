@@ -819,7 +819,13 @@ function paintMoments(canvases, defaultSrc) {
           const timer = setTimeout(fail, 4000);
           shot.addEventListener("seeked", done, { once: true });
           shot.addEventListener("error", fail, { once: true });
-          shot.currentTime = at;
+          /* Seeking to where you already are fires nothing.
+             A decoder sits at 0 after loadedmetadata, so data-at="0" set
+             currentTime to 0, no seeked event ever came, and the frame sat out
+             its four-second timeout and gave up — which is why the first block
+             of every transcript and EVERY finished short showed a black box.
+             40ms in is the same picture and is always a real seek. */
+          shot.currentTime = at > 0.01 ? at : 0.04;
         });
         drawCover(canvas, shot);
         canvas.dataset.painted = "1";
@@ -1497,12 +1503,12 @@ if (blocksEl) {
         const res = await fetch("/api/projects/" + projectId + "/blocks/short", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ block: short.getAttribute("data-block"), aspect: "9:16" }),
+          body: JSON.stringify({ block: short.getAttribute("data-block"), aspect: "9:16", captionStyle: "Bold" }),
         });
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || "Couldn't make that");
-        if (pill) pill.textContent = "in Clipping";
-        toast("Making it — it'll be in Clipping.");
+        if (pill) pill.textContent = "in Exports";
+        toast("Making it — it will be in Footage, under Exports.");
       } catch (err) {
         short.dataset.busy = "0";
         if (pill) pill.textContent = label;
@@ -2131,7 +2137,7 @@ document.querySelectorAll(".job-row").forEach((row) => {
 
 /* ── Keyboard map (10-ROUTES-AND-KEYS.md) ─────────────────────────────── */
 let goArmed = false;
-const GO = { h: "/", p: "/projects", c: "/clipping", f: "/footage", s: "/settings" };
+const GO = { h: "/", p: "/projects", f: "/footage", s: "/settings" };
 
 /*
  * The editor's own keys.
@@ -3243,7 +3249,9 @@ function setKept(clipId, kept) {
   if (row) {
     row.setAttribute("data-kept", kept ? "1" : "0");
     row.style.opacity = kept ? "" : ".55";
-    const quote = row.querySelector("div > div");
+    /* By class. This asked for "div > div", which on a card is the media
+       box's first child and not the words at all. */
+    const quote = row.querySelector(".clip-quote");
     if (quote) {
       quote.style.textDecoration = kept ? "" : "line-through";
       quote.style.textDecorationColor = kept ? "" : "rgba(236,236,241,0.35)";
@@ -3894,8 +3902,11 @@ async function record(button) {
 /*
  * "Make a short" on a moment in Footage.
  *
- * The same route Clipping's own card uses — a moment is a moment wherever you
- * are looking at it, and there is no second renderer.
+ * One renderer, wherever you press it: this and the editor's per-block button
+ * reach the same route. Captions are ON, because a short is the one export
+ * that is watched with the sound off — both callers sent "None" here, so
+ * every short this product has ever made came out bare while the landing page
+ * promised "captions burned in".
  */
 document.querySelectorAll(".moment-short").forEach((btn) => {
   btn.addEventListener("click", async () => {
@@ -3907,7 +3918,7 @@ document.querySelectorAll(".moment-short").forEach((btn) => {
       const res = await fetch("/api/clips/" + btn.getAttribute("data-clip") + "/render", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ aspect: "9:16", captionStyle: "None" }),
+        body: JSON.stringify({ aspect: "9:16", captionStyle: "Bold" }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't start");
@@ -3920,108 +3931,61 @@ document.querySelectorAll(".moment-short").forEach((btn) => {
   });
 });
 
-/* Clipping's drop zone. The video lands in Footage like any other source —
-   the surface says so — and then this page reopens on it, so the drop and the
-   clip run are one gesture rather than two. Reuses the same resumable upload
-   and real-frame poster grab as the Home composer; a video dropped here must
-   not arrive with a worse record of itself than one dropped there. */
-const clipDrop = document.querySelector("#clipDrop");
-if (clipDrop) {
-  const pick = clipDrop.querySelector("#clipFilePick");
-  const label = clipDrop.querySelector("span");
-  const original = label ? label.innerHTML : "";
-
-  const send = async (file) => {
-    if (!file) return;
-    if (label) label.textContent = "Uploading…";
-    try {
-      const durationS = await readDuration(file).catch(() => 0);
-
-      const start = await fetch("/api/uploads", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4", bytes: file.size, durationS }),
-      }).then((r) => r.json());
-      if (start.error) throw new Error(start.error);
-
-      /* Poster first, from the local file, so navigating away cannot lose it. */
-      grabPoster(file, Math.max(1, (durationS || 8) * 0.25))
-        .then((blob) =>
-          blob &&
-          fetch("/api/sources/" + start.source.id + "/poster", {
-            method: "POST",
-            headers: { "content-type": "image/jpeg" },
-            body: blob,
-          }),
-        )
-        .catch(() => {});
-
-      /* Same worker as the composer. A drop here used to die on navigation for
-         exactly the same reason, and would have been easy to miss once the
-         composer was fixed. */
-      const sw = await uploadWorker();
-      if (sw) {
-        const msg = {
-          type: "start-upload",
-          file,
-          sourceId: start.source.id,
-          uploadId: start.uploadId,
-          partSize: start.partSize,
-          mode: start.mode,
-          durationS,
-        };
-        inFlight.set(start.source.id, { msg, doneParts: [], timer: null });
-        sw.postMessage(msg);
-        watchUpload(start.source.id);
-        showUpload({ sourceId: start.source.id, name: file.name, pct: 0 });
-        if (label) label.innerHTML = original;
-        return;
-      }
-
-      const guard = (ev) => { ev.preventDefault(); ev.returnValue = ""; };
-      window.addEventListener("beforeunload", guard);
-      try {
-        await uploadResumable(file, durationS, (pct) => {
-          if (label) label.textContent = "Uploading " + pct + "%";
-        }, start);
-        location.href = "/clipping?source=" + start.source.id;
-      } finally {
-        window.removeEventListener("beforeunload", guard);
-      }
-    } catch (err) {
-      if (label) label.innerHTML = original;
-      toast(err.message || "Couldn't add that video");
-    }
-  };
-
-  pick?.addEventListener("change", (e) => send(e.target.files?.[0]));
-  ["dragenter", "dragover"].forEach((ev) =>
-    clipDrop.addEventListener(ev, (e) => {
-      e.preventDefault();
-      clipDrop.style.boxShadow = "inset 0 0 0 1px rgba(217,179,106,0.45)";
-    }),
-  );
-  ["dragleave", "drop"].forEach((ev) =>
-    clipDrop.addEventListener(ev, (e) => {
-      e.preventDefault();
-      clipDrop.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,0.05)";
-    }),
-  );
-  clipDrop.addEventListener("drop", (e) => send(e.dataTransfer?.files?.[0]));
-}
-
-/* Make the video of one short. Rendering costs money, so it happens when you
-   ask and not because a scoring pass found something. */
 /*
- * CLIPPING'S CARDS.
+ * FRAMES FOR CLIPS AND FINISHED EXPORTS.
  *
- * Each paints its own moment rather than wearing the source's first frame,
- * and each gets its own player — the same two pieces the editor uses, called
- * per card. Footage's clip grid carries exactly the same three parts, so it is
- * the same block rather than a second copy of it.
+ * Each paints its own moment rather than wearing the source's first frame —
+ * the same piece the editor uses for block rows, called wherever a card or a
+ * row needs a picture of itself.
  */
-const shortCards = document.querySelectorAll("[data-short], [data-moment]");
-if (shortCards.length) paintMoments(document.querySelectorAll(".short-frame"), "");
+/* Gated on the canvases themselves, not on something else being on the page.
+   This asked for [data-short], [data-moment] first — which the finished-short
+   cards do not carry — so a page showing only shorts you had MADE matched
+   nothing, the painter never ran, and every frame stayed black. The thing to
+   ask about is the thing you are about to paint. */
+const shortFrames = document.querySelectorAll(".short-frame");
+if (shortFrames.length) paintMoments(shortFrames, "");
+
+/*
+ * WATCHING A FINISHED EXPORT WITHOUT LEAVING THE PAGE.
+ *
+ * Exports listed a file, a size and a Download button, and that was the whole
+ * row: the only way to see whether a render came out right was to fetch it and
+ * open it in something else. The frame is a button now, and this is what it
+ * does. One at a time, because two videos playing over each other is never
+ * what anybody meant.
+ *
+ * No aspect is passed in. A video with a real src carries its own intrinsic
+ * shape, so max-width and max-height frame a 9:16 short and a 16:9 cut
+ * correctly without either being told which it is.
+ */
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".exp-play");
+  if (!btn) return;
+  const item = btn.closest(".exp-item");
+  const stage = item && item.querySelector(".exp-stage");
+  if (!stage) return;
+
+  const shut = (s) => { s.hidden = true; s.innerHTML = ""; };
+  document.querySelectorAll(".exp-stage").forEach((s) => { if (s !== stage) shut(s); });
+
+  if (!stage.hidden) return shut(stage);
+
+  const v = document.createElement("video");
+  v.src = "/media/" + btn.getAttribute("data-media");
+  v.controls = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.style.cssText = "max-width:100%;max-height:60vh;background:#000;border-radius:9px;display:block";
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex;justify-content:center";
+  wrap.appendChild(v);
+
+  stage.innerHTML = "";
+  stage.appendChild(wrap);
+  stage.hidden = false;
+});
 
 /*
  * EVERY player bar on the page, wired to the video it belongs to.
@@ -4044,421 +4008,6 @@ document.querySelectorAll(".player").forEach((bar) => {
   const video = own || (allVideos.length === 1 ? allVideos[0] : null);
   if (video) players.set(video, wirePlayer(bar, video));
 });
-
-/*
- * ADJUST — the verb the clipper never had.
- *
- * Everything a short is can be changed before a render is spent on it: where
- * it starts and ends, by a second at a time or by pointing at the words. The
- * server writes start_ms and end_ms, which is exactly what renderShort builds
- * its plan from, so a trimmed clip renders trimmed with nothing downstream
- * needing to know.
- */
-const adjust = document.querySelector("#adjust");
-if (adjust) {
-  /*
-   * OUT OF THE PAGE BODY, or it is not fixed to anything.
-   *
-   * The shell animates each surface in with viewIn, which leaves a transform
-   * on the wrapper — and a transformed ancestor becomes the containing block
-   * for position:fixed. So the sheet laid itself out against the whole scrolled
-   * page instead of the viewport: the scrim covered everything and the panel
-   * was a thousand pixels below the fold. That is why the shell's own overlays
-   * (the palette, the key sheet) are rendered outside the page body, and this
-   * one has to be too — it belongs to Clipping, so it ships with the page and
-   * moves itself rather than being hoisted into the shell.
-   */
-  document.body.appendChild(adjust);
-  const wordsEl = adjust.querySelector(".adj-words");
-  const headEl = adjust.querySelector(".adj-head");
-  const tailEl = adjust.querySelector(".adj-tail");
-  const fromEl = adjust.querySelector(".adj-from");
-  const durEl = adjust.querySelector(".adj-dur");
-  const frame = adjust.querySelector(".adj-frame");
-  const capWrap = adjust.querySelector(".adj-cap");
-  const whyWrap = adjust.querySelector(".adj-why");
-  const whyHead = adjust.querySelector(".adj-why-head");
-  const whyText = adjust.querySelector(".adj-why-text");
-  const well = adjust.querySelector(".adj-well");
-
-  let clip = null;
-  /* The bounds as edited here, saved when they settle rather than on every
-     press of a stepper — five taps on + is one clip, not five writes. */
-  let start = 0;
-  let end = 0;
-  let saveTimer = null;
-  let pendingWord = null;
-  let decoder = null;
-
-  const secs = (ms) => {
-    const t = Math.max(0, Math.round(ms / 1000));
-    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
-    return h > 0
-      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
-      : m + ":" + String(sec).padStart(2, "0");
-  };
-
-  /* The frame at the in-point, so the preview is of the short you are about to
-     make rather than of wherever it used to begin. */
-  const drawFrame = () => {
-    if (!clip || !frame || !decoder) return;
-    const done = () => {
-      try {
-        drawCover(frame, decoder);
-      } catch (err) {
-        /* No frame. The sheet is complete without one. */
-      }
-    };
-    decoder.addEventListener("seeked", done, { once: true });
-    decoder.currentTime = start / 1000;
-  };
-
-  const paint = () => {
-    if (!clip) return;
-    if (headEl) headEl.textContent = secs(start);
-    if (tailEl) tailEl.textContent = secs(end);
-    if (fromEl) fromEl.textContent = "from " + secs(start);
-    if (durEl) durEl.textContent = secs(end - start);
-
-    wordsEl.querySelectorAll("[data-s]").forEach((w) => {
-      const ws = Number(w.getAttribute("data-s"));
-      const we = Number(w.getAttribute("data-e"));
-      const inside = we > start && ws < end;
-      w.style.color = inside ? "#ECECF1" : "rgba(236,236,241,0.32)";
-      w.style.background = inside ? "rgba(94,201,143,0.14)" : "transparent";
-    });
-  };
-
-  const save = async () => {
-    if (!clip) return;
-    try {
-      const res = await fetch("/api/clips/" + clip.id + "/trim", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ start_ms: Math.round(start), end_ms: Math.round(end) }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || "That didn't save");
-      /* The server clamps to the video and refuses a clip of nothing, so what
-         it sends back is the truth about the bounds, not what was asked. */
-      start = out.start_ms;
-      end = out.end_ms;
-      paint();
-    } catch (err) {
-      toast((err && err.message) || "That didn't save");
-    }
-  };
-
-  const queueSave = () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 400);
-  };
-
-  const nudge = (which, deltaMs) => {
-    if (!clip) return;
-    if (which === "head") start = Math.max(0, Math.min(start + deltaMs, end - 500));
-    else end = Math.max(start + 500, end + deltaMs);
-    pendingWord = null;
-    paint();
-    drawFrame();
-    queueSave();
-  };
-
-  const open = async (clipId) => {
-    adjust.hidden = false;
-    wordsEl.innerHTML = "";
-    clip = null;
-    try {
-      const res = await fetch("/api/clips/" + clipId);
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.error || "Couldn't open that");
-      clip = out;
-      start = out.start_ms;
-      end = out.end_ms;
-      pendingWord = null;
-
-      /* Why the model liked it, when a model picked it at all. A clip you
-         chose yourself was not scored, and saying "0" about it is the bug this
-         whole card was carrying. */
-      if (whyWrap) {
-        const scored = out.score != null && out.score > 0;
-        whyWrap.hidden = !(scored || out.origin === "manual");
-        if (whyHead) whyHead.textContent = scored ? "Why it scored " + out.score : "Yours";
-        if (whyText) whyText.textContent = scored ? (out.why || "") : "You picked this one — it was never scored.";
-      }
-
-      wordsEl.innerHTML = (out.words || [])
-        .map(
-          (w) =>
-            '<span data-s="' + w.s + '" data-e="' + w.e + '" style="padding:1px 5px;border-radius:4px;cursor:pointer">' +
-            escapeHtml(w.w) + "</span>",
-        )
-        .join("");
-
-      if (capWrap) {
-        /* What the caption will look like, in the style chosen on the page —
-           the preview exists so the short can be judged before it is paid for. */
-        const form = document.querySelector(".clip-form");
-        const style = form ? new FormData(form).get("captionStyle") : "None";
-        capWrap.hidden = style === "None";
-        const span = capWrap.querySelector("span");
-        if (span) span.textContent = (out.quote || "").split(/\s+/).slice(0, 6).join(" ");
-        if (span && style === "Clean") {
-          span.style.background = "transparent";
-          span.style.color = "#ECECF1";
-          span.style.fontWeight = "600";
-        }
-        const aspect = String((form ? new FormData(form).get("aspect") : "9:16") || "9:16");
-        if (well) well.style.aspectRatio = aspect.replace(":", "/");
-        /* The canvas has to be the chosen shape too, or drawCover crops to
-           9:16 and the browser then stretches that into a 1:1 well — the
-           preview would be lying about the thing it exists to show. */
-        const [aw, ah] = aspect.split(":").map(Number);
-        if (frame && aw && ah) {
-          frame.width = 270;
-          frame.height = Math.round((270 * ah) / aw);
-        }
-      }
-
-      if (decoder) decoder.remove();
-      decoder = document.createElement("video");
-      decoder.src = "/media/" + out.sourceKey;
-      decoder.muted = true;
-      decoder.playsInline = true;
-      decoder.preload = "metadata";
-      decoder.addEventListener("loadedmetadata", drawFrame, { once: true });
-      decoder.load();
-
-      paint();
-    } catch (err) {
-      adjust.hidden = true;
-      toast((err && err.message) || "Couldn't open that");
-    }
-  };
-
-  document.querySelectorAll(".short-edit").forEach((btn) => {
-    btn.addEventListener("click", () => void open(btn.getAttribute("data-clip")));
-  });
-
-  adjust.querySelectorAll("[data-close]").forEach((el) => {
-    el.addEventListener("click", () => {
-      adjust.hidden = true;
-      /* Any pending nudge is written before the sheet goes, or closing it
-         quickly after a tap would lose the trim. */
-      clearTimeout(saveTimer);
-      if (clip) void save().then(() => location.reload());
-    });
-  });
-
-  adjust.querySelector(".adj-head-minus")?.addEventListener("click", () => nudge("head", -1000));
-  adjust.querySelector(".adj-head-plus")?.addEventListener("click", () => nudge("head", 1000));
-  adjust.querySelector(".adj-tail-minus")?.addEventListener("click", () => nudge("tail", -1000));
-  adjust.querySelector(".adj-tail-plus")?.addEventListener("click", () => nudge("tail", 1000));
-
-  /*
-   * Trim by word. The first click sets the start; the second sets the end.
-   *
-   * The prototype uses right-click for the end, which is unreachable on a
-   * phone and hidden on a desktop. Two clicks in a row say the same thing and
-   * the line above the words explains it.
-   */
-  wordsEl.addEventListener("click", (e) => {
-    const w = e.target.closest("[data-s]");
-    if (!w || !clip) return;
-    const ws = Number(w.getAttribute("data-s"));
-    const we = Number(w.getAttribute("data-e"));
-
-    if (pendingWord === null) {
-      start = ws;
-      end = Math.max(we, ws + 500);
-      pendingWord = ws;
-    } else {
-      /* A second word before the first is a start, not a backwards clip. */
-      if (we <= pendingWord) { start = ws; end = Math.max(we, ws + 500); pendingWord = ws; }
-      else { end = we; pendingWord = null; }
-    }
-    paint();
-    drawFrame();
-    queueSave();
-  });
-
-  adjust.querySelector(".adj-reset")?.addEventListener("click", () => {
-    if (!clip) return;
-    start = clip.start_ms;
-    end = clip.end_ms;
-    pendingWord = null;
-    paint();
-    drawFrame();
-    queueSave();
-  });
-
-  /* Make it from here, so the sheet is somewhere you finish rather than
-     somewhere you pass through. */
-  adjust.querySelector(".adj-make")?.addEventListener("click", async () => {
-    if (!clip) return;
-    clearTimeout(saveTimer);
-    await save();
-    const card = document.querySelector('[data-short="' + clip.id + '"] .make-short');
-    adjust.hidden = true;
-    if (card) card.click();
-    else location.reload();
-  });
-}
-
-document.querySelectorAll(".make-short").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    const was = btn.textContent;
-    btn.textContent = "Making it…";
-    /*
-     * Shape and Captions, as chosen on the page.
-     *
-     * These used to live inside the SCAN form, which only exists once you have
-     * picked a video to scan — so on the page you actually land on there was
-     * no form to read and this sent captionStyle "None", while the lede above
-     * it promised "captions burned in". The settings are their own form now
-     * and are on the page either way.
-     */
-    const form = document.querySelector(".clip-form");
-    const data = form ? new FormData(form) : null;
-    try {
-      const res = await fetch("/api/clips/" + btn.getAttribute("data-clip") + "/render", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          aspect: data ? data.get("aspect") : "9:16",
-          captionStyle: data ? data.get("captionStyle") : "None",
-        }),
-      });
-      if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) || {}).error || "That didn't start");
-      location.reload();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = was;
-      toast((err && err.message) || "That didn't start");
-    }
-  });
-});
-
-/* A short being made. Polls only while one actually is, and stops when none
-   are — the same rule as the exports list. */
-if (document.querySelector('[data-short][data-state="queued"], [data-short][data-state="running"]')) {
-  const tick = setInterval(async () => {
-    try {
-      const res = await fetch("/api/jobs");
-      if (!res.ok) return;
-      const { jobs } = await res.json();
-      if (!(jobs || []).some((j) => j.type === "render")) { clearInterval(tick); location.reload(); }
-    } catch (err) {
-      /* A blip is not a reason to stop watching. */
-    }
-  }, 4000);
-}
-
-/* ── Clipping ──────────────────────────────────────────────────────────
-   Two ways to find a moment: a scored batch, or a search for one it missed.
-   Both start a job the page then follows. */
-/* The chips are radios, so keyboard and form semantics come for free; the
-   visual state has to follow the checked one. Both forms have them — how a
-   short comes out (.clip-form) and what to look for (.clip-scan) — so this is
-   bound to each rather than to one of them. */
-document.querySelectorAll(".clip-form, .clip-scan").forEach((form) => {
-  form.addEventListener("change", () => {
-    form.querySelectorAll("input[type=radio]").forEach((input) => {
-      const chip = input.nextElementSibling;
-      if (!chip) return;
-      chip.style.background = input.checked ? "#2E2E36" : "#17171B";
-      chip.style.color = input.checked ? "#ECECF1" : "rgba(236,236,241,0.55)";
-    });
-  });
-});
-
-const clipForm = document.querySelector(".clip-scan");
-if (clipForm) {
-  clipForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const button = clipForm.querySelector('button[type="submit"]');
-    button.disabled = true;
-    button.textContent = "Finding clips…";
-    const data = new FormData(clipForm);
-    try {
-      const res = await fetch("/api/shorts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceId: clipForm.getAttribute("data-source"),
-          length: data.get("length"),
-          count: Number(data.get("count")),
-          /* Shape and Captions were on the form and never left the page: the
-             client did not send them, /api/shorts had no field for them, and
-             ShortsOpts had none either. They are the render's, not the search's
-             — carried on each short's own render request. */
-        }),
-      });
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.error || "That didn't run");
-      location.reload();
-    } catch (err) {
-      button.disabled = false;
-      button.textContent = "Find clips";
-      toast(err.message);
-    }
-  });
-}
-
-const askForm = document.querySelector(".clip-ask");
-if (askForm) {
-  askForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = askForm.querySelector('input[name="q"]');
-    const button = askForm.querySelector('button[type="submit"]');
-    const q = input.value.trim();
-    if (!q) return;
-    button.disabled = true;
-    button.textContent = "Looking…";
-    try {
-      const res = await fetch("/api/shorts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sourceId: askForm.getAttribute("data-source"), query: q }),
-      });
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.error || "That didn't run");
-      location.reload();
-    } catch (err) {
-      button.disabled = false;
-      button.textContent = "Find it";
-      toast(err.message);
-    }
-  });
-}
-
-/* Following a Clipping run. */
-const clipJob = $("#clipping-job");
-if (clipJob) {
-  const sourceId = clipJob.getAttribute("data-source");
-  const tick = async () => {
-    try {
-      const { jobs } = await (await fetch("/api/jobs")).json();
-      const job = jobs.find((j) => j.ref_id === sourceId);
-      if (!job) { location.reload(); return; }
-      /* By id, not by position. This reached for span:last-child, which is
-         now the clock — the stage would have been written over it. */
-      const label = $("#clipping-label");
-      const pct = $("#clipping-pct");
-      const bar = $("#clipping-bar");
-      if (label && job.stage_label) label.textContent = job.stage_label;
-      /* The scan reports real progress and this was dropping it on the floor,
-         which is the same thing the editor's pass strip used to do. */
-      if (typeof job.pct === "number") {
-        if (pct) pct.textContent = job.pct > 0 ? job.pct + "%" : "";
-        if (bar) bar.style.width = job.pct + "%";
-      }
-      setTimeout(tick, 2000);
-    } catch { setTimeout(tick, 5000); }
-  };
-  setTimeout(tick, 1500);
-}
 
 /* ── Watching a source being read ──────────────────────────────────────
    Polls the job rather than guessing, and reloads once the transcript is

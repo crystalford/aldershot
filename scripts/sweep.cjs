@@ -29,7 +29,7 @@ const WIDTH = Number(process.env.WIDTH || 1360);
 /* Pressed on a real account, these do real damage or leave the surface. */
 const DONT_PRESS = /^(delete|remove|close account|sign out|discard|empty|trash|upgrade|manage billing|subscribe|cancel plan)/i;
 /* These leave the page on purpose; following them is the link check's job. */
-const NAVIGATES = /^(open|continue|download|all \d|watch|review the cut|start cutting|retry|make the video|make a short|clip it|react to it|find clips|find it|run it|begin|export|adjust|record it|generate it|in clipping)/i;
+const NAVIGATES = /^(open|continue|download|all \d|watch|review the cut|start cutting|retry|make a short|clip it|react to it|find it|run it|begin|export|record it|generate it|in exports|drop)/i;
 
 async function surfaces(page) {
   const out = [];
@@ -43,8 +43,6 @@ async function surfaces(page) {
   out.push(['Footage · Videos', '/footage?tab=sources']);
   out.push(['Footage · Clips', '/footage?tab=moments']);
   out.push(['Footage · Find', '/footage?tab=find']);
-  out.push(['Clipping', '/clipping']);
-  if (ready) out.push(['Clipping · one video', '/clipping?source=' + ready.id]);
   out.push(['Projects', '/projects']);
   out.push(['Settings', '/settings']);
   if (ready) out.push(['Video', '/sources/' + ready.id]);

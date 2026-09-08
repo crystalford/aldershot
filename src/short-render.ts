@@ -165,35 +165,3 @@ export async function createShortRender(
   return id;
 }
 
-/**
- * The newest render of each of these clips, for the cards to show state.
- *
- * duration_s comes back too, because a card has to know whether the file it
- * has is still a file of THIS clip: trimming moves the boundaries and leaves a
- * finished video of the old ones behind.
- */
-export async function shortRendersFor(
-  db: D1Database,
-  userId: string,
-  clipIds: string[],
-): Promise<Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>> {
-  if (!clipIds.length) return new Map();
-  const marks = clipIds.map(() => "?").join(",");
-  const { results } = await db
-    .prepare(
-      `SELECT r.clip_id, r.id, r.state, r.r2_key, r.error, r.duration_s,
-              (SELECT j.started_at FROM jobs j
-                WHERE j.ref_id = r.id AND j.type='short-render'
-                ORDER BY j.created_at DESC LIMIT 1) AS started_at
-         FROM renders r
-        WHERE r.user_id=? AND r.kind='short' AND r.clip_id IN (${marks})
-        ORDER BY r.created_at DESC`,
-    )
-    .bind(userId, ...clipIds)
-    .all<{ clip_id: string; id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
-
-  const out = new Map<string, { id: string; state: string; r2_key: string | null; error: string | null; duration_s: number | null; started_at: number | null }>();
-  /* Newest first, so the first one seen for a clip is the one that counts. */
-  for (const r of results ?? []) if (!out.has(r.clip_id)) out.set(r.clip_id, r);
-  return out;
-}

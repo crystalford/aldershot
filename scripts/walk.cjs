@@ -169,7 +169,6 @@ const HEIGHT = Number(process.env.HEIGHT || 900);
   const surfaces = [...editorSurfaces, 
     ['Home', '/'],
     ['Editor', '/editor'],
-    ['Clipping', '/clipping'],
     ['Footage', '/footage'],
     ['Footage · Clips', '/footage?tab=moments'],
     ['Projects', '/projects'],

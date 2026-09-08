@@ -405,13 +405,26 @@ async function checkStrings() {
       "The same toggle, pressed. Says what it will do rather than what it is " +
         "doing, like every other control in this product.",
     ],
+    ...[
+      "Shorts",
+      "Full videos",
+    ].map((t) => [
+      t,
+      "Exports lists both kinds now, under two headings. Clipping was the " +
+        "ONLY surface that listed a finished short, so scrapping it while " +
+        "Exports asked for cuts alone would have left every short unreachable " +
+        "and still paying for its storage. Two headings rather than two tabs, " +
+        "because two tabs means two counts, and a count that disagrees with " +
+        "its list is the bug this page has already had twice.",
+    ]),
     [
-      "\u2190 All shorts",
-      "Clipping lists the shorts you have MADE, and choosing a video filters " +
-        "them. It said 'All videos' and pointed at /clipping, which redirected " +
-        "to a guessed video — so the link could not move: 'I click All videos " +
-        "it just stays on this screen'. The prototype's Clipping never needed " +
-        "a way back because its demo only ever has one video.",
+      "Drop",
+      "Keeping a clip, where the clips are. src/projects.ts has always said " +
+        "kept 'means ONE thing: I want this moment. That is what Footage's " +
+        "Clips tab shows' — and the only place you could say so was Clipping. " +
+        "The handler and the route both outlived it with nothing rendering a " +
+        "button. The list is filtered to kept clips, so this always drops and " +
+        "undo puts it back.",
     ],
     [
       "Exports",
@@ -442,17 +455,21 @@ async function checkStrings() {
      */
     ...[
       "VERTICAL, WITHOUT ASKING",
-      "One long video in. Eight shorts out.",
-      "It goes through the whole thing and scores what would stand alone \u2014 then cuts each one vertical with the captions burned in, ready to post. No brief, no timeline, no second tool. You watch them and keep the ones that land.",
+      "Any line in it becomes a vertical short.",
+      "It reads the whole thing and scores what would stand alone. Press one and it cuts vertical with the captions burned in, ready to post. No brief, no timeline, no second tool \u2014 the same page you edit in.",
       "THAT'S THE WHOLE",
       "POINT THOUGH",
       "ISN'T IT",
     ].map((t) => [
       t,
       "The shorts half of the product, which this page did not mention at all: " +
-        "it sold 'editing is reading now' and nothing else, while Clipping is a " +
-        "nav item inside. The pitch is Descript AND OpusClip and only one half " +
-        "was on the way in.",
+        "it sold 'editing is reading now' and nothing else. The pitch is " +
+        "Descript AND OpusClip and only one half was on the way in. The claim " +
+        "was rewritten when Clipping was scrapped: it used to promise 'One " +
+        "long video in. Eight shorts out.' and describe a batch that cut every " +
+        "winner unasked. That batch is gone — shorts are made one at a time " +
+        "off any line in the editor — and a landing page must not sell a " +
+        "surface that no longer exists.",
     ]),
     /*
      * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
@@ -497,7 +514,12 @@ async function checkStrings() {
     ...[
       "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
       "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
-      "Every render lands ready to leave: download it, or cut shorts straight off it at whatever shape the platform wants, captions burned in. A short is never take-it-or-leave-it \u2014 move its in and out points by pointing at the words, and see the frame it opens on before you spend a render. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
+      /* Trimmed when the Adjust sheet went with Clipping. It used to promise
+         "A short is never take-it-or-leave-it — move its in and out points by
+         pointing at the words, and see the frame it opens on before you spend
+         a render", which was Clipping's trim-by-word sheet and exists nowhere
+         now. Shortening a short means striking words in the editor first. */
+      "Every render lands ready to leave: download it, or cut a short straight off any line in it at whatever shape the platform wants, captions burned in. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
       "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
       "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
       "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
@@ -588,14 +610,6 @@ async function checkStrings() {
         "while editing. Making it an assist INSIDE the editor is the point of " +
         "docs/decisions/blocks.md: the model marking what is strong is a " +
         "property of the blocks you are already reading, not a destination.",
-    ],
-    [
-      "Make the video",
-      "Clipping's lede promises 'scored vertical shorts, captions burned in' " +
-        "and the prototype shows them as if they already exist — it never had " +
-        "to name the act of producing one, because its data was fixtures. The " +
-        "real product cannot render eight videos nobody asked for, so making " +
-        "one is a deliberate action and needs a label the prototype has none of.",
     ],
     [
       "Duplicate",
