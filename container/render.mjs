@@ -25,7 +25,7 @@
 // docs/decisions/transcription.md.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
 
 /**
@@ -175,12 +175,23 @@ const COLLECT_WINDOW_MS = 30 * 60 * 1000;
  *
  * Returns null when the file will not fit, and the caller keeps the URL.
  */
-async function fetchOnce(url, dest) {
+async function fetchOnce(url, dest, budget) {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`couldn't read the source (${res.status})`);
 
+  /*
+   * The budget is what is LEFT, not what one file may be.
+   *
+   * This compared each file against the whole allowance on its own, which was
+   * right while an edit came from one video: there was only ever one master.
+   * A cut assembled from the library is ten different videos, and ten 2 GB
+   * masters each passed a 12 GB test and together filled the disk. The caller
+   * spends the allowance down as it goes; anything that no longer fits keeps
+   * its URL and is read over the network instead, which is slower and always
+   * works.
+   */
   const declared = Number(res.headers.get("content-length")) || 0;
-  if (declared > DISK_BUDGET) {
+  if (declared > (typeof budget === "number" ? budget : DISK_BUDGET)) {
     await res.body.cancel().catch(() => {});
     return null;
   }
@@ -348,11 +359,17 @@ function render(plan, res) {
       const wanted = [...new Set(cuts.flatMap((c) => [c.url, c.voiceUrl]).filter(Boolean))];
       const local = new Map();
       let fetched = 0;
+      /* Spent down as each source lands, so ten videos share one disk rather
+         than each being measured against the whole of it. */
+      let left = DISK_BUDGET;
       for (const url of wanted) {
         const ext = (String(url).split("?")[0].match(/\.[a-z0-9]{2,4}$/i) || [".mp4"])[0];
         const dest = `${dir}/source-${local.size}${ext}`;
-        const got = await fetchOnce(url, dest).catch(() => null);
-        if (got) local.set(url, got);
+        const got = await fetchOnce(url, dest, left).catch(() => null);
+        if (got) {
+          local.set(url, got);
+          try { left -= statSync(got).size; } catch { /* unreadable size: assume it took its share */ }
+        }
         fetched++;
         job.pct = Math.round((fetched / wanted.length) * 15);
       }

@@ -3012,7 +3012,25 @@ if (composer) {
         list.textContent = "Nothing transcribed yet — add a video and it starts.";
         return;
       }
-      list.innerHTML = ready
+      /*
+       * EVERYTHING, as the first answer to "which video?".
+       *
+       * An edit has always begun with one file. This row begins one from the
+       * whole library instead — it posts no sourceId, which the server reads
+       * as "out of everything I have" and assembles from what matches. It is
+       * first because it is the answer the sentence usually deserves: you said
+       * what you wanted, not which file it was in.
+       */
+      list.innerHTML =
+        '<button data-source="" style="display:flex;gap:12px;align-items:center;text-align:left;' +
+        'padding:11px 12px;border-radius:8px;background:#1A1A1F;border:none;cursor:pointer;color:#ECECF1;' +
+        'font-family:inherit;box-shadow:inset 0 0 0 1px rgba(217,179,106,.28)">' +
+        '<span style="flex:none;width:54px;aspect-ratio:16/9;border-radius:4px;background:#0B0B0E;display:grid;place-items:center;' +
+        'font-size:11px;color:rgba(236,236,241,.45)">all</span>' +
+        '<span style="flex:1;min-width:0"><span style="display:block;font-size:13px">Everything I have shot</span>' +
+        '<span style="display:block;font-size:11px;color:rgba(236,236,241,.45);margin-top:2px">Pulls the moments that match from every video</span>' +
+        '</span></button>' +
+        ready
         .map(
           (sv) =>
             '<button data-source="' + escapeHtml(sv.id) + '" style="display:flex;gap:12px;align-items:center;text-align:left;' +

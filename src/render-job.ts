@@ -249,11 +249,24 @@ export async function listFinished(
  * the same place.
  */
 export async function edlForProject(env: Env, project: Project, userId: string) {
-  if (!project.source_id) return null;
-  const source = await getSource(env.DB, project.source_id, userId);
-  if (!source) return null;
+  /*
+   * A PROJECT NEED NOT HAVE A VIDEO.
+   *
+   * This refused any project without one, which made "an edit assembled from
+   * the library" unrenderable — and everything below it was already ready for
+   * that: a block carries its own mediaKey, an EdlCut carries its own
+   * sourceKey, runRender signs each cut's key separately, and the container
+   * downloads one file per distinct url. The single-source assumption lived
+   * here, at the top, and nowhere underneath.
+   *
+   * A source_id that no longer RESOLVES is different and still refused: that
+   * is a deleted video, not a library edit, and quietly rendering whatever
+   * clips survived would hand back a different film from the one asked for.
+   */
+  const source = project.source_id ? await getSource(env.DB, project.source_id, userId) : null;
+  if (project.source_id && !source) return null;
 
-  const segments = await getSegments(env.DB, source.id);
+  const segments = source ? await getSegments(env.DB, source.id) : [];
 
   /*
    * The render is built from the SAME blocks the editor shows.
@@ -271,7 +284,7 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
 
   /* Two keys: the master for the render, the editing copy for the preview.
      playableKey is the one definition of which file you watch. */
-  const edl = buildEdl(source.r2_key, blocks, cuts, playableKey(source));
+  const edl = buildEdl(source?.r2_key ?? "", blocks, cuts, source ? playableKey(source) : undefined);
   return { edl, source, segments };
 }
 

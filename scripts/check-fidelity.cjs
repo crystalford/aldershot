@@ -432,6 +432,20 @@ async function checkStrings() {
         "conversation behind it and nothing to take back.",
     ],
     ...[
+      "Empty the bin",
+      "Put it back",
+      "Delete for good",
+    ].map((t) => [
+      t,
+      "The deleted pile in Settings. Delete is a soft delete here — an edit or " +
+        "a video goes to a bin you can take it back out of — and the " +
+        "prototype has no bin at all, because nothing in it can be deleted. " +
+        "These have been shipped for a long time and were never CHECKED: the " +
+        "controls only render when the bin has something in it, and no check " +
+        "had ever put anything there. The editor gate now makes a library edit " +
+        "and deletes it again, which is what finally rendered them.",
+    ]),
+    ...[
       "In this cut",
       "Ask the model",
       "More like these",

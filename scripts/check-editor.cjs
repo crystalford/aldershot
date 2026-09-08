@@ -383,6 +383,72 @@ async function main() {
     "the runtime and kept count are shown once, not twice",
   );
 
+  /*
+   * AN EDIT MADE FROM THE WHOLE LIBRARY.
+   *
+   * Every edit in this product belonged to one video, and the assumption lived
+   * in the route guards rather than in the machinery — a Block already carried
+   * its own mediaKey and the container already downloaded one file per
+   * distinct url. The failure this guards against is a cut whose blocks come
+   * from several videos rendering ranges out of ONE of them: a perfectly valid
+   * file of the wrong footage.
+   *
+   * Made and then deleted, so running the gate does not silt the account up
+   * with test edits.
+   */
+  {
+    const words = await $(() => {
+      const t = [...document.querySelectorAll(".w")].map((e) => e.textContent.trim());
+      return t.find((w) => /^[a-z0-9']{4,}$/i.test(w)) || null;
+    });
+    let madeId = null;
+    try {
+      const made = await page.evaluate(async (brief) => {
+        const r = await fetch("/api/begin", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brief }),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      }, "the bits about " + (words || "this"));
+
+      if (made.status === 422) {
+        console.log("  ⚠ nothing in this library matches — the library edit is not exercised");
+      } else {
+        say(made.status === 200 && !!made.body.projectId, "a brief with no video makes an edit", JSON.stringify(made.body).slice(0, 120));
+        madeId = made.body.projectId;
+      }
+
+      if (madeId) {
+        const edl = await page.evaluate(async (id) => {
+          const r = await fetch("/api/projects/" + id + "/edl");
+          return { status: r.status, body: await r.json().catch(() => ({})) };
+        }, madeId);
+        say(edl.status === 200 && (edl.body.cuts || []).length > 0,
+          "and it has something to render", "an edit with no source used to have no EDL at all");
+        say((edl.body.cuts || []).every((c) => c.sourceKey),
+          "every cut names the file it comes from");
+
+        await page.goto(BASE + "/p/" + madeId + "/cut", { waitUntil: "domcontentloaded" });
+        await page.waitForTimeout(700);
+        say(await $(() => document.querySelectorAll(".blk").length > 0), "the editor shows its blocks");
+        say(
+          await $(() => !!document.querySelector("#cut-video")),
+          "and a player to play them into",
+          "each block carries its own file; without the element there is nothing to swap",
+        );
+        say(await $(() => !!document.querySelector(".asst .pass-form")), "and the assistant is there too");
+      }
+    } finally {
+      if (madeId) {
+        await page.evaluate(
+          (id) => fetch("/api/projects/" + id + "/delete", { method: "POST" }).catch(() => {}),
+          madeId,
+        );
+      }
+    }
+  }
+
   /* ── Narrow ─────────────────────────────────────────────────────────── */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);

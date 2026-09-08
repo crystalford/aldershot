@@ -693,8 +693,20 @@ export function renderCut(d: CutData): string {
   const ctl = `flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:${RADIUS.button};background:transparent;border:none;color:${C.ink70};cursor:pointer;font-family:${FONT.ui};font-size:${SIZE.meta};font-weight:600`;
   const clockStyle = `flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};font-variant-numeric:tabular-nums`;
 
-  const player = d.sourceKey
-    ? `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""} src="/media/${esc(d.sourceKey)}" style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
+  /*
+   * THE PLAYER EXISTS EVEN WHEN THE EDIT HAS NO VIDEO OF ITS OWN.
+   *
+   * A cut assembled from the library has no project source, and this used to
+   * render nothing at all in that case — so #cut-video did not exist, and
+   * every block's play button, "Watch the cut" and the follow-along highlight
+   * had nothing to play into. Each block carries its own file and playFrom
+   * swaps the element's src to it, so the element is what has to be there; the
+   * src is not.
+   *
+   * It starts empty and fills the moment you press a block, which is the only
+   * honest first frame for a cut with no single video behind it.
+   */
+  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="width:100%;aspect-ratio:${d.aspect ?? "16/9"};max-height:62vh;object-fit:contain;background:#000;border-radius:${RADIUS.card};display:block"></video>
       <!-- Wraps. Seven controls in a 320px column ran "Full" off the edge;
            the bar is narrower now that it lives with the assistant, so it
            takes a second line rather than losing its last button. -->
@@ -715,8 +727,7 @@ export function renderCut(d: CutData): string {
         <span class="pl-dur" data-content style="${clockStyle}">${hms(0)}</span>
         <button class="pl-rate" aria-label="Speed" style="${ctl};width:auto;padding:0 6px"><span data-content>1×</span></button>
         <button class="pl-full" aria-label="Fullscreen" style="${ctl};width:auto;padding:0 6px">Full</button>
-      </div>`
-    : "";
+      </div>`;
 
   /*
    * WHICH FOOTAGE this cut is made from, and a way back to it.

@@ -317,29 +317,32 @@ export async function runScore(
   const spent = { tokensIn: 0, tokensOut: 0 };
 
   try {
-    const src = await getSource(env.DB, opts.sourceId, opts.userId);
-    if (!src) return void (await failJob(env.DB, jobId, "That video isn't there any more."));
-
-    const segments = await getSegments(env.DB, opts.sourceId);
-    if (!segments.length) {
-      return void (await failJob(env.DB, jobId, "That video hasn't been transcribed yet — give it a minute and try again."));
-    }
-
     /*
-     * WHICH VERB DID THEY MEAN?
+     * WHICH VERB DID THEY MEAN? — and this is answered FIRST, before any video
+     * is looked up.
      *
      * Everything below picks spans and keeps or cuts them, which was the only
-     * thing a pass could ever do — and it is why the assistant read as a
-     * search box however it was dressed. "Put the punchline first" is the most
-     * obvious thing anybody says to a video editor and the product could not
-     * hear it, even though blocks have carried an order and two arrows since
-     * they were built.
+     * thing a pass could ever do, and it needs a transcript. Reordering does
+     * not: it works on the blocks themselves. So it has to be decided before
+     * the source lookup, or a cut assembled from the LIBRARY — which has no
+     * source of its own — would fail with "That video isn't there any more"
+     * about a video it never had.
      *
      * The sentence decides, in code, before any model is asked. See
      * wantsArrange for why that is not the model's job.
      */
     if (opts.projectId && wantsArrange(opts.brief)) {
+      const segments = opts.sourceId ? await getSegments(env.DB, opts.sourceId) : [];
       return void (await arrangePass(env, jobId, opts, segments));
+    }
+
+    /* Selecting needs words, and words come from a video. */
+    const src = opts.sourceId ? await getSource(env.DB, opts.sourceId, opts.userId) : null;
+    if (!src) return void (await failJob(env.DB, jobId, "That video isn't there any more."));
+
+    const segments = await getSegments(env.DB, opts.sourceId);
+    if (!segments.length) {
+      return void (await failJob(env.DB, jobId, "That video hasn't been transcribed yet — give it a minute and try again."));
     }
 
     await startJob(env.DB, jobId, "reading it for meaning");

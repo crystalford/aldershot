@@ -71,6 +71,8 @@ import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
+import { wantsArrange } from "./arrange.ts";
+import { assembleFromLibrary } from "./assemble.ts";
 import { claimPassUndo, passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
@@ -1317,14 +1319,14 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
   const b = await body<{ block?: string; dir?: number }>(c);
   if (!b.block) return c.json({ error: "which block?" }, 400);
   const dir = (b.dir ?? 1) < 0 ? -1 : 1;
 
   const [segments, beats] = await Promise.all([
-    getSegments(c.env.DB, project.source_id),
+    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
     getBeats(c.env.DB, project.id),
   ]);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
@@ -1387,11 +1389,13 @@ app.get("/api/projects/:id/blocks", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
-  const source = await getSource(c.env.DB, project.source_id, user.id);
+  /* Only for its poster. A library edit has no own source and each block
+     carries its own frame, so null here is a working state. */
+  const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
   const [segments, beats] = await Promise.all([
-    getSegments(c.env.DB, project.source_id),
+    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
     getBeats(c.env.DB, project.id),
   ]);
   const cuts = parseCuts(project.cuts);
@@ -1431,10 +1435,10 @@ app.get("/api/projects/:id/find", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
   const q = (c.req.query("q") ?? "").trim();
-  const segments = await getSegments(c.env.DB, project.source_id);
+  const segments = await (project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]));
   const matches = findPhrase(segments, q);
   if (!matches.length) return c.json({ q, matches: [], savedMs: 0 });
 
@@ -1570,7 +1574,7 @@ app.post("/api/projects/:id/blocks/insert", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
   const b = await body<{ at: number; kind?: string; clipId?: string }>(c);
   const kind = (["vo", "react", "clip"] as const).find((k) => k === b.kind) ?? "vo";
@@ -1592,7 +1596,7 @@ app.post("/api/projects/:id/blocks/insert", async (c) => {
   });
   const made = beats[beats.length - 1];
 
-  const segments = await getSegments(c.env.DB, project.source_id);
+  const segments = await (project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]));
   const before = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
   /* Insert at the seam, not at the end — the position is the whole point of
@@ -1617,7 +1621,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
   const b = await body<{
     /** Block id, e.g. "s:12" or "b:<beatId>". Preferred over `seg`. */
@@ -1634,7 +1638,7 @@ app.post("/api/projects/:id/cuts", async (c) => {
     ranges?: Array<{ seg: number; from: number; to: number }>;
     kind: "word" | "segment" | "fillers" | "pauses" | "range";
   }>(c);
-  const segments = await getSegments(c.env.DB, project.source_id);
+  const segments = await (project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]));
   /* What the cut looked like before this gesture. Handed back so Undo can put
      it there again without the server keeping a history. */
   const before = { cuts: project.cuts ?? null, order: project.block_order ?? null };
@@ -2362,18 +2366,38 @@ app.post("/api/projects/:id/passes", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project || !project.source_id) return c.json({ error: "not found" }, 404);
+  if (!project) return c.json({ error: "not found" }, 404);
 
   const b = await body<{ instruction: string }>(c);
   const instruction = (b.instruction || "").trim();
   if (!instruction) return c.json({ error: "say what you want" }, 400);
+
+  /*
+   * WHAT THE ASSISTANT CAN DO TO AN EDIT WITH NO TRANSCRIPT OF ITS OWN.
+   *
+   * A cut assembled from the library is blocks pulled out of other videos, and
+   * a selecting pass reads a transcript to decide what to keep — there is not
+   * one here yet, because a pulled block does not carry its source's words
+   * (src/blocks.ts, `words: []`).
+   *
+   * Reordering does not need words: it works on the blocks themselves. So a
+   * library edit takes an arrange instruction and refuses a selecting one in
+   * plain words, rather than returning "not found" about a project that is
+   * plainly right there.
+   */
+  if (!project.source_id && !wantsArrange(instruction)) {
+    return c.json(
+      { error: "This cut is assembled from your library, so there is no transcript to read yet — but I can put it in a different order." },
+      422,
+    );
+  }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
   await dispatch(c.env, c.executionCtx, {
     type: "score",
     jobId: job.id,
     userId: user.id,
-    sourceId: project.source_id,
+    sourceId: project.source_id ?? "",
     projectId: project.id,
     brief: instruction,
   });
@@ -3251,7 +3275,33 @@ app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const b = await body<{ sourceId: string; brief: string; upgrade: boolean }>(c);
-  if (!b.sourceId) return c.json({ error: "pick a video first" }, 400);
+
+  /*
+   * A BRIEF WITH NO VIDEO MEANS "OUT OF EVERYTHING I HAVE".
+   *
+   * This used to refuse — "pick a video first" — and that refusal was the
+   * whole single-source assumption in one line: an edit had to begin with one
+   * file. Say what you want without choosing a video and it searches the
+   * library instead, by meaning where the index exists and by words where it
+   * does not, and assembles what it finds into a cut with no source of its own.
+   *
+   * Still refuses an empty request: no video AND no sentence is not a brief,
+   * it is a stray press.
+   */
+  if (!b.sourceId) {
+    const brief = (b.brief || "").trim();
+    if (!brief) return c.json({ error: "pick a video, or say what you want" }, 400);
+
+    const made = await assembleFromLibrary(c.env, { userId: user.id, brief });
+    if ("error" in made) return c.json({ error: made.error }, 422);
+    return c.json({
+      intent: "assemble",
+      projectId: made.projectId,
+      jobId: null,
+      href: `/p/${made.projectId}/cut`,
+      used: made.used,
+    });
+  }
 
   const src = await getSource(c.env.DB, b.sourceId, user.id);
   if (!src) return c.json({ error: "not found" }, 404);
