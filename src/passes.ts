@@ -21,6 +21,8 @@ export interface PassRow {
   created_at: number;
   /** Whether this turn can still be taken back — see the `undo` column. */
   undoable: boolean;
+  /** The block to jump to, so "Show me" has somewhere to go. */
+  first_change: string | null;
 }
 
 /**
@@ -58,6 +60,8 @@ export async function recordPass(
      * pass changes no cut and has nothing to undo.
      */
     undo?: { cuts: string | null; order: string | null } | null;
+    /** The block this pass was first about, for "Show me". */
+    firstChange?: string | null;
     model?: string;
     tokensIn?: number;
     tokensOut?: number;
@@ -66,8 +70,8 @@ export async function recordPass(
   const n = await nextPassNumber(db, p.projectId, p.sourceId);
   await db
     .prepare(
-      `INSERT INTO passes (id,project_id,source_id,n,instruction,result,undo,model,tokens_in,tokens_out,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO passes (id,project_id,source_id,n,instruction,result,undo,first_change,model,tokens_in,tokens_out,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       ulid(),
@@ -77,6 +81,7 @@ export async function recordPass(
       p.instruction,
       p.result,
       p.undo ? JSON.stringify(p.undo) : null,
+      p.firstChange ?? null,
       p.model ?? null,
       p.tokensIn ?? 0,
       p.tokensOut ?? 0,
@@ -103,7 +108,7 @@ export async function passLog(db: D1Database, projectId: string, limit = 12): Pr
        between the two — or any stray template quote in a comment — hands the
        test somebody else's query. */
     .prepare(
-      `SELECT id, n, instruction, result, created_at,
+      `SELECT id, n, instruction, result, created_at, first_change,
               (undo IS NOT NULL AND undone_at IS NULL) AS undoable
          FROM passes
         WHERE project_id=? ORDER BY created_at DESC LIMIT ?`,

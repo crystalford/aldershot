@@ -206,6 +206,30 @@ function probeDuration(url) {
   });
 }
 
+/**
+ * The shape of a file's picture, for deciding whether to crop or letterbox.
+ *
+ * Null when it cannot be read — a voiceover take has no video stream, and an
+ * unreadable source falls back to letterboxing, which is never wrong, only
+ * ugly.
+ */
+function probeShape(url) {
+  return new Promise((resolve) => {
+    const pr = spawn("ffprobe", [
+      "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x", url,
+    ]);
+    let out = "";
+    pr.stdout.on("data", (d) => { out += d; });
+    pr.on("close", () => {
+      const m = /^(\d+)x(\d+)/.exec(out.trim());
+      resolve(m && Number(m[2]) ? { w: Number(m[1]), h: Number(m[2]) } : null);
+    });
+    pr.on("error", () => resolve(null));
+  });
+}
+
 /** Runs `work` over `items`, `lanes` at a time, calling `onDone` as each lands. */
 async function pool(items, lanes, work, onDone) {
   let next = 0;
@@ -335,12 +359,54 @@ function render(plan, res) {
       /* Anything too big for the disk keeps its URL and takes the old path. */
       const at = (url) => (url ? local.get(url) || url : url);
 
+      /*
+       * WHAT SHAPE EACH SOURCE IS, so a cut can be filled rather than boxed.
+       *
+       * One ffprobe per distinct video, not per cut — a forty-cut edit from
+       * one video asks once. Voice takes are skipped: they have no picture.
+       */
+      const shapes = new Map();
+      for (const url of new Set(cuts.map((c) => c.url).filter(Boolean))) {
+        shapes.set(url, await probeShape(at(url)));
+      }
+
       job.stage = "cutting";
       const parts = new Array(cuts.length);
 
+      /*
+       * FILL THE FRAME, OR BOX IT — and which one depends on the source.
+       *
+       * Every cut used to be scaled down until it fit inside the frame and the
+       * remainder filled with black. For the thing this product exists to make
+       * that is close to a bug: a 16:9 source in a 9:16 short came out 1080x608
+       * in a 1080x1920 box, so the picture was about a THIRD of the frame and
+       * the rest was bars. OpusClip's whole visual signature is that it fills.
+       *
+       * CROP when the source is WIDER than the frame: the sides go and the
+       * middle stays, and the middle is where a person talking to a camera is.
+       *
+       * PAD when the source is TALLER: cropping a vertical source into a
+       * landscape frame takes a band across the middle and removes the
+       * speaker's head. Pillarboxing looks boxed; that one looks broken.
+       *
+       * Either way the output is exactly w x h, which everything downstream
+       * depends on — the concat below is a stream copy and will not join parts
+       * that differ, the voice branch appends tpad to this same string, and the
+       * caption geometry is measured off w and h.
+       */
+      const CROP = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`;
+      const PAD = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+      const fillFor = (url) => {
+        const shape = shapes.get(url);
+        if (!shape) return PAD;
+        /* Equal shapes make both a no-op; the tolerance keeps a 1919x1080
+           master from being treated as taller than 16:9 and boxed. */
+        return shape.w / shape.h >= w / h - 0.005 ? CROP : PAD;
+      };
+
       const encode = async (cut, i) => {
         const out = `${dir}/part-${String(i).padStart(4, "0")}.mp4`;
-        const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+        const vf = fillFor(cut.url);
 
         if (cut.voiceUrl) {
           // The user talking over the clip. Their voice is the point, so the

@@ -46,3 +46,9 @@ echo
 # the encoder and a fixture host. `npm run check:render` says what is missing
 # and skips cleanly, so it is a pointer here rather than a gate.
 echo "  the export itself:  npm run check:render   (see scripts/check-render.cjs)"
+# Two real renders and two ffmpeg fixture builds — minutes, not seconds, so it
+# is a pointer like the one above rather than a stage. It is the only check in
+# this repo that looks at a PIXEL: everything else reasons about the EDL, the
+# plan or the DOM, which is how a 9:16 short shipped with the picture filling a
+# third of the frame and the rest black.
+echo "  what it looks like: npm run check:frame    (see scripts/check-frame.cjs)"

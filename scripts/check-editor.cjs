@@ -219,6 +219,33 @@ async function main() {
   await page.fill(".find-q", "");
 
   /*
+   * SAYING IT INSTEAD OF TYPING IT.
+   *
+   * Nothing else in this market ships voice INPUT for editing — every search
+   * for it returns text-to-speech. The control has to be visible next to the
+   * composer, and it must not be a ninth icon: src/ui/icons.ts says outright
+   * that a feature which seems to need one does not, and this draws with type
+   * and the recorder's own red dot instead.
+   */
+  say(
+    await $(() => {
+      const mic = document.querySelector(".asst-mic");
+      if (!mic) return false;
+      return mic.offsetParent !== null && /say it/i.test(mic.textContent);
+    }),
+    "you can say the instruction instead of typing it",
+  );
+  say(
+    await $(() => {
+      const dot = document.querySelector(".asst-mic-dot");
+      /* Hidden until it is listening — a red dot that is always on says
+         something untrue about a microphone. */
+      return !!dot && dot.hidden;
+    }),
+    "and it is not pretending to listen before you press it",
+  );
+
+  /*
    * THE COMPOSER IS NEVER UNDER THE EXPORT BAR.
    *
    * The bar is sticky-bottom and paints over whatever is beneath it, and the

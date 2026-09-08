@@ -66,6 +66,7 @@ import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegm
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
 import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
+import { transcribeOnce } from "./transcribe.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
@@ -2011,6 +2012,46 @@ app.post("/api/beats/:beatId/record", async (c) => {
 
   await c.env.MEDIA.put(key, audio, { httpMetadata: { contentType: "audio/webm" } });
   return c.json({ ok: true, key });
+});
+
+/**
+ * SAY IT INSTEAD OF TYPING IT.
+ *
+ * Nothing in this market lets you speak an edit instruction — four search
+ * angles turned up only voice OUTPUT, text-to-speech and cloning and dubbing.
+ * The likely reason is a real one: editing is issue-then-review, voice is good
+ * at issuing and bad at reviewing, and review is where the time goes.
+ *
+ * So this transcribes and hands the words back. It does NOT run a pass. You
+ * speak it, you read it in the composer, you change it if it heard you wrong,
+ * and then you press the button. Voice is the fast way in, not a way to spend
+ * minutes and money on a sentence nobody checked.
+ *
+ * No job, no queue: an instruction is a few seconds of audio, so it answers
+ * in the request. Nothing is stored — the audio is read, transcribed and
+ * dropped. It never becomes a source, so it never counts against storage.
+ */
+app.post("/api/dictate", async (c) => {
+  const user = await requireUser(c);
+  const audio = await c.req.arrayBuffer();
+  if (!audio.byteLength) return c.json({ error: "nothing was recorded" }, 400);
+
+  /* A minute of speech at the recorder's bitrate is comfortably under this.
+     An instruction that long is a paragraph, and a paragraph is typed. */
+  if (audio.byteLength > 4_000_000) return c.json({ error: "that was too long — try a sentence" }, 413);
+
+  try {
+    const heard = await transcribeOnce(c.env, audio, {});
+    const text = (heard.text || "").trim();
+    if (!text) return c.json({ error: "I didn't catch that" }, 422);
+
+    /* Metered like every other model call. A dictation is cheap and it is not
+       free, and "a job that does not meter is a bug". */
+    await meter(c.env.DB, { user_id: user.id, job_type: "transcribe", source_minutes: 0 }).catch(() => {});
+    return c.json({ text });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "I didn't catch that" }, 502);
+  }
 });
 
 /** Lay out a reaction: clips interleaved with lines drafted to say after them. */

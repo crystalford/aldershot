@@ -73,6 +73,12 @@ export interface UsageInput {
   bytes_delivered?: number;
   stream_minutes_stored?: number;
   stream_minutes_delivered?: number;
+  /*
+   * What the work produced: "found" when it did something, "empty" when it ran
+   * and produced nothing, "failed" when it died. Absent for job types where
+   * the question is meaningless — a proxy either exists or the job failed.
+   */
+  outcome?: "found" | "empty" | "failed";
   /** Set when the diarization upgrade was used, which costs ~10x. */
   diarized?: boolean;
 }
@@ -117,8 +123,8 @@ export async function meter(db: D1Database, u: UsageInput): Promise<number> {
          (id, user_id, job_id, job_type, source_minutes, cpu_ms, gpu_ms,
           tokens_in, tokens_out, bytes_stored, bytes_delivered,
           stream_minutes_stored, stream_minutes_delivered,
-          unit_prices, cost_usd, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          unit_prices, cost_usd, outcome, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       ulid(),
@@ -136,6 +142,7 @@ export async function meter(db: D1Database, u: UsageInput): Promise<number> {
       u.stream_minutes_delivered ?? 0,
       JSON.stringify(PRICES),
       cost,
+      u.outcome ?? null,
       Date.now(),
     )
     .run();

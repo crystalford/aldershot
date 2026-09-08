@@ -357,6 +357,35 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
      back twice would restore a state from before an edit you made in between
      and silently throw it away. */
   { table: "passes", column: "undone_at", ddl: "ALTER TABLE passes ADD COLUMN undone_at INTEGER" },
+
+  /*
+   * WHETHER THE WORK THIS ROW PAID FOR PRODUCED ANYTHING.
+   *
+   * usage_events records what was spent and has never recorded what came of
+   * it, so the cost panel could not tell a pass that found eight moments from
+   * one that found none — and the neurons cost the same either way. Three
+   * answers: "found", "empty", "failed".
+   *
+   * Deliberately NOT a way to charge less. The tokens really were bought, and
+   * zeroing the row would make the ledger understate real spend — a lie in the
+   * other direction. This says what the money bought.
+   */
+  { table: "usage_events", column: "outcome", ddl: "ALTER TABLE usage_events ADD COLUMN outcome TEXT" },
+
+  /*
+   * WHERE TO LOOK, after a pass has rewritten the cut.
+   *
+   * A pass says what it did — "8 lines cut · −1:24" — and could not show you
+   * where, so checking its work meant scrolling a transcript hunting for
+   * things that had changed colour. The research on this whole category lands
+   * on the same point: the problem is not whether the model can do more, it is
+   * whether a person can check what it chose faster than doing it by hand.
+   *
+   * The block id of the first moment the pass was about. Not the first cut it
+   * applied — on a "keep" pass that is line 0 every time, which is true and
+   * useless.
+   */
+  { table: "passes", column: "first_change", ddl: "ALTER TABLE passes ADD COLUMN first_change TEXT" },
 ];
 
 let ensured = false;

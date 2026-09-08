@@ -1226,6 +1226,38 @@ if (blocksEl) {
   };
 
   /*
+   * GO TO A BLOCK, loading the page as far as it if the reader has not
+   * scrolled there.
+   *
+   * Published rather than duplicated, the same way window.cutSelection is: the
+   * find panel walks its hits with this and the conversation's "Show me" jumps
+   * to what a pass changed with it, and the two must never disagree about what
+   * "go there" means. Also the only place that knows a block arriving late has
+   * to be put into the word index and the frame observer.
+   */
+  window.goToBlock = async (blockId, index) => {
+    if (!blockId || !blocksEl) return false;
+    let el = blocksEl.querySelector('[data-block="' + blockId + '"]');
+    if (!el) {
+      /* Load until it is on the page. The server caps how much one request
+         will send, so a very long jump takes a few — bounded, not a walk. */
+      let guard = 0;
+      while (!el && blocksEl.querySelector("#more-blocks") && guard++ < 12) {
+        await loadMore(typeof index === "number" && index >= 0 ? index + 1 : undefined);
+        el = blocksEl.querySelector('[data-block="' + blockId + '"]');
+      }
+      /* The highlight and the selection counter keep their own index of the
+         words; blocks that arrive this way have to be in it too. */
+      reindexWords();
+      observeFrames(blocksEl.querySelectorAll(".blk-frame"));
+    }
+    if (!el) return false;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    here(el);
+    return true;
+  };
+
+  /*
    * WHERE YOU ARE.
    *
    * The editor has never had a notion of a current block, which is why the +
@@ -1823,21 +1855,7 @@ if (blocksEl) {
       atHit = i;
       if (video) video.currentTime = h.start_ms / 1000;
 
-      let el = blocksEl.querySelector('[data-block="' + h.block + '"]');
-      if (!el && h.index >= 0) {
-        /* Load until it is on the page. The server caps how much one request
-           will send, so a very long jump takes a few — bounded, not a walk. */
-        let guard = 0;
-        while (!el && blocksEl.querySelector("#more-blocks") && guard++ < 12) {
-          await loadMore(h.index + 1);
-          el = blocksEl.querySelector('[data-block="' + h.block + '"]');
-        }
-        /* The highlight and the selection counter keep their own index of the
-           words; blocks that arrive this way have to be in it too. */
-        reindexWords();
-        observeFrames(blocksEl.querySelectorAll(".blk-frame"));
-      }
-      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      await window.goToBlock(h.block, h.index);
     };
 
     hitsEl.addEventListener("click", (e) => {
@@ -1950,6 +1968,105 @@ if (assist) {
        here too rather than making the user wait for a round trip to hear it. */
     if (!instruction) { toast("Say what you want."); field?.focus(); return; }
     void runPass(instruction, form.querySelector("button[type=submit]"));
+  });
+
+  /*
+   * SAYING THE INSTRUCTION INSTEAD OF TYPING IT.
+   *
+   * Nothing in this market does this — the search for it turns up only voice
+   * OUTPUT, text-to-speech and cloning. The reason it is worth having here and
+   * the reason it must NOT fire a pass are the same one: editing is
+   * issue-then-review, voice is good at issuing and bad at reviewing, and
+   * review is where the time goes. So the words land in the box and you press
+   * the button yourself.
+   *
+   * Same getUserMedia and MediaRecorder the beat recorder uses, and the same
+   * blinking red dot, because it means the same thing.
+   */
+  const mic = assist.querySelector(".asst-mic");
+  if (mic && navigator.mediaDevices) {
+    const dot = mic.querySelector(".asst-mic-dot");
+    const label = mic.querySelector(".asst-mic-label");
+    const hint = assist.querySelector(".asst-hint");
+    const hintWas = hint ? hint.textContent : "";
+    let rec = null;
+    let stream = null;
+
+    const say = (t) => { if (label) label.textContent = t; };
+    const note = (t) => { if (hint) hint.textContent = t; };
+    const idle = () => {
+      if (dot) dot.hidden = true;
+      say("Say it");
+      mic.disabled = false;
+    };
+
+    const stop = () => {
+      if (rec && rec.state !== "inactive") rec.stop();
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      rec = null;
+      stream = null;
+    };
+
+    mic.addEventListener("click", async () => {
+      if (rec) { stop(); return; }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        toast("I could not reach the microphone.");
+        return;
+      }
+      const chunks = [];
+      rec = new MediaRecorder(stream);
+      rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+      rec.addEventListener("stop", async () => {
+        if (dot) dot.hidden = true;
+        /* NOT "Listening" — it has stopped listening, that is why we are here.
+           The hint below says what is happening; the button must not disagree
+           with it. */
+        say("Working…");
+        mic.disabled = true;
+        note("Working out what you said…");
+        try {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          /* Nothing to send is not an error worth a toast — you pressed twice. */
+          if (blob.size < 1200) { idle(); note(hintWas); return; }
+          const res = await fetch("/api/dictate", {
+            method: "POST",
+            headers: { "content-type": "audio/webm" },
+            body: blob,
+          });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(out.error || "I did not catch that");
+          if (field) {
+            /* Appended, not replaced: pressing it twice adds a second
+               sentence rather than throwing the first one away. */
+            const now = (field.value || "").trim();
+            field.value = now ? now + " " + out.text : out.text;
+            field.focus();
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          note(hintWas);
+        } catch (err) {
+          note(hintWas);
+          toast((err && err.message) || "I did not catch that");
+        } finally {
+          idle();
+        }
+      });
+      rec.start();
+      if (dot) dot.hidden = false;
+      say("Stop");
+      note("Listening — press again when you are done.");
+    });
+  }
+
+  /* Show me what it changed. goToBlock is published by the editor so this and
+     the find panel can never disagree about what "go there" means. */
+  assist.querySelectorAll(".turn-show").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const found = await window.goToBlock(btn.getAttribute("data-block"));
+      if (!found) toast("That line isn't in this cut any more.");
+    });
   });
 
   /*

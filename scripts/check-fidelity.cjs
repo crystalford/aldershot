@@ -421,6 +421,16 @@ async function checkStrings() {
         "sits under looks exactly like a box you might expect to filter " +
         "something. Saying what it does is cheaper than a surprised bill.",
     ],
+    [
+      "Undo this",
+      "A pass rewrites the whole cut at once, and the only way back was a toast " +
+        "that expired in six seconds or Cmd-Z — which the owner does not press, " +
+        "so in practice the one action that changes everything was permanent " +
+        "the moment you looked away. Each pass now keeps the cut as it stood " +
+        "before it ran and the turn spends that snapshot once. The prototype " +
+        "has no such control because its assistant is a single input with no " +
+        "conversation behind it and nothing to take back.",
+    ],
     ...[
       "In this cut",
       "Ask the model",

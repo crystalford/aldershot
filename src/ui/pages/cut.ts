@@ -66,7 +66,7 @@ export interface CutData {
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** Every instruction given to the model on this cut, and what came of it. */
-  passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean }>;
+  passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
 }
 
 /**
@@ -521,8 +521,23 @@ function assistant(d: CutData, player: string): string {
       <div style="max-width:92%;display:flex;flex-direction:column;gap:6px">
         <div data-content style="font-size:${SIZE.secondary};line-height:1.5;color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</div>
         ${
-          p.undoable
-            ? `<button class="turn-undo" data-pass="${esc(p.id)}" data-project="${esc(d.projectId)}" style="align-self:flex-start;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Undo this</button>`
+          p.undoable || p.first_change
+            ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${
+                  /* Where to look. The research on this whole category lands on
+                     one point: the question is not whether the model can do
+                     more, it is whether a person can check what it chose faster
+                     than doing it themselves. */
+                  p.first_change
+                    ? `<button class="turn-show" data-block="${esc(p.first_change)}" style="font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Show me</button>`
+                    : ""
+                }
+                ${
+                  p.undoable
+                    ? `<button class="turn-undo" data-pass="${esc(p.id)}" data-project="${esc(d.projectId)}" style="font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}">Undo this</button>`
+                    : ""
+                }
+              </div>`
             : ""
         }
       </div>
@@ -552,7 +567,19 @@ function assistant(d: CutData, player: string): string {
         <textarea name="instruction" rows="2" placeholder="Ask for a change…"
           style="display:block;width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:9px 10px 4px;color:${C.ink};font-size:${SIZE.body};line-height:1.5;font-family:${FONT.ui}"></textarea>
         <div style="display:flex;align-items:center;gap:8px;padding:0 4px 2px">
-          <span style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
+          <!--
+            SAY IT INSTEAD OF TYPING IT. The words land in the box above for
+            you to read and fix before anything runs — voice is the fast way
+            in, not a way to spend a pass on a sentence nobody checked.
+
+            Type and a coloured dot, not a ninth icon: src/ui/icons.ts says
+            outright that if a feature seems to need one, it does not. The
+            blinking red dot is the recorder's, because it means the same
+            thing in both places.
+          -->
+          <button type="button" class="asst-mic"
+            style="flex:none;display:flex;align-items:center;gap:5px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"><span class="asst-mic-dot" hidden style="width:6px;height:6px;border-radius:50%;background:${ACCENT.red};animation:blip 1.1s ease-in-out infinite"></span><span class="asst-mic-label">Say it</span></button>
+          <span class="asst-hint" style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
           <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Run it</button>
         </div>
       </form>

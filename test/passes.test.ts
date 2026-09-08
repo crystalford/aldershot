@@ -32,7 +32,7 @@ function db(): DatabaseSync {
   d.exec(`CREATE TABLE passes (
     id TEXT PRIMARY KEY, project_id TEXT, source_id TEXT,
     n INTEGER NOT NULL, instruction TEXT NOT NULL, result TEXT NOT NULL,
-    undo TEXT, undone_at INTEGER,
+    undo TEXT, undone_at INTEGER, first_change TEXT,
     model TEXT, tokens_in INTEGER, tokens_out INTEGER, created_at INTEGER NOT NULL)`);
   return d;
 }

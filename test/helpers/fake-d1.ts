@@ -109,7 +109,7 @@ export function schema(db: DatabaseSync): void {
       stream_uid TEXT, duration_s INTEGER, bytes INTEGER, state TEXT, error TEXT,
       created_at INTEGER);
     CREATE TABLE passes (id TEXT PRIMARY KEY, project_id TEXT, source_id TEXT, n INTEGER,
-      instruction TEXT, result TEXT, undo TEXT, undone_at INTEGER,
+      instruction TEXT, result TEXT, undo TEXT, undone_at INTEGER, first_change TEXT,
       model TEXT, tokens_in INTEGER, tokens_out INTEGER, created_at INTEGER);
     CREATE TABLE jobs (id TEXT PRIMARY KEY, user_id TEXT, type TEXT, ref_id TEXT,
       state TEXT, pct INTEGER, stage_label TEXT, queued_overnight INTEGER,
@@ -118,7 +118,7 @@ export function schema(db: DatabaseSync): void {
       job_type TEXT, source_minutes REAL, cpu_ms INTEGER, gpu_ms INTEGER,
       tokens_in INTEGER, tokens_out INTEGER, bytes_stored INTEGER, bytes_delivered INTEGER,
       stream_minutes_stored REAL, stream_minutes_delivered REAL, unit_prices TEXT,
-      cost_usd REAL, created_at INTEGER);
+      cost_usd REAL, outcome TEXT, created_at INTEGER);
     CREATE TABLE trash (id TEXT PRIMARY KEY, user_id TEXT, entity TEXT, entity_id TEXT,
       label TEXT, payload TEXT, deleted_at INTEGER);
     CREATE TABLE uploads (source_id TEXT PRIMARY KEY, user_id TEXT, upload_id TEXT,

@@ -282,8 +282,24 @@ async function arrangePass(
     /* Only when something actually moved: a turn offering to undo nothing is
        a button that lies. */
     undo: out.order && out.moved ? undo : null,
+    /* The first line that changed place — the same question "Show me" asks of
+       a scoring pass, answered in the terms a reorder works in. */
+    firstChange: out.order ? (out.order.find((id, i) => kept[i] && kept[i].id !== id) ?? null) : null,
     tokensIn: out.tokensIn,
     tokensOut: out.tokensOut,
+  });
+
+  /* A reorder burns real tokens and this metered NOTHING when it was written
+     this morning — against the rule at the top of src/usage.ts, "a job that
+     does not meter is a bug". Typed "pass", like every other instruction that
+     is not the first scoring run. */
+  await meter(env.DB, {
+    user_id: opts.userId,
+    job_id: jobId,
+    job_type: "pass",
+    tokens_in: out.tokensIn,
+    tokens_out: out.tokensOut,
+    outcome: out.order && out.moved ? "found" : "empty",
   });
 
   await finishJob(env.DB, jobId);
@@ -295,6 +311,11 @@ export async function runScore(
   opts: { userId: string; sourceId: string; projectId: string | null; brief: string; jobId: string; upgrade?: boolean },
 ): Promise<void> {
   const { jobId } = opts;
+  /* What the model call cost, held OUTSIDE the try so the catch can still say
+     what was already bought. failJob writes only the jobs row, so tokens spent
+     on a pass that died after the model answered vanished from the ledger. */
+  const spent = { tokensIn: 0, tokensOut: 0 };
+
   try {
     const src = await getSource(env.DB, opts.sourceId, opts.userId);
     if (!src) return void (await failJob(env.DB, jobId, "That video isn't there any more."));
@@ -343,6 +364,9 @@ export async function runScore(
         );
       },
     });
+
+    spent.tokensIn = result.tokensIn;
+    spent.tokensOut = result.tokensOut;
 
     await advance(env.DB, jobId, 90, "picking out the moments");
     const clips = await saveClips(
@@ -411,6 +435,18 @@ export async function runScore(
           (struck ? ` · ${struck} line${struck === 1 ? "" : "s"} cut` : "")
         : "no matches — try different words",
       undo,
+      /*
+       * WHERE TO LOOK. The earliest moment the model found, resolved to the
+       * line covering it — honest for both directions, because a keep pass and
+       * a cut pass are both ABOUT the moments it picked. The first applied cut
+       * would point at line 0 on every keep pass, which is true and useless.
+       */
+      firstChange: (() => {
+        const first = [...result.clips].sort((a, b) => a.start_ms - b.start_ms)[0];
+        if (!first) return null;
+        const seg = segments.find((sg) => sg.end_ms > first.start_ms) ?? segments[0];
+        return seg ? `s:${seg.idx}` : null;
+      })(),
       model: result.model,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
@@ -446,11 +482,27 @@ export async function runScore(
       job_type: "score",
       tokens_in: result.tokensIn,
       tokens_out: result.tokensOut,
+      /* The neurons cost the same whether it found eight moments or none, and
+         the ledger could not tell those apart. Recorded, not discounted. */
+      outcome: result.clips.length ? "found" : "empty",
     });
 
     await finishJob(env.DB, jobId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    /* Bill what was actually bought before giving up. meter() sat on the happy
+       path, so a pass that died after the model call recorded nothing and the
+       cost panel understated every failure. */
+    if (spent.tokensIn || spent.tokensOut) {
+      await meter(env.DB, {
+        user_id: opts.userId,
+        job_id: jobId,
+        job_type: "score",
+        tokens_in: spent.tokensIn,
+        tokens_out: spent.tokensOut,
+        outcome: "failed",
+      }).catch(() => {});
+    }
     await failJob(env.DB, jobId, `Couldn't work out what to keep: ${message}`);
   }
 }
