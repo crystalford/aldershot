@@ -323,7 +323,12 @@ export function renderLanding(d: LandingData): string {
 
   <div style="${PAD}">
     <div style="${WRAP};padding:clamp(64px,10vw,110px) 0 clamp(48px,7vw,72px);text-align:center">
-      <div style="${EYEBROW};color:${GOLD}">NO TIMELINE · NO SCRUBBING · NO NLE</div>
+      <!--
+        The joke is the owner's, and it is a better eyebrow than a list of
+        things we do not have — which is what this was, directly above a
+        headline that said the same thing again.
+      -->
+      <div style="${EYEBROW};color:${GOLD}">THEY CALLED IT NON-LINEAR · THEN GAVE YOU A LINE</div>
       <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">The timeline is gone.<br>Good.</h1>
       <p style="margin:20px auto 0;max-width:560px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut — you strike what's weak, keep what's good, and it's done.</p>
       <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start cutting — free", true, d.google)}</div>

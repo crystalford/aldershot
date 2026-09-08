@@ -28,6 +28,7 @@
 import type { Env } from "./env.ts";
 import { listMoments, searchMeaning, type Moment } from "./library.ts";
 import { createProject, putBeats } from "./projects.ts";
+import { recordPass } from "./passes.ts";
 import { titleFromBrief } from "./projects.ts";
 import { ulid } from "./id.ts";
 
@@ -147,21 +148,47 @@ export async function assembleFromLibrary(
     brief: opts.brief,
   });
 
-  await putBeats(
-    env.DB,
-    project.id,
-    moments.map((m) => ({
-      id: ulid(),
-      kind: "clip" as const,
-      act: null,
-      struck: "0",
-      text: m.quote,
-      clip_id: m.id,
-      dur_ms: Math.max(0, m.end_ms - m.start_ms),
-      media_r2_key: null,
-      recorded_at: null,
-    })),
-  );
+  const beats = moments.map((m) => ({
+    id: ulid(),
+    kind: "clip" as const,
+    act: null,
+    struck: "0",
+    text: m.quote,
+    clip_id: m.id,
+    dur_ms: Math.max(0, m.end_ms - m.start_ms),
+    media_r2_key: null,
+    recorded_at: null,
+  }));
+
+  await putBeats(env.DB, project.id, beats);
+
+  /*
+   * IT SAYS WHAT IT DID.
+   *
+   * Six blocks appearing from six places with no explanation is the exact
+   * review gap this product is supposed to be better at than everyone else:
+   * the question is not whether the model can do more, it is whether a person
+   * can check what it chose faster than doing it by hand.
+   *
+   * So the assembly writes itself into the conversation as the first turn, the
+   * same shape a pass does — what you asked, what it found, and a Show me that
+   * jumps to the first thing it pulled. No undo snapshot: there is no earlier
+   * state of this edit to go back to, and a button that offered one would lie.
+   */
+  const from = new Set(moments.map((m) => m.source_id)).size;
+  await recordPass(env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: opts.brief,
+    result:
+      `${moments.length} moment${moments.length === 1 ? "" : "s"} from ` +
+      `${from} video${from === 1 ? "" : "s"}` +
+      (how === "meaning" ? "" : how === "words" ? " · matched on words" : " · your most recent"),
+    firstChange: `b:${beats[0].id}`,
+  }).catch(() => {
+    /* The edit exists and is usable; a missing opening line is not worth
+       failing the whole assembly for. */
+  });
 
   return { projectId: project.id, used: moments.length, how };
 }

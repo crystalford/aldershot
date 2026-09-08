@@ -784,9 +784,23 @@ export function renderCut(d: CutData): string {
    * writes a new file — but the editor gave no sign of that, so the footage
    * was effectively consumed by the first edit made from it.
    */
+  /*
+   * WHERE THIS IS MADE OF.
+   *
+   * One video gets its name and a way back to it. A cut assembled from the
+   * library has no single video and used to say nothing at all — six lines
+   * from six places with no account of where they came from, which is the
+   * review gap this product is supposed to be better at than anyone else's.
+   * It says how many videos, and points at the library.
+   */
+  const fromCount = new Set(
+    d.blocks.filter((b) => b.origin === "footage" && b.previewKey).map((b) => b.previewKey),
+  ).size;
   const sourceLine = d.sourceId
     ? `<a href="/sources/${esc(d.sourceId)}" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${esc(d.sourceTitle ?? "your footage")}</span> →</a>`
-    : "";
+    : fromCount
+      ? `<a href="/footage?tab=moments" style="display:block;margin-top:8px;font-size:${SIZE.meta};color:${C.ink45}">From <span data-content>${fromCount} video${fromCount === 1 ? "" : "s"}</span> in your library →</a>`
+      : "";
 
   /*
    * A WINDOW of blocks, not all of them.

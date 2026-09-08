@@ -445,6 +445,18 @@ async function checkStrings() {
         "had ever put anything there. The editor gate now makes a library edit " +
         "and deletes it again, which is what finally rendered them.",
     ]),
+    [
+      "THEY CALLED IT NON-LINEAR \u00B7 THEN GAVE YOU A LINE",
+      "Replaces the prototype's 'NO TIMELINE \u00B7 NO SCRUBBING \u00B7 NO NLE', " +
+        "which sat directly above the headline 'The timeline is gone. Good.' " +
+        "and said the same thing twice \u2014 an eyebrow should earn the headline, " +
+        "not restate it. The replacement is the owner's own observation: " +
+        "'non-linear never made sense, now we make it make sense'. Non-linear " +
+        "editing meant random access rather than cutting tape in sequence, and " +
+        "the interface the industry shipped for it is a literal horizontal " +
+        "line you drag along. Naming that is a sharper claim than listing what " +
+        "we left out.",
+    ],
     ...[
       "In this cut",
       "Ask the model",

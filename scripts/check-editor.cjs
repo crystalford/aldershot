@@ -438,6 +438,33 @@ async function main() {
           "each block carries its own file; without the element there is nothing to swap",
         );
         say(await $(() => !!document.querySelector(".asst .pass-form")), "and the assistant is there too");
+
+        /*
+         * AND IT SAYS WHAT IT DID.
+         *
+         * Blocks appearing from several places with no account of where they
+         * came from is the review gap this product is supposed to be better at
+         * than everyone else's. The assembly writes itself into the
+         * conversation as the first turn.
+         */
+        say(
+          await $(() => {
+            const t = document.querySelector(".asst-talk");
+            return !!t && /moments? from \d+ video/.test(t.textContent);
+          }),
+          "the conversation opens with what it pulled and from how many videos",
+        );
+        say(
+          await $(() => {
+            const turn = document.querySelector(".turn");
+            return !!turn && !!turn.querySelector(".turn-show") && !turn.querySelector(".turn-undo");
+          }),
+          "with a Show me, and no Undo — there is no earlier state to go back to",
+        );
+        say(
+          await $(() => /in your library/.test(document.querySelector(".asst").textContent)),
+          "and the rail says it is made of the library rather than one video",
+        );
       }
     } finally {
       if (madeId) {
