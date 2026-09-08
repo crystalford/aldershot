@@ -217,17 +217,24 @@ p,div{text-wrap:pretty}
    lifts on hover. */
 .seg-pill{display:inline-block;font-size:${SIZE.secondary};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};white-space:nowrap;background:${C.pill};color:${C.ink70};transition:background-color .12s ease,color .12s ease}
 .seg-pill:hover{background:${C.active};color:${C.ink}}
-/* "Cut" stays quiet until you are on its row: 24 loud Cut buttons is a wall,
+/* QUIET-UNTIL-HOVER IS A POINTER IDEA, so it is behind a pointer query.
+   "Cut" stays quiet until you are on its row: 24 loud Cut buttons is a wall,
    and the gesture you reach for most should not be the loudest thing on the
-   page. It still reads as a control, which is what was actually wrong. */
-.seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
-.blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
-/* "Make a short" is a secondary gesture on a line you are reading, and one
-   per row held about 110px of the text column open at all times. It keeps its
-   space so nothing reflows under the cursor, and shows itself on the row you
-   are actually on. */
-.blk-short{opacity:0;transition:opacity .12s ease}
-.blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
+   page. "Make a short" is secondary on a line you are reading, and one per
+   row held about 110px of the text column open at all times, so it keeps its
+   space and shows itself on the row you are actually on.
+
+   Both were unconditional, and a touch screen has no hover at all — so on a
+   phone or an iPad the two main verbs on every block were invisible and
+   there was no gesture that could reveal them. On a product whose output is
+   vertical shorts, that is not a detail. Where there is no hover to wait
+   for, they are simply shown. */
+@media (hover: hover) {
+  .seg-pill[data-kept="1"]{background:transparent;color:${C.ink32}}
+  .blk:hover .seg-pill[data-kept="1"]{background:${C.pill};color:${C.ink70}}
+  .blk-short{opacity:0;transition:opacity .12s ease}
+  .blk:hover .blk-short,.blk-short:focus-visible{opacity:1}
+}
 .seg-pill[data-kept="0"]{background:${accentBg(ACCENT.green)};color:${ACCENT.green};font-weight:600}
 /* ── The hover layer ───────────────────────────────────────────────────────
    The prototype specifies 161 hover and focus states. The build had 14, and

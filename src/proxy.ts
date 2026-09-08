@@ -24,6 +24,8 @@
  */
 
 import type { Env } from "./env.ts";
+import { createJob, latestJobFor } from "./jobs.ts";
+import { dispatch } from "./queue.ts";
 import { encoderFor } from "./encode.ts";
 import { presignGet } from "./r2sign.ts";
 import { putFromResponse } from "./r2stream.ts";
@@ -164,7 +166,7 @@ export async function attachProxy(
  * extraction in flight against the same file, and a source that failed to
  * transcribe is very likely one ffmpeg cannot open at all.
  */
-export async function backfillProxies(env: Env, limit = 2): Promise<number> {
+export async function backfillProxies(env: Env, limit = 4): Promise<number> {
   const { results } = await env.DB
     .prepare(
       `SELECT id, r2_key FROM sources
@@ -179,4 +181,44 @@ export async function backfillProxies(env: Env, limit = 2): Promise<number> {
     if ((await attachProxy(env, src)).ok) made++;
   }
   return made;
+}
+
+
+/**
+ * THE VIDEO YOU JUST OPENED GOES FIRST.
+ *
+ * backfillProxies works a backlog off two an hour, deliberately, so a large
+ * library does not claim every container at once. But that is a queue with no
+ * sense of what you are looking at: with a dozen videos read before the
+ * editing copy existed, the one you opened could sit ten hours behind videos
+ * you had no intention of touching, and you would be editing against the
+ * 4K master the whole time.
+ *
+ * So opening a video jumps it. Called from the editor and from the source
+ * page — the two places you can be looking at footage.
+ *
+ * Cheap and idempotent: it returns immediately if the copy exists, and it
+ * checks for a proxy job already queued or running before making a second
+ * one. Every failure is swallowed, because not getting a faster copy is a
+ * slower edit and never a broken page.
+ */
+export async function proxyFirst(
+  env: Env,
+  ctx: ExecutionContext | undefined,
+  src: { id: string; user_id: string; r2_key: string | null; proxy_r2_key?: string | null; transcript_state?: string | null },
+): Promise<void> {
+  if (!ctx || !src.r2_key || src.proxy_r2_key) return;
+  /* An edit's own output is already small; making a proxy of one is work for
+     nothing. Same test ingest uses. */
+  if (src.r2_key.endsWith(".edit.mp4")) return;
+
+  try {
+    const running = await latestJobFor(env.DB, src.id, src.user_id, ["proxy"]);
+    if (running && (running.state === "queued" || running.state === "running")) return;
+
+    const job = await createJob(env.DB, { user_id: src.user_id, type: "proxy", ref_id: src.id });
+    await dispatch(env, ctx, { type: "proxy", jobId: job.id, userId: src.user_id, sourceId: src.id });
+  } catch (err) {
+    console.log(`[proxy] couldn't jump the queue for ${src.id}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

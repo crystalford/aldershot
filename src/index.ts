@@ -61,7 +61,7 @@ import { PLANS, checkCap } from "./plans.ts";
 import { abortMultipart, canPresign, completeMultipart, createMultipart, presignPart } from "./r2sign.ts";
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
-import { backfillProxies } from "./proxy.ts";
+import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -913,6 +913,7 @@ app.get("/sources/:id", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
+  if (src) await proxyFirst(c.env, c.executionCtx, src);
   if (!src) return c.notFound();
 
   /* The LATEST job, not the active one: this page renders the failed state and
@@ -1117,6 +1118,12 @@ app.get("/p/:id/:stagePath", async (c) => {
   if (!project) return c.notFound();
 
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
+
+  /* The video you are about to edit goes to the front of the proxy queue.
+     The hourly backfill does two at a time, so without this the copy for the
+     one video you actually opened could sit hours behind ones you were never
+     going to touch. */
+  if (source) await proxyFirst(c.env, c.executionCtx, source);
 
   const [segments, beats, clips, job, passes] = await Promise.all([
     source ? getSegments(c.env.DB, source.id) : Promise.resolve([]),
@@ -3250,9 +3257,11 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  /* Footage read before the editing copy existed. Two per sweep, so a large
+  /* Footage read before the editing copy existed. A few per sweep, so a large
      backlog works itself off over hours rather than claiming every container
-     at once. See src/proxy.ts. */
+     at once. This is the BACKGROUND rate and nothing waits on it: the video
+     you actually open jumps the queue on its own (proxyFirst), which is what
+     makes a slow trickle here acceptable. See src/proxy.ts. */
   try {
     const made = await backfillProxies(env);
     if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);
