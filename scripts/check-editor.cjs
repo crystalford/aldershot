@@ -78,8 +78,22 @@ async function main() {
     projects = JSON.parse(await page.locator("body").innerText()).projects || [];
   } catch {}
 
+  /*
+   * A project with a video of its OWN.
+   *
+   * Everything from here to the library section is about word-level work —
+   * find, strike a phrase, undo the runtime — and none of it can be done on a
+   * clip pulled from another video, whose word cuts have no source to address
+   * (see src/blocks.ts). This used to filter on having words on the page,
+   * which was the same thing until pulled clips gained displayWords for
+   * READING: after that the picker quietly started landing on assembled edits
+   * and five real assertions went red for the right reason on the wrong
+   * fixture. The library case has a section of its own further down, which
+   * builds its own edit rather than hoping to find one.
+   */
   let project = null;
   for (const cand of projects.slice(0, 12)) {
+    if (!cand.source_id) continue;
     await page.goto(BASE + "/p/" + cand.id + "/cut", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(400);
     if ((await page.evaluate(() => document.querySelectorAll(".w").length)) > 40) {
@@ -147,12 +161,123 @@ async function main() {
   );
   say(
     await $(() => {
+      const top = document.querySelector(".asst-top");
+      const talk = document.querySelector(".asst-talk");
+      if (!top || !talk) return false;
+      /*
+       * THE NUMBER THIS WHOLE LAYOUT WAS CHANGED FOR.
+       *
+       * Measured on the real page: a 660px column spent 283 on the video and
+       * gave the conversation 97 — the control the product is about, smaller
+       * than the poster above it. "I think maybe we need to reconsider just
+       * having it under the video small." So the video is a fixed band and
+       * the conversation takes what that frees, and this fails the day
+       * anything above it starts growing again.
+       */
+      return talk.getBoundingClientRect().height > top.getBoundingClientRect().height;
+    }),
+    "the conversation gets more of the column than the video above it",
+  );
+  say(
+    await $(() => {
+      const v = document.querySelector(".asst-top #cut-video");
+      if (!v) return false;
+      /* Idle it crops to fill the band; playing it must show the whole frame.
+         Cropping what somebody is actually watching is the one thing here
+         that must never be quietly wrong. */
+      const idle = getComputedStyle(v).objectFit;
+      const was = v.getBoundingClientRect().height;
+      const top = v.closest(".asst-top");
+      top.setAttribute("data-watching", "1");
+      const playing = getComputedStyle(v).objectFit;
+      /* And NOTHING MOVES between the two. An earlier version grew the video
+         on play and took the conversation back down to 88px. */
+      const moved = Math.abs(v.getBoundingClientRect().height - was);
+      top.removeAttribute("data-watching");
+      return idle === "cover" && playing === "contain" && moved < 1;
+    }),
+    "the player crops its poster and stops cropping when it plays",
+  );
+  say(
+    await $(() => {
       const g = document.querySelector(".asst-foot");
       return !!g && g.querySelectorAll("button").length >= 4;
     }),
     "the counted quick actions sit above the composer",
     "expected three clean-ups plus Run it",
   );
+
+  /* ── The verbs ─────────────────────────────────────────────────────────
+     These are the product, not decoration: "it's like a chatbot LLM powered
+     video editing system". They were removed once and had to come back, and
+     "Keep only the good bits" spent a fortnight rendered and bound to
+     NOTHING — its one line of handler did not follow the markup when the
+     assistant became a column. A gold button doing nothing at all is most of
+     why the feature "could be improved", and no check saw it: the wiring
+     check reads class="literal" and these are built by a helper. */
+  say(
+    await $(() => {
+      const foot = document.querySelector(".asst-foot");
+      if (!foot) return false;
+      /* A verb is type=button, deliberately: they sit outside the composer's
+         form today and a default type=submit would post it the day anyone
+         moves them inside. Run it is the only submit in the foot. */
+      const shown = [...foot.querySelectorAll("button")].filter(
+        (b) => b.offsetParent !== null && b.type === "button" && !b.classList.contains("asst-mic"),
+      );
+      /* Six verbs and More. Fewer means someone quietly tidied them away
+         again; the whole row is the discoverability of the box below it. */
+      return shown.length >= 7;
+    }),
+    "six verbs and More are visible without opening anything",
+  );
+  say(
+    await $(() => {
+      const rest = document.querySelector(".verb-rest");
+      const more = document.querySelector(".verb-more");
+      if (!rest || !more || !rest.hidden) return false;
+      more.click();
+      return !rest.hidden && more.offsetParent === null;
+    }),
+    "More opens the rest of them, and takes itself away",
+  );
+  say(
+    await $(() => {
+      /* Every verb carries the sentence it would type. The rule these are
+         built on is that no button does anything the box cannot, so a verb
+         with no sentence behind it is a special path and a lie. */
+      const asks = [...document.querySelectorAll(".verb-ask")];
+      return asks.length >= 9 && asks.every((b) => (b.getAttribute("data-ask") || "").length > 12);
+    }),
+    "every verb carries the sentence it would type",
+  );
+
+  /*
+   * AND PRESSING ONE ACTUALLY RUNS IT.
+   *
+   * The failure worth a browser: markup rendered, handler absent, silence.
+   * The pass itself is refused at the network so no real job is queued and no
+   * real edit is cut — what is being asserted is that the click reached the
+   * code at all, which is exactly what was missing.
+   */
+  await page.route("**/passes", (r) => r.abort());
+  const pressed = await (async () => {
+    const field = page.locator(".asst .pass-form [name=instruction]");
+    await page.locator(".find-good").click();
+    await page.waitForTimeout(300);
+    return await field.inputValue();
+  })();
+  say(/good bits/.test(pressed), "pressing a verb puts its sentence in the composer", JSON.stringify(pressed));
+  const asked = await (async () => {
+    const btn = page.locator(".verb-ask").first();
+    const want = await btn.getAttribute("data-ask");
+    await btn.click();
+    await page.waitForTimeout(300);
+    const got = await page.locator(".asst .pass-form [name=instruction]").inputValue();
+    return got === want;
+  })();
+  say(asked, "and a written verb sends exactly the sentence it shows");
+  await page.unroute("**/passes");
   say(
     await $(() => {
       const f = document.querySelector(".editor-doc .find .find-q");

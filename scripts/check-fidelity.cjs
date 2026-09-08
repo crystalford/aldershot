@@ -675,13 +675,65 @@ async function checkStrings() {
         "right to erasure is not optional for anyone selling into the EU or UK.",
     ],
     [
-      "Find the strong bits",
-      "The prototype has no word for this because its scoring lived on a " +
-        "separate surface — Clipping — rather than being something you ask for " +
-        "while editing. Making it an assist INSIDE the editor is the point of " +
+      "Keep only the good bits",
+      "Was \"Find the strong bits\". Two things were wrong with that name and " +
+        "the owner named both — \"the vocabulary and what it actually does\". " +
+        "\"Find\" promises annotation and the control DELETES: the pass returns " +
+        "action keep, and everything it did not pick is struck. A destructive " +
+        "button whose name does not say what disappears is the thing people " +
+        "are frightened of pressing, and this one is gold and sits alone. " +
+        "\"Strong\" was worse than vague, it was circular — the instruction sent " +
+        "the model the word \"strongest\" and asked it to score \"how strongly " +
+        "it matches\", with nothing anywhere saying what a good moment is. Now " +
+        "fixed in src/score.ts and held by test/strong.test.ts. The prototype " +
+        "has no word for any of this because its scoring lived on a separate " +
+        "surface — Clipping — rather than being something you ask for while " +
+        "editing. Making it an assist INSIDE the editor is the point of " +
         "docs/decisions/blocks.md: the model marking what is strong is a " +
         "property of the blocks you are already reading, not a destination.",
     ],
+    [
+      "Shape it",
+      "The second of two row headings over the verbs, and the two rows are two " +
+        "different promises. Clean up is subtractive, counted and instant — " +
+        "fillers and silences are found in the transcript by code, so the " +
+        "button prints how many there are before you press it. Shape it asks " +
+        "the model for a judgement: it costs a pass, it takes minutes, and it " +
+        "can come back with nothing. Splitting them by THAT rather than by " +
+        "topic is what stops the free ones and the expensive ones reading " +
+        "alike. The prototype has no verb list at all — its assist is one field.",
+    ],
+    ...[
+      ["Start where I start", "the mic check and the false start before the first real sentence"],
+      ["Cut the tangents", "the bits that go nowhere"],
+      ["Lead with the best line", "the one reorder instruction, which the arrange pass already takes"],
+      ["Cut the hedges", "\"I think\", \"kind of\", \"if that makes sense\""],
+      ["Cut the meta", "\"sorry about the audio\", \"as I said last time\""],
+      ["Remove the sponsor read", "the ad read, which the scoring rules already refuse to keep"],
+      ["Say it once", "the same point told three times, keeping the best telling"],
+      ["Make it half as long", "a length, said as a length"],
+      ["Cut where I asked", "\"can we cut that\", \"strike that\", said on camera"],
+    ].map(([label, what]) => [
+      label,
+      "One of the verbs over the composer: " + what + ". THESE WERE REMOVED " +
+        "AND THE REMOVAL WAS THE MISTAKE. Nine example prompts were replaced " +
+        "with one sentence, on the argument that nine is \"a wall you skip " +
+        "rather than read\" — tidiness bought at the cost of the one control " +
+        "this product is about. The owner: \"if this is the result i don't " +
+        "think you understood the significance i was placing on it\". A chat " +
+        "with no suggested prompts is a discoverability failure: after two " +
+        "years of Underlord there is still no community prompt library for " +
+        "it, only the vendor's own copy, and even the chat-first product " +
+        "sells itself with chips. Six are visible and six sit behind More, " +
+        "because products converge on three to six in front and everything " +
+        "else a layer down. The prototype has none of these words — it draws " +
+        "a single field and no examples, which is the state this fixes. Every " +
+        "label is an imperative verb plus a concrete noun in the words a " +
+        "person would use, \"Cut the tangents\" over \"Edit for Clarity\"; and " +
+        "every one carries the sentence it would type, so pressing a button " +
+        "and typing it are the same act and no verb does anything the box " +
+        "cannot.",
+    ]),
     [
       "Duplicate",
       "The prototype offers 'Branch a version', which it renders as an inert " +

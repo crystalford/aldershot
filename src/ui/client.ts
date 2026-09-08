@@ -467,6 +467,10 @@ function wirePlayer(root, video) {
 
   const paintFace = () => {
     const playing = !video.paused && !video.ended;
+    /* The idle band opens into a player the first time you press play, and
+       stays open: see the note beside .asst-top in src/ui/shell.ts for why it
+       does not fold up again when you pause. */
+    if (playing) video.closest(".asst-top")?.setAttribute("data-watching", "1");
     if (iPlay) iPlay.hidden = playing;
     if (iPause) iPause.hidden = !playing;
     if (playBtn) playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
@@ -1925,8 +1929,12 @@ if (assist) {
   /* A pass is queued work, so the page reloads into the running strip rather
      than pretending the answer is instant. */
   const runPass = async (instruction, btn) => {
-    const was = btn ? btn.textContent : "";
-    if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+    /* A verb button holds spans — its name and sometimes a count — so swapping
+       the BUTTON's textContent would eat them. The name is swapped instead. */
+    const label = btn ? btn.querySelector("span:not([data-content])") || btn : null;
+    const was = label ? label.textContent : "";
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = "Starting…";
     try {
       const res = await fetch("/api/projects/" + projectId + "/passes", {
         method: "POST",
@@ -1950,7 +1958,8 @@ if (assist) {
       }
       location.reload();
     } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = was; }
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = was;
       toast((err && err.message) || "That didn't start");
     }
   };
@@ -2142,6 +2151,46 @@ if (assist) {
   fillers?.addEventListener("click", () => void cleanUp(fillers, "fillers"));
   const pauses = assist.querySelector(".clean-pauses");
   pauses?.addEventListener("click", () => void cleanUp(pauses, "pauses"));
+
+  /*
+   * THE VERBS.
+   *
+   * "Find the strong bits" had been dead since the assistant became a column:
+   * the markup moved and its one line of handler did not follow it, so the
+   * gold button on the most important control in the product did nothing at
+   * all. That is most of why the feature "could be improved".
+   *
+   * Every verb press goes through runPass, the same path the composer uses,
+   * and the sentence lands in the box on the way. That is the whole design
+   * rule for these: no button does anything you could not type, so pressing
+   * one teaches you what the box takes. It also means a verb you nearly want
+   * is a starting point — the words are sitting there to be edited after the
+   * pass comes back.
+   */
+  const press = (btn, instruction) => {
+    if (!btn || btn.disabled) return;
+    if (field) field.value = instruction;
+    void runPass(instruction, btn);
+  };
+
+  for (const btn of assist.querySelectorAll(".verb-ask")) {
+    btn.addEventListener("click", () => press(btn, btn.getAttribute("data-ask") || ""));
+  }
+
+  const findGood = assist.querySelector(".find-good");
+  findGood?.addEventListener("click", () =>
+    press(findGood, "keep only the good bits and cut everything else"),
+  );
+
+  /* Six in front, six one press away. It does not fold back up: someone who
+     opened it wanted the long tail, and closing it again would hide the verb
+     they are half way through reading. */
+  const more = assist.querySelector(".verb-more");
+  const rest = assist.querySelector(".verb-rest");
+  more?.addEventListener("click", () => {
+    if (rest) rest.hidden = false;
+    more.hidden = true;
+  });
 }
 
 /* ── The nav bar's three controls ──────────────────────────────────────
