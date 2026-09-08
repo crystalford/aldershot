@@ -11,12 +11,15 @@ import type { Env } from "./env.ts";
 import { INTENT_KIND, readIntent, type Intent } from "./intent.ts";
 import { dispatch, type JobMessage } from "./queue.ts";
 import { advance, createJob, failJob, finishJob, startJob } from "./jobs.ts";
-import { createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief, TOUCHED } from "./projects.ts";
+import { blocksForProject, createProject, getProject, putBeats, saveClips, saveCuts, titleFromBrief, TOUCHED } from "./projects.ts";
 import { asked, scorePass } from "./score.ts";
 import { applyMoments, parseCuts, serialiseCuts } from "./cuts.ts";
 import { getSegments, getSource } from "./sources.ts";
 import { meter } from "./usage.ts";
 import { recordPass } from "./passes.ts";
+import { ARRANGE_MAX, runArrange, wantsArrange } from "./arrange.ts";
+import { serialiseOrder, type Block } from "./blocks.ts";
+import type { Segment } from "./sources.ts";
 
 export interface BeginResult {
   intent: Intent;
@@ -219,6 +222,73 @@ export async function begin(
   };
 }
 
+/**
+ * REORDERING, as a pass.
+ *
+ * Writes `block_order` — the same column the two arrows on a row write, and
+ * the same one the pass snapshot restores — so a reorder is undone by exactly
+ * the mechanism every other pass already has. Nothing is re-encoded and
+ * nothing is lost: the blocks are the same blocks in a different sequence.
+ */
+async function arrangePass(
+  env: Env,
+  jobId: string,
+  opts: { userId: string; projectId: string | null; brief: string },
+  segments: Segment[],
+): Promise<void> {
+  await startJob(env.DB, jobId, "working out a better order");
+
+  const project = opts.projectId ? await getProject(env.DB, opts.projectId, opts.userId) : null;
+  if (!project) return void (await failJob(env.DB, jobId, "That edit isn't there any more."));
+
+  const undo = { cuts: project.cuts ?? null, order: project.block_order ?? null };
+  const all = (await blocksForProject(env.DB, project, opts.userId, { segments })).blocks;
+  /* Only what is KEPT. Reordering lines you have already cut would change an
+     order nobody can see, and it is the struck ones that make a long cut too
+     big to arrange at all. */
+  const kept = all.filter((b: Block) => !b.struck);
+
+  await advance(env.DB, jobId, 40, "working out a better order");
+
+  const out = kept.length > ARRANGE_MAX
+    ? { order: null, moved: 0, tokensIn: 0, tokensOut: 0 }
+    : await runArrange(env, opts.brief, kept);
+
+  await advance(env.DB, jobId, 90, "putting them in order");
+
+  if (out.order) {
+    /* The struck lines keep their places around the ones that moved, so
+       putting a line back later does not drop it at the end. */
+    const moved = new Set(out.order);
+    let next = 0;
+    const full = all.map((b: Block) => (moved.has(b.id) ? out.order![next++] : b.id));
+    await env.DB
+      .prepare(`UPDATE v2_projects SET block_order=?, updated_at=? WHERE id=? AND user_id=?`)
+      .bind(serialiseOrder(full), Date.now(), project.id, opts.userId)
+      .run();
+  }
+
+  await recordPass(env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: opts.brief,
+    result: out.order
+      ? out.moved
+        ? `${out.moved} line${out.moved === 1 ? "" : "s"} moved`
+        : "already in that order"
+      : kept.length > ARRANGE_MAX
+        ? `too many lines to reorder at once — cut it down below ${ARRANGE_MAX} first`
+        : "couldn't work out an order — try naming the line",
+    /* Only when something actually moved: a turn offering to undo nothing is
+       a button that lies. */
+    undo: out.order && out.moved ? undo : null,
+    tokensIn: out.tokensIn,
+    tokensOut: out.tokensOut,
+  });
+
+  await finishJob(env.DB, jobId);
+}
+
 /** The score pass itself. Runs after the response; reports real progress. */
 export async function runScore(
   env: Env,
@@ -232,6 +302,23 @@ export async function runScore(
     const segments = await getSegments(env.DB, opts.sourceId);
     if (!segments.length) {
       return void (await failJob(env.DB, jobId, "That video hasn't been transcribed yet — give it a minute and try again."));
+    }
+
+    /*
+     * WHICH VERB DID THEY MEAN?
+     *
+     * Everything below picks spans and keeps or cuts them, which was the only
+     * thing a pass could ever do — and it is why the assistant read as a
+     * search box however it was dressed. "Put the punchline first" is the most
+     * obvious thing anybody says to a video editor and the product could not
+     * hear it, even though blocks have carried an order and two arrows since
+     * they were built.
+     *
+     * The sentence decides, in code, before any model is asked. See
+     * wantsArrange for why that is not the model's job.
+     */
+    if (opts.projectId && wantsArrange(opts.brief)) {
+      return void (await arrangePass(env, jobId, opts, segments));
     }
 
     await startJob(env.DB, jobId, "reading it for meaning");

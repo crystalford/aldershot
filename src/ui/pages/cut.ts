@@ -533,7 +533,7 @@ function assistant(d: CutData, player: string): string {
      were doing, in one sentence, without being a wall. */
   const talk = d.passes.length
     ? d.passes.map(turn).join("")
-    : `<div data-content style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Tell me what to change and I'll go through the whole transcript. Try “cut the bits where I repeat myself” or “keep only the strongest points”.</div>`;
+    : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Tell me what to change and I'll go through the whole transcript. Try “cut the bits where I repeat myself”, “keep only the strongest points”, or “put the punchline first”.</div>`;
 
   return `<div class="asst" data-project="${esc(d.projectId)}">
     <div class="asst-top">${player}</div>
@@ -552,7 +552,7 @@ function assistant(d: CutData, player: string): string {
         <textarea name="instruction" rows="2" placeholder="Ask for a change…"
           style="display:block;width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:9px 10px 4px;color:${C.ink};font-size:${SIZE.body};line-height:1.5;font-family:${FONT.ui}"></textarea>
         <div style="display:flex;align-items:center;gap:8px;padding:0 4px 2px">
-          <span data-content style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
+          <span style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
           <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Run it</button>
         </div>
       </form>

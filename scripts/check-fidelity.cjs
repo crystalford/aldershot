@@ -405,6 +405,22 @@ async function checkStrings() {
       "The same toggle, pressed. Says what it will do rather than what it is " +
         "doing, like every other control in this product.",
     ],
+    [
+      "Tell me what to change and I'll go through the whole transcript. Try \u201Ccut the bits where I repeat myself\u201D, \u201Ckeep only the strongest points\u201D, or \u201Cput the punchline first\u201D.",
+      "What the assistant says before you have said anything. It replaces " +
+        "nine example chips that sat in a wall down a 300px column — nine of " +
+        "anything is a list you skip rather than read — and it names the two " +
+        "verbs a pass has: selecting (keep or cut) and, now, ordering. The " +
+        "prototype has no such control, because its assistant is one input " +
+        "with no conversation behind it.",
+    ],
+    [
+      "It reads the whole transcript.",
+      "Under the composer, because a pass is not a search: it costs minutes " +
+        "and money and reads every window of the source, and the field it " +
+        "sits under looks exactly like a box you might expect to filter " +
+        "something. Saying what it does is cheaper than a surprised bill.",
+    ],
     ...[
       "In this cut",
       "Ask the model",
