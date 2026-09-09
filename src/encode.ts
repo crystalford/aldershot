@@ -30,6 +30,14 @@ export interface EncodeStatus {
 /** Anything that can be fetched like a container: the binding, or RENDER_URL. */
 export interface Encoder {
   fetch(url: string, init?: RequestInit): Promise<Response>;
+  /**
+   * Hand the instance back the moment the work is done.
+   *
+   * Optional because RENDER_URL in development is a plain HTTP server with no
+   * instance to release. See RenderContainer.sleepNow in src/render.ts for why
+   * waiting for sleepAfter is not enough on its own.
+   */
+  release?(): Promise<void>;
 }
 
 /**
@@ -184,5 +192,11 @@ export function encoderFor(
     };
   }
   if (!env.RENDER) return null;
-  return env.RENDER.get(env.RENDER.idFromName(name)) as unknown as Encoder;
+  const stub = env.RENDER.get(env.RENDER.idFromName(name)) as unknown as Encoder & {
+    sleepNow?(): Promise<void>;
+  };
+  return {
+    fetch: (u: string, init?: RequestInit) => stub.fetch(u, init),
+    release: async () => { await stub.sleepNow?.().catch(() => {}); },
+  };
 }

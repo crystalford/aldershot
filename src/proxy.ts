@@ -90,28 +90,35 @@ export async function makeProxy(
 
   onProgress?.("making an editing copy");
 
-  const res = await container.fetch("http://container/proxy", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url }),
-    /* A three-hour 4K source is a real decode. Generous, and finite — an
-       encoder that never answers must not hold a queue invocation for ever. */
-    signal: AbortSignal.timeout(40 * 60 * 1000),
-  });
-  if (!res.ok || !res.body) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(detail.slice(0, 200) || `the encoder failed (${res.status})`);
+  /* Released on EVERY path, including the failures. An instance we walk away
+     from bills its whole allocated memory until the Durable Object is evicted
+     — see RenderContainer.sleepNow. */
+  try {
+    const res = await container.fetch("http://container/proxy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+      /* A three-hour 4K source is a real decode. Generous, and finite — an
+         encoder that never answers must not hold a queue invocation for ever. */
+      signal: AbortSignal.timeout(40 * 60 * 1000),
+    });
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(detail.slice(0, 200) || `the encoder failed (${res.status})`);
+    }
+
+    const width = Number(res.headers.get("x-width")) || 0;
+    const height = Number(res.headers.get("x-height")) || 0;
+
+    /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts. */
+    await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
+
+    const head = await env.MEDIA.head(key);
+    if (!head?.size) throw new Error("the encoder produced no editing copy");
+    return { key, bytes: head.size, width, height };
+  } finally {
+    await container.release?.();
   }
-
-  const width = Number(res.headers.get("x-width")) || 0;
-  const height = Number(res.headers.get("x-height")) || 0;
-
-  /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts. */
-  await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
-
-  const head = await env.MEDIA.head(key);
-  if (!head?.size) throw new Error("the encoder produced no editing copy");
-  return { key, bytes: head.size, width, height };
 }
 
 /**

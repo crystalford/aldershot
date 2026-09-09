@@ -34,6 +34,41 @@ export class RenderContainer extends Container {
    * The countdown starts when the finished file has been collected.
    */
   sleepAfter = "45s";
+
+  /*
+   * LET THE MACHINE GO, THE MOMENT THE WORK IS DONE.
+   *
+   * sleepAfter has a hole in it. @cloudflare/containers decides whether to
+   * sleep with:
+   *
+   *     if (this.inflightRequests > 0) { this.renewActivityTimeout(); return false; }
+   *
+   * and it only decrements that counter when a response body is fully read or
+   * cancelled. Any body we abandon renews the timeout for ever, and the
+   * instance bills its whole allocated memory — awake, idle — until the
+   * Durable Object is evicted. That is what a $23.58 memory line against
+   * $0.10 of vCPU looks like: 218 hours awake, 0.16% of it doing anything.
+   *
+   * src/r2stream.ts fixes the leak we had. This is the belt to that pair of
+   * braces: the job knows when it is finished, so it says so, and does not
+   * leave the question to a timeout it might never reach. Safe because it is
+   * only ever called after the body has been consumed — stopping a container
+   * mid-stream would break a live read.
+   *
+   * Reached over Durable Object RPC rather than an HTTP route, so there is no
+   * new endpoint on the container and nothing to authenticate.
+   */
+  async sleepNow(): Promise<void> {
+    /* `container` is private in the published types, so ask rather than look:
+       stopping something already stopped is not an error worth propagating,
+       and a release that throws must never fail the job it is tidying up
+       after. */
+    try {
+      await this.stop();
+    } catch {
+      /* already asleep, or never started */
+    }
+  }
 }
 
 /**
@@ -70,4 +105,17 @@ export class RenderContainer extends Container {
 export class AudioContainer extends Container {
   defaultPort = 8080;
   sleepAfter = "20s";
+
+  /** Same reasoning as RenderContainer.sleepNow, and the same hole to close. */
+  async sleepNow(): Promise<void> {
+    /* `container` is private in the published types, so ask rather than look:
+       stopping something already stopped is not an error worth propagating,
+       and a release that throws must never fail the job it is tidying up
+       after. */
+    try {
+      await this.stop();
+    } catch {
+      /* already asleep, or never started */
+    }
+  }
 }
