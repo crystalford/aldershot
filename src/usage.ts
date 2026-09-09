@@ -42,9 +42,46 @@ export const PRICES = {
   usd_per_stream_min_stored: 0.005,
   usd_per_stream_min_delivered: 0.001,
 
-  /** Containers, per CPU-second (ffmpeg probe/frames/render). */
+  /**
+   * Containers, per CPU-second. KEPT FOR HISTORY ONLY — every row written
+   * before the three dimensions below was priced with it, and prices are
+   * snapshotted per row so those rows must still recompute. New container work
+   * is priced by the shape of the machine; see below.
+   */
   usd_per_cpu_second: 0.000_02,
+
+  /*
+   * WHAT A CONTAINER ACTUALLY COSTS, IN THE THREE DIMENSIONS IT BILLS IN.
+   *
+   * A single per-CPU-second rate is not what Cloudflare charges. Memory and
+   * disk are billed on the PROVISIONED size of the instance for every second
+   * it is awake, whether the job touches them or not; only CPU is billed on
+   * consumption. Pricing all of it as one flat CPU rate understated a
+   * standard-4 by 5.6x, which is how a $23 line arrived unannounced.
+   */
+  usd_per_gib_second: 0.000_002_5,
+  usd_per_vcpu_second: 0.000_02,
+  usd_per_disk_gb_second: 0.000_000_07,
 } as const;
+
+/**
+ * The machines, and which work runs on which.
+ *
+ * Kept as a job-type map rather than a column on usage_events: the mapping is
+ * a fact about the deploy (see wrangler.jsonc), it is already true of every
+ * historical row, and a migration to record what we can already derive would
+ * be a schema change for nothing.
+ */
+export const INSTANCE = {
+  "standard-4": { gib: 12, vcpu: 4, disk_gb: 20 },
+  "standard-2": { gib: 6, vcpu: 1, disk_gb: 12 },
+} as const;
+
+export const RUNS_ON: Partial<Record<JobType, keyof typeof INSTANCE>> = {
+  render: "standard-4",
+  shorts: "standard-4",
+  proxy: "standard-4",
+};
 
 export type Prices = typeof PRICES;
 
@@ -100,7 +137,35 @@ export function computeCost(u: UsageInput, p: Prices): number {
     ((u.tokens_out ?? 0) / 1e6) * p.neurons_per_m_tokens_out;
 
   const aiCost = (neurons / 1000) * p.usd_per_1k_neurons;
-  const cpuCost = ((u.cpu_ms ?? 0) / 1000) * p.usd_per_cpu_second;
+
+  /*
+   * CONTAINER TIME, PRICED BY THE SHAPE OF THE MACHINE.
+   *
+   * `cpu_ms` is and always was WALL-CLOCK — every caller computes it as
+   * Date.now() - t0 — which is the right measurement, because memory and disk
+   * bill on the provisioned size for every second the instance is awake. It
+   * was the RATE that was wrong: one flat per-CPU-second figure, blind to the
+   * fact that a standard-4 reserves 12 GiB and 20 GB the whole time.
+   *
+   * vCPU is deliberately NOT charged here, and that is not laziness. It bills
+   * on consumption, which a Worker cannot observe — and on the invoice that
+   * prompted all of this, vCPU was $0.10 against $23.58 of memory, 0.4% of
+   * container spend, because these instances are almost never CPU-saturated.
+   * Inventing a utilisation factor would add error, not remove it. Memory plus
+   * disk on wall-clock is not an estimate: it is the billing rule.
+   *
+   * Rows written before those rates existed carry prices that lack them, and
+   * prices are snapshotted per row, so those fall back to what they were
+   * actually priced with rather than being silently restated.
+   */
+  const seconds = (u.cpu_ms ?? 0) / 1000;
+  const shape = RUNS_ON[u.job_type];
+  const perSecond =
+    shape && p.usd_per_gib_second != null
+      ? INSTANCE[shape].gib * p.usd_per_gib_second +
+        INSTANCE[shape].disk_gb * p.usd_per_disk_gb_second
+      : p.usd_per_cpu_second;
+  const cpuCost = seconds * perSecond;
   const storeCost = ((u.bytes_stored ?? 0) / 1e9) * p.usd_per_gb_month_r2;
   const deliverCost = ((u.bytes_delivered ?? 0) / 1e9) * p.usd_per_gb_delivered;
   const streamCost =

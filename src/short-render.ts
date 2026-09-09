@@ -36,9 +36,34 @@ export interface ShortRenderOpts {
 
 export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<void> {
   const { jobId, renderId } = opts;
+  /*
+   * A SHORT IS A FULL ENCODE ON A STANDARD-4, AND IT WAS BOOKED AT $0.00.
+   *
+   * This job recorded bytes_stored and nothing else — no container time at
+   * all — so a 15-minute-ceilinged export on four vCPUs and twelve GiB cost
+   * nothing in the ledger while costing real money on the invoice.
+   *
+   * Wall-clock, like every other container job, because memory and disk bill
+   * on the provisioned size for every second the instance is awake. See the
+   * note beside computeCost in src/usage.ts.
+   */
+  const t0 = Date.now();
 
   const fail = async (message: string) => {
     await env.DB.prepare(`UPDATE renders SET state='failed', error=? WHERE id=?`).bind(message, renderId).run();
+    /* A failed encode still burned the container time it burned. The proxy job
+       already meters its failures for exactly this reason (src/queue.ts); a
+       render that dies at 90% is not free, and a ledger that says it was is
+       how the expensive failures stay invisible. */
+    await meter(env.DB, {
+      user_id: opts.userId,
+      job_id: jobId,
+      job_type: "shorts",
+      cpu_ms: Date.now() - t0,
+      outcome: "failed",
+    }).catch(() => {
+      /* Never let the bookkeeping stop the failure being reported. */
+    });
     await failJob(env.DB, jobId, message);
   };
 
@@ -136,6 +161,7 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       user_id: opts.userId,
       job_id: jobId,
       job_type: "shorts",
+      cpu_ms: Date.now() - t0,
       bytes_stored: size,
     });
 

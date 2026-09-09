@@ -2059,9 +2059,25 @@ app.post("/api/dictate", async (c) => {
     const text = (heard.text || "").trim();
     if (!text) return c.json({ error: "I didn't catch that" }, 422);
 
-    /* Metered like every other model call. A dictation is cheap and it is not
-       free, and "a job that does not meter is a bug". */
-    await meter(c.env.DB, { user_id: user.id, job_type: "transcribe", source_minutes: 0 }).catch(() => {});
+    /*
+     * Metered like every other model call — with a real number this time.
+     *
+     * source_minutes was 0, and computeCost multiplies the neuron rate BY
+     * source_minutes, so every dictation booked exactly $0.00 while making a
+     * genuine Whisper call. "A job that does not meter is a bug" applies to a
+     * job that meters zero just as much.
+     *
+     * The length is the audio's own, from the model rather than guessed: the
+     * upload is capped at 4 MB above, which at the recorder's bitrate is a
+     * sentence or two, so this is fractions of a cent — but fractions of a
+     * cent times every press of the mic button is a line on the invoice, and
+     * an unmetered one is a line nobody can see.
+     */
+    await meter(c.env.DB, {
+      user_id: user.id,
+      job_type: "transcribe",
+      source_minutes: heard.duration / 60,
+    }).catch(() => {});
     return c.json({ text });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "I didn't catch that" }, 502);

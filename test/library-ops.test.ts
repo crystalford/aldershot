@@ -32,6 +32,12 @@ function world() {
     "u/USER_ME/sources/S1/original.audio.mp3": 200_000,
     "u/USER_ME/sources/S1/poster.jpg": 40_000,
     "u/USER_ME/renders/R1.mp4": 1_000_000,
+    /* The four kinds nothing has ever deleted. Each was in the bucket after
+       "delete for good" AND after closing the account. */
+    "u/USER_ME/sources/S1/original.edit.mp4": 700_000,
+    "u/USER_ME/renders/R1.srt": 3_000,
+    "u/USER_ME/shorts/R2.mp4": 400_000,
+    "u/USER_ME/beats/B1.webm": 90_000,
     "u/USER_THEM/sources/S9/original.mp4": 9_999,
   });
 
@@ -47,6 +53,14 @@ function world() {
       ('P9','${THEM}','their edit','cut','S9',1,1);
     INSERT INTO renders (id,project_id,user_id,kind,format,aspect,r2_key,state,created_at)
       VALUES ('R1','P1','${ME}','cut','mp4_1080','16:9','u/USER_ME/renders/R1.mp4','ready',1);
+    INSERT INTO v2_clips (id,user_id,source_id,start_ms,end_ms,quote,frame_r2_key,origin,created_at)
+      VALUES ('C1','${ME}','S1',0,5000,'a line','',' found',1);
+    /* A short: project_id NULL, the clip in clip_id. Joining renders through
+       v2_projects — which is what purge did — can never reach this row. */
+    INSERT INTO renders (id,project_id,user_id,kind,format,aspect,clip_id,r2_key,state,created_at)
+      VALUES ('R2',NULL,'${ME}','short','mp4_1080','9:16','C1','u/USER_ME/shorts/R2.mp4','ready',1);
+    INSERT INTO beats (id,project_id,idx,kind,media_r2_key)
+      VALUES ('B1','P1',0,'vo','u/USER_ME/beats/B1.webm');
     INSERT INTO segments (id,source_id,idx,start_ms,end_ms,text) VALUES ('SEG1','S1',0,0,1000,'hi');
     INSERT INTO jobs (id,user_id,type,ref_id,state,pct,queued_overnight,created_at)
       VALUES ('J1','${ME}','transcribe','S1','ready',100,0,1);
@@ -146,19 +160,41 @@ test("purge refuses anything not already in the bin", async () => {
   assert.ok(w.R2.objects.has("u/USER_ME/sources/S1/original.mp4"), "the bytes stay");
 });
 
-test("purge frees the video, its audio, its poster and its renders", async () => {
+test("purge frees everything the video ever produced", async () => {
+  /*
+   * IT USED TO FREE FOUR OF EIGHT.
+   *
+   * The master, its audio, the poster and the project's renders — and it left
+   * behind the editing copy (the largest derived file in the product, ~3.5 MB
+   * a minute), every subtitle sidecar, every recorded take, and every vertical
+   * short. The shorts were missed for a structural reason worth naming: a
+   * short is inserted with project_id NULL and its clip in clip_id, and this
+   * joined renders through v2_projects, which is exactly the row a short does
+   * not have.
+   *
+   * The failure was silent and permanent. "Delete for good" reported success,
+   * the row went, and the bytes stayed for ever.
+   */
   const w = world();
   await softDelete(w.env.DB as never, "source", "S1", ME);
 
   const out = await purge(w.env as never, "source", "S1", ME);
   assert.equal(out.ok, true);
-  assert.equal(out.freedBytes, 5_000_000 + 200_000 + 40_000 + 1_000_000);
+  assert.equal(
+    out.freedBytes,
+    5_000_000 + 200_000 + 40_000 + 1_000_000 + 700_000 + 3_000 + 400_000 + 90_000,
+    "the freed figure is what the user is told they got back",
+  );
 
   for (const key of [
     "u/USER_ME/sources/S1/original.mp4",
     "u/USER_ME/sources/S1/original.audio.mp3",
     "u/USER_ME/sources/S1/poster.jpg",
     "u/USER_ME/renders/R1.mp4",
+    "u/USER_ME/sources/S1/original.edit.mp4",
+    "u/USER_ME/renders/R1.srt",
+    "u/USER_ME/shorts/R2.mp4",
+    "u/USER_ME/beats/B1.webm",
   ]) {
     assert.equal(w.R2.objects.has(key), false, `${key} should be gone`);
   }
@@ -205,8 +241,31 @@ test("closing takes everything, and only this account's", async () => {
   assert.equal(w.count("SELECT COUNT(*) n FROM segments WHERE source_id='S1'"), 0);
   assert.equal(w.count("SELECT COUNT(*) n FROM renders WHERE user_id='" + ME + "'"), 0);
 
-  assert.equal(w.R2.objects.has("u/USER_ME/sources/S1/original.mp4"), false);
-  assert.equal(w.R2.objects.has("u/USER_ME/renders/R1.mp4"), false);
+  /*
+   * NOT A STORAGE BUG. AN ERASURE ONE.
+   *
+   * The comment above closeAccount says why it exists: "for anyone selling
+   * into the EU or UK the right to erasure is not optional". It deleted the
+   * master, its audio, the poster and the renders — and left behind the
+   * editing copy of every video, every subtitle sidecar, every recorded take
+   * and every generated voice track. Those are derived from the person's
+   * footage and their voice, and they survived the account being closed.
+   *
+   * Asserted key by key rather than by count, because "most of it went" is
+   * not what was promised.
+   */
+  for (const key of [
+    "u/USER_ME/sources/S1/original.mp4",
+    "u/USER_ME/sources/S1/original.audio.mp3",
+    "u/USER_ME/sources/S1/poster.jpg",
+    "u/USER_ME/renders/R1.mp4",
+    "u/USER_ME/sources/S1/original.edit.mp4",
+    "u/USER_ME/renders/R1.srt",
+    "u/USER_ME/shorts/R2.mp4",
+    "u/USER_ME/beats/B1.webm",
+  ]) {
+    assert.equal(w.R2.objects.has(key), false, `${key} survived the account being closed`);
+  }
 
   assert.equal(w.count("SELECT COUNT(*) n FROM v2_users WHERE id='" + THEM + "'"), 1, "the other account survives");
   assert.equal(w.count("SELECT COUNT(*) n FROM sources WHERE user_id='" + THEM + "'"), 1);
