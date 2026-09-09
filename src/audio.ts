@@ -117,27 +117,48 @@ export async function extractAudio(
 
   onProgress?.("separating the audio");
 
-  const container = env.RENDER.get(env.RENDER.idFromName(`audio-${sourceKey}`));
-  const res = await container.fetch("http://container/extract-full", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  if (!res.ok || !res.body) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(detail.slice(0, 200) || `the extractor failed (${res.status})`);
+  /*
+   * The small machine when there is one, the big one when there is not.
+   *
+   * AUDIO is standard-2 — one whole vCPU, so this single-threaded extract runs
+   * at exactly the same speed for half the memory (see AudioContainer in
+   * src/render.ts). The fallback is not defensive padding: the binding is new,
+   * and a Worker deployed before its container exists must still be able to
+   * read a video rather than fail every upload.
+   */
+  const ns = env.AUDIO ?? env.RENDER;
+  const container = ns.get(ns.idFromName(`audio-${sourceKey}`)) as unknown as {
+    fetch(url: string, init?: RequestInit): Promise<Response>;
+    sleepNow?(): Promise<void>;
+  };
+
+  /* Released on EVERY path, failures included — an instance we walk away from
+     bills its whole allocated memory until the Durable Object is evicted. See
+     AudioContainer.sleepNow in src/render.ts. */
+  try {
+    const res = await container.fetch("http://container/extract-full", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(detail.slice(0, 200) || `the extractor failed (${res.status})`);
+    }
+
+    /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts,
+       which is where this rule was first worked out and now lives. */
+    await putFromResponse(env.MEDIA, key, res, {
+      contentType: "audio/mpeg",
+      /* Six hours of speech is ~86MB, so the no-length fallback is bounded
+         lower here than for video. */
+      maxBufferBytes: 64 * 1024 * 1024,
+    });
+
+    const head = await env.MEDIA.head(key);
+    if (!head?.size) throw new Error("the extractor produced no audio");
+    return { key, bytes: head.size };
+  } finally {
+    await container.sleepNow?.().catch(() => {});
   }
-
-  /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts,
-     which is where this rule was first worked out and now lives. */
-  await putFromResponse(env.MEDIA, key, res, {
-    contentType: "audio/mpeg",
-    /* Six hours of speech is ~86MB, so the no-length fallback is bounded
-       lower here than for video. */
-    maxBufferBytes: 64 * 1024 * 1024,
-  });
-
-  const head = await env.MEDIA.head(key);
-  if (!head?.size) throw new Error("the extractor produced no audio");
-  return { key, bytes: head.size };
 }

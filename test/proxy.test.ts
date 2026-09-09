@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { playableKey } from "../src/sources.ts";
-import { proxyKeyFor } from "../src/proxy.ts";
+import { backfillProxies, proxyKeyFor } from "../src/proxy.ts";
 import { fakeD1, schema } from "./helpers/fake-d1.ts";
 import { edlForProject } from "../src/render-job.ts";
 
@@ -169,4 +169,34 @@ test("a pulled clip with no editing copy yet still previews", async () => {
   const pulled = blocks.find((b) => b.mediaKey);
   assert.ok(pulled, "the pulled clip did not become a block");
   assert.equal(pulled.previewKey, "u/u1/sources/OTHER/original.mp4");
+});
+
+test("the hourly sweep does not transcode anything by default", async () => {
+  /*
+   * A STANDING COST, INCURRED BY AN EMPTY ACCOUNT.
+   *
+   * backfillProxies ran four full 480p x264 transcodes an hour from the cron,
+   * forever, on a standard-4 — about $0.40/hour awake, so on the order of $40
+   * a month billed to a product nobody was using. It stops only when the
+   * backlog clears, and it never clears for footage nobody returns to.
+   *
+   * proxyFirst covers the real need: the video you open gets its copy on
+   * demand and jumps the queue. So the trickle is off, and this holds it off —
+   * the failure it guards against is SILENT, because turning it back on breaks
+   * nothing and simply bills by the hour.
+   *
+   * It asserts the default rather than the query: a DB that is never touched
+   * is the observable difference, and it means the test says nothing about
+   * how the backlog is found, only that nothing goes looking for it.
+   */
+  let asked = 0;
+  const env = {
+    DB: { prepare() { asked++; throw new Error("the sweep must not go looking for work to do"); } },
+  } as never;
+
+  assert.equal(await backfillProxies(env), 0, "the default must be off");
+  assert.equal(asked, 0, "and off means no query, not a query that returns nothing");
+
+  /* Still one number away from working a backlog off deliberately. */
+  await assert.rejects(() => backfillProxies(env, 4), /go looking/);
 });

@@ -90,28 +90,35 @@ export async function makeProxy(
 
   onProgress?.("making an editing copy");
 
-  const res = await container.fetch("http://container/proxy", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url }),
-    /* A three-hour 4K source is a real decode. Generous, and finite — an
-       encoder that never answers must not hold a queue invocation for ever. */
-    signal: AbortSignal.timeout(40 * 60 * 1000),
-  });
-  if (!res.ok || !res.body) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(detail.slice(0, 200) || `the encoder failed (${res.status})`);
+  /* Released on EVERY path, including the failures. An instance we walk away
+     from bills its whole allocated memory until the Durable Object is evicted
+     — see RenderContainer.sleepNow. */
+  try {
+    const res = await container.fetch("http://container/proxy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+      /* A three-hour 4K source is a real decode. Generous, and finite — an
+         encoder that never answers must not hold a queue invocation for ever. */
+      signal: AbortSignal.timeout(40 * 60 * 1000),
+    });
+    if (!res.ok || !res.body) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(detail.slice(0, 200) || `the encoder failed (${res.status})`);
+    }
+
+    const width = Number(res.headers.get("x-width")) || 0;
+    const height = Number(res.headers.get("x-height")) || 0;
+
+    /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts. */
+    await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
+
+    const head = await env.MEDIA.head(key);
+    if (!head?.size) throw new Error("the encoder produced no editing copy");
+    return { key, bytes: head.size, width, height };
+  } finally {
+    await container.release?.();
   }
-
-  const width = Number(res.headers.get("x-width")) || 0;
-  const height = Number(res.headers.get("x-height")) || 0;
-
-  /* Streamed into R2, with a length R2 will accept — see src/r2stream.ts. */
-  await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
-
-  const head = await env.MEDIA.head(key);
-  if (!head?.size) throw new Error("the encoder produced no editing copy");
-  return { key, bytes: head.size, width, height };
 }
 
 /**
@@ -154,19 +161,33 @@ export async function attachProxy(
  * Footage that predates the editing copy.
  *
  * Every source read before this existed has `proxy_r2_key` null and plays the
- * original, which works and is slow. Bounded per sweep and idempotent, in the
- * same shape as reapUsedAudio: it works through the backlog an hour at a time
- * and costs nothing once there is none left.
+ * original, which works and is slow.
  *
- * TWO at a time, not the whole backlog. A proxy is a full decode of the video,
- * so a user with forty unprocessed sources would otherwise fill the container
- * ceiling for everyone the moment the cron fired.
+ * OFF BY DEFAULT, AND THAT IS THE POINT.
+ *
+ * This ran four full 480p transcodes an hour, from the cron, forever — on a
+ * standard-4, whether or not anybody opened the app. A standard-4 costs
+ * roughly $0.40 an hour awake, so four jobs an hour of a couple of minutes
+ * each is on the order of $40 a month of STANDING cost, incurred by an empty
+ * account with a backlog. It stops only when the backlog clears, and it never
+ * clears for footage nobody returns to.
+ *
+ * It was never load-bearing. proxyFirst (below) gives the video you actually
+ * open its editing copy on demand and jumps it to the front, which is the only
+ * moment the copy matters. This was a nicety that quietly billed by the hour.
+ *
+ * The parameter stays, so turning it back on is one number in the sweep and
+ * not a code change — pass 2 or 4 to work a backlog off deliberately, watch
+ * the Containers line, and set it back.
  *
  * Only sources that have been READ. A source still transcribing has an
  * extraction in flight against the same file, and a source that failed to
  * transcribe is very likely one ffmpeg cannot open at all.
  */
-export async function backfillProxies(env: Env, limit = 4): Promise<number> {
+export async function backfillProxies(env: Env, limit = 0): Promise<number> {
+  /* Not "LIMIT 0", which is a query that returns nothing and still costs a
+     round trip on every sweep for the rest of the product's life. */
+  if (limit <= 0) return 0;
   const { results } = await env.DB
     .prepare(
       `SELECT id, r2_key FROM sources

@@ -1,4 +1,4 @@
-import type { RenderContainer } from "./render.ts";
+import type { AudioContainer, RenderContainer } from "./render.ts";
 
 /** Shared Cloudflare bindings for the Aldershot Worker. */
 export interface Env {
@@ -10,6 +10,16 @@ export interface Env {
   // question in 04-API-AND-JOBS.md) possibly Whisper itself. Optional so the
   // Worker still deploys before Containers are enabled.
   RENDER?: DurableObjectNamespace<RenderContainer>;
+  /**
+   * The same image, sized for single-threaded work.
+   *
+   * Extracting the audio is `-vn` through libmp3lame, which uses one core
+   * whatever it is given — see AudioContainer in src/render.ts for why that
+   * makes a smaller instance strictly cheaper rather than merely smaller.
+   * Optional and falls back to RENDER, so a deploy that has not created it yet
+   * still reads video.
+   */
+  AUDIO?: DurableObjectNamespace<AudioContainer>;
   /**
    * A local encoder, for development only.
    *

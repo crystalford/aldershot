@@ -73,12 +73,33 @@
      * The owner's first export sat on 30% until he gave up, and I told him it
      * was probably a stale deploy. It was a sixteenth of a core.
      *
-     * standard-4 is 4 vCPU / 12 GiB / 20 GB. It costs no more for the same
-     * export — containers bill per vCPU-second and the encode is the same
-     * number of them either way — it simply finishes in a quarter of the time,
-     * which makes it CHEAPER on the memory and disk hours it is also billed
-     * for. The disk is what lets the container hold a downloaded source
-     * instead of re-reading it over the wire for every cut.
+     * standard-4 is 4 vCPU / 12 GiB / 20 GB. The disk is what lets the
+     * container hold a downloaded source instead of re-reading it over the
+     * wire for every cut.
+     *
+     * WHY A BIGGER MACHINE IS CHEAPER HERE, STATED PROPERLY. This used to say
+     * the resize "costs no more for the same export — containers bill per
+     * vCPU-second and the encode is the same number of them either way". That
+     * reached the right answer by an argument that only covers ONE of the
+     * three dimensions a container bills on. Memory and disk are charged for
+     * every second the instance is awake whether the job touches them or not,
+     * so a machine that is 48× the memory is 48× the memory cost per second
+     * and is only cheaper overall if the work actually finishes faster in
+     * proportion.
+     *
+     * The real rule, and it is worth stating because the wrong version of it
+     * would justify putting anything here: compare tiers by MEMORY PER VCPU.
+     *
+     *     lite 4.0   basic 4.0   standard-1 8.0
+     *     standard-2 6.0   standard-3 4.0   standard-4 3.0
+     *
+     * standard-4 has the best ratio of any tier, so for work that genuinely
+     * scales across cores — x264, which every render, short and proxy runs —
+     * it is the cheapest place to do it, not merely the fastest. Downsizing
+     * this would raise the bill.
+     *
+     * The corollary is the container below: work that does NOT scale across
+     * cores inverts the whole argument.
      */
     {
       "class_name": "RenderContainer",
@@ -86,13 +107,42 @@
       "name": "aldershot-ffmpeg",
       "max_instances": 12,
       "instance_type": "standard-4"
+    },
+    /*
+     * THE SAME IMAGE, FOR THE WORK THAT CANNOT USE FOUR CORES.
+     *
+     * Extracting the audio for transcription is `-vn -ac 1 -ar 16000
+     * -codec:a libmp3lame -b:a 32k` — the video is thrown away and libmp3lame
+     * is single-threaded. It uses about one core however many it is handed, so
+     * on standard-4 it bought three idle vCPUs and most of twelve GiB on every
+     * upload in the product.
+     *
+     * standard-2 is one WHOLE vCPU, so it runs at the same wall-clock speed —
+     * nobody waits longer for a transcription — with half the memory and a bit
+     * over half the disk. That is the ratio table above read backwards: when
+     * work does not scale, the cheapest tier is the smallest one that still
+     * gives it a full core.
+     *
+     * Same image, so there is no second thing to build or keep in step; it is
+     * the same server answering one endpoint on a smaller machine.
+     */
+    {
+      "class_name": "AudioContainer",
+      "image": "./container/Dockerfile",
+      "name": "aldershot-ffmpeg-audio",
+      "max_instances": 8,
+      "instance_type": "standard-2"
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "RENDER", "class_name": "RenderContainer" }]
+    "bindings": [
+      { "name": "RENDER", "class_name": "RenderContainer" },
+      { "name": "AUDIO", "class_name": "AudioContainer" }
+    ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] }
+    { "tag": "v1", "new_sqlite_classes": ["RenderContainer"] },
+    { "tag": "v2", "new_sqlite_classes": ["AudioContainer"] }
   ],
 
   // NOTE: there is deliberately no "vars" block here.

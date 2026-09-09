@@ -120,3 +120,64 @@ test("a response with no body at all is a readable failure", async () => {
     /no body/,
   );
 });
+
+test("a failed store releases the body instead of stranding a container", async () => {
+  /*
+   * THE CONTAINER BILL, AS AN INVARIANT.
+   *
+   * Twelve days of Cloudflare: $23.58 of container MEMORY against $0.10 of
+   * container vCPU. Read together those two numbers say 218 hours of instances
+   * awake and 1.4 vCPU-hours of work done inside them — 0.16% utilisation. The
+   * machines were not encoding. They were awake and idle, billing their whole
+   * ALLOCATED memory, because memory bills on allocation x wall-clock while
+   * vCPU bills only on what is consumed.
+   *
+   * The mechanism is in @cloudflare/containers:
+   *
+   *     res.body.pipeTo(writable).finally(() => this.decrementInflight());
+   *     ...
+   *     isActivityExpired() {
+   *       if (this.inflightRequests > 0) { this.renewActivityTimeout(); return false; }
+   *
+   * pipeTo settles only when a body is fully read OR cancelled. Abandon one and
+   * it stalls on backpressure, the counter never returns to zero, and
+   * sleepAfter is renewed for the life of the Durable Object. ONE abandoned
+   * response body is ONE machine billing all day for nothing.
+   *
+   * This function had exactly that shape: `void res.body.pipeTo(fixed.writable)`
+   * followed by an awaited `bucket.put`. When the put rejected — an R2 error, a
+   * length ffmpeg did not match — nothing ever read the other end.
+   *
+   * Silent, which is why it is a test and not a comment: the feature works, no
+   * page changes and nothing else fails. It just bills.
+   */
+  let released = false;
+  /*
+   * A body big enough to still be arriving when the put fails — which is the
+   * only case that can leak. A small one drains before anything goes wrong,
+   * and a fully-drained body settles the container's pipe by itself. This is a
+   * render, so "still arriving" is the normal case.
+   */
+  const body = new ReadableStream({
+    pull(c) { c.enqueue(new Uint8Array(65536)); },
+    cancel() { released = true; },
+  });
+  const res = new Response(body, { headers: { "content-length": "99999999" } });
+  const angry = { put: async () => { throw new Error("R2 said no"); } };
+
+  await assert.rejects(
+    () => putFromResponse(angry as never, "u/1/renders/x.mp4", res, { contentType: "video/mp4" }),
+    /R2 said no/,
+    "the failure must still reach the caller",
+  );
+  assert.equal(released, true, "and the body must be released on the way out");
+});
+
+test("and a store that works drains it rather than cancelling it", async () => {
+  /* So the fix cannot be "cancel everything": a cancelled body on the success
+     path is a truncated file, which is the worse bug of the two. */
+  const r2 = fakeR2();
+  const res = new Response(bodyOf(2048), { headers: { "content-length": "2048" } });
+  assert.equal(await putFromResponse(r2 as never, "u/1/renders/y.mp4", res, { contentType: "video/mp4" }), 2048);
+  assert.equal(r2.puts[0].bytes, 2048, "every byte must reach R2");
+});

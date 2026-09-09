@@ -37,13 +37,57 @@ export async function putFromResponse(
 
   if (declared > 0) {
     const fixed = new FixedLengthStream(declared);
-    /* pipeTo runs ALONGSIDE the put rather than before it, or the two deadlock
-       waiting on each other. Deliberately not awaited here. */
-    void res.body.pipeTo(fixed.writable);
-    const stored = await bucket.put(key, fixed.readable, {
-      httpMetadata: { contentType: opts.contentType },
+    /*
+     * THIS IS WHAT THE CONTAINER BILL WAS.
+     *
+     * @cloudflare/containers decrements its in-flight counter inside
+     * `res.body.pipeTo(writable).finally(...)`, and its sleep check reads:
+     *
+     *     if (this.inflightRequests > 0) { this.renewActivityTimeout(); return false; }
+     *
+     * — so a response body nobody finishes renews sleepAfter FOR EVER, and the
+     * instance bills its whole ALLOCATED memory, awake and idle, until the
+     * Durable Object is evicted. Twelve days of that read as $23.58 of
+     * container memory against $0.10 of container vCPU.
+     *
+     * This function used to run `void res.body.pipeTo(fixed.writable)` and then
+     * await the put. When the put rejected — an R2 error, a length ffmpeg did
+     * not match — nothing ever read the other end and one machine was stranded
+     * awake per failure.
+     *
+     * PUMPED BY HAND rather than piped, because pipeTo takes the one thing
+     * needed to fix it: a handle to cancel with. Measured, not assumed —
+     * aborting a pipeTo whose destination nobody reads does not release the
+     * source, it hangs; cancelling our end of the body settles the container's
+     * pipe immediately. So the reader is held, and cancelled on failure.
+     *
+     * The pump is not awaited on the failure path — it may still be blocked on
+     * a write nobody is draining, and the cancel above has already done the
+     * part that matters.
+     */
+    const reader = res.body.getReader();
+    const writer = fixed.writable.getWriter();
+    const pump = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) { await writer.close(); return; }
+        await writer.write(value);
+      }
+    })().catch(() => {
+      /* The put below is what reports a failure to the caller; a pump that
+         dies on the way is that same failure seen from the other end. */
     });
-    return stored?.size ?? declared;
+
+    try {
+      const stored = await bucket.put(key, fixed.readable, {
+        httpMetadata: { contentType: opts.contentType },
+      });
+      await pump;
+      return stored?.size ?? declared;
+    } catch (err) {
+      await reader.cancel().catch(() => {});
+      throw err;
+    }
   }
 
   const cap = opts.maxBufferBytes ?? 128 * 1024 * 1024;

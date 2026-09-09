@@ -76,7 +76,7 @@ import { assembleFromLibrary } from "./assemble.ts";
 import { claimPassUndo, passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
-export { RenderContainer } from "./render.ts";
+export { AudioContainer, RenderContainer } from "./render.ts";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -3419,11 +3419,12 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     console.log(`[sweep] audio: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  /* Footage read before the editing copy existed. A few per sweep, so a large
-     backlog works itself off over hours rather than claiming every container
-     at once. This is the BACKGROUND rate and nothing waits on it: the video
-     you actually open jumps the queue on its own (proxyFirst), which is what
-     makes a slow trickle here acceptable. See src/proxy.ts. */
+  /* Footage read before the editing copy existed. OFF by default now — this
+     was four x264 transcodes an hour on a standard-4, forever, billing about
+     $40 a month to an account nobody was using. proxyFirst gives the video you
+     actually open its copy on demand, which is the only moment it matters. The
+     limit is a parameter, so working a backlog off deliberately is one number
+     here rather than a code change. See src/proxy.ts. */
   try {
     const made = await backfillProxies(env);
     if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);

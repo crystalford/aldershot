@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { audioKeyFor, isAudio } from "../src/audio.ts";
+import { audioKeyFor, extractAudio, isAudio } from "../src/audio.ts";
 import { SINGLE_CALL_MAX_BYTES } from "../src/transcribe.ts";
 import { CHUNK_MS } from "../src/longaudio.ts";
 
@@ -58,4 +58,58 @@ test("extracted audio keeps long sources within one chunk each", () => {
   const bytesPerMs = 32000 / 8 / 1000;
   const hours = (CHUNK_MS * bytesPerMs) / (1024 * 1024);
   assert.ok(hours < 20, "a chunk should be tens of MB, not hundreds");
+});
+
+test("extracting the audio uses the small container, not the encoder", async () => {
+  /*
+   * A SILENT COST, WHICH IS WHY THIS IS A TEST AND NOT A COMMENT.
+   *
+   * `extract-full` is `-vn -ac 1 -ar 16000 -codec:a libmp3lame -b:a 32k`: the
+   * video is discarded and libmp3lame is single-threaded, so it uses about one
+   * core however many it is given. On the render container — standard-4, four
+   * vCPU and twelve GiB — three of those cores and most of that memory were
+   * bought and idled on every upload in the product.
+   *
+   * AUDIO is standard-2: one whole vCPU, so the same wall-clock speed for half
+   * the memory. Route it back to RENDER and nothing breaks, no test fails and
+   * no page changes — it simply costs what it used to. That is exactly the
+   * failure a comment does not catch.
+   */
+  const used: string[] = [];
+  const ns = (tag: string) => ({
+    idFromName: (n: string) => ({ tag, n }) as never,
+    get: (id: never) => {
+      used.push(tag);
+      return {
+        fetch: async () =>
+          new Response(new Blob(["x"]).stream(), { status: 200, headers: { "content-type": "audio/mpeg" } }),
+      };
+    },
+  });
+
+  const base = {
+    MEDIA: {
+      head: async () => null,
+      put: async () => ({ size: 1 }),
+    },
+    MEDIA_PUBLIC_BASE: "https://example.test",
+  };
+
+  await extractAudio(
+    { ...base, RENDER: ns("render"), AUDIO: ns("audio") } as never,
+    "u/1/sources/a/original.mp4",
+  ).catch(() => {});
+  assert.deepEqual(used, ["audio"], "the extract must go to the small container");
+
+  /*
+   * And it still reads a video on a Worker deployed before that container
+   * exists. The binding is new; failing every upload until the container is
+   * created would be a worse bug than the cost it fixes.
+   */
+  used.length = 0;
+  await extractAudio(
+    { ...base, RENDER: ns("render") } as never,
+    "u/1/sources/a/original.mp4",
+  ).catch(() => {});
+  assert.deepEqual(used, ["render"], "with no AUDIO binding it must fall back, not fail");
 });
