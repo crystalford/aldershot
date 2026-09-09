@@ -303,6 +303,24 @@ export async function runRender(
   const fail = async (message: string) => {
     await failJob(env.DB, jobId, message);
     await env.DB.prepare(`UPDATE renders SET state='failed', error=? WHERE id=?`).bind(message, renderId).run();
+    /*
+     * A failed export still burned the container time it burned.
+     *
+     * Only the success path metered, so an encode that died at 90% — after
+     * twenty minutes on four vCPUs — cost nothing in the ledger and real money
+     * on the invoice. The expensive failures were the invisible ones, which is
+     * the wrong way round. The proxy job already meters its failures and says
+     * why (src/queue.ts); this is the same rule.
+     */
+    await meter(env.DB, {
+      user_id: opts.userId,
+      job_id: jobId,
+      job_type: "render",
+      cpu_ms: Date.now() - t0,
+      outcome: "failed",
+    }).catch(() => {
+      /* Bookkeeping must never stop the failure being reported. */
+    });
   };
 
   try {
