@@ -117,7 +117,17 @@ export async function extractAudio(
 
   onProgress?.("separating the audio");
 
-  const container = env.RENDER.get(env.RENDER.idFromName(`audio-${sourceKey}`));
+  /*
+   * The small machine when there is one, the big one when there is not.
+   *
+   * AUDIO is standard-2 — one whole vCPU, so this single-threaded extract runs
+   * at exactly the same speed for half the memory (see AudioContainer in
+   * src/render.ts). The fallback is not defensive padding: the binding is new,
+   * and a Worker deployed before its container exists must still be able to
+   * read a video rather than fail every upload.
+   */
+  const ns = env.AUDIO ?? env.RENDER;
+  const container = ns.get(ns.idFromName(`audio-${sourceKey}`));
   const res = await container.fetch("http://container/extract-full", {
     method: "POST",
     headers: { "content-type": "application/json" },
