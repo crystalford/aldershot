@@ -51,6 +51,8 @@ export interface CutData {
   /** What the footage is called, for the line that links back to it. */
   sourceTitle: string | null;
   sourceKey: string | null;
+  /** The video's own shape, so a vertical source is not drawn as 16:9. */
+  aspect?: string;
   posterKey: string | null;
   blocks: Block[];
   cuts: Cut[];
@@ -824,7 +826,7 @@ export function renderCut(d: CutData): string {
    * It starts empty and fills the moment you press a block, which is the only
    * honest first frame for a cut with no single video behind it.
    */
-  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="width:100%;background:#000;border-radius:${RADIUS.card};display:block"></video>
+  const player = `<video id="cut-video" playsinline preload="metadata"${d.posterKey ? ` poster="/media/${esc(d.posterKey)}"` : ""}${d.sourceKey ? ` src="/media/${esc(d.sourceKey)}"` : ""} style="--cut-aspect:${d.aspect ?? "16/9"};background:#000;border-radius:${RADIUS.card};display:block"></video>
       <!-- Wraps. Seven controls ran "Full" off the edge of the column, so the
            bar takes a second line rather than losing its last button. -->
       <div class="player" style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:6px 8px;border-radius:${RADIUS.card};background:${C.surface}">

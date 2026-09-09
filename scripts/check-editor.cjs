@@ -161,42 +161,58 @@ async function main() {
   );
   say(
     await $(() => {
-      const top = document.querySelector(".asst-top");
       const talk = document.querySelector(".asst-talk");
-      if (!top || !talk) return false;
+      if (!talk) return false;
       /*
-       * THE NUMBER THIS WHOLE LAYOUT WAS CHANGED FOR.
+       * THE CONVERSATION HAS TO HOLD A CONVERSATION.
        *
-       * Measured on the real page: a 660px column spent 283 on the video and
-       * gave the conversation 97 — the control the product is about, smaller
-       * than the poster above it. "I think maybe we need to reconsider just
-       * having it under the video small." So the video is a fixed band and
-       * the conversation takes what that frees, and this fails the day
-       * anything above it starts growing again.
+       * This used to assert that the conversation was taller than the video
+       * above it, which was the right bar for a layout where the video was a
+       * cropped band. The picture is its true 16:9 shape again — the owner
+       * asked for that and it was not negotiable — so that comparison no
+       * longer measures anything useful; passing it would just mean shrinking
+       * the video to a stamp.
+       *
+       * A floor is the honest bar: two exchanges, each a question, what it did,
+       * and the Show me / Undo beneath, which measures about 190px. One
+       * exchange visible is not a conversation, and 88px — which is what a
+       * full-width 16:9 video left — is not even one.
        */
-      return talk.getBoundingClientRect().height > top.getBoundingClientRect().height;
+      return talk.getBoundingClientRect().height >= 185;
     }),
-    "the conversation gets more of the column than the video above it",
+    "the conversation has room for two exchanges",
   );
   say(
     await $(() => {
       const v = document.querySelector(".asst-top #cut-video");
       if (!v) return false;
-      /* Idle it crops to fill the band; playing it must show the whole frame.
-         Cropping what somebody is actually watching is the one thing here
-         that must never be quietly wrong. */
-      const idle = getComputedStyle(v).objectFit;
-      const was = v.getBoundingClientRect().height;
-      const top = v.closest(".asst-top");
-      top.setAttribute("data-watching", "1");
-      const playing = getComputedStyle(v).objectFit;
-      /* And NOTHING MOVES between the two. An earlier version grew the video
-         on play and took the conversation back down to 88px. */
-      const moved = Math.abs(v.getBoundingClientRect().height - was);
-      top.removeAttribute("data-watching");
-      return idle === "cover" && playing === "contain" && moved < 1;
+      /*
+       * THE PICTURE IS NOT CROPPED, AND NOT STRETCHED.
+       *
+       * This used to assert the opposite — that the poster cropped to a fixed
+       * band — and the owner's verdict on seeing it was "it needs to be 16:9".
+       * He was right: a video editor that shows a cropped frame is lying about
+       * the footage, and the arithmetic should never have been paid for out of
+       * the picture.
+       *
+       * object-fit:contain never crops. The box is asserted to actually match
+       * the declared shape, so "contain" cannot be quietly correct while the
+       * element is the wrong rectangle and the video letterboxes inside it.
+       */
+      const fit = getComputedStyle(v).objectFit;
+      const r = v.getBoundingClientRect();
+      /*
+       * Against the FOOTAGE's own dimensions, not the box's own declaration.
+       * Written the lazy way first — box versus its computed aspect-ratio —
+       * this passed while the declared ratio was changed to 4/3, because a box
+       * always matches what it says it is. videoWidth/videoHeight come from
+       * the decoded file and cannot be talked into agreeing.
+       */
+      if (!v.videoWidth || !v.videoHeight) return "no metadata";
+      const want = v.videoWidth / v.videoHeight;
+      return fit === "contain" && Math.abs(r.width / r.height - want) < 0.02;
     }),
-    "the player crops its poster and stops cropping when it plays",
+    "the picture is its own shape, neither cropped nor stretched",
   );
   say(
     await $(() => {

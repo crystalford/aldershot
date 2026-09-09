@@ -257,28 +257,34 @@ p,div{text-wrap:pretty}
   display:flex;flex-direction:column;overflow:hidden}
 .asst-top{flex:none}
 /*
- * THE PLAYER IS A BAND, NOT A RECTANGLE.
+ * 16:9, BECAUSE THAT IS WHAT THE FOOTAGE IS.
  *
- * At its own aspect ratio the video took 283px of a 660px column and the
- * CONVERSATION got 97 — the control this product is about, given less room
- * than the poster above it and less than the buttons below it. Measured, not
- * guessed: the numbers come from check-editor.cjs driving the real page.
+ * This cropped to a fixed band and the owner's verdict was immediate: "the
+ * video doesn't look good like that size.. it needs to be 16:9". Right, and
+ * the reasoning behind the crop was upside down — it treated the picture as
+ * the thing to sacrifice to make the arithmetic work, when the picture is what
+ * the product is for. A video editor that shows you a cropped frame is lying
+ * about your footage.
  *
- * So the player has a fixed height and the conversation gets what that frees
- * (97 to 205 at this size). Idle it CROPS, because a poster with black bars
- * down both sides reads as a broken image and is the same wasted column by
- * another name. The moment it plays it stops cropping and shows the whole
- * frame — what the footage actually looks like is the one thing here that
- * must never be quietly wrong.
+ * So the real shape is back, from the file itself: --cut-aspect carries what
+ * the proxy pass measured, so a vertical source is drawn vertical instead of
+ * being posted into a 16:9 hole.
  *
- * Nothing moves between those two states: same height, same place, only the
- * fit changes. An earlier version grew the video on play and ate the
- * conversation back down to 88px, which is the bug this rule exists to fix,
- * committed a second time. Anyone who wants the picture big presses Full, in
- * the bar directly underneath. The column is for editing.
+ * BOUNDED BY HEIGHT, NOT WIDTH, which is the part that makes it fit. Filling
+ * the column at 400px wide costs 225px of a 660px column and leaves the
+ * conversation 88. The cap is set from the other end instead: the conversation
+ * needs room for two exchanges — a question, what it did, and the Show me and
+ * Undo under it, twice — which measures about 190px. Everything above it gets
+ * what is left, so the video is ~117px tall and 208 wide, centred with air
+ * either side. Nothing is cropped and nothing is stretched; it is simply not
+ * enormous, and Full is in the bar directly beneath it.
+ *
+ * This is deliberately NOT the layout answer — that is being drawn properly
+ * and decided separately. It is the smallest change that stops the editor
+ * showing the wrong picture in the meantime.
  */
-.asst-top video{height:clamp(96px,12vh,140px);object-fit:cover}
-.asst-top[data-watching="1"] video{object-fit:contain}
+.asst-top video{height:clamp(100px,13vh,150px);width:auto;max-width:100%;
+  aspect-ratio:var(--cut-aspect,16/9);object-fit:contain;margin:0 auto}
 /* The newest turn sits nearest the box you typed it into, the way every
    conversation does — and it means one opening line does not float in the
    middle of a column of nothing. */

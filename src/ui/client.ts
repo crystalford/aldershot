@@ -467,10 +467,6 @@ function wirePlayer(root, video) {
 
   const paintFace = () => {
     const playing = !video.paused && !video.ended;
-    /* The idle band opens into a player the first time you press play, and
-       stays open: see the note beside .asst-top in src/ui/shell.ts for why it
-       does not fold up again when you pause. */
-    if (playing) video.closest(".asst-top")?.setAttribute("data-watching", "1");
     if (iPlay) iPlay.hidden = playing;
     if (iPause) iPause.hidden = !playing;
     if (playBtn) playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
