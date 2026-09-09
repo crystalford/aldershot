@@ -18,6 +18,7 @@
 import { ulid } from "./id.ts";
 import type { Env } from "./env.ts";
 import { audioKeyFor } from "./audio.ts";
+import { proxyKeyFor } from "./proxy.ts";
 
 export type Entity = "project" | "source";
 
@@ -250,6 +251,33 @@ export async function duplicateProject(
  * object must not block emptying the bin, or a half-uploaded source becomes
  * permanently unremovable — and the row is the thing that makes it visible.
  */
+/**
+ * The subtitle file that rides along with a render.
+ *
+ * Derived rather than stored — src/render-job.ts writes it beside the mp4 and
+ * keeps no column — so the scheme lives here, once, for the same reason
+ * audioKeyFor exists: a second copy is a copy that stops matching.
+ */
+export const srtKeyFor = (userId: string, renderId: string) =>
+  `u/${userId}/renders/${renderId}.srt`;
+
+/**
+ * EVERY R2 OBJECT A RENDER OWNS.
+ *
+ * Two files, not one. `renders.r2_key` is the mp4 and it is the only thing
+ * either delete path has ever looked at, so every subtitle sidecar ever
+ * written is still in the bucket — including for accounts that have been
+ * closed.
+ */
+function renderKeys(rows: { id: string; user_id: string; r2_key: string | null }[]): string[] {
+  const out: string[] = [];
+  for (const r of rows) {
+    if (r.r2_key) out.push(r.r2_key);
+    out.push(srtKeyFor(r.user_id, r.id));
+  }
+  return out;
+}
+
 export async function purge(
   env: Env,
   entity: Entity,
@@ -275,20 +303,60 @@ export async function purge(
     /* audioKeyFor rather than the same expression written out again: a second
        copy of the scheme is a copy that stops matching the day the scheme
        changes, and then every extracted audio file leaks silently. */
-    if (src?.r2_key) keys.push(src.r2_key, audioKeyFor(src.r2_key));
+    if (src?.r2_key) keys.push(src.r2_key, audioKeyFor(src.r2_key), proxyKeyFor(src.r2_key));
     if (src?.poster_r2_key) keys.push(src.poster_r2_key);
   }
 
+  /*
+   * THE EDITING COPY WAS NEVER IN THIS LIST.
+   *
+   * proxyKeyFor above. It is made on every upload at about 3.5 MB a minute —
+   * 210 MB an hour of footage — and until now nothing deleted it: not this,
+   * not closing the account. "Delete for good" left the largest derived file
+   * in the product sitting in the bucket for ever.
+   */
+
+  /*
+   * A SHORT HAS NO PROJECT, so joining through one never found it.
+   *
+   * src/short-render.ts inserts shorts with project_id NULL and the clip in
+   * clip_id. The old query joined renders to v2_projects, which is exactly the
+   * rows a short does not have — so purging a video deleted its cuts and left
+   * every vertical short ever made from it behind.
+   */
   const { results: renders } = await db
     .prepare(
       entity === "source"
-        ? `SELECT r.r2_key FROM renders r JOIN v2_projects p ON p.id=r.project_id
-            WHERE p.source_id=? AND r.r2_key IS NOT NULL`
-        : `SELECT r2_key FROM renders WHERE project_id=? AND r2_key IS NOT NULL`,
+        ? `SELECT r.id, r.user_id, r.r2_key FROM renders r
+             JOIN v2_projects p ON p.id = r.project_id
+            WHERE p.source_id = ?
+           UNION
+           SELECT r.id, r.user_id, r.r2_key FROM renders r
+             JOIN v2_clips c ON c.id = r.clip_id
+            WHERE c.source_id = ?`
+        : `SELECT id, user_id, r2_key FROM renders WHERE project_id = ?`,
+    )
+    .bind(...(entity === "source" ? [id, id] : [id]))
+    .all<{ id: string; user_id: string; r2_key: string | null }>();
+  /* Both files per render — the mp4 AND its subtitle sidecar. */
+  keys.push(...renderKeys(renders ?? []));
+
+  /*
+   * Recorded takes and generated voice. Both live in beats.media_r2_key
+   * (setBeatMedia writes the .wav there too), and neither has ever been
+   * deleted by anything except removing the beat by hand.
+   */
+  const { results: takes } = await db
+    .prepare(
+      entity === "source"
+        ? `SELECT b.media_r2_key AS k FROM beats b
+             JOIN v2_projects p ON p.id = b.project_id
+            WHERE p.source_id = ? AND b.media_r2_key IS NOT NULL`
+        : `SELECT media_r2_key AS k FROM beats WHERE project_id = ? AND media_r2_key IS NOT NULL`,
     )
     .bind(id)
-    .all<{ r2_key: string }>();
-  for (const r of renders ?? []) keys.push(r.r2_key);
+    .all<{ k: string }>();
+  for (const t of takes ?? []) keys.push(t.k);
 
   let freedBytes = 0;
   for (const key of keys) {
@@ -353,15 +421,37 @@ export async function closeAccount(
   for (const s of sources ?? []) {
     if (s.r2_key) {
       keys.add(s.r2_key);
-      keys.add(`${s.r2_key.replace(/\.[a-z0-9]+$/i, "")}.audio.mp3`);
+      /*
+       * audioKeyFor and proxyKeyFor, not the expression written out by hand.
+       * This line used to carry its own copy of the audio scheme — the exact
+       * thing purge's comment warns against — and it had no notion of the
+       * editing copy at all, so closing an account left the largest derived
+       * file per video in the bucket. On an account that has exercised its
+       * right to be forgotten.
+       */
+      keys.add(audioKeyFor(s.r2_key));
+      keys.add(proxyKeyFor(s.r2_key));
     }
     if (s.poster_r2_key) keys.add(s.poster_r2_key);
   }
   const { results: renders } = await db
-    .prepare(`SELECT r2_key FROM renders WHERE user_id=? AND r2_key IS NOT NULL`)
+    .prepare(`SELECT id, user_id, r2_key FROM renders WHERE user_id=?`)
     .bind(userId)
-    .all<{ r2_key: string }>();
-  for (const r of renders ?? []) keys.add(r.r2_key);
+    .all<{ id: string; user_id: string; r2_key: string | null }>();
+  /* Both files per render. Scoped by user_id, so shorts come along even
+     though they have no project — the gap that made purge miss them. */
+  for (const k of renderKeys(renders ?? [])) keys.add(k);
+
+  /* Recorded takes and generated voice, which nothing has ever deleted. */
+  const { results: takes } = await db
+    .prepare(
+      `SELECT b.media_r2_key AS k FROM beats b
+         JOIN v2_projects p ON p.id = b.project_id
+        WHERE p.user_id = ? AND b.media_r2_key IS NOT NULL`,
+    )
+    .bind(userId)
+    .all<{ k: string }>();
+  for (const t of takes ?? []) keys.add(t.k);
 
   const { results: clips } = await db
     .prepare(`SELECT frame_r2_key FROM v2_clips WHERE user_id=? AND frame_r2_key IS NOT NULL AND frame_r2_key <> ''`)
