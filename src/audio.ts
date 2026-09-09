@@ -140,6 +140,30 @@ export async function extractAudio(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url }),
+      /*
+       * THE ONE CONTAINER CALL WITH NO WAY OUT, ON THE PATH EVERY UPLOAD TAKES.
+       *
+       * Every other call into a container is bounded — the render start at 60s
+       * (src/encode.ts), a status poll at 30s, collecting the file at 10
+       * minutes, the proxy at 40. This one had nothing, and it is the only one
+       * that runs on all of them.
+       *
+       * A hung request is not a slow request, it is a machine that never
+       * sleeps. @cloudflare/containers refuses to sleep while any request is
+       * outstanding, so a stalled extract renews sleepAfter for ever and the
+       * instance bills its full allocated memory until the Durable Object is
+       * evicted. Seven of those, awake around the clock, is a $20 day.
+       *
+       * It also defeats the release in the `finally` below: that runs when the
+       * await returns, and the await never returns. A deadline is what turns a
+       * hang into a failure, and only then does anything else get a chance to
+       * tidy up.
+       *
+       * Thirty minutes is deliberately generous — this streams a multi-gigabyte
+       * source out of R2 — and deliberately finite. The proxy does strictly
+       * more work on the same file in forty.
+       */
+      signal: AbortSignal.timeout(30 * 60 * 1000),
     });
     if (!res.ok || !res.body) {
       const detail = await res.text().catch(() => "");

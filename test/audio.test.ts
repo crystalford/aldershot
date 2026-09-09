@@ -113,3 +113,53 @@ test("extracting the audio uses the small container, not the encoder", async () 
   ).catch(() => {});
   assert.deepEqual(used, ["render"], "with no AUDIO binding it must fall back, not fail");
 });
+
+test("every call into a container can time out", async () => {
+  /*
+   * A HUNG REQUEST IS A MACHINE THAT NEVER SLEEPS.
+   *
+   * @cloudflare/containers will not sleep while any request is outstanding —
+   * `isActivityExpired` renews the timeout instead — so a container call with
+   * no deadline is an instance billing its full allocated memory until the
+   * Durable Object is evicted. Seven of those, awake around the clock, is the
+   * $20 day this test exists because of.
+   *
+   * `extract-full` was the only one without a signal, and it is the only one
+   * that runs on EVERY upload. It also silently defeated the release in its
+   * own `finally`: that runs when the await returns, and a hang never returns.
+   *
+   * Asserted by reading the source rather than by driving a container, because
+   * what is being protected is that the deadline is WRITTEN — and asserted
+   * over every call site at once, so the next one added inherits the rule
+   * instead of repeating the bug.
+   */
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = join(import.meta.dirname, "..", "src");
+
+  const unbounded: string[] = [];
+  let sites = 0;
+  for (const file of ["audio.ts", "proxy.ts", "encode.ts"]) {
+    const src = readFileSync(join(root, file), "utf8");
+    const lines = src.split("\n");
+    lines.forEach((line, i) => {
+      if (!/fetch\(\s*[`"]?http:\/\/container/.test(line)) return;
+      sites++;
+      /* Walk to the line that closes the options object. Not a fixed window:
+         a long comment inside the options is exactly what hid this the first
+         time the check was written. */
+      let body = "";
+      for (let j = i; j < lines.length; j++) {
+        body += lines[j] + "\n";
+        if (/^\s*\}\);\s*$/.test(lines[j])) break;
+      }
+      if (!/signal:/.test(body)) unbounded.push(`${file}:${i + 1}`);
+    });
+  }
+
+  /* The check that keeps the check honest: an empty list must mean "all
+     bounded", never "found nothing to look at". */
+  assert.equal(sites, 5, "expected 5 container call sites; the matcher has drifted");
+
+  assert.deepEqual(unbounded, [], "a container call with no deadline never lets its instance sleep");
+});
