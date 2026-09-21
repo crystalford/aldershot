@@ -1111,12 +1111,27 @@ if (blocksEl) {
       const hit = timed.filter((w) => w.el.dataset.cut !== "1" && range.intersectsNode(w.el));
       if (!hit.length) return null;
 
+      /*
+       * WHAT WILL ACTUALLY BE CUT, WHICH IS NOT ALWAYS WHAT YOU SELECTED.
+       *
+       * Only own-source blocks carry segment indices. A clip pulled in from
+       * another video is b:<ulid> and its words exist for READING -- the
+       * render addresses it as one whole span (see blockRanges in
+       * src/blocks.ts), so there is no way to cut inside it.
+       *
+       * The count and the saving used to be measured across every selected
+       * word while only the own-source ones were sent. Drag across the seam
+       * between your own footage and a pulled clip and the button promised to
+       * cut twelve words and cut seven, with a runtime that never matched.
+       * A number on a destructive button has to be the number.
+       */
       const byBlock = new Map();
+      const cuttable = [];
+      let pulled = 0;
       for (const w of hit) {
         const block = w.el.getAttribute("data-block");
-        /* Only footage blocks carry segment indices; an inserted block has a
-           ULID and no words, so it can never be in here. */
-        if (!block.startsWith("s:")) continue;
+        if (!block.startsWith("s:")) { pulled++; continue; }
+        cuttable.push(w);
         const seg = Number(block.slice(2));
         const idx = Number(w.el.getAttribute("data-word"));
         const run = byBlock.get(seg);
@@ -1124,10 +1139,16 @@ if (blocksEl) {
         else byBlock.set(seg, { seg, from: idx, to: idx });
       }
       const ranges = [...byBlock.values()];
-      if (!ranges.length) return null;
+      const rect = range.getBoundingClientRect();
 
-      const ms = hit.reduce((n, w) => n + Math.max(0, w.e - w.s), 0);
-      return { ranges, count: hit.length, ms, rect: range.getBoundingClientRect() };
+      /* Nothing here can be cut, and the old code returned null — so the
+         selection highlighted, no button appeared, and nothing said why. A
+         control that does nothing in silence is the thing this codebase keeps
+         arguing against; it says so instead. */
+      if (!ranges.length) return pulled ? { ranges: [], count: 0, ms: 0, pulled, rect } : null;
+
+      const ms = cuttable.reduce((n, w) => n + Math.max(0, w.e - w.s), 0);
+      return { ranges, count: cuttable.length, ms, pulled, rect };
     };
 
     let pending = null;
@@ -1136,9 +1157,14 @@ if (blocksEl) {
       pending = selected();
       if (!pending) { action.hidden = true; return; }
       /* The count and the saving are both real — the same rule the clean-up
-         chips follow. */
-      action.textContent =
-        "Cut " + pending.count + " word" + (pending.count === 1 ? "" : "s") + " · −" + clock(pending.ms);
+         chips follow — and "real" now means what will be cut, not what was
+         highlighted. */
+      action.textContent = pending.count
+        ? "Cut " + pending.count + " word" + (pending.count === 1 ? "" : "s") + " · −" + clock(pending.ms)
+        : "Pulled clips cut whole";
+      action.disabled = !pending.count;
+      action.style.opacity = pending.count ? "1" : ".55";
+      action.style.cursor = pending.count ? "pointer" : "default";
       action.hidden = false;
       const r = pending.rect;
       action.style.top = window.scrollY + r.top - 38 + "px";
@@ -1161,7 +1187,7 @@ if (blocksEl) {
     };
 
     action.addEventListener("click", async () => {
-      if (!pending) return;
+      if (!pending || !pending.count) return;
       const { ranges } = pending;
       action.hidden = true;
       try {

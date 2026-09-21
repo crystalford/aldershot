@@ -2817,7 +2817,20 @@ app.get("/settings", async (c) => {
       uncapped,
       unit: "",
       color: ACCENT_CYAN,
-      note: "Spent transcribing footage, rendering cuts, and burning captions. Resets on the 1st.",
+      /*
+       * WHAT IT SAYS IS NOW WHAT IT COUNTS.
+       *
+       * This promised the meter covered rendering and captions. checkCap sums
+       * usage_events WHERE job_type = 'transcribe' and nothing else, so a
+       * render has never once moved this number. Three surfaces said it
+       * anyway: here, and twice on the landing page.
+       *
+       * The copy is what changes, not the charge. Whether a render SHOULD cost
+       * a customer minutes is a pricing decision and not one to make by
+       * quietly starting to bill for it; exports being free is also the better
+       * thing to be true, so it is said out loud instead.
+       */
+      note: "Spent reading your footage. Cutting and exporting from it are free. Resets on the 1st.",
     },
     {
       label: "Storage",
