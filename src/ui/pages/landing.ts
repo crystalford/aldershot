@@ -132,7 +132,7 @@ const FAQ = [
   },
   {
     q: "What's a processing minute?",
-    a: "A minute of work: transcribing footage, rendering a cut, burning captions. A one-hour video costs roughly its length to transcribe once — after that, cutting and re-cutting from it is nearly free.",
+    a: "A minute of footage we read. A one-hour video costs roughly its length, once — and after that, cutting it, re-cutting it and exporting it cost nothing at all.",
   },
   {
     q: "Whose videos can I use?",
@@ -530,7 +530,7 @@ export function renderLanding(d: LandingData): string {
       <div style="text-align:center">
         <div style="${EYEBROW};color:rgba(236,236,241,0.35)">PRICING</div>
         <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em">Pay for the minutes it works.</h2>
-        <p style="margin:12px auto 0;max-width:460px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">A processing minute is a minute spent transcribing footage, rendering cuts, or burning captions. Storage is permanent on every plan.</p>
+        <p style="margin:12px auto 0;max-width:460px;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">A processing minute is a minute of footage we read. Cutting, re-cutting and exporting are free, and storage is permanent on every plan.</p>
       </div>
       <div style="margin:36px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;max-width:720px">
         <div style="padding:26px 24px;border-radius:12px;background:#131317">

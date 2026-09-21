@@ -573,8 +573,6 @@ async function checkStrings() {
       "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
       "It shows you what it found and why. You keep, cut, and reorder in the transcript \u2014 Space plays, arrows step through.",
       "If you can edit a sentence, you can cut a video. The editor is the transcript \u2014 strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
-      "A minute of work: transcribing footage, rendering a cut, burning captions. A one-hour video costs roughly its length to transcribe once \u2014 after that, cutting and re-cutting from it is nearly free.",
-      "A processing minute is a minute spent transcribing footage, rendering cuts, or burning captions. Storage is permanent on every plan.",
     ].map((t) => [
       t,
       "The reading pass. The machine transcribes; you edit. One verb each, so " +
@@ -603,6 +601,24 @@ async function checkStrings() {
         "has been serving; the value of listing it is that the next change to " +
         "it is visible.",
     ]),
+    ...[
+      "A minute of footage we read. A one-hour video costs roughly its length, once \u2014 and after that, cutting it, re-cutting it and exporting it cost nothing at all.",
+      "A processing minute is a minute of footage we read. Cutting, re-cutting and exporting are free, and storage is permanent on every plan.",
+    ].map((t) => [
+      t,
+      "THE PRICING PAGE WAS DESCRIBING A METER THE CODE DOES NOT KEEP. Both " +
+        "of these said a processing minute covered rendering cuts and burning " +
+        "captions. checkCap (src/plans.ts) sums usage_events WHERE " +
+        "job_type = 'transcribe' and nothing else, so a render has never once " +
+        "moved that number \u2014 and this is the page a customer reads before " +
+        "paying, which makes it the worst possible place to be wrong about " +
+        "what they are buying. The copy changed rather than the charge: " +
+        "whether a render SHOULD consume minutes is a pricing decision, and " +
+        "not one to make by quietly starting to bill for it. Exports being " +
+        "free is also the better thing to be true, so it is now said out loud " +
+        "instead of being a discrepancy.",
+    ]),
+
     ...[
       "Keep only the strongest points",
       "Where I actually make the point",

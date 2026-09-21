@@ -734,6 +734,7 @@ setInterval(() => {
 function proxy(url, res) {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const outPath = `/tmp/proxy-${id}.mp4`;
+  const posterPath = `/tmp/poster-${id}.jpg`;
 
   const probe = () =>
     new Promise((resolve) => {
@@ -768,6 +769,23 @@ function proxy(url, res) {
       "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "96k", "-ac", "2",
       "-movflags", "+faststart", "-y", outPath,
+      /*
+       * A POSTER, OUT OF THE DECODE WE ARE ALREADY PAYING FOR.
+       *
+       * Six of nine videos had none, because the only thing that ever made one
+       * was the browser at upload time — miss that path once and the video is
+       * a black rectangle on Home and in Footage for ever, with no way back.
+       *
+       * A second output on the same invocation: one decode, two encodes. The
+       * container is already open, the frames are already going past, and
+       * writing one of them out costs a JPEG.
+       *
+       * `thumbnail` rather than the first frame, because videos routinely open
+       * on black, a fade or a slate — it scores 300 frames and picks the most
+       * representative one, which is the difference between a poster and a
+       * black rectangle with extra steps.
+       */
+      "-vf", "thumbnail=300,scale=-2:480", "-frames:v", "1", "-q:v", "4", "-y", posterPath,
     ];
     const ff = spawn("ffmpeg", args);
     let err = "";
@@ -787,6 +805,10 @@ function proxy(url, res) {
           "x-width": String(shape.width),
           "x-height": String(shape.height),
           "x-duration-s": String(Math.round(shape.duration)),
+          /* Collected separately: this response is already the mp4, and a
+             JPEG will not fit in a header. The caller fetches /poster on THIS
+             instance, which is still awake, so it costs no new container. */
+          ...(await stat(posterPath).then(() => ({ "x-poster": id })).catch(() => ({}))),
         });
         const rs = createReadStream(outPath);
         rs.pipe(res);
@@ -864,6 +886,32 @@ createServer(async (req, res) => {
     const id = url.searchParams.get("id") || "";
     if (path === "/render/status") return renderStatus(id, res);
     if (path === "/render/result") return renderResult(id, res);
+    /*
+     * The poster the proxy pass just made, collected on the same instance.
+     *
+     * A GET, so it belongs HERE — it was written into the POST section first,
+     * where a GET can never reach it, and the gate did not notice because it
+     * asserted a 404 and got one from the catch-all below. The error body is
+     * what makes the two distinguishable now.
+     *
+     * Deleted on the way out whether or not the read succeeds: a container is
+     * ephemeral, but this runs once per upload and a temp file nobody collects
+     * is still a temp file nobody collects.
+     */
+    if (path === "/poster") {
+      const posterPath = `/tmp/poster-${id.replace(/[^a-z0-9.-]/gi, "")}.jpg`;
+      try {
+        const st = await stat(posterPath);
+        res.writeHead(200, { "content-type": "image/jpeg", "content-length": String(st.size) });
+        const rs = createReadStream(posterPath);
+        rs.pipe(res);
+        rs.on("close", () => { unlink(posterPath).catch(() => {}); });
+        rs.on("error", () => { unlink(posterPath).catch(() => {}); });
+      } catch {
+        jsonError(res, 404, { error: "no poster for that id" });
+      }
+      return;
+    }
     res.writeHead(404).end();
     return;
   }
@@ -883,6 +931,7 @@ createServer(async (req, res) => {
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);
   if (path === "/proxy") return proxy(body.url, res);
+
   res.writeHead(404).end();
 /* 8080 is what the Container binding expects (defaultPort in src/render.ts).
    PORT is only for scripts/bench-render.cjs, which runs this file directly. */

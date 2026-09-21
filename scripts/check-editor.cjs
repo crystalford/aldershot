@@ -606,6 +606,42 @@ async function main() {
           await $(() => /in your library/.test(document.querySelector(".asst").textContent)),
           "and the rail says it is made of the library rather than one video",
         );
+
+        /*
+         * SELECTING WORDS IN A PULLED CLIP SAYS SO, RATHER THAN DOING NOTHING.
+         *
+         * Pulled clips gained words so an assembled edit could be READ, and
+         * the words came out selectable-looking and inert: highlight them,
+         * press Backspace, and nothing happened — no button, no message, no
+         * effect. They cannot be cut into, because the render addresses a
+         * pulled clip as one whole span (src/blocks.ts).
+         *
+         * Silence was the bug. The chip appears and says what is true.
+         */
+        say(
+          await $(() => {
+            const w = document.querySelector(".blk[data-block^='b:'] .w");
+            if (!w) return "no pulled words on screen";
+            const r = document.createRange();
+            r.selectNodeContents(w);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            document.dispatchEvent(new Event("selectionchange"));
+            return new Promise((done) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  const b = [...document.querySelectorAll("button")].find(
+                    (x) => x.offsetParent !== null && /cut \d+ word|pulled clips/i.test(x.textContent),
+                  );
+                  sel.removeAllRanges();
+                  done(!!b && /pulled clips/i.test(b.textContent) && b.disabled);
+                }),
+              ),
+            );
+          }),
+          "selecting inside a pulled clip explains itself instead of going quiet",
+        );
       }
     } finally {
       if (madeId) {

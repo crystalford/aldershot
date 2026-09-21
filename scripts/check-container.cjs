@@ -57,6 +57,21 @@ const ASKS = [
     want: (r) => r.status === 200,
   },
   {
+    /*
+     * The poster the proxy pass leaves behind, collected on the same instance.
+     * Six of nine videos had none, because the only thing that ever made one
+     * was the browser at upload time — and a 404 here is the difference
+     * between a black rectangle and a picture.
+     */
+    name: "GET /poster for an unknown id",
+    go: () => fetch(`${BASE}/poster?id=nope`).then(read),
+    /* The BODY, not just the status. Asserting 404 alone passed while this
+       route did not exist at all — the GET branch 404s anything it does not
+       recognise, so "not found" and "no such endpoint" were the same answer.
+       Only the handler says why. */
+    want: (r) => r.status === 404 && /no poster for that id/.test(r.body),
+  },
+  {
     name: "POST with no url is refused before any work",
     go: () => post("/extract-full", {}),
     want: (r) => r.status === 400 && /missing url/.test(r.body),
