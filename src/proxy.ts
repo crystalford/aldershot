@@ -49,6 +49,14 @@ export interface ProxyResult {
   /** The SOURCE's shape, not the copy's — see makeProxy. */
   width: number;
   height: number;
+  /** Where the poster landed, when this pass made one. */
+  posterKey?: string;
+}
+
+/** Where a source's poster lives. Derived, so a retry overwrites rather than
+    orphaning — the same rule as audioKeyFor and proxyKeyFor. */
+export function posterKeyFor(sourceKey: string): string {
+  return sourceKey.replace(/\/[^/]*$/, "") + "/poster.jpg";
 }
 
 /**
@@ -115,7 +123,44 @@ export async function makeProxy(
 
     const head = await env.MEDIA.head(key);
     if (!head?.size) throw new Error("the encoder produced no editing copy");
-    return { key, bytes: head.size, width, height };
+
+    /*
+     * AND THE POSTER, FROM THE SAME DECODE.
+     *
+     * The only thing that ever made one was the browser at upload time. Miss
+     * that path once — an API upload, a tab closed early, an extraction that
+     * failed — and the video is a black rectangle on Home and in Footage for
+     * ever, with nothing to fix it. Six of nine had none.
+     *
+     * Collected from the SAME container instance, which is still awake: no new
+     * machine, no new wake, and the frame was already going past. A failure
+     * here is not a failure of the editing copy, which is the thing the caller
+     * actually asked for, so it is swallowed rather than thrown.
+     */
+    const posterId = res.headers.get("x-poster");
+    let posterKey: string | undefined;
+    /* Only when there is a gap to fill. The derived key is the SAME one the
+       browser writes to, so fetching unconditionally would overwrite a frame
+       the user actually watched being chosen with a heuristic guess. */
+    const already = posterId ? await env.MEDIA.head(posterKeyFor(sourceKey)).catch(() => null) : null;
+    if (posterId && !already) {
+      try {
+        const shot = await container.fetch(`http://container/poster?id=${encodeURIComponent(posterId)}`, {
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (shot.ok && shot.body) {
+          const pk = posterKeyFor(sourceKey);
+          await putFromResponse(env.MEDIA, pk, shot, { contentType: "image/jpeg", maxBufferBytes: 8 * 1024 * 1024 });
+          posterKey = pk;
+        } else {
+          await shot.body?.cancel().catch(() => {});
+        }
+      } catch (err) {
+        console.log(`[proxy] poster ${sourceKey}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return { key, bytes: head.size, width, height, ...(posterKey ? { posterKey } : {}) };
   } finally {
     await container.release?.();
   }
@@ -146,6 +191,15 @@ export async function attachProxy(
       )
       .bind(made.key, made.width, made.height, source.id)
       .run();
+    /* COALESCE, not assignment: the browser's poster is the one the user
+       watched being made and is usually a better frame than a heuristic. This
+       fills the gap; it does not overrule. */
+    if (made.posterKey) {
+      await env.DB
+        .prepare(`UPDATE sources SET poster_r2_key=COALESCE(poster_r2_key, ?) WHERE id=?`)
+        .bind(made.posterKey, source.id)
+        .run();
+    }
     /* What it cost, so the caller can meter it. A 480p transcode of the whole
        video on four vCPUs is the newest recurring cost in this product and it
        was the only job not writing a usage row. */

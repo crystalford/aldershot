@@ -174,17 +174,28 @@ app.get("/app.js", (c) =>
  */
 /*
  * `email` rather than a whole user: the shell only needs an initial for the
- * avatar, which was a hardcoded "C" — the owner's — on every account. Every
- * authenticated route has the user in hand; a signed-out page passes nothing
- * and gets the neutral mark.
+ * avatar, which was a hardcoded "C" — the owner's — on every account.
+ *
+ * REQUIRED, NOT OPTIONAL, and that is the whole fix.
+ *
+ * It was optional with a neutral fallback, so "every authenticated route has
+ * the user in hand" held only as long as everyone remembered. They did not:
+ * the editor called page() directly without one and several surfaces here
+ * dropped it, so the avatar showed the signed-in initial on Home and a bare
+ * bullet the moment you opened a video. Half the app knew who you were.
+ *
+ * A default that silently produces a plausible-looking wrong answer is the
+ * shape of bug that spreads, because nothing ever fails. Making it required
+ * turns forgetting into a type error, and a signed-out page now says `null`
+ * out loud, which is a statement rather than an omission.
  */
 function surface(
   view: View,
   screenLabel: string,
   title: string,
   body: string,
+  email: string | null,
   shortsCtx: ShortsCtx = "nav",
-  email?: string | null,
 ) {
   return page({ title, view, screenLabel, shortsCtx, email }, body);
 }
@@ -614,7 +625,6 @@ app.get("/", async (c) => {
           duration_s: sv.duration_s,
         })),
       }),
-      "nav",
       user.email,
     ),
   );
@@ -679,7 +689,7 @@ app.get("/projects", async (c) => {
   const user = await requireUser(c);
   const rows = await editRows(c.env.DB, user.id);
   return c.html(
-    surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows)),
+    surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows), user.email),
   );
 });
 
@@ -804,7 +814,6 @@ app.get("/footage", async (c) => {
         })),
         moments, momentCount, threads, mode, q: query, meaningUnavailable, canMean, thread, sort,
       }),
-      "nav",
       user.email,
     ),
   );
@@ -958,7 +967,7 @@ app.get("/sources/:id", async (c) => {
   ]);
 
   return c.html(
-    surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job, edits })),
+    surface("archive", "Footage", `${src.title} — Aldershot`, renderSource({ source: src, segments, job, edits }), user.email),
   );
 });
 
@@ -1181,7 +1190,7 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   return c.html(
     page(
-      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", shortsCtx: "editor" },
+      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", shortsCtx: "editor", email: user.email },
       renderCut({
         projectId: project.id,
         title: project.title,
@@ -2490,7 +2499,6 @@ app.get("/editor", async (c) => {
           clip_count: clipCounts.get(s.id) ?? 0,
         })),
       }),
-      "nav",
       user.email,
     ),
   );
@@ -2868,6 +2876,7 @@ app.get("/settings", async (c) => {
       "Settings",
       "Settings — Aldershot",
       renderSettings({ name: user.name, email: user.email, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
+      user.email,
     ),
   );
 });

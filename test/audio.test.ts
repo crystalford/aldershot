@@ -159,7 +159,12 @@ test("every call into a container can time out", async () => {
 
   /* The check that keeps the check honest: an empty list must mean "all
      bounded", never "found nothing to look at". */
-  assert.equal(sites, 5, "expected 5 container call sites; the matcher has drifted");
+  /* Six: render start, status poll, collect the file, proxy, extract-full, and
+     collecting the poster the proxy pass leaves behind. The count is asserted
+     so that a new call site has to be looked at rather than silently inheriting
+     an empty result — which is how this check was caught passing vacuously the
+     first time it was written. */
+  assert.equal(sites, 6, "expected 6 container call sites; the matcher has drifted");
 
   assert.deepEqual(unbounded, [], "a container call with no deadline never lets its instance sleep");
 });

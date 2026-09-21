@@ -73,7 +73,7 @@ function initialFor(email: string | null | undefined): string {
   return c ? c.toUpperCase() : "\u2022";
 }
 
-function nav(view: View, shortsCtx: ShortsCtx, email?: string | null): string {
+function nav(view: View, shortsCtx: ShortsCtx, email: string | null): string {
   const lit = navItemFor(view, shortsCtx);
   const markLead = MARK_LEAD[view] || MARK_LEAD_DEFAULT;
   const link = (href: string, label: string, item: NavItem) =>
@@ -567,8 +567,14 @@ export interface PageOpts {
   /**
    * Who is signed in. The avatar was a hardcoded "C" — the owner's initial, on
    * every account, from the first second of the first page.
+   *
+   * REQUIRED, so that forgetting it is a type error rather than a bullet.
+   * Optional, it silently produced a plausible-looking wrong answer: the
+   * editor rendered a bare dot where every other surface showed your initial,
+   * because it calls page() directly and nothing made it say who you were.
+   * A signed-out page passes `null`, which is a statement rather than a gap.
    */
-  email?: string | null;
+  email: string | null;
 }
 
 /**
@@ -576,7 +582,7 @@ export interface PageOpts {
  * column — a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM).
  */
 export function page(opts: PageOpts, body: string): string {
-  const { title, view, shortsCtx = "nav", screenLabel } = opts;
+  const { title, view, shortsCtx = "nav", screenLabel, email } = opts;
   return `<!doctype html>
 <html lang="en">
 <head>
