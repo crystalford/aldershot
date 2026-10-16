@@ -370,6 +370,31 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    /*
+     * THE EMPTY STATES, which this check could not see until today.
+     *
+     * Both of these render only when the account has nothing in it, and there
+     * was always something in it — so a gate that has passed for weeks had
+     * never once reached either string. They surfaced the first time a local
+     * database was emptied on purpose.
+     *
+     * Signed off rather than rewritten because the prototype has no empty
+     * states at all: every frame of it shows a populated library, which is the
+     * normal way a design is drawn and the reason this gap existed. The words
+     * say the one thing a person needs at that moment — what to do next, and
+     * roughly how long it takes — and neither invents a capability.
+     */
+    ...[
+      "Drop a file or paste a link above. An hour of footage takes a few minutes to transcribe.",
+      "Nothing here yet — upload a video and it starts transcribing.",
+    ].map((t) => [
+      t,
+      "An empty state. The prototype draws every surface populated, so it has " +
+        "no wording for a library with nothing in it, and these two were " +
+        "unreachable by this check until a local database was emptied on " +
+        "purpose. Kept as written: each says what to do next and how long it " +
+        "takes, and claims nothing the product does not do.",
+    ]),
     ...[
       "As recorded",
       "Clean it up",
