@@ -223,6 +223,14 @@ const STATEMENTS: string[] = [
  * project uses for lazy migrations.
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
+  /*
+   * When this clip was written into the meaning index, or null if it never
+   * was. A backfill reads this to know what is left to do, so the work is
+   * resumable and a library of thousands does not restart from the top every
+   * run. See src/embeddings.ts.
+   */
+  { table: "v2_clips", column: "embedded_at", ddl: "ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER" },
+
   // Script mode's transcript cuts, as JSON ranges. On the project because
   // Script edits the whole source transcript, not one block.
   { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },

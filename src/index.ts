@@ -62,6 +62,7 @@ import { abortMultipart, canPresign, completeMultipart, createMultipart, presign
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
+import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -3471,6 +3472,31 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);
   } catch (err) {
     console.log(`[sweep] proxy: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /*
+   * THE MEANING INDEX CATCHES UP WITH THE LIBRARY.
+   *
+   * Deliberately here rather than at the three places clips are written. A
+   * call site you have to remember is one a fourth call site will forget —
+   * that is exactly how the signed-in avatar ended up missing on half the app.
+   * Every clip lands with embedded_at NULL, so the sweep finds it whatever
+   * wrote it, and a new way of making clips is indexed without anyone wiring
+   * anything.
+   *
+   * Cheap and self-terminating, unlike the proxy backfill that used to live
+   * here: no container, no encode, a couple of hundred short strings through
+   * an embedding model, and nothing at all to do once the library is caught
+   * up. It costs roughly a thousandth of a cent per clip.
+   *
+   * A no-op until someone creates the index — see docs/SETUP.md.
+   */
+  try {
+    const added = await backfillClipIndex(env);
+    const gone = await reapClipIndex(env);
+    if (added || gone) console.log(`[sweep] meaning index: +${added} -${gone}`);
+  } catch (err) {
+    console.log(`[sweep] index: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   /* Videos that failed because a container slot was busy rather than because
