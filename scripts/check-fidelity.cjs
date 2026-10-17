@@ -1199,14 +1199,66 @@ function checkReachable() {
     problems.push('link ?' + key + '= — nothing on the server reads it (' + where + '…)');
   }
 
+  /*
+   * NOTHING FETCHES VIDEO FROM A PLATFORM THAT FORBIDS IT.
+   *
+   * Invariant 9, and Scout v0's first acceptance test: "No code path fetches
+   * audiovisual content from YouTube or Twitch (a test greps for media-fetch
+   * calls on those adapters)."
+   *
+   * WRITTEN BEFORE THE ADAPTERS, which is the whole point. The rule is easy
+   * to hold while nobody has tried, and the moment somebody is three hours
+   * into a YouTube adapter and wants one video file for one test, it is a
+   * judgement call made alone at the wrong time. A check that already exists
+   * is not a judgement call. It also outlives whoever writes the adapter,
+   * which a comment does not.
+   *
+   * It looks for a FETCH whose URL names one of those hosts' media. Searching
+   * for the host alone would fire on every honest thing Scout does — storing
+   * an id, writing a watch link, reading an RSS feed — and a check that fires
+   * on correct code gets switched off.
+   */
+  const MEDIA_HOSTS = [
+    'googlevideo\\.com',
+    'ytimg\\.com/vi/[^"\']*\\.mp4',
+    'youtube\\.com/get_video',
+    'youtube\\.com/watch\\?[^"\']*&?format=',
+    'ttvnw\\.net',
+    'twitch\\.tv/[^"\']*\\.m3u8',
+    'cloudfront\\.net/[^"\']*twitch',
+    'yt-dlp',
+    'youtube-dl',
+    'ytdl',
+  ];
+  const MEDIA = new RegExp('(' + MEDIA_HOSTS.join('|') + ')', 'i');
+  for (const f of walk(path.join(ROOT, 'src'))) {
+    const src = fs.readFileSync(f, 'utf8');
+    /* Comments are where the rule gets EXPLAINED, so they are stripped — a
+       paragraph naming yt-dlp to say we do not use it must not trip it. The
+       line is blanked rather than removed so the number still points at the
+       right line of the real file. */
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/^(\s*)\/\/.*$/gm, '$1');
+    code.split('\n').forEach((line, i) => {
+      if (MEDIA.test(line) && /fetch\(|axios|request\(|exec|spawn/.test(line)) {
+        problems.push(
+          path.relative(ROOT, f) + ':' + (i + 1) +
+            ' — fetches audiovisual content from a platform that forbids it (invariant 9): ' +
+            line.trim().slice(0, 70),
+        );
+      }
+    });
+  }
+
   if (problems.length) {
     fail(
       'reachable',
-      'Something on the server has no way to reach a person. Either wire it up or take it out.',
+      'Something on the server has no way to reach a person, or reaches somewhere it may not. Wire it up, take it out, or stop fetching it.',
       problems.join('\n'),
     );
   } else {
-    pass('reachable', 'every API route is asked for, every table written is read back, every linked query is read');
+    pass('reachable', 'every API route is asked for, every table written is read back, every linked query is read, nothing downloads footage it may not');
   }
 }
 
