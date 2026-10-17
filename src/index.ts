@@ -65,7 +65,7 @@ import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
-import { applyRule, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
+import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
@@ -1294,7 +1294,7 @@ app.get("/clipping", (c) => c.redirect("/footage?tab=exports", 302));
  * This list had `cut` MISSING, so the canonical URL 404ed while all four
  * legacy aliases worked. The walk caught it.
  */
-const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts"]);
+const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts", "footage"]);
 
 /**
  * The editor. One route, one surface.
@@ -1316,7 +1316,10 @@ app.get("/p/:id/:stagePath", async (c) => {
    * word always meant. ?view= is honoured too, the same shape Footage's ?tab=
    * uses, so the blocks endpoint can ask for a matching slice.
    */
-  const view: CutView = stage === "script" || c.req.query("view") === "script" ? "script" : "blocks";
+  const view: CutView =
+    stage === "footage" || c.req.query("view") === "footage" ? "footage"
+    : stage === "script" || c.req.query("view") === "script" ? "script"
+    : "blocks";
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.notFound();
@@ -1417,18 +1420,60 @@ app.get("/p/:id/:stagePath", async (c) => {
          * an effect is a fact about the CURRENT footage, and a stored one goes
          * stale the moment a moment is struck.
          */
-        rules: await (async () => {
+        ...(await (async () => {
+          /*
+           * THE RULES AND THE MOMENTS THEY JUDGED, from one computation.
+           *
+           * Both halves of the project state read the same cut: the pane
+           * numbers the rules, the Footage tab says which rule put each
+           * moment in or took it out, and they have to agree or a moment
+           * points at the wrong line. Computing twice would let them.
+           */
           const stored = await loadRules(c.env.DB, project.id);
-          if (!stored.length) return [];
+          if (!stored.length) return { rules: [], moments: [] };
+
           const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
           const set = toFootageSet(pool, momentTags);
-          return stored.map((r) => ({
-            id: String(r.id),
-            text: r.text ?? r.kind,
-            on: r.on,
-            effect: effectLine(stored, r, { set }),
-          }));
-        })(),
+          const judged = compute(stored, { set }).st;
+
+          /* The pane numbers only the rules proper; a hand decision is the
+             escape hatch from them. Same rule, same order, same numbers. */
+          const main = stored.filter((r) => !r.hand);
+          const numberOf = (id: unknown) => {
+            const i = main.findIndex((r) => String(r.id) === String(id));
+            return i < 0 ? "—" : String(i + 1).padStart(2, "0");
+          };
+          const isHand = (id: unknown) =>
+            Boolean(stored.find((r) => String(r.id) === String(id))?.hand);
+          const titles = new Map(pool.map((m) => [m.id, m.source_title]));
+
+          return {
+            rules: stored.map((r) => ({
+              id: String(r.id),
+              text: r.text ?? r.kind,
+              on: r.on,
+              hand: Boolean(r.hand),
+              effect: effectLine(stored, r, { set }),
+            })),
+            moments: judged.map((m) => ({
+              id: String(m.id),
+              quote: m.text,
+              source_title: titles.get(String(m.id)) ?? "",
+              in: m.in,
+              note: m.in
+                ? m.byId === null
+                  ? "in · kept by hand"
+                  : isHand(m.byId)
+                    ? "in · kept by hand"
+                    : `in · rule ${numberOf(m.byId)}`
+                : m.dropId === null
+                  ? "out · no rule keeps it"
+                  : isHand(m.dropId)
+                    ? "out · by hand · click to keep"
+                    : `out · rule ${numberOf(m.dropId)} · click to keep`,
+            })),
+          };
+        })()),
       }) +
         exportPanel(project.id, user.plan) +
         exportsStrip({ projectId: project.id, renders }),

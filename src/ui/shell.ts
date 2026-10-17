@@ -259,6 +259,22 @@ p,div{text-wrap:pretty}
   display:flex;flex-direction:column;overflow:hidden}
 .asst-top{flex:none}
 /*
+ * THE PLAYER'S OWN COLUMN, in a project.
+ *
+ * One Take is three columns: direction at 360, the thing itself in the
+ * centre, the player at 300. The player used to sit at the top of the
+ * direction column, which made the column it shared do two unrelated jobs and
+ * left the document whatever width was left over after both.
+ *
+ * It is sticky for the same reason the direction column is: you scroll the
+ * document, and what you are watching has to stay with you. Below 1180 it
+ * drops under the document rather than squeezing it, which is where the
+ * prototype folds it into a corner player — this is the honest half of that
+ * until the corner player exists.
+ */
+.editor-player{flex:0 0 300px;max-width:min(320px,100%);position:sticky;top:88px}
+@media (max-width:1180px){.editor-player{position:static;flex:1 1 100%;max-width:100%;order:3}}
+/*
  * 16:9, BECAUSE THAT IS WHAT THE FOOTAGE IS.
  *
  * This cropped to a fixed band and the owner's verdict was immediate: "the
