@@ -184,7 +184,11 @@ Cross-check with **capture–recapture**. Take the distinct verified moments fou
 
 ## 4. The board, and how it reaches the room
 
-- **Rows by beat.** `VERIFIED` (a quote, a `t=` link and the source type), `CROWD` (a place the crowd points to that Scout couldn't read; a mission candidate), `TRACE` (a compilation whose original hasn't been found yet).
+- **Rows by beat.** `CROWD` (a place the crowd points to that Scout couldn't read; a mission candidate), `TRACE` (a compilation whose original hasn't been found yet) — and for a verified row, **its acquisition state rather than the word `VERIFIED`**.
+
+  *Corrected 17 Oct 2026 against the rendered prototype (`labs/Scout.dc.html`, driven to its populated state).* `VERIFIED` is not a chip on the board. A verified row wears one of six: `YOURS` · `SCOUTED` · `MISSION` · `FETCHING` · `MATCHING` · `ACQUIRED · VERIFIED`. That is the difference between a row you can cut today and a row that needs twenty minutes of the user's afternoon, and it is the only thing they are choosing between — one word on all six hides exactly that. A separate **route** chip says how the footage would arrive (`ALREADY YOURS` · `AUTO · open feed` · `MISSION · you grab it`), which is a different question from where it is now: a scouted row on a podcast feed and a scouted row on YouTube are the same state and completely different asks.
+
+- **Two meters, not one.** This section used to name only the balance meter. The board has **SOURCED** beside **BALANCE**. SOURCED is over every row, verified and crowd alike — how many are already yours or acquired and verified — with a second, dimmer segment for the ones in flight on a mission. It is the number that decides whether a run produced evidence or a reading list, and crowd rows are in its denominator for that reason: a meter counting only what it could read would score full marks having read one thing and linked forty.
 - **Gaps first** (a beat with nothing, and what was tried), then the **balance meter** (subject against counter, shown as effort and as results: "sought 6 searches, found 2"), then the verified rows.
 - A **diligence log export**: queries run, sources examined, counterpoints sought, rejections. Part of the dispute file.
 - **In the room**, the board is not a separate page. Verified rows become **external moments** under Footage → Highlights → External, and each beat in the plan shows its finds. Attaching one makes a **ghost** in the cut. Scout's character shows the run's state (looking, found, thin, mission). See doc 07 for the copy and the character.
