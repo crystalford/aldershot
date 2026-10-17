@@ -126,4 +126,10 @@ its claim — fix the test, not the breakage.
 - Running speech recognition on enhanced audio makes it worse; enhance only the final mix.
 - SDK retries × gateway retries × workflow retries multiply; SDK retries off.
 - Queues drop messages on retry exhaustion unless a dead-letter queue exists.
+  There is one now (`aldershot-jobs-dlq`), the gate fails if a consumer lacks
+  one, and a DLQ is exempt from the rule because a DLQ with a DLQ is turtles.
+- Most job handlers catch their own errors and write their own failure, so they
+  never reach the guards in `consume`. Only `proxy`, `transcribe` and
+  `short-render` throw straight out — those are the ones a test of that path
+  has to use.
 - YouTube: 100 `search.list` calls a day per project; store nothing audiovisual; refresh metadata every 30 days.

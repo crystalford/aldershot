@@ -1335,10 +1335,51 @@ function checkSchema() {
     }
   }
 
+  /*
+   * EVERY QUEUE CONSUMER HAS A DEAD-LETTER QUEUE.
+   *
+   * labs/OPERATIONS.md: "Queues delete on retry exhaustion unless a
+   * dead-letter queue exists — that is exactly how '300 processed, 200
+   * didn't' happens. Every consumer gets a DLQ." A consumer declared without
+   * one throws away whatever it cannot process, and the job row goes on
+   * saying "running" — invariant 7's silent partial failure, arriving through
+   * a config file nobody thinks of as code.
+   *
+   * Read by regex rather than by parsing, for the reason
+   * test/queue-retries.test.ts gives at length: this file contains a comment
+   * opener inside a string ("globs": ["**\/*.woff2"]), so a comment stripper
+   * swallows the rest of the file and a parser that handles it correctly is a
+   * parser with its own bugs, in a check.
+   *
+   * A dead-letter queue is itself exempt, because a DLQ with a DLQ is turtles.
+   * The rule is that the chain terminates, not that it never does.
+   */
+  const wranglerRaw = fs.readFileSync(path.join(ROOT, 'wrangler.jsonc'), 'utf8');
+  const consumersBlock = wranglerRaw.match(/"consumers"\s*:\s*\[([\s\S]*?)\n\s*\]/);
+  if (!consumersBlock) {
+    bad.push('wrangler.jsonc declares no queue consumers — no job runs on the queue at all');
+  } else {
+    for (const m of consumersBlock[1].matchAll(/\{[^{}]*\}/g)) {
+      const entry = m[0];
+      const name = (entry.match(/"queue"\s*:\s*"([^"]+)"/) || [])[1];
+      if (!name) {
+        bad.push('a queue consumer in wrangler.jsonc names no queue');
+        continue;
+      }
+      if (/-dlq$/.test(name)) continue;
+      if (!/"dead_letter_queue"\s*:\s*"[^"]+"/.test(entry)) {
+        bad.push(
+          name + ' — a consumer with no dead_letter_queue: whatever it cannot process is deleted ' +
+            'and the job row goes on saying "running"',
+        );
+      }
+    }
+  }
+
   if (bad.length) {
     fail('schema', 'The schema that runs and the schema a person reads have come apart. `npm run schema`.', bad.join('\n'));
   } else {
-    pass('schema', live.size + ' tables and indexes, each in migrations/schema.sql with the same shape');
+    pass('schema', live.size + ' tables and indexes mirrored in migrations/schema.sql; every queue consumer has a dead-letter queue');
   }
 }
 
