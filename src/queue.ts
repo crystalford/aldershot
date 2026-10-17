@@ -35,6 +35,45 @@ import { runRender } from "./render-job.ts";
 import { runScore } from "./begin.ts";
 import { runReactions, runOutline } from "./pass-jobs.ts";
 
+/**
+ * HOW MANY DELIVERIES A MESSAGE GETS, and it must equal `max_retries` on the
+ * consumer in wrangler.jsonc. test/queue-retries.test.ts reads both and fails
+ * if they drift, because drift in either direction is silent and bad.
+ *
+ * Set too HIGH here and the platform exhausts the message's retries before
+ * this code ever reaches its last attempt — so the message is deleted (there
+ * is no dead-letter queue), nothing marks the job failed, and the row sits on
+ * "running" until reapStaleJobs gets to it twenty minutes to three hours
+ * later. That is the silent partial failure the handoff's invariant 7 is
+ * about, and it arrives by editing one number.
+ *
+ * Set too LOW and jobs are declared failed with retries still unspent, which
+ * is the cheap direction to be wrong in but still wrong: these fail mostly
+ * because something was busy, and the retry is the fix.
+ */
+export const MAX_DELIVERIES = 3;
+
+/** Whether this delivery is the last one, so the job must be closed out. */
+export const isLastDelivery = (attempts: number): boolean => attempts >= MAX_DELIVERIES;
+
+/**
+ * How long to wait before the next delivery.
+ *
+ * These fail almost entirely because something was busy — a container slot, a
+ * rate limit — and retrying at once asks the same question a millisecond
+ * later. The delay grows with the attempt and carries a little jitter, because
+ * twenty videos uploaded together fail together and would otherwise retry
+ * together too, in lockstep, for ever.
+ *
+ * Pure and exported so the schedule can be asserted rather than described: a
+ * backoff that silently collapses to zero looks exactly like one that works
+ * until the day everything retries at once.
+ */
+export function backoffSeconds(attempts: number, rand: () => number = Math.random): number {
+  const base = [20, 60, 180][Math.min(attempts - 1, 2)] ?? 180;
+  return base + Math.floor(rand() * base * 0.4);
+}
+
 export type JobMessage =
   | {
       type: "transcribe";
@@ -205,24 +244,14 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env): Promis
       // no retry left to wait for and the job has to be closed out honestly.
       // Whatever was busy has now been busy for four minutes, so this is a
       // real failure rather than a queue that gave up too early.
-      if (message.attempts >= 3) {
+      if (isLastDelivery(message.attempts)) {
         const [job] = await getJobs(env.DB, [message.body.jobId]);
         if (job && job.state !== "ready" && job.state !== "failed") {
           await failJob(env.DB, message.body.jobId, `That didn't finish: ${reason}`);
         }
         message.ack();
       } else {
-        /*
-         * BACKOFF, or the retry walks into the same wall.
-         *
-         * These fail almost entirely because something was busy — a container
-         * slot, a rate limit — and retrying at once asks the same question a
-         * millisecond later. The delay grows with the attempt and carries a
-         * little jitter, because twenty videos uploaded together fail together
-         * and would otherwise retry together too, in lockstep, for ever.
-         */
-        const base = [20, 60, 180][Math.min(message.attempts - 1, 2)] ?? 180;
-        message.retry({ delaySeconds: base + Math.floor(Math.random() * base * 0.4) });
+        message.retry({ delaySeconds: backoffSeconds(message.attempts) });
       }
     }
   }

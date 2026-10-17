@@ -69,6 +69,42 @@ export const CANDIDATE_POOL = 60;
 export const DEFAULT_TARGET_MS = 12 * 60_000;
 
 /**
+ * RECIPROCAL RANK FUSION.
+ *
+ * Two retrievers, fused by where each put a thing rather than by what each
+ * scored it. A cosine similarity and a count of matched words are numbers on
+ * scales with no exchange rate between them, and any constant mixing the two
+ * would be invented. Ranks are comparable by construction, which is the whole
+ * reason this is the standard way to combine retrievers.
+ *
+ * score(d) = Σ 1 / (K + rank(d)) over the lists that returned it.
+ *
+ * K = 60 is the conventional value from the original TREC work. It flattens
+ * the top of each list — the difference between first and second matters less
+ * than the difference between returned and not returned — which is what makes
+ * agreement between two retrievers beat a confident first place from one.
+ */
+export const RRF_K = 60;
+
+export function fuseByRank<T>(lists: T[][], key: (item: T) => string): T[] {
+  const score = new Map<string, number>();
+  const first = new Map<string, T>();
+
+  for (const list of lists) {
+    list.forEach((item, i) => {
+      const k = key(item);
+      score.set(k, (score.get(k) ?? 0) + 1 / (RRF_K + i + 1));
+      if (!first.has(k)) first.set(k, item);
+    });
+  }
+
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => first.get(k))
+    .filter((x): x is T => x !== undefined);
+}
+
+/**
  * The moments a brief asks for, best first.
  *
  * Meaning search when the index exists, exact words when it does not — the
@@ -89,9 +125,6 @@ export async function findMaterial(
   const q = brief.trim();
   if (!q) return { moments: await listMoments(env.DB, userId, limit), how: "recent" };
 
-  const meant = await searchMeaning(env, userId, q, limit);
-  if (meant && meant.length) return { moments: dedupe(meant), how: "meaning" };
-
   /*
    * A BRIEF IS NOT A SEARCH BOX QUERY.
    *
@@ -100,13 +133,48 @@ export async function findMaterial(
    * library holding exactly that, it returned nothing, because no single
    * moment contains all four words including "the" and "about".
    *
-   * So the words fallback ranks instead of filters: how many of the brief's
+   * So the words retriever ranks instead of filtering: how many of the brief's
    * content words a moment actually says. Deterministic, over our own
-   * transcripts, and it degrades to "the most recent" rather than to nothing.
+   * transcripts.
    */
-  const recent = await listMoments(env.DB, userId, 200);
+  /* Genuinely in parallel: the embedding call and the row read are the two
+     waits, and neither needs the other's answer. */
+  const [meant, recent] = await Promise.all([
+    searchMeaning(env, userId, q, limit),
+    listMoments(env.DB, userId, 200),
+  ]);
   const ranked = rankByWords(recent, q);
-  if (ranked.length) return { moments: dedupe(ranked).slice(0, limit), how: "words" };
+
+  /*
+   * TWO PEER RETRIEVERS, FUSED BY RANK — not one with the other as a fallback.
+   *
+   * This used to return the meaning results whenever there were any, and only
+   * fall back to words when the index gave nothing. That is not hybrid
+   * retrieval, and the failure is specific rather than theoretical: words can
+   * only ever surface what the vector missed if words are allowed to run when
+   * the vector succeeded. A proper name, a number, a piece of jargon — the
+   * things an embedding is worst at and an exact match is best at — were
+   * unreachable on any account where the index existed.
+   *
+   * 06-FOOTAGE-SYSTEM.md: "Never re-score vector results with BM25 — then
+   * keywords can't surface what the vector missed. On transcripts, keyword
+   * search is a peer retriever." Both run, both rank, ranks fuse.
+   *
+   * `how` says whether the INDEX took part, which is the only thing it was
+   * ever for: it exists to warn somebody that they are looking at the weaker
+   * answer. So "meaning" means the index contributed something, not that words
+   * contributed nothing — usually both did, and that is the point.
+   */
+  if (meant?.length || ranked.length) {
+    const fused = fuseByRank(
+      [meant ?? [], ranked].filter((l) => l.length),
+      (m) => m.id,
+    );
+    return {
+      moments: dedupe(fused).slice(0, limit),
+      how: meant?.length ? "meaning" : "words",
+    };
+  }
 
   /*
    * AND WHEN NO WORD MATCHES, THE MOST RECENT — which is what the paragraph

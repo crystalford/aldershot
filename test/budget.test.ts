@@ -20,6 +20,8 @@ import {
   clock,
   DEFAULT_TARGET_MS,
   findMaterial,
+  fuseByRank,
+  RRF_K,
 } from "../src/assemble.ts";
 
 const at = (start: number, seconds: number, quote: string, source = "s1") => ({
@@ -169,4 +171,80 @@ test("the clock reads as a time somebody can check against", () => {
   assert.equal(clock(9_000), "0:09");
   assert.equal(clock(185_000), "3:05");
   assert.equal(runtimeMs([at(0, 30, "x"), at(60_000, 45, "y")]), 75_000);
+});
+
+test("words and meaning are peers, so words can surface what the vector missed", async () => {
+  /*
+   * THE FAILURE THIS FIXES, which is specific rather than theoretical.
+   *
+   * findMaterial used to return the meaning results whenever there were any
+   * and only consult words when the index gave nothing. So on any account
+   * where the index existed, an exact match the embedding ranked badly — a
+   * proper name, a number, a piece of jargon, which is precisely what
+   * embeddings are worst at — was unreachable. 06-FOOTAGE-SYSTEM.md: "On
+   * transcripts, keyword search is a peer retriever."
+   */
+  const rows = [
+    { id: "vague", quote: "the whole launch thing was a bit of a mess honestly", source_id: "s1", start_ms: 0, end_ms: 20_000 },
+    { id: "exact", quote: "the Hesketh contract was signed on the fourteenth", source_id: "s1", start_ms: 60_000, end_ms: 80_000 },
+  ];
+  const env = {
+    DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: rows }) }) }) },
+    /* An index that exists and ranks the wrong one first — the normal case,
+       not a broken one. */
+    VECTORIZE: {
+      query: async () => ({ matches: [{ id: "vague" }] }),
+    },
+    AI: { run: async () => ({ data: [Array(1024).fill(0.1)] }) },
+  } as never;
+
+  const out = await findMaterial(env, "u1", "the Hesketh contract");
+  assert.equal(out.how, "meaning", "the index took part, which is all `how` claims");
+  assert.deepEqual(
+    out.moments.map((m) => m.id).sort(),
+    ["exact", "vague"],
+    "both retrievers' results are present — the old code returned only the vector's",
+  );
+  /*
+   * They TIE, and that is correct rather than a shortfall: each is first in
+   * one list and absent from the other, so 1/(60+1) each. Preferring one would
+   * mean deciding that an exact match on a proper noun beats a vector hit, and
+   * there is no evidence for that — it is a threshold to tune against the eval
+   * set, not a constant to invent here.
+   */
+  assert.equal(out.moments.length, 2);
+});
+
+test("rank fusion scores by position, not by incomparable similarity numbers", () => {
+  /*
+   * A cosine similarity and a count of matched words have no exchange rate, so
+   * any constant mixing them would be invented. Ranks are comparable by
+   * construction.
+   *
+   * Hand-computed from 1/(60 + rank), and note what the FIRST version of this
+   * test got wrong: it used two lists that were each other's reverse, which
+   *   under RRF tie exactly — every symmetric swap does — so it could not have
+   *   distinguished a working fusion from a broken one.
+   *
+   *   x: 1/61 + 1/61 = 0.03279   first in both lists
+   *   y: 1/62        = 0.01613   second in one list
+   *   z: 1/62        = 0.01613   second in the other
+   *
+   * So agreement between two retrievers beats a confident first place in one,
+   * which is the property the whole method exists for.
+   */
+  const A = [{ id: "x" }, { id: "y" }];
+  const B = [{ id: "x" }, { id: "z" }];
+  assert.deepEqual(fuseByRank([A, B], (x) => x.id).map((x) => x.id), ["x", "y", "z"]);
+
+  const only = [{ id: "x" }];
+  const agreed = [{ id: "y" }, { id: "x" }];
+  assert.deepEqual(
+    fuseByRank([only, agreed], (x) => x.id).map((x) => x.id),
+    ["x", "y"],
+    "x: 1/61 + 1/62 beats y: 1/61 alone",
+  );
+
+  assert.deepEqual(fuseByRank([[], []], (x: { id: string }) => x.id), []);
+  assert.equal(RRF_K, 60, "the conventional constant; changing it reweights every fusion");
 });
