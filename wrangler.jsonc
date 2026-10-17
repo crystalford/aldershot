@@ -164,25 +164,24 @@
   // already exist (confirmed live: error code 10159, "index ... was not
   // found") — so this binding must stay commented out, not just optionally
   // absent, until the index is actually created. One-time setup, in order:
+  // DONE, 17 Oct 2026, in this order and verified at each step:
   //   1. wrangler vectorize create aldershot-clips --dimensions=1024 --metric=cosine
-  //      (needs a token with Vectorize edit permission — not yet granted)
   //   2. wrangler vectorize create-metadata-index aldershot-clips \
   //        --propertyName=user_id --type=string
-  //   3. THEN uncomment the block below and deploy.
+  //      (enqueued, not instant — it took about 45s to appear in
+  //       `vectorize list-metadata-index`, and nothing may write a vector
+  //       until it does)
+  //   3. this binding.
   //
   // STEP 2 IS NOT OPTIONAL AND THE ORDER IS NOT COSMETIC. Every query is
   // filtered by user_id, and Vectorize cannot filter on vectors written
   // before the metadata index for that property existed — it does not error,
-  // it just never matches them. Deploy before step 2 and you get a full
-  // index, a clean search and no results, with nothing saying why; the only
-  // fix is re-writing every vector. See docs/SETUP.md §5.
-  //
-  // Until all three happen, env.VECTORIZE is simply undefined: search falls
-  // back to exact words and says so on screen, the backfill in embeddings.ts
-  // is a no-op, and threads.ts falls back to tag-equality grouping.
-  // "vectorize": [
-  //   { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
-  // ]
+  // it just never matches them. Bind before step 2 completes and you get a
+  // full index, a clean search and no results, with nothing saying why; the
+  // only fix is re-writing every vector. See docs/SETUP.md §5.
+  "vectorize": [
+    { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
+  ],
 
   // Job pipeline (04-API-AND-JOBS.md). Long work — reading a source, scoring,
   // rendering — is dispatched as a message rather than run inside the

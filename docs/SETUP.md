@@ -76,8 +76,19 @@ until the queue exists.
 
 ## 5. Vectorize — meaning search and automatic threads
 
-Blocked on a permission, not on code. **Run them in this order** — the
-order is not a style preference, see the warning below:
+**Done, 17 October 2026.** The index `aldershot-clips` exists, its `user_id`
+metadata index exists, and the binding is live in `wrangler.jsonc`. Nothing
+below needs doing again; it is kept because the ORDER is the part that cannot
+be recovered from, and anyone adding a second filterable property has to
+follow it too.
+
+The one thing the original instructions got wrong: `create-metadata-index`
+returns "successfully enqueued", not "created". It took about 45 seconds to
+appear in `wrangler vectorize list-metadata-index`, and nothing may write a
+vector until it does.
+
+**Run them in this order** — the order is not a style preference, see the
+warning below:
 
 ```
 npx wrangler vectorize create aldershot-clips --dimensions=1024 --metric=cosine
@@ -86,8 +97,8 @@ npx wrangler vectorize create-metadata-index aldershot-clips --propertyName=user
 
 Then uncomment the `vectorize` block in `wrangler.jsonc` and deploy.
 
-The first command needs an API token with **Vectorize: Edit**. The token in
-`CLOUDFLARE_API_TOKEN` doesn't have it; add that permission first.
+The first command needs an API token with **Vectorize: Edit**. The token used
+here is `aldershot-claude-code-env`; the permission was added on 17 Oct 2026.
 
 ### The metadata index has to exist before the first vector
 

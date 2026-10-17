@@ -42,10 +42,11 @@ code that has not moved yet.
 is accurate for that date. Three things it lists as missing have since landed,
 and the build order should start from them rather than from zero:
 
-- **The dense half of hybrid retrieval.** `src/embeddings.ts` writes the clip
-  library into Vectorize from the hourly sweep, resumable and library-wide.
-  The binding is still commented out until the index and its `user_id`
-  metadata index exist, in that order — see `docs/SETUP.md` §5.
+- **Hybrid retrieval, both halves.** `src/embeddings.ts` writes the clip
+  library into Vectorize from the hourly sweep, resumable and library-wide;
+  the index, its `user_id` metadata index and the binding all exist as of
+  17 Oct 2026. `findMaterial` runs meaning and word search as peers and fuses
+  them by reciprocal rank, rather than treating words as a fallback.
 - **A retrieval eval that runs today.** `npm run eval` reports recall@k over
   your own library through the real page, using kept clips as labels, with
   `--exact` as the keyword baseline to beat. It is an upper bound rather than
