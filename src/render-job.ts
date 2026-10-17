@@ -12,6 +12,7 @@
  */
 
 import type { Env } from "./env.ts";
+import { FRAME_MS, frameAccurate, timingFor } from "./align.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { parseCuts } from "./cuts.ts";
 import { presignGet } from "./r2sign.ts";
@@ -297,6 +298,25 @@ export async function runRender(
   env: Env,
   opts: { userId: string; projectId: string; renderId: string; jobId: string },
 ): Promise<void> {
+  /*
+   * WHAT THE CUTS ARE WORTH, said once per render.
+   *
+   * Every cut in this product is placed on a word boundary, and those
+   * boundaries come from a recogniser accurate to about a tenth of a second
+   * — roughly three frames at 25fps (src/align.ts). That is the honest
+   * answer to "why is this cut a frame late", and until forced alignment
+   * lands it is the answer for every render. Logged rather than refused,
+   * because a cut that is three frames out is still the cut somebody asked
+   * for; the refusal belongs where frame accuracy is promised, and nothing
+   * promises it yet.
+   */
+  {
+    const t = timingFor({ id: opts.projectId });
+    if (!frameAccurate(t)) {
+      console.log(`[render] cuts placed on ${t.source} timings — ±${t.toleranceMs}ms, about ${Math.round(t.toleranceMs / FRAME_MS)} frames`);
+    }
+  }
+
   const { jobId, renderId } = opts;
   const t0 = Date.now();
 

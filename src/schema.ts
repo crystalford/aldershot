@@ -320,6 +320,22 @@ const STATEMENTS: string[] = [
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /*
+   * THE MOMENT'S ADDRESS, independent of its timing.
+   *
+   * start_ms and end_ms are where the moment is according to a RECOGNISER,
+   * accurate to about a tenth of a second (src/align.ts). Forced alignment
+   * will move those numbers — that is what it is for — and a moment pinned to
+   * them would move with them, or worse, stay still while the audio did not.
+   *
+   * A word span survives it, because re-aligning changes WHEN a word is and
+   * never WHICH word it is. Null for a moment whose source has no word
+   * timings: a transcript that failed, or one stored before they were kept.
+   * The milliseconds remain the fallback and remain correct.
+   */
+  { table: "v2_clips", column: "start_word", ddl: "ALTER TABLE v2_clips ADD COLUMN start_word INTEGER" },
+  { table: "v2_clips", column: "end_word", ddl: "ALTER TABLE v2_clips ADD COLUMN end_word INTEGER" },
+
+  /*
    * When this clip was written into the meaning index, or null if it never
    * was. A backfill reads this to know what is left to do, so the work is
    * resumable and a library of thousands does not restart from the top every

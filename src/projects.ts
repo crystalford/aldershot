@@ -8,6 +8,7 @@
  */
 
 import { ulid } from "./id.ts";
+import { indexWords, spanFor } from "./align.ts";
 import { buildBlocks, parseOrder, type Block, type PulledClip, type ScoreLike, type SegmentLike } from "./blocks.ts";
 import { parseCuts, parseWords, wordsInRange, type Cut, type StoredWord } from "./cuts.ts";
 import { getSegments } from "./sources.ts";
@@ -63,6 +64,10 @@ export interface Clip {
   source_id: string;
   start_ms: number;
   end_ms: number;
+  /** The moment's address in words, which survives re-alignment. Null when
+      the source has no word timings. See src/align.ts. */
+  start_word: number | null;
+  end_word: number | null;
   quote: string;
   why: string | null;
   score: number | null;
@@ -319,6 +324,24 @@ export async function saveClips(
 ): Promise<Clip[]> {
   if (!clips.length) return [];
 
+  /*
+   * THE WORD SPAN, WORKED OUT AT THE ONE MOMENT IT IS CHEAP.
+   *
+   * The transcript is already being read here, so numbering its words costs
+   * one more pass over rows that are in hand. Doing it later would mean
+   * re-reading every segment of every source to address moments that were
+   * saved without one.
+   *
+   * Null when the source has no word timings — a failed transcript, or one
+   * stored before they were kept. The milliseconds stay what they have always
+   * been, so nothing regresses; a moment simply has no address yet.
+   */
+  const { results: segs } = await db
+    .prepare(`SELECT idx, words FROM segments WHERE source_id=? ORDER BY idx`)
+    .bind(opts.source_id)
+    .all<{ idx: number; words: string | null }>();
+  const words = indexWords(segs ?? [], parseWords);
+
   // Don't re-save a moment we already have.
   //
   // Running a second pass over the same source finds much of the same
@@ -337,6 +360,8 @@ export async function saveClips(
     source_id: opts.source_id,
     start_ms: c.start_ms,
     end_ms: c.end_ms,
+    start_word: spanFor(words, c.start_ms, c.end_ms)?.startWord ?? null,
+    end_word: spanFor(words, c.start_ms, c.end_ms)?.endWord ?? null,
     quote: c.quote,
     why: c.why || null,
     score: c.score,
@@ -353,13 +378,14 @@ export async function saveClips(
   }));
 
   const stmt = db.prepare(
-    `INSERT INTO v2_clips (id,user_id,source_id,start_ms,end_ms,quote,why,score,heat,frame_r2_key,kept,origin,used_count,created_at,deleted_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO v2_clips (id,user_id,source_id,start_ms,end_ms,start_word,end_word,quote,why,score,heat,frame_r2_key,kept,origin,used_count,created_at,deleted_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
   await db.batch(
     rows.map((r) =>
       stmt.bind(
-        r.id, r.user_id, r.source_id, r.start_ms, r.end_ms, r.quote, r.why, r.score, r.heat,
+        r.id, r.user_id, r.source_id, r.start_ms, r.end_ms, r.start_word, r.end_word,
+        r.quote, r.why, r.score, r.heat,
         r.frame_r2_key, r.kept, r.origin, r.used_count, r.created_at, r.deleted_at,
       ),
     ),
