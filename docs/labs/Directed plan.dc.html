@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column">
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">LABS</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Directed plan · footage + brief → the plan, before any cut · what the canvas shows when the brief is more than “tighter”</span>
+    <a href="Scout.dc.html" style="font-size:12px;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Scout</a>
+    <a href="Footage sets.dc.html" style="flex:none;font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Footage sets</a>
+    <a href="Essay to video.dc.html" style="flex:none;font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Essay → video</a>
+  </div>
+
+  <div style="flex:1;display:flex;justify-content:center;padding:0 clamp(16px,4vw,40px) 120px">
+    <div style="width:min(1180px,100%)">
+
+      <div style="padding-top:36px;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1 1 440px;min-width:min(440px,100%)">
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE BRIEF · what you said</div>
+          <div style="margin-top:10px;padding:16px 18px;border-radius:12px;background:#1A1A1F;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 18px 60px rgba(0,0,0,0.4);font-size:16.5px;line-height:1.5;text-wrap:pretty">{{ brief }}</div>
+          <div style="margin-top:14px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">WHAT IT WAS GIVEN</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ sources }}" as="s" hint-placeholder-count="4">
+              <div style="display:flex;gap:10px;align-items:center;padding:8px 11px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <span style="flex:none;width:18px;height:18px;border-radius:4px;background:{{ s.bg }};color:{{ s.color }};font-size:9.5px;font-weight:600;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:center">{{ s.key }}</span>
+                <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span>
+                <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45);white-space:nowrap">{{ s.meta }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:1 1 380px;min-width:min(380px,100%)">
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE READ · before the plan</div>
+          <div style="margin-top:10px;font-size:17px;font-weight:500;line-height:1.5;letter-spacing:-0.012em;text-wrap:pretty">Three streams, five years apart, and the same three subjects every time — the audience, the detractors, the money. Every number went down between them. Your screenshots are the numbers; his words are the explanations.</div>
+          <div style="margin-top:8px;font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ readMeta }}</div>
+          <div style="margin-top:12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:9px 12px;border-radius:7px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <span style="flex:none;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#5EC98F">CORPUS · HUGE</span>
+            <span style="flex:1 1 260px;min-width:0;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.75);text-wrap:pretty">Your 13 moments cover 9 of 11 blocks. Outside: thousands of hours of his streams on record, three fan-kept incident lists, 40+ compilations — the two thin blocks (<span style="color:#ECECF1">01</span>, <span style="color:#ECECF1">11</span>) can almost certainly be sourced. Looking outside is <span style="color:#ECECF1">on for this project</span>.</span>
+          </div>
+          <div style="margin-top:18px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE RULES IT WROTE FROM THE BRIEF</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ rules }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:#D9B36A;padding-top:2px">{{ r.n }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;line-height:1.5;text-wrap:pretty">{{ r.text }}</div>
+                  <div style="margin-top:2px;font-size:11px;color:rgba(236,236,241,0.45);line-height:1.45;text-wrap:pretty">{{ r.effect }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:40px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE PLAN · {{ planMeta }}</span>
+        <span style="font-size:11.5px;color:rgba(236,236,241,0.4);text-wrap:pretty">each block is one point · what's said, what backs it, what's on screen · click a moment or a screenshot to see it</span>
+      </div>
+      <div style="margin-top:10px;height:6px;border-radius:3px;background:#17171B;overflow:hidden;display:flex;gap:1px">
+        <sc-for list="{{ bar }}" as="b" hint-placeholder-count="11"><span title="{{ b.title }}" style="height:100%;flex:{{ b.flex }};background:{{ b.color }}"></span></sc-for>
+      </div>
+      <div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:rgba(236,236,241,0.45)">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#E06A6A;vertical-align:-1px;margin-right:5px"></span>his footage, playing clean</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#5EB8C9;vertical-align:-1px;margin-right:5px"></span>your screenshot over narration</span>
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#D9B36A;vertical-align:-1px;margin-right:5px"></span>you, to camera</span>
+      </div>
+
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="6">
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="flex:none;width:34px">
+              <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ b.n }}</div>
+              <div style="margin-top:3px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.35)">{{ b.secs }}</div>
+            </div>
+            <div style="flex:1 1 300px;min-width:min(300px,100%)">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:14px;font-weight:600;letter-spacing:-0.01em">{{ b.title }}</span>
+                <span style="font-size:10.5px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border-radius:4px;background:{{ b.roleBg }};color:{{ b.roleColor }};white-space:nowrap">{{ b.roleName }}</span>
+              </div>
+              <sc-if value="{{ b.hasVo }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:8px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:{{ b.voLabelColor }}">{{ b.voLabel }}</div>
+                <div style="margin-top:4px;font-size:14.5px;line-height:1.55;color:{{ b.voColor }};text-wrap:pretty">{{ b.vo }}</div>
+              </sc-if>
+              <sc-if value="{{ b.hasMoments }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:10px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">HE SAID · from the archive</div>
+                <div style="margin-top:5px;display:flex;flex-direction:column;gap:4px">
+                  <sc-for list="{{ b.moments }}" as="m" hint-placeholder-count="1">
+                    <div tabindex="0" role="button" onclick="{{ m.onGo }}" style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:7px;background:{{ m.bg }};cursor:pointer" style-hover="background:#1C1C22">
+                      <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ m.color }};white-space:nowrap;padding-top:2px">{{ m.tc }}</span>
+                      <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.85);text-wrap:pretty">“{{ m.text }}”</span>
+                      <span style="flex:none;font-size:10.5px;color:rgba(236,236,241,0.4);white-space:nowrap">{{ m.dur }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <div style="flex:1 1 260px;min-width:min(260px,100%)">
+              <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">ON SCREEN</div>
+              <div style="margin-top:5px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.72);text-wrap:pretty">{{ b.screen }}</div>
+              <sc-if value="{{ b.hasShots }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:9px;display:flex;flex-direction:column;gap:4px">
+                  <sc-for list="{{ b.shots }}" as="d" hint-placeholder-count="1">
+                    <div tabindex="0" role="button" onclick="{{ d.onGo }}" style="display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border-radius:7px;background:#0E0E11;border-left:2px solid #5EB8C9;cursor:pointer" style-hover="background:#121216">
+                      <div style="flex:none;width:44px;aspect-ratio:16/10;border-radius:3px;background:#1A1A1F;display:flex;align-items:center;justify-content:center;font-size:9px;font-family:'IBM Plex Mono',monospace;color:#5EB8C9">{{ d.id }}</div>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:12px;line-height:1.45;color:rgba(236,236,241,0.85);font-family:'IBM Plex Mono',monospace;text-wrap:pretty">{{ d.text }}</div>
+                        <div style="margin-top:3px;font-size:11px;color:rgba(236,236,241,0.45);line-height:1.4;text-wrap:pretty">{{ d.file }} · {{ d.date }} · proves {{ d.proves }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ b.hasNeed }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:9px;display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:7px;background:rgba(217,179,106,0.08);box-shadow:inset 0 0 0 1px rgba(217,179,106,0.3)">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#E06A6A"></span>
+                  <span style="font-size:12px;color:#D9B36A">Needs {{ b.need }}</span>
+                  <span style="flex:1"></span>
+                  <span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:4px;background:#ECECF1;color:#131316;white-space:nowrap">Record</span>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:8px">
+        <sc-for list="{{ gaps }}" as="g" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+            <span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ g.dot }};margin-top:6px"></span>
+            <span style="font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.8);text-wrap:pretty">{{ g.text }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:16px 18px;border-radius:10px;background:#1A1A1F;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+        <div style="flex:1 1 300px;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">When the plan is right, it becomes the cut.</div>
+          <div style="margin-top:3px;font-size:12px;color:rgba(236,236,241,0.5);line-height:1.5;text-wrap:pretty">Blocks become moments in the editor, in this order; the screenshots ride with the moments they prove; the narration and your line become voice beats to record. The editor opens on it with its rules.</div>
+        </div>
+        <div tabindex="0" role="button" onclick="{{ onCut }}" style="flex:none;font-size:12.5px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316;cursor:pointer;white-space:nowrap" style-hover="background:#FFFFFF">{{ cutLabel }}</div>
+      </div>
+
+      <div style="margin-top:40px;padding:18px 20px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">WHAT THIS PAGE IS FOR</div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:14px 28px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.72)">
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">The shape of pre-production.</span> Brief → Read → rules → plan as blocks → cut. The plan is a canvas state on Home, not a new place: it's what the Read becomes when the brief is more than “tighter”.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Screenshots as evidence.</span> Your uploads are read (OCR), dated, and pinned to the narration line they prove. Same mechanism as receipts in an essay — the Document block, now a product feature.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">His words carry it.</span> 7 of 11 blocks are him, clean. Narration only where the footage can't say it. The one line that's yours is marked and drafted from his words.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">What the engine must do.</span> Find the moments that back a claim (transcript reasoning). Match a screenshot to a line (OCR + reasoning). Decide exhibit vs. narration (the director layer). Everything here was authored to show the target.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ hasPeek }}" hint-placeholder-val="{{ false }}">
+    <div tabindex="0" role="button" onclick="{{ onPeekClose }}" style="position:fixed;inset:0;background:rgba(8,8,10,0.7);z-index:20;display:flex;align-items:center;justify-content:center;padding:24px;cursor:pointer">
+      <div style="width:min(560px,100%);padding:18px 20px;border-radius:12px;background:#1A1A1F;box-shadow:0 0 0 1px rgba(255,255,255,0.08), 0 30px 80px rgba(0,0,0,0.6);cursor:default">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:{{ peekColor }}">{{ peekKind }}</div>
+        <div style="margin-top:8px;font-size:15px;line-height:1.55;text-wrap:pretty">{{ peekText }}</div>
+        <div style="margin-top:8px;font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ peekMeta }}</div>
+        <div style="margin-top:14px;font-size:11.5px;color:rgba(236,236,241,0.4)">In the product this plays the moment, or opens the screenshot at full size. Click anywhere to close.</div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { mod: null, peek: null };
+  componentDidMount() { Promise.all([import("./plan-sample.js"), import("../footage.js")]).then(([m, F]) => this.setState({ mod: m, F })).catch(e => console.error("labs plan import failed", e)); }
+  // The plan → a project the editor can open: a footage set (his moments, in plan order, tagged by block) + rules + voice beats.
+  cutIt() {
+    const M = this.state.mod, F = this.state.F; if (!M || !F) return;
+    const SRCX = {}; Object.keys(M.SOURCES).forEach((k, i) => { const v = M.SOURCES[k]; if (v.kind === "video") SRCX[k] = { name: v.name, secs: v.secs, color: v.color, f: (i % 6) + 1 }; });
+    const clips = [], strands = [];
+    M.PLAN.forEach(b => {
+      const strand = String(b.n).padStart(2, "0") + " · " + b.title; strands.push(strand);
+      const shots = b.shots.map(id => M.SHOTS.find(d => d.id === id)).filter(Boolean);
+      const docNote = shots.length ? " [on screen: " + shots.map(d => d.file).join(", ") + "]" : "";
+      if (b.moments.length) {
+        b.moments.forEach((id, j) => { const m = M.MOMENTS.find(x => x.id === id); const last = j === b.moments.length - 1;
+          clips.push({ id: m.id, src: m.src, ts: m.ts.replace(/^0:/, ""), dur: m.dur, tags: ["plan", "core", "exhibit", ...(shots.length && last ? ["doc"] : [])], strand, text: m.text + (last ? docNote : ""), screen: b.screen, provenance: "external", acq: (b.n === 7 || b.n === 9) ? "mission" : "verified", voAfter: last && b.vo ? { text: (b.role === "cam" ? "You, to camera — " : "Narration — ") + b.vo.replace(/^YOUR LINE — /, ""), secs: b.role === "cam" ? 12 : Math.round(b.vo.split(/\s+/).length / 2.6) } : null }); });
+      } else {
+        // a narrated or to-camera block with no exhibit: a document/title moment carrying the voice line
+        clips.push({ id: 100 + b.n, src: Object.keys(SRCX)[0], ts: "0:00", dur: shots.length ? 3 : 1, tags: ["plan", "core", b.role === "cam" ? "cam" : "doc"], strand, text: shots.length ? "[" + shots.map(d => d.text).join(" · ") + "]" : "[you, to camera]", screen: b.screen, voAfter: b.vo ? { text: (b.role === "cam" ? "You, to camera — " : "Narration — ") + b.vo.replace(/^YOUR LINE — /, ""), secs: b.role === "cam" ? 12 : Math.round(b.vo.split(/\s+/).length / 2.6) } : null });
+      }
+    });
+    const set = { SRC: SRCX, CLIPS: clips, STRANDS: strands };
+    const rules = [
+      { id: 1, kind: "keep", tag: "plan", on: true, text: M.RULES[0].text },
+      { id: 2, kind: "keep", tag: "doc", on: true, text: M.RULES[1].text, wins: true },
+      { id: 3, kind: "keep", tag: "exhibit", on: true, text: M.RULES[2].text },
+      { id: 4, kind: "order", order: "strand", on: true, text: "Run it in the plan's order — 2019, 2021, 2024." },
+      { id: 5, kind: "fx", fx: "attrib", on: true, text: M.RULES[4].text, scope: "every clip of his — 10 clips" },
+      { id: 6, kind: "fx", fx: "pictures", on: true, text: "Pictures from his footage first, then your screenshots, then the open world — never generated over a claim or its proof.", scope: "9 evidence blocks hold their own proof; 2 context blocks are cards" },
+    ];
+    const q = "?project=" + encodeURIComponent("dsp-break-from-reality");
+    const R = F.compute(rules, {}, [], {}, null, set);
+    F.saveProject(q, { title: "DSP · the break from reality", fromHome: true, runtime: F.fmt(R.secs), rules: rules.length, hand: 0, voice: R.rows.filter(r => r.voice).length, recorded: 0,
+      set, plan: { brief: "from everything tagged DSP · overlaid with your screenshots", blocks: M.PLAN.length, readKind: "THREE STREAMS · HIM, FIVE YEARS APART · YOUR SCREENSHOTS AS EVIDENCE", readHead: "Three streams, the same three subjects every time, every number down between them. His words are the explanations; your screenshots are the numbers. Built from a plan of " + M.PLAN.length + " blocks." },
+      state: { rules, struck: {}, inserts: [], recorded: {}, takes: {} } });
+    this.setState({ cutDone: true });
+    setTimeout(() => { try { window.location.href = "../Aldershot One Take.dc.html" + q; } catch (e) {} }, 350);
+  }
+  renderVals() {
+    const s = this.state, M = s.mod, out = { brief: "", sources: [], rules: [], blocks: [], bar: [], gaps: [], readMeta: "", planMeta: "", hasPeek: false };
+    if (!M) { out.brief = "Loading…"; return out; }
+    const ROLE = { exhibit: ["HIM, CLEAN", "#E06A6A"], vo: ["NARRATED", "#5EB8C9"], cam: ["YOU, TO CAMERA", "#D9B36A"] };
+    const secsOf = b => b.moments.reduce((n, id) => n + (M.MOMENTS.find(m => m.id === id) || { dur: 0 }).dur, 0) + (b.vo ? Math.round(b.vo.split(/\s+/).length / 2.6) : 0) + (b.shots.length ? 3 : 0) + (b.role === "cam" ? 12 : 0);
+    const total = M.PLAN.reduce((n, b) => n + secsOf(b), 0);
+    out.brief = M.BRIEF;
+    out.sources = Object.keys(M.SOURCES).map(k => { const v = M.SOURCES[k]; return { key: k, name: v.name, color: v.color, bg: v.color + "33", meta: v.kind === "images" ? "14 files · read by OCR" : M.fmt(v.secs) + " · " + M.MOMENTS.filter(m => m.src === k).length + " moments" }; });
+    out.readMeta = "3 streams · " + M.fmt(Object.values(M.SOURCES).reduce((n, v) => n + v.secs, 0)) + " of his footage · " + M.MOMENTS.length + " moments on the subject · 14 screenshots, 6 used";
+    out.rules = M.RULES;
+    out.planMeta = M.PLAN.length + " blocks · about " + M.fmt(total) + " · " + M.PLAN.filter(b => b.role === "exhibit").length + " of them him, clean";
+    const peek = (kind, text, meta, color) => () => this.setState({ peek: { kind, text, meta, color } });
+    out.blocks = M.PLAN.map(b => { const R = ROLE[b.role]; return {
+      n: String(b.n).padStart(2, "0"), secs: "~" + M.fmt(secsOf(b)), title: b.title, roleName: R[0], roleColor: R[1], roleBg: R[1] + "26",
+      hasVo: !!b.vo, vo: b.vo || "", voLabel: b.role === "cam" ? "YOU SAY · drafted from his words, yours to change" : "NARRATION · drafted from his words and your screenshots", voLabelColor: b.role === "cam" ? "#D9B36A" : "rgba(236,236,241,0.4)", voColor: b.role === "cam" ? "#D9B36A" : "#ECECF1",
+      hasMoments: b.moments.length > 0, moments: b.moments.map(id => { const m = M.MOMENTS.find(x => x.id === id), S = M.SOURCES[m.src]; return { tc: m.src + " " + m.ts, text: m.text, dur: M.fmt(m.dur), color: S.color, bg: "#0E0E11", onGo: peek("HE SAID · " + S.name, "“" + m.text + "”", m.src + " " + m.ts + " · " + M.fmt(m.dur) + " · thread: " + m.thread + " · third-party footage, attributed at first use", S.color) }; }),
+      screen: b.screen,
+      hasShots: b.shots.length > 0, shots: b.shots.map(id => { const d = M.SHOTS.find(x => x.id === id); return { id: d.id, text: d.text, file: d.file, date: d.date, proves: d.proves, onGo: peek("YOUR SCREENSHOT · read by OCR", d.text, d.file + " · " + d.date + " · proves " + d.proves, "#5EB8C9") }; }),
+      hasNeed: !!b.need, need: b.need || "",
+    }; });
+    out.bar = M.PLAN.map(b => ({ flex: Math.max(1, Math.round(secsOf(b) / 5)), color: ROLE[b.role][1], title: String(b.n).padStart(2, "0") + " · " + b.title }));
+    out.gaps = M.GAPS.map(g => ({ text: g.text, dot: g.kind === "record" ? "#E06A6A" : g.kind === "missing" ? "#D9B36A" : g.kind === "rights" ? "#5EB8C9" : "rgba(236,236,241,0.3)" }));
+    out.hasPeek = !!s.peek; out.peekKind = s.peek ? s.peek.kind : ""; out.peekText = s.peek ? s.peek.text : ""; out.peekMeta = s.peek ? s.peek.meta : ""; out.peekColor = s.peek ? s.peek.color : "#ECECF1";
+    out.onPeekClose = () => this.setState({ peek: null });
+    out.cutLabel = s.cutDone ? "Opening the editor…" : "Cut it →"; out.onCut = () => this.cutIt();
+    return out;
+  }
+}
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 ## What disagrees
 
-`design/docs/05-INFRA-AND-COSTS.md` §"Pricing shape this implies":
+`docs/archive/handoff-v2/05-INFRA-AND-COSTS.md` §"Pricing shape this implies":
 
 - **Free** — 60 source minutes/month
 - **Pro $39/mo** — 15 source hours

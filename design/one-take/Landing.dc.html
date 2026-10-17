@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+html, body { margin: 0; padding: 0; background: #101013; }
+* { box-sizing: border-box; }
+a { color: #ECECF1; text-decoration: none; }
+a:hover { color: rgba(236,236,241,0.7); }
+a[style*="background: rgb(236, 236, 241)"]:hover { filter: brightness(.92); color: #131316; }
+::selection { background: rgba(236,236,241,0.18); }
+html { scroll-behavior: smooth; }
+@keyframes caret { 0%,100% { opacity: 1 } 50% { opacity: 0 } }
+@keyframes blip { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+@keyframes rowIn { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <div style="border-bottom:1px solid rgba(255,255,255,0.05);position:sticky;top:0;background:rgba(16,16,19,0.86);backdrop-filter:blur(14px);z-index:5;padding:0 clamp(20px,5vw,40px)">
+    <div style="max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;height:58px">
+      <div style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></div>
+      <div style="display:flex;align-items:center;gap:clamp(14px,2.4vw,26px);font-size:13.5px">
+        <a href="#rules" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">The rules</a>
+        <a href="#archive" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">The archive</a>
+        <a href="#pricing" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Pricing</a>
+        <a href="./Aldershot Manual.dc.html" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Manual</a>
+        <a href="./Aldershot One Take.dc.html" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 clamp(20px,5vw,40px)">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(64px,10vw,110px) 0 clamp(48px,7vw,72px);text-align:center">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:rgba(236,236,241,0.55);font-family:'IBM Plex Mono',monospace">A VIDEO EDITOR WITH NO TIMELINE</div>
+      <h1 style="margin:18px auto 0;max-width:860px;font-size:clamp(34px,6vw,64px);font-weight:700;letter-spacing:-0.035em;line-height:1.04;text-wrap:balance">Say what the video should be.<br>The rules do the cutting.</h1>
+      <p style="margin:22px auto 0;max-width:600px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.6);line-height:1.6;text-wrap:pretty">Drop in footage — yours or anyone's. Aldershot reads it and asks what you want. Each answer becomes a plain-English rule you can see, switch off, or change. The cut follows the rules. Nothing is ever deleted.</p>
+      <div style="margin-top:28px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <a href="./Aldershot One Take.dc.html" style="font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
+        <a href="./Aldershot One Take.dc.html?open=1" style="font-size:14.5px;font-weight:500;padding:12px 22px;border-radius:5px;background:#1C1C22;color:rgba(236,236,241,0.85);white-space:nowrap">Open the sample cut</a>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:rgba(236,236,241,0.4)">No card. 300 processing minutes a month on the house.</div>
+
+      <div style="margin:clamp(40px,6vw,64px) auto 0;max-width:860px;text-align:left;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:6px">
+        <div style="background:#1A1A1F;border-radius:12px;padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.5);display:flex;flex-direction:column">
+          <div style="padding:14px 16px 10px;font-size:16px;line-height:1.5;color:#ECECF1;min-height:76px">{{ heroLine }}<span style="display:inline-block;width:2px;height:17px;background:#ECECF1;vertical-align:-3px;margin-left:2px;animation:caret 1s step-end infinite"></span></div>
+          <div style="margin-top:auto;display:flex;gap:10px;align-items:center;padding:10px 8px 6px 16px;border-top:1px solid rgba(255,255,255,0.05);flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px;flex:1 1 180px;min-width:0">
+              <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)"><img src="assets/frame-2.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
+              <span style="font-size:12px;color:rgba(236,236,241,0.6);font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ heroFile }}</span>
+            </div>
+            <div style="flex:none;font-size:13px;font-weight:600;padding:8px 18px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</div>
+          </div>
+        </div>
+        <div style="background:#141418;border-radius:12px;padding:14px 16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)"><span style="width:6px;height:6px;border-radius:50%;background:#5EC98F;animation:blip 1.6s ease-in-out infinite"></span>THE RULES IT WROTE</div>
+          <sc-for list="{{ heroRules }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;gap:9px;align-items:baseline;padding:8px 10px;border-radius:7px;background:#17171B;animation:rowIn .3s ease both">
+              <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">{{ r.n }}</span>
+              <span style="flex:1;font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.88);text-wrap:pretty">{{ r.text }}</span>
+              <span style="flex:none;width:22px;height:12px;border-radius:99px;background:#5EC98F;position:relative"><span style="position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;background:#101013"></span></span>
+            </div>
+          </sc-for>
+          <div style="margin-top:auto;padding-top:6px;font-size:11px;color:rgba(236,236,241,0.4);line-height:1.5;text-wrap:pretty">{{ heroEffect }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rules" style="padding:0 clamp(20px,5vw,40px);background:#0C0C0F">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,80px) 0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace">THE RULES ARE THE FILE</div>
+      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,36px);font-weight:600;letter-spacing:-0.025em;line-height:1.15;max-width:700px;text-wrap:balance">A timeline remembers where you dragged things. Rules remember why.</h2>
+      <p style="margin:14px 0 0;max-width:620px;font-size:14.5px;color:rgba(236,236,241,0.55);line-height:1.65;text-wrap:pretty">Every edit is a sentence: <em style="font-style:normal;color:#ECECF1">take out the hellos</em>, <em style="font-style:normal;color:#ECECF1">keep every claim about the numbers</em>, <em style="font-style:normal;color:#ECECF1">under three minutes</em>. The cut is what the rules produce. Change a rule and the whole cut follows; switch one off and see exactly what it was doing. The same rules, saved as a recipe, cut next week's video the way you cut this one.</p>
+
+      <div style="margin-top:36px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:8px;align-items:stretch">
+        <div style="background:#131317;border-radius:12px;padding:18px 18px 16px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE RULES · click one</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ demoMeta }}</span></div>
+          <sc-for list="{{ demoRules }}" as="r" hint-placeholder-count="4">
+            <div tabindex="0" role="button" onclick="{{ r.onToggle }}" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:{{ r.bg }};cursor:pointer;opacity:{{ r.opacity }};transition:background .12s,opacity .12s" style-hover="background:#1C1C22">
+              <span style="flex:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:#D9B36A;padding-top:2px">{{ r.n }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13.5px;line-height:1.45;text-decoration:{{ r.strike }};text-wrap:pretty">{{ r.text }}</div>
+                <div style="margin-top:2px;font-size:11.5px;color:rgba(236,236,241,0.45);line-height:1.4">{{ r.effect }}</div>
+              </div>
+              <span style="flex:none;margin-top:3px;width:26px;height:14px;border-radius:99px;background:{{ r.toggleBg }};position:relative;transition:background .12s"><span style="position:absolute;top:2px;left:{{ r.knob }};width:10px;height:10px;border-radius:50%;background:#101013;transition:left .12s"></span></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:#131317;border-radius:12px;padding:18px 18px 16px;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE CUT · follows the rules</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:#5EC98F">{{ demoRuntime }}</span></div>
+          <div style="margin-top:10px;height:6px;border-radius:3px;background:#1C1C22;overflow:hidden;display:flex;gap:1px">
+            <sc-for list="{{ demoBar }}" as="b" hint-placeholder-count="8"><span style="height:100%;flex:{{ b.flex }};background:{{ b.color }};transition:background .2s"></span></sc-for>
+          </div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ demoRows }}" as="m" hint-placeholder-count="6">
+              <div style="display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:7px;background:{{ m.bg }};opacity:{{ m.opacity }};transition:opacity .2s,background .2s">
+                <span style="flex:none;width:40px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ m.tcColor }}">{{ m.tc }}</span>
+                <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.45;color:{{ m.color }};text-decoration:{{ m.deco }};text-wrap:pretty">{{ m.text }}</span>
+                <span style="flex:none;font-size:10.5px;color:rgba(236,236,241,0.4);white-space:nowrap">{{ m.why }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:auto;padding-top:12px;font-size:11.5px;color:rgba(236,236,241,0.45);line-height:1.5;text-wrap:pretty">Left-out moments are kept, with the rule that removed them as the reason. Nothing is deleted.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 clamp(20px,5vw,40px)">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,80px) 0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace">ONE CONVERSATION · FOUR THINGS OUT</div>
+      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,36px);font-weight:600;letter-spacing:-0.025em;line-height:1.15;max-width:640px;text-wrap:balance">It asks one question, recommends an answer, and gets on with it.</h2>
+      <div style="margin-top:32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:8px">
+        <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="4">
+          <div style="padding:22px 20px;border-radius:11px;background:#17171B;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:9px"><span style="width:7px;height:7px;border-radius:2px;background:{{ j.color }};flex:none"></span><span style="font-size:15.5px;font-weight:600">{{ j.name }}</span></div>
+            <div style="font-size:13px;color:rgba(236,236,241,0.55);line-height:1.6;flex:1;text-wrap:pretty">{{ j.body }}</div>
+            <div style="font-size:12px;color:{{ j.color }};font-family:'IBM Plex Mono',monospace;line-height:1.5">“{{ j.example }}”</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:20px;padding:16px 18px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.18);font-size:13.5px;color:rgba(236,236,241,0.65);line-height:1.6;text-wrap:pretty">Every decision it makes is one line in the conversation, with Undo. Set it to <span style="color:#ECECF1">Ask</span> and it checks before anything consequential; <span style="color:#ECECF1">Recommend</span> and it asks at most once; <span style="color:#ECECF1">Auto</span> and it decides, then tells you what it decided.</div>
+    </div>
+  </div>
+
+  <div id="archive" style="padding:0 clamp(20px,5vw,40px);background:#0C0C0F">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,80px) 0">
+      <div style="display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap">
+        <div style="flex:1 1 320px;min-width:min(300px,100%)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:#5EB8C9;font-family:'IBM Plex Mono',monospace">THE ARCHIVE DIRECTS THE NEXT ONE</div>
+          <h2 style="margin:12px 0 0;font-size:clamp(22px,3vw,32px);font-weight:600;letter-spacing:-0.025em;line-height:1.15;text-wrap:balance">Everything it reads, it keeps — as moments, sorted by what was said.</h2>
+          <p style="margin:14px 0 0;font-size:14.5px;color:rgba(236,236,241,0.55);line-height:1.65;text-wrap:pretty">Footage is read once and broken into moments, each tagged by thread. Months later, ask for <em style="font-style:normal;color:#ECECF1">every time he contradicts himself</em> and it hands back the moments across every video you've fed it — the reason each one matched, never a score. That's how a clip becomes a supercut, and a supercut becomes an essay. And it's why a sentence like <em style="font-style:normal;color:#ECECF1">keep every claim about the numbers</em> can be a rule at all.</p>
+        </div>
+        <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:18px">
+          <div style="display:flex;align-items:center;gap:8px;background:#101014;border-radius:7px;padding:9px 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(236,236,241,0.4)" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><span style="font-size:12.5px;color:rgba(236,236,241,0.8)">when someone admits the plan changed</span></div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ hits }}" as="ht" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#101014">
+                <span style="flex:none;width:16px;height:16px;border-radius:4px;background:{{ ht.bg }};color:{{ ht.color }};font-size:9.5px;font-weight:600;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:center">{{ ht.src }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;color:rgba(236,236,241,0.85);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ht.text }}</div>
+                  <div style="margin-top:2px;font-size:11px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ht.why }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace">3 moments · 3 videos · by meaning</div>
+        </div>
+      </div>
+
+      <div style="margin-top:clamp(40px,6vw,64px);display:flex;gap:clamp(20px,4vw,44px);align-items:center;flex-wrap:wrap-reverse">
+        <div style="flex:1 1 340px;min-width:min(320px,100%);background:#17171B;border-radius:11px;padding:18px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#101014">
+            <img src="assets/frame-1.png" alt="" style="width:52px;aspect-ratio:16/9;border-radius:4px;object-fit:cover;flex:none"/>
+            <span style="font-size:12.5px;color:rgba(236,236,241,0.8);flex:1;min-width:0;line-height:1.4">“By 2030 nobody will own a car in this city.”</span>
+            <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">0:18</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.3)">
+            <span style="flex:none;width:8px;height:8px;border-radius:50%;background:#E06A6A;animation:blip 1.2s ease-in-out infinite"></span>
+            <span style="font-size:12.5px;color:rgba(236,236,241,0.8);flex:1;line-height:1.4">Your take — on camera or voice only. Every take is kept.</span>
+            <span style="flex:none;font-size:10.5px;font-weight:600;color:#E06A6A;font-family:'IBM Plex Mono',monospace">REC</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:#101014">
+            <img src="assets/frame-4.png" alt="" style="width:52px;aspect-ratio:16/9;border-radius:4px;object-fit:cover;flex:none"/>
+            <span style="font-size:12.5px;color:rgba(236,236,241,0.8);flex:1;min-width:0;line-height:1.4">“The data says the opposite of what he just said.”</span>
+            <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">0:41</span>
+          </div>
+        </div>
+        <div style="flex:1 1 320px;min-width:min(300px,100%)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:#E06A6A;font-family:'IBM Plex Mono',monospace">YOUR VOICE, WHERE IT'S NEEDED</div>
+          <h2 style="margin:12px 0 0;font-size:clamp(22px,3vw,32px);font-weight:600;letter-spacing:-0.025em;line-height:1.15;text-wrap:balance">It leaves the room for you to talk.</h2>
+          <p style="margin:14px 0 0;font-size:14.5px;color:rgba(236,236,241,0.55);line-height:1.65;text-wrap:pretty">Reacting, narrating, bridging two moments — the cut shows where your voice goes and what's on either side of it. Record one line at a time with a three-second count-in; every take is kept, so you can change your mind later. No screen capture, no syncing, no OBS.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 clamp(20px,5vw,40px)">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,80px) 0;text-align:center">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:#5EC98F;font-family:'IBM Plex Mono',monospace">BEFORE YOU POST</div>
+      <h2 style="margin:14px auto 0;font-size:clamp(24px,3.4vw,36px);font-weight:600;letter-spacing:-0.025em;max-width:600px;line-height:1.15;text-wrap:balance">It checks the things that get videos taken down.</h2>
+      <p style="margin:14px auto 0;max-width:560px;font-size:14.5px;color:rgba(236,236,241,0.55);line-height:1.65;text-wrap:pretty">Third-party clips, music underneath, faces, anything generated, missing attributions — each one named, each with a one-press fix and a recommendation. A provenance record goes on every export, listing every source and every edit.</p>
+      <div style="margin:32px auto 0;max-width:640px;text-align:left;display:flex;flex-direction:column;gap:5px">
+        <sc-for list="{{ checks }}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+            <span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ c.dot }};transform:translateY(-1px)"></span>
+            <span style="flex:1 1 220px;min-width:0;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.85);text-wrap:pretty">{{ c.text }}</span>
+            <span style="flex:none;font-size:11.5px;font-weight:500;padding:4px 10px;border-radius:4px;background:{{ c.fixBg }};color:{{ c.fixColor }};white-space:nowrap">{{ c.fix }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div id="pricing" style="padding:0 clamp(20px,5vw,40px);background:#0C0C0F">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,80px) 0">
+      <div style="text-align:center">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.08em;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace">PRICING</div>
+        <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,36px);font-weight:600;letter-spacing:-0.025em">Pay for the minutes it reads. Editing is free.</h2>
+        <p style="margin:12px auto 0;max-width:480px;font-size:14.5px;color:rgba(236,236,241,0.55);line-height:1.6;text-wrap:pretty">Footage costs its length to read, once. After that, every cut, re-cut, short and search from it costs nothing. Storage is permanent on every plan.</p>
+      </div>
+      <div style="margin-top:36px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:10px;max-width:720px;margin-left:auto;margin-right:auto">
+        <div style="padding:26px 24px;border-radius:12px;background:#131317">
+          <div style="font-size:15.5px;font-weight:600">Free</div>
+          <div style="margin-top:10px;font-size:32px;font-weight:700;letter-spacing:-0.03em">$0</div>
+          <div style="font-size:12.5px;color:rgba(236,236,241,0.45);margin-top:3px">forever</div>
+          <div style="margin-top:18px;display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ freeFeats }}" as="f" hint-placeholder-count="4">
+              <div style="display:flex;gap:9px;align-items:baseline"><span style="color:#5EC98F;font-size:12px;flex:none">✓</span><span style="font-size:13px;color:rgba(236,236,241,0.7);line-height:1.5">{{ f }}</span></div>
+            </sc-for>
+          </div>
+          <a href="./Aldershot One Take.dc.html" style="display:block;text-align:center;margin-top:22px;font-size:13.5px;font-weight:600;padding:11px;border-radius:5px;background:#232329;color:#ECECF1;white-space:nowrap">Start free</a>
+        </div>
+        <div style="padding:26px 24px;border-radius:12px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.22)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:15.5px;font-weight:600">Studio</span><span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:4px;background:rgba(217,179,106,0.16);color:#D9B36A;white-space:nowrap">MOST GET THIS</span></div>
+          <div style="margin-top:10px;font-size:32px;font-weight:700;letter-spacing:-0.03em">$29</div>
+          <div style="font-size:12.5px;color:rgba(236,236,241,0.45);margin-top:3px">a month</div>
+          <div style="margin-top:18px;display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ proFeats }}" as="f" hint-placeholder-count="5">
+              <div style="display:flex;gap:9px;align-items:baseline"><span style="color:#5EC98F;font-size:12px;flex:none">✓</span><span style="font-size:13px;color:rgba(236,236,241,0.7);line-height:1.5">{{ f }}</span></div>
+            </sc-for>
+          </div>
+          <a href="./Aldershot One Take.dc.html" style="display:block;text-align:center;margin-top:22px;font-size:13.5px;font-weight:600;padding:11px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start with Studio</a>
+        </div>
+      </div>
+      <div style="margin-top:16px;text-align:center;font-size:12px;color:rgba(236,236,241,0.4)">Need more room? Storage add-ons, or point sources at a bucket you own.</div>
+    </div>
+  </div>
+
+  <div style="padding:0 clamp(20px,5vw,40px)">
+    <div style="max-width:680px;margin:0 auto;padding:clamp(48px,7vw,72px) 0">
+      <h2 style="font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-0.02em;text-align:center">Fair questions.</h2>
+      <div style="margin-top:26px;display:flex;flex-direction:column;gap:6px">
+        <sc-for list="{{ faq }}" as="q" hint-placeholder-count="5">
+          <div style="border-radius:10px;background:#17171B;overflow:hidden">
+            <div tabindex="0" role="button" onclick="{{ q.onToggle }}" style="display:flex;align-items:center;gap:12px;padding:16px 18px;cursor:pointer" style-hover="background:#1A1A20">
+              <span style="flex:1;font-size:14px;font-weight:500">{{ q.q }}</span>
+              <span style="flex:none;font-size:15px;color:rgba(236,236,241,0.4)">{{ q.mark }}</span>
+            </div>
+            <sc-if value="{{ q.open }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:0 18px 16px;font-size:13.5px;color:rgba(236,236,241,0.6);line-height:1.65;text-wrap:pretty">{{ q.a }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:0 clamp(20px,5vw,40px);background:#0C0C0F">
+    <div style="max-width:1080px;margin:0 auto;padding:clamp(56px,8vw,90px) 0;text-align:center">
+      <h2 style="margin:0 auto;font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-0.03em;max-width:640px;line-height:1.1;text-wrap:balance">The footage is sitting there. Say what it should be.</h2>
+      <div style="margin-top:26px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <a href="./Aldershot One Take.dc.html" style="font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
+        <a href="./Aldershot Manual.dc.html" style="font-size:14.5px;font-weight:500;padding:12px 22px;border-radius:5px;background:#1C1C22;color:rgba(236,236,241,0.85);white-space:nowrap">Read how it works</a>
+      </div>
+      <div style="margin-top:52px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px;color:rgba(236,236,241,0.4)">
+        <span style="display:flex;align-items:baseline;gap:4px;font-weight:600;color:rgba(236,236,241,0.55)">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2px;transform:translateY(-1px)"><span style="width:4.5px;height:10px;background:rgba(217,179,106,0.85);border-radius:2px"></span><span style="width:4.5px;height:10px;background:rgba(217,179,106,0.45);border-radius:2px"></span><span style="width:4.5px;height:10px;background:rgba(217,179,106,0.2);border-radius:2px"></span></span></span>
+        <span>Cuts · Shorts · Reactions · Essays</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900}}">
+const HERO = [
+  { line: "Tighten this down to the argument. Lose the hellos. Under three minutes.", file: "committee_14_may_full.mp4 · 2:50:12", rules: ["Take out the procedure — apologies, item numbers, the recess.", "Keep every claim about the numbers, and who made it.", "Keep it under three minutes."], effect: "2:50:12 → 2:48 · 9 of 31 moments · the vote stays — it's protected by rule 02" },
+  { line: "Six shorts from the strongest moments. Hooks in the first two seconds. Nothing about money.", file: "kino_casino_372.mp4 · 3:04:00", rules: ["Hook in the first 2 seconds.", "Nothing about money.", "Make the best 6."], effect: "14 candidates → 6 · 3 came off for slow openers, 2 for the money rule — each says so" },
+  { line: "React to the big claims in this keynote. Leave me room to talk after each one.", file: "keynote_2026.mp4 · 48:10", rules: ["Keep every claim about the future.", "Leave me fifteen seconds to camera after each one.", "Run it as it happened."], effect: "7 claims found · 7 slots for you · record one line at a time, every take kept" },
+  { line: "An essay on why every city ripped out its trams — start from what I've already kept.", file: "your archive · 41 moments · 6 videos", rules: ["Open on the sharpest line.", "Show the source on screen whenever I quote one.", "One thread at a time."], effect: "5 acts drafted from 23 of your moments · 4 beats need footage you don't have yet — it says which" },
+];
+const DEMO = [
+  { tc: "0:00", dur: 140, text: "Good evening. Item one, apologies for absence. Item two, declarations of interest.", tag: "procedure" },
+  { tc: "18:40", dur: 58, text: "Forty-two units, of which twelve would be affordable. That's 28 per cent against a policy requirement of 35.", tag: "claim" },
+  { tc: "31:12", dur: 72, text: "The light study was done in June. Come and stand in my kitchen in December.", tag: "public" },
+  { tc: "44:05", dur: 49, text: "At 35 per cent affordable the scheme does not come forward. That isn't a threat, it's arithmetic.", tag: "claim" },
+  { tc: "1:04:10", dur: 64, text: "We've approved four schemes on the promise of affordable units that were renegotiated away within a year.", tag: "strong" },
+  { tc: "1:40:00", dur: 600, text: "[recess — ten minutes, camera running]", tag: "procedure" },
+  { tc: "2:11:30", dur: 55, text: "We're being asked to choose between twelve affordable homes and no homes. I don't accept those are the only options.", tag: "strong" },
+  { tc: "2:38:15", dur: 90, text: "Those in favour. Six. Against. Five. The application is approved.", tag: "vote" },
+];
+const RULES = [
+  { id: 1, kind: "drop", tag: "procedure", text: "Take out the procedure — apologies, item numbers, the recess.", effectOn: n => "takes out " + n + " — including the ten-minute recess" },
+  { id: 2, kind: "keep", tag: "claim", text: "Keep every claim about the numbers, and who made it.", effectOn: n => "protects " + n + " — a cap can't touch them" },
+  { id: 3, kind: "keepOne", tag: "vote", text: "End on the vote.", effectOn: () => "the last word is 2:38:15" },
+  { id: 4, kind: "cap", secs: 240, text: "Keep it under four minutes.", effectOn: () => "drops the longest unprotected moments until it fits" },
+];
+const fmt = n => Math.floor(n / 60) + ":" + String(Math.round(n) % 60).padStart(2, "0");
+class Component extends DCLogic {
+  state = { heroI: 0, heroChars: 0, faqOpen: 0, off: {} };
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      const line = HERO[this.state.heroI].line;
+      if (this.state.heroChars < line.length) this.setState(s => ({ heroChars: Math.min(line.length, s.heroChars + 2) }));
+      else { this.hold = (this.hold || 0) + 1; if (this.hold > 70) { this.hold = 0; this.setState(s => ({ heroI: (s.heroI + 1) % HERO.length, heroChars: 0 })); } }
+    }, 42);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const s = this.state, h = HERO[s.heroI], typed = s.heroChars >= h.line.length;
+    const nShow = typed ? 3 : Math.min(3, Math.floor(s.heroChars / (h.line.length / 3)));
+    const on = RULES.filter(r => !s.off[r.id]);
+    const drop = on.find(r => r.kind === "drop"), keep = on.find(r => r.kind === "keep"), vote = on.find(r => r.kind === "keepOne"), cap = on.find(r => r.kind === "cap");
+    let rows = DEMO.map(m => ({ m, out: null }));
+    rows.forEach(r => { if (drop && r.m.tag === drop.tag) r.out = "rule 01"; });
+    let secs = rows.filter(r => !r.out).reduce((n, r) => n + r.m.dur, 0);
+    if (cap && secs > cap.secs) {
+      const victims = rows.filter(r => !r.out && !(keep && r.m.tag === keep.tag) && !(vote && r.m.tag === vote.tag)).sort((a, b) => b.m.dur - a.m.dur);
+      for (const v of victims) { if (secs <= cap.secs) break; v.out = "over the cap"; secs -= v.m.dur; }
+    }
+    const kept = rows.filter(r => !r.out);
+    return {
+      heroLine: h.line.slice(0, s.heroChars), heroFile: h.file,
+      heroRules: h.rules.slice(0, nShow).map((text, i) => ({ n: String(i + 1).padStart(2, "0"), text })),
+      heroEffect: typed ? h.effect : "",
+      demoRules: RULES.map((r, i) => { const o = !!s.off[r.id], n = DEMO.filter(m => m.tag === r.tag).length; return { n: String(i + 1).padStart(2, "0"), text: r.text, effect: o ? "off — switch it back on to see what it was doing" : r.effectOn(n), bg: o ? "#101014" : "#17171B", opacity: o ? "0.6" : "1", strike: o ? "line-through" : "none", toggleBg: o ? "#2A2A31" : "#5EC98F", knob: o ? "2px" : "14px", onToggle: () => this.setState({ off: { ...s.off, [r.id]: !o } }) }; }),
+      demoMeta: on.length + " of 4 on",
+      demoRuntime: fmt(secs) + " from 2:50:12",
+      demoBar: rows.map(r => ({ flex: Math.max(1, Math.round(r.m.dur / 20)), color: r.out ? "#232329" : r.m.tag === "vote" ? "#D9B36A" : "#5EC98F" })),
+      demoRows: rows.map(r => ({ tc: r.m.tc, text: r.m.text, why: r.out ? "out · " + r.out : (keep && r.m.tag === keep.tag ? "protected" : ""), bg: r.out ? "transparent" : "#17171B", opacity: r.out ? "0.5" : "1", color: r.out ? "rgba(236,236,241,0.5)" : "rgba(236,236,241,0.88)", deco: r.out ? "line-through" : "none", tcColor: r.out ? "rgba(236,236,241,0.3)" : "#D9B36A" })),
+      jobs: [
+        { name: "Cuts", color: "#5EC98F", body: "Three hours becomes four minutes, by rules you can read. It cuts first and says exactly what went; you fix anything by changing a rule or striking a line.", example: "tighten this down to the argument — lose the procedure" },
+        { name: "Shorts", color: "#5EB8C9", body: "Moments that stand on their own, ranked with a reason — Strong, Worth a look, Long shot — never a score. Paste a client brief and it compiles into rules.", example: "six shorts, hooks in the first two seconds, nothing about money" },
+        { name: "Reactions", color: "#E06A6A", body: "It finds what's worth answering in someone else's video and leaves a slot for you after each one. Clip and reaction stay together.", example: "react to the big claims — leave me room after each" },
+        { name: "Essays", color: "#B08CD4", body: "Built beat by beat from what you've kept: an outline, the moments that back each point, your voice between them, the sources on screen when you quote them.", example: "an essay on why every city ripped out its trams" },
+        { name: "Stories", color: "#ECECF1", body: "What happened, in order. Organised by time instead of by claim — the stakes before the turn, the day on screen at each change. The more dated footage you keep, the more it can tell.", example: "the story of the move, as it happened" },
+        { name: "Supercuts", color: "#ECECF1", body: "Every time he says it, strung together. Searched by what was said, not by what you named the file — the archive turned straight into a video, with a count on screen.", example: "every time he blames chat" },
+      ],
+      hits: [
+        { src: "K", bg: "rgba(94,201,143,0.2)", color: "#5EC98F", text: "“Fine — yes, we moved the launch before the review came in.”", why: "Keynote · 31:40 · an admission, said plainly" },
+        { src: "P", bg: "rgba(94,184,201,0.2)", color: "#5EB8C9", text: "“The roadmap slide was aspirational. Very aspirational.”", why: "Podcast 141 · 18:12 · the plan, walked back" },
+        { src: "Q", bg: "rgba(176,140,212,0.2)", color: "#B08CD4", text: "“We script the ‘unscripted’ Q&A. Everyone does.”", why: "Q&A stream · 1:02:30 · the same move, confessed" },
+      ],
+      checks: [
+        { dot: "#D9B36A", text: "Two clips are someone else's footage — 48s and 55s, with their original audio.", fix: "Attribute at first use (Recommended)", fixBg: "rgba(236,236,241,0.14)", fixColor: "#ECECF1" },
+        { dot: "#D9B36A", text: "Music under 11:48–19:30 — the car radio. Platforms tend to claim it.", fix: "Duck it (Recommended)", fixBg: "rgba(236,236,241,0.14)", fixColor: "#ECECF1" },
+        { dot: "#5EC98F", text: "Nothing generated. Every frame is footage someone shot.", fix: "Nothing to do", fixBg: "#1F1F26", fixColor: "rgba(236,236,241,0.55)" },
+        { dot: "#5EC98F", text: "A provenance record goes on the export — every source, every edit.", fix: "Always on", fixBg: "#1F1F26", fixColor: "rgba(236,236,241,0.55)" },
+      ],
+      freeFeats: ["300 processing minutes a month", "25 GB of permanent storage", "Cuts, shorts, reactions, essays — all of it", "Rules, recipes, and the archive"],
+      proFeats: ["7 footage-hours a month — read once, edit free", "100 GB of permanent storage, add-ons beyond", "Overnight queue — it works while you sleep", "4K renders", "Bring your own storage bucket"],
+      faq: [
+        { q: "Do I need to know how to edit?", a: "If you can say what you want, you can cut. There's no timeline to learn: one room shows the rules on the left, the cut they produce in the middle, and the player on the right. The first pass is already done when you arrive; you change a rule, strike a line, or record a take." },
+        { q: "What's a rule, exactly?", a: "A plain sentence the system turns into an instruction it can show you the effect of — “take out the hellos”, “keep every definition in full”, “under four minutes”. Switch one off and the cut updates and tells you what that rule was doing. Save a set as a recipe and the next video starts from it." },
+        { q: "Whose footage can I use?", a: "Yours, and anything you have the right to work with — your recordings, streams, podcasts, or material you're commenting on within fair use. Before you post, it flags third-party clips, music and faces, each with a fix. What you upload is yours; we never train on it." },
+        { q: "What's a processing minute?", a: "A minute spent reading footage into moments, or rendering a finished piece. A one-hour video costs roughly its length to read, once. After that, cutting, re-cutting, shorts and search from it are free." },
+        { q: "What happens to my footage?", a: "Nothing expires, ever. Every moment it reads stays in your archive, searchable by what was said. Left-out moments are kept with the rule that removed them. Deleted items wait thirty days. You can also point sources at a bucket you own." },
+        { q: "Can it post for me?", a: "It hands off instead of posting: download the file, or set a webhook and every finished piece POSTs to it — Zapier, Make, n8n, or your own endpoint. We'd rather do handoff honestly than fake a publish button." },
+      ].map((f, i) => ({ ...f, open: s.faqOpen === i, mark: s.faqOpen === i ? "−" : "+", onToggle: () => this.setState(st => ({ faqOpen: st.faqOpen === i ? -1 : i })) })),
+    };
+  }
+}
+</script>
+</body>
+</html>

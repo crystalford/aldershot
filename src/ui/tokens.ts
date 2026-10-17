@@ -1,11 +1,11 @@
 /**
  * Design tokens — lifted verbatim from design/Aldershot.dc.html and cross-checked
- * against design/docs/02-DESIGN-SYSTEM.md.
+ * against docs/archive/handoff-v2/02-DESIGN-SYSTEM.md.
  *
  * These are COPIED VALUES, not a derived palette. The previous build of this
  * product failed review because dozens of small substitutions (a rounded font
  * size, a near-miss grey, a library's icon set) accumulated into a different
- * product. See design/docs/PROMPTING-NOTES.md.
+ * product. See docs/archive/handoff-v2/PROMPTING-NOTES.md.
  *
  * Rule: if a hex code or px value appears in the built app, it must be
  * greppable back to the prototype. scripts/check-tokens.sh enforces that no

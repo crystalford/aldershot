@@ -4,7 +4,7 @@
  * Deliberately small: the design's interactions are simple enough that
  * hydration islands are plenty (07-CLAUDE-CODE-BRIEF.md §Stack). No framework.
  *
- * The keyboard map is from design/docs/10-ROUTES-AND-KEYS.md. Two rules from
+ * The keyboard map is from docs/archive/handoff-v2/10-ROUTES-AND-KEYS.md. Two rules from
  * that doc are load-bearing and easy to get wrong:
  *   1. Keyboard actions and their mouse equivalents must route through the
  *      SAME undo-wrapped handler, or ⌘Z reverts only half of them.

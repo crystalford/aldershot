@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column">
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">LABS</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Footage sets · four kinds of footage through the same rules · what each one demands</span>
+    <a href="Essay to video.dc.html" style="flex:none;font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Essay → video</a>
+  </div>
+
+  <div style="flex:1;display:flex;justify-content:center;padding:0 clamp(16px,4vw,40px) 120px">
+    <div style="width:min(1180px,100%)">
+      <div style="padding-top:36px;display:flex;gap:6px;flex-wrap:wrap">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <div tabindex="0" role="button" onclick="{{ t.onGo }}" style="flex:1 1 200px;min-width:min(200px,100%);padding:12px 14px;border-radius:9px;background:{{ t.bg }};box-shadow:{{ t.ring }};cursor:pointer;transition:background .12s" style-hover="background:#18181E">
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:{{ t.dot }}"></span><span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.name }}</span></div>
+            <div style="margin-top:4px;font-size:11.5px;color:rgba(236,236,241,0.5);line-height:1.45;text-wrap:pretty">{{ t.kind }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:28px;align-items:start">
+        <div>
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE READ</div>
+          <div style="margin-top:8px;font-size:17px;font-weight:500;line-height:1.5;letter-spacing:-0.012em;text-wrap:pretty">{{ read }}</div>
+          <div style="margin-top:6px;font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ readMeta }}</div>
+
+          <div style="margin-top:22px;display:flex;align-items:center;gap:8px"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">IT NOTICED</span><span style="font-size:11px;color:rgba(236,236,241,0.35)">one line each, the fix after the arrow</span></div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ noticed }}" as="n" hint-placeholder-count="3">
+              <div style="display:flex;gap:9px;align-items:baseline;padding:9px 11px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)"><span style="flex:none;width:6px;height:6px;border-radius:99px;background:#D9B36A;transform:translateY(-1px)"></span><span style="font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.8);text-wrap:pretty">{{ n }}</span></div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:22px;display:flex;align-items:center;gap:8px"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE RULES</span><span style="font-size:11px;color:rgba(236,236,241,0.35)">click to switch off · the cut updates</span></div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+              <div tabindex="0" role="button" onclick="{{ r.onToggle }}" style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:{{ r.bg }};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);cursor:pointer;opacity:{{ r.opacity }}">
+                <span style="flex:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:#D9B36A;padding-top:2px">{{ r.n }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;line-height:1.5;text-decoration:{{ r.strike }};text-wrap:pretty">{{ r.text }}</div>
+                  <div style="margin-top:2px;font-size:11.5px;line-height:1.45;color:{{ r.effectColor }};text-wrap:pretty">{{ r.effect }}</div>
+                </div>
+                <span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:{{ r.kindBg }};color:{{ r.kindColor }};white-space:nowrap">{{ r.kindName }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:22px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#D9B36A">WHAT THIS SET DEMANDS OF THE PRODUCT</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ demands }}" as="d" hint-placeholder-count="4">
+              <div style="display:flex;gap:10px;align-items:baseline"><span style="flex:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">{{ d.n }}</span><span style="font-size:13px;line-height:1.55;color:rgba(236,236,241,0.8);text-wrap:pretty">{{ d.text }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE CUT</span>
+            <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5)">{{ cutMeta }}</span>
+          </div>
+          <div style="margin-top:8px;height:6px;border-radius:3px;background:#17171B;overflow:hidden;display:flex;gap:1px">
+            <sc-for list="{{ bar }}" as="b" hint-placeholder-count="6"><span style="height:100%;flex:{{ b.flex }};background:{{ b.color }}"></span></sc-for>
+          </div>
+          <div style="margin-top:4px;font-size:11px;color:rgba(236,236,241,0.4)">{{ barNote }}</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ rows }}" as="m" hint-placeholder-count="6">
+              <div style="display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <div style="flex:none;width:52px">
+                  <div style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ m.srcColor }}">{{ m.tc }}</div>
+                  <div style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">{{ m.dur }}</div>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <sc-if value="{{ m.hasSpeaker }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.5);margin-bottom:3px">{{ m.speaker }}</div></sc-if>
+                  <div style="font-size:13px;line-height:1.5;color:rgba(236,236,241,0.88);text-wrap:pretty">{{ m.text }}</div>
+                  <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">
+                    <sc-for list="{{ m.tags }}" as="t" hint-placeholder-count="2"><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:{{ t.bg }};color:{{ t.color }};white-space:nowrap">{{ t.name }}</span></sc-for>
+                    <sc-if value="{{ m.hasSlide }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(176,140,212,0.16);color:#B08CD4;white-space:nowrap">{{ m.slide }}</span></sc-if>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:22px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">LEFT OUT</span>
+            <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5)">{{ outMeta }}</span>
+          </div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ outs }}" as="o" hint-placeholder-count="3">
+              <div style="display:flex;gap:11px;align-items:baseline;padding:8px 12px;border-radius:7px;background:#0E0E11">
+                <span style="flex:none;width:52px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.35)">{{ o.tc }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ o.text }}</div>
+                  <div style="margin-top:2px;font-size:11px;color:rgba(236,236,241,0.4);text-wrap:pretty">{{ o.why }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:56px;padding:18px 20px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">ACROSS ALL FOUR · what the product is missing</div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:14px 28px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.75)">
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Speakers.</span> Three of four sets have more than one voice. Moments need a speaker; rules need to name them (“everything Cllr Okafor said”); the cut needs on-screen names. Today there is no speaker anywhere.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Rules that protect, not cut.</span> “Keep every claim and who made it”, “keep every definition in full”, “keep the clip with the reaction” — three new rule kinds (<em style="font-style:normal;color:#D9B36A">keep in full</em>, <em style="font-style:normal;color:#D9B36A">pair</em>, <em style="font-style:normal;color:#D9B36A">label</em>) that the engine must honour before a cap or a drop.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">The Read leads with the number that matters.</span> “11 minutes of 184 are about the subject.” “Six to five.” “108 to 20.” It's a different first sentence for each kind, and only the vlog's is about themes.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Sources that aren't video.</span> Slides with pages, a planning document with figures. Both are Documents; both want a page-to-time map; both make the Document block a product feature, not an essay feature.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Third-party footage up front.</span> For react, Before-you-post isn't the last step — it's the Read. Which clips are someone else's, how long, attributed where.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Chapters.</span> Long single-source footage wants chapters with titles more than shorts. Shorts mode's sibling.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { pick: "council", off: {}, mod: null };
+  componentDidMount() { import("./samples.js").then(m => this.setState({ mod: m })).catch(e => console.error("samples.js failed", e)); }
+  renderVals() {
+    const s = this.state, M = s.mod, out = {};
+    const KIND = { drop: ["CUTS", "#E06A6A"], keep: ["PROTECTS", "#5EC98F"], order: ["ORDERS", "#5EB8C9"], gap: ["MAKES ROOM", "#D9B36A"], cap: ["LIMITS", "#E06A6A"], label: ["LABELS", "#B08CD4"], pair: ["PAIRS", "#5EC98F"], slide: ["SHOWS", "#B08CD4"] };
+    const tagColor = t => ({ core: "#5EC98F", strong: "#5EC98F", resolve: "#D9B36A", claim: "#5EB8C9", def: "#5EB8C9", thirdparty: "#E06A6A", crosstalk: "#E06A6A", dead: "#8E8E9A", procedure: "#8E8E9A", chat: "#8E8E9A", admin: "#8E8E9A", tangent: "#8E8E9A", hedge: "#8E8E9A", public: "#B08CD4", question: "#B08CD4", example: "#D9B36A" })[t] || "#8E8E9A";
+    if (!M) { out.tabs = []; out.rules = []; out.rows = []; out.outs = []; out.noticed = []; out.demands = []; out.bar = []; out.read = "Loading the sets…"; return out; }
+    const S = M.SAMPLES, cur = S[s.pick];
+    const colorOf = smp => Object.values(smp.sources)[0].color;
+    out.tabs = Object.keys(S).map(k => ({ name: S[k].name, kind: S[k].kind, dot: colorOf(S[k]), bg: k === s.pick ? "#17171B" : "#141418", ring: k === s.pick ? "inset 0 0 0 1.5px " + colorOf(S[k]) : "inset 0 0 0 1px rgba(255,255,255,0.06)", onGo: () => this.setState({ pick: k, off: {} }) }));
+    const rules = cur.rules.map(r => ({ ...r, on: r.on && !s.off[r.id] }));
+    const R = M.compute(cur, rules), all = M.compute(cur, cur.rules.map(r => ({ ...r, on: false })));
+    const total = cur.moments.reduce((n, c) => n + c.dur, 0), srcSecs = Object.values(cur.sources).reduce((n, x) => n + x.secs, 0);
+    out.read = cur.read;
+    out.readMeta = cur.kind + " · " + M.fmt(srcSecs) + " of footage · " + cur.moments.length + " moments found · voice: " + cur.who;
+    out.noticed = cur.noticed;
+    out.rules = rules.map((r, i) => { const K = KIND[r.kind] || ["RULE", "#ECECF1"]; const without = M.compute(cur, rules.map(x => x.id === r.id ? { ...x, on: false } : x)); const d = R.rows.length - without.rows.length;
+      let effect = r.on ? (r.kind === "drop" ? (d < 0 ? "takes out " + (-d) : "takes out nothing here") : r.kind === "keep" ? ("protects " + cur.moments.filter(c => c.tags.indexOf(r.tag) >= 0).length + " — a cap or a drop can't touch them") : r.kind === "order" ? ("runs it " + M.ORDERS[r.order]) : r.kind === "cap" ? (R.secs > r.secs ? "over — " + M.fmt(R.secs) + " for a " + M.fmt(r.secs) + " cap" : "holds it at " + M.fmt(R.secs) + " of " + M.fmt(r.secs)) : r.kind === "gap" ? "adds a to-camera slot after each thread" : r.kind === "pair" ? "clip and reaction move as one — the engine doesn't do this yet" : r.kind === "label" ? "names appear on screen — the engine doesn't do this yet" : r.kind === "slide" ? "the slide follows your voice — the engine doesn't do this yet" : "") : "off";
+      const unsupported = ["pair", "label", "slide"].indexOf(r.kind) >= 0;
+      return { n: String(i + 1).padStart(2, "0"), text: r.text, effect, effectColor: unsupported && r.on ? "#D9B36A" : "rgba(236,236,241,0.45)", bg: r.on ? "#141418" : "#0E0E11", opacity: r.on ? "1" : "0.6", strike: r.on ? "none" : "line-through", kindName: K[0], kindBg: K[1] + "26", kindColor: K[1], onToggle: () => this.setState({ off: { ...s.off, [r.id]: !s.off[r.id] } }) }; });
+    out.demands = cur.demands.map((d, i) => ({ n: String(i + 1).padStart(2, "0"), text: d }));
+    out.cutMeta = M.fmt(R.secs) + " from " + M.fmt(total) + " of moments · " + R.rows.length + " of " + cur.moments.length + " · " + M.ORDERS[R.order];
+    out.bar = cur.moments.map(c => ({ flex: Math.max(1, Math.round(c.dur / 10)), color: R.rows.indexOf(c) >= 0 ? (c.tags.indexOf("thirdparty") >= 0 ? "#E06A6A" : colorOf(cur)) : "#232329" }));
+    out.barNote = "Every moment at its real length · lit = in the cut" + (R.rows.some(c => c.tags.indexOf("thirdparty") >= 0) ? " · red = someone else's footage" : "");
+    const row = c => ({ tc: c.src + " " + c.ts, dur: M.fmt(c.dur), srcColor: cur.sources[c.src].color, text: c.text, hasSpeaker: !!c.speaker, speaker: c.speaker || "", hasSlide: !!c.slide, slide: c.slide ? "slide " + c.slide : "", tags: c.tags.map(t => ({ name: cur.tagNames[t] || t, bg: tagColor(t) + "22", color: tagColor(t) })) });
+    out.rows = R.rows.map(row);
+    out.outs = R.out.map(o => ({ tc: o.c.src + " " + o.c.ts, text: (o.c.speaker ? o.c.speaker + " — " : "") + o.c.text, why: o.why }));
+    out.outMeta = R.out.length + " moments · " + M.fmt(R.out.reduce((n, o) => n + o.c.dur, 0)) + " — nothing is deleted";
+    return out;
+  }
+}
+</script>
+</body>
+</html>

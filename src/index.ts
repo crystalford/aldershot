@@ -2,9 +2,9 @@
  * Aldershot — Workers entry point.
  *
  * Editing is reading. No timeline, no scrubbing, no NLE. See design/ for the
- * spec: design/Aldershot.dc.html is authoritative, design/docs/ explains it.
+ * spec: design/Aldershot.dc.html is authoritative, docs/archive/handoff-v2/ explains it.
  *
- * Routing follows design/docs/10-ROUTES-AND-KEYS.md exactly. The prototype
+ * Routing follows docs/archive/handoff-v2/10-ROUTES-AND-KEYS.md exactly. The prototype
  * switches surfaces on a single `view` string; the built app gives each one a
  * real URL so work is linkable and the back button works — the prototype's
  * biggest limitation, called out in that doc.

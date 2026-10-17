@@ -1,6 +1,6 @@
 # Open questions for the owner
 
-Per `design/docs/07-CLAUDE-CODE-BRIEF.md` §"How to handle uncertainty": ask
+Per `docs/archive/handoff-v2/07-CLAUDE-CODE-BRIEF.md` §"How to handle uncertainty": ask
 rather than invent. Each item below is a place where the prototype does not
 answer a question the build has to answer. Nothing here is blocking — each has
 a defensible interim behaviour, noted — but each is a decision that should be

@@ -8,7 +8,7 @@
  *
  * Markup transcribed from the `<sc-if value="{{ isHome }}">` block of
  * design/Aldershot.dc.html. Every string here is copied from the prototype and
- * cross-checked against design/docs/11-STRINGS.md — do not rewrite, shorten,
+ * cross-checked against docs/archive/handoff-v2/11-STRINGS.md — do not rewrite, shorten,
  * or "improve" any of them.
  *
  * Phase 0 renders the fresh (empty-account) state: composer + example chips +

@@ -1,7 +1,7 @@
 /**
  * Renders the built app AND the design prototype at the same width, so they can
  * be compared side by side. This is check #1 of the four in
- * design/docs/PROMPTING-NOTES.md, and it is the check that matters most: the
+ * docs/archive/handoff-v2/PROMPTING-NOTES.md, and it is the check that matters most: the
  * previous build passed every string/feature test and still shipped a
  * different-feeling product, because nobody ever put the two next to each other.
  *

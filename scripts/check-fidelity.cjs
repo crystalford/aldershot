@@ -1,5 +1,5 @@
 /**
- * The three static fidelity checks from design/docs/PROMPTING-NOTES.md.
+ * The three static fidelity checks from docs/archive/handoff-v2/PROMPTING-NOTES.md.
  * (Check #1, the screenshot diff, is scripts/shoot.cjs — it needs eyes.)
  *
  *   2. Every icon, with its source. If the answer is a library name, it's wrong.

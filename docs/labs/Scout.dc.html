@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+  input, textarea, button { font: inherit; }
+  @keyframes scoutPulse { 0%, 100% { opacity: .35 } 50% { opacity: 1 } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column">
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">LABS</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Scout · finds clips that aren't yours yet · links, never downloads · sample findings, not real ones</span>
+    <a href="Directed plan.dc.html" style="font-size:12px;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Directed plan</a>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+    <div style="flex:0 0 min(400px,38%);min-width:0;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,0.06);min-height:0">
+      <div style="flex:none;padding:18px 20px 12px;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <div style="display:flex;align-items:flex-end;gap:12px">
+          <dc-import name="Recce" state="{{ recceState }}" name-of="{{ scoutName }}" size="44" hint-size="44px,46px"></dc-import>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">THE BRIEF</span><input value="{{ scoutName }}" oninput="{{ onName }}" title="His name. Scout by default — call him what you like; everything he says uses it." style="width:7em;background:transparent;border:none;outline:none;border-bottom:1px dashed rgba(236,236,241,0.25);color:#ECECF1;font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:600;padding:0 0 1px"/><span style="font-size:10.5px;color:rgba(236,236,241,0.35)">reports below · rename him</span></div>
+            <div title="Recce — the one who looks outside. His state follows the run." style="margin-top:3px;font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.5);text-wrap:pretty">{{ recceLine }}</div>
+          </div>
+        </div>
+        <textarea value="{{ brief }}" oninput="{{ onBrief }}" rows="2" style="margin-top:8px;width:100%;resize:none;font-family:'Instrument Sans',sans-serif;font-size:14px;line-height:1.5;padding:10px 12px;border-radius:8px;border:none;outline:none;background:#1A1A20;color:#ECECF1;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)"></textarea>
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <div tabindex="0" role="button" onclick="{{ onRun }}" style="font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:5px;background:{{ runBg }};color:{{ runColor }};cursor:pointer;white-space:nowrap">{{ runLabel }}</div>
+          <div tabindex="0" role="button" onclick="{{ onReset }}" style="font-size:12px;font-weight:500;padding:7px 12px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.75);cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36;color:#ECECF1">Start over</div>
+          <span style="flex:1 1 auto;min-width:0;text-align:right;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ costLine }}</span>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div tabindex="0" role="button" onclick="{{ onOutsideToggle }}" title="{{ outsideNote }}" style="flex:none;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:4px;background:{{ outsideBg }};color:{{ outsideColor }};cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36"><span style="width:6px;height:6px;border-radius:50%;background:{{ outsideColor }}"></span>{{ outsideLabel }}</div>
+          <span style="flex:1;min-width:0;font-size:11px;color:rgba(236,236,241,0.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ outsideNote }}</span>
+          <div title="Stands in for the Settings default — lives on the Settings page in the product" style="flex:none;display:flex;gap:2px;padding:2px;border-radius:5px;background:#17171B">
+            <sc-for list="{{ dfltOpts }}" as="o" hint-placeholder-count="3">
+              <div tabindex="0" role="button" onclick="{{ o.onGo }}" style="font-size:10.5px;font-weight:600;padding:3px 7px;border-radius:3px;background:{{ o.bg }};color:{{ o.color }};cursor:pointer;white-space:nowrap">{{ o.name }}</div>
+            </sc-for>
+          </div>
+        </div>
+        <sc-if value="{{ needsAsk }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:10px;padding:12px 13px;border-radius:9px;background:rgba(217,179,106,0.06);box-shadow:inset 0 0 0 1px rgba(217,179,106,0.3)">
+            <div style="font-size:12.5px;font-weight:600;line-height:1.5">Your footage has 3 moments on this — not enough for 7 beats. Look outside too?</div>
+            <div style="margin-top:4px;font-size:11.5px;line-height:1.55;color:rgba(236,236,241,0.55);text-wrap:pretty">It would search open archives, news captions, podcasts and the crowd's maps of streams — finding and linking only, never downloading. Asked once per project; the default lives in Settings.</div>
+            <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap">
+              <div tabindex="0" role="button" onclick="{{ onAskYes }}" style="font-size:11.5px;font-weight:600;padding:5px 12px;border-radius:5px;background:#ECECF1;color:#131316;cursor:pointer;white-space:nowrap">Look outside (Recommended)</div>
+              <div tabindex="0" role="button" onclick="{{ onAskNo }}" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.8);cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36;color:#ECECF1">My footage only</div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+      <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 20px 40px;min-height:0;display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ log }}" as="l" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="flex:none;margin-top:1px;opacity:{{ l.recceOpacity }}"><dc-import name="Recce" state="{{ l.recce }}" name-of="{{ scoutName }}" size="18" hint-size="18px,20px"></dc-import></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;line-height:1.55;color:{{ l.color }};text-wrap:pretty">{{ l.text }}</div>
+              <sc-if value="{{ l.hasChips }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">
+                  <sc-for list="{{ l.chips }}" as="c" hint-placeholder-count="3">
+                    <div tabindex="0" role="button" onclick="{{ c.onGo }}" style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:4px;background:{{ c.bg }};color:{{ c.color }};cursor:pointer;white-space:nowrap" style-hover="background:rgba(236,236,241,0.2);color:#ECECF1">{{ c.text }}</div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ l.hasSub }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
+                  <sc-for list="{{ l.sub }}" as="s" hint-placeholder-count="2">
+                    <div style="display:flex;gap:8px;align-items:baseline;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.6)"><span style="flex:none;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:{{ s.color }}">{{ s.k }}</span><span style="text-wrap:pretty">{{ s.v }}</span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#0E0E11;min-height:0">
+      <div style="flex:none;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <div style="flex:1 1 180px;min-width:0">
+          <div style="font-size:14px;font-weight:600;white-space:nowrap">The Scout board</div>
+          <div style="margin-top:2px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ boardMeta }}</div>
+        </div>
+        <div title="Sourced = acquired or auto-fetched · Verified = matched back to the scouted moment by its words" style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.4)">SOURCED</span>
+          <div style="width:110px;height:6px;border-radius:99px;background:#1F1F26;overflow:hidden;display:flex"><div style="width:{{ srcVerified }}%;background:#5EC98F"></div><div style="width:{{ srcAcquired }}%;background:rgba(94,201,143,0.35)"></div></div>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5);white-space:nowrap">{{ srcText }}</span>
+        </div>
+        <div title="Subject moments vs counterpoint moments — a battle shown from one side is the bias a fairness defence would expose" style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.4)">BALANCE</span>
+          <div style="width:110px;height:6px;border-radius:99px;background:#1F1F26;overflow:hidden;display:flex"><div style="width:{{ balSubj }}%;background:#ECECF1"></div><div style="width:{{ balCounter }}%;background:{{ balCounterBg }}"></div></div>
+          <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5);white-space:nowrap">{{ balText }}</span>
+        </div>
+        <div style="flex:none;display:flex;gap:2px;padding:2px;border-radius:6px;background:#17171B">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+            <div tabindex="0" role="button" onclick="{{ t.onGo }}" style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:4px;background:{{ t.bg }};color:{{ t.color }};cursor:pointer;white-space:nowrap">{{ t.name }}</div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 22px 48px;min-height:0">
+        <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+          <sc-if value="{{ boardEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:22px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);font-size:13px;line-height:1.6;color:rgba(236,236,241,0.55);text-wrap:pretty">Nothing yet. Scout turns the brief into things a viewer could point to on camera — never a diagnosis — then searches for each, and for its opposite. Press Scout to watch it work on the sample brief.</div>
+          </sc-if>
+          <sc-if value="{{ hasGaps }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-bottom:18px;padding:13px 14px;border-radius:9px;background:rgba(224,106,106,0.05);box-shadow:inset 0 0 0 1px rgba(224,106,106,0.28)">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#E06A6A">GAPS · {{ gapCount }}</span><span style="font-size:11.5px;color:rgba(236,236,241,0.5);text-wrap:pretty">what's missing comes first — it's the next thing to do. Each says what was tried, so you can tell “doesn't exist” from “not found yet”.</span></div>
+              <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ gaps }}" as="g" hint-placeholder-count="2">
+                  <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+                    <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ g.roleColor }};margin-top:2px">{{ g.id }}</span>
+                    <div style="flex:1 1 240px;min-width:0"><div style="font-size:13px;font-weight:600">{{ g.name }}</div><div style="margin-top:2px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.6);text-wrap:pretty">{{ g.gapText }}</div></div>
+                    <div style="flex:none;display:flex;gap:4px;flex-wrap:wrap">
+                      <sc-for list="{{ g.fixes }}" as="f" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ f.onGo }}" style="font-size:11px;font-weight:500;padding:4px 9px;border-radius:4px;background:{{ f.bg }};color:{{ f.color }};cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36;color:#ECECF1">{{ f.name }}</div></sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <div style="display:flex;flex-direction:column;gap:18px">
+            <sc-for list="{{ board }}" as="b" hint-placeholder-count="3">
+              <div>
+                <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.06)">
+                  <span style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ b.roleColor }}">{{ b.id }}</span>
+                  <span style="font-size:14px;font-weight:600">{{ b.name }}</span>
+                  <span style="font-size:10px;font-weight:600;letter-spacing:.06em;padding:1px 6px;border-radius:3px;background:{{ b.roleBg }};color:{{ b.roleColor }};white-space:nowrap">{{ b.roleName }}</span>
+                  <span style="flex:1;min-width:0;font-size:12px;color:rgba(236,236,241,0.5);text-wrap:pretty">{{ b.behaviour }}</span>
+                  <span style="flex:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:{{ b.statusColor }};white-space:nowrap">{{ b.status }}</span>
+                </div>
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+                  <sc-for list="{{ b.rows }}" as="r" hint-placeholder-count="2">
+                    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:{{ r.bg }};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                      <span style="flex:none;margin-top:2px;font-size:10.5px;font-weight:600;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:{{ r.stBg }};color:{{ r.stColor }};white-space:nowrap">{{ r.st }}</span>
+                      <div style="flex:1 1 200px;min-width:0">
+                        <div style="font-size:13.5px;line-height:1.5;color:{{ r.qColor }};font-style:{{ r.qStyle }};text-wrap:pretty">{{ r.quote }}</div>
+                        <sc-if value="{{ r.hasCtx }}" hint-placeholder-val="{{ false }}">
+                          <div title="The 30 seconds either side, from the transcript — the provocation before the line, what followed it. The fairness check, visible." style="margin-top:5px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:11.5px;line-height:1.5;color:rgba(236,236,241,0.5)"><span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.35)">−30 s</span><span style="flex:1 1 200px;min-width:0;text-wrap:pretty">{{ r.before }}</span></div>
+                          <div style="margin-top:2px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:11.5px;line-height:1.5;color:rgba(236,236,241,0.5)"><span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.35)">+30 s</span><span style="flex:1 1 200px;min-width:0;text-wrap:pretty">{{ r.after }}</span></div>
+                        </sc-if>
+                        <div style="margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:11px;color:rgba(236,236,241,0.5)">
+                          <span style="font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.7);white-space:nowrap">{{ r.src }} · {{ r.t }}</span>
+                          <span style="white-space:nowrap">{{ r.host }}</span>
+                          <sc-if value="{{ r.hasCrowd }}" hint-placeholder-val="{{ false }}"><span style="color:#5EB8C9;white-space:nowrap">{{ r.crowd }}</span></sc-if>
+                          <span style="flex:1;min-width:0;text-wrap:pretty">{{ r.note }}</span>
+                        </div>
+                        <sc-if value="{{ r.hasAcq }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:7px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <span style="font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:{{ r.routeBg }};color:{{ r.routeColor }};white-space:nowrap">{{ r.route }}</span>
+                            <span style="font-size:11.5px;line-height:1.45;color:{{ r.acqColor }};text-wrap:pretty">{{ r.acqText }}</span>
+                          </div>
+                          <div style="margin-top:5px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="Burned in for the clip's first 3–4 seconds and listed in the description — editable, removable only on purpose">{{ r.credit }}</div>
+                        </sc-if>
+                      </div>
+                      <div style="flex:none;display:flex;gap:4px;flex-wrap:wrap">
+                        <div tabindex="0" role="button" onclick="{{ r.onOpen }}" style="font-size:11px;font-weight:500;padding:4px 9px;border-radius:4px;background:#1F1F26;color:rgba(236,236,241,0.75);cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36;color:#ECECF1">Open at {{ r.t }}</div>
+                        <sc-if value="{{ r.canAcquire }}" hint-placeholder-val="{{ false }}"><div tabindex="0" role="button" onclick="{{ r.onAcquire }}" style="font-size:11px;font-weight:600;padding:4px 9px;border-radius:4px;background:{{ r.acqBg }};color:{{ r.acqBtnColor }};cursor:pointer;white-space:nowrap">{{ r.acqLabel }}</div></sc-if>
+                        <sc-if value="{{ r.canAttach }}" hint-placeholder-val="{{ true }}"><div tabindex="0" role="button" onclick="{{ r.onAttach }}" style="font-size:11px;font-weight:600;padding:4px 9px;border-radius:4px;background:{{ r.attachBg }};color:{{ r.attachColor }};cursor:pointer;white-space:nowrap">{{ r.attachLabel }}</div></sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ b.isGap }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:10px;align-items:baseline;padding:10px 12px;border-radius:8px;background:rgba(224,106,106,0.06);box-shadow:inset 0 0 0 1px rgba(224,106,106,0.25)">
+                      <span style="flex:none;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:#E06A6A">GAP</span>
+                      <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.7);text-wrap:pretty">{{ b.gapText }}</span>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasFoot }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:22px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:11.5px;color:rgba(236,236,241,0.45)">
+              <span style="flex:1 1 260px;min-width:0;text-wrap:pretty">{{ footText }}</span>
+              <span tabindex="0" role="button" onclick="{{ onSources }}" style="flex:none;cursor:pointer;color:rgba(236,236,241,0.6);white-space:nowrap" style-hover="color:#ECECF1">sources ↗</span>
+              <span tabindex="0" role="button" onclick="{{ onLedger }}" style="flex:none;cursor:pointer;color:rgba(236,236,241,0.6);white-space:nowrap" style-hover="color:#ECECF1">the ledger ↗</span>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ isCut }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;line-height:1.6;color:rgba(236,236,241,0.55);text-wrap:pretty;max-width:720px">The edit doesn't wait for acquisition. The director builds the whole cut from scouted moments — a <span style="color:#ECECF1">ghost</span> has everything except the media: quote, source, timestamps, duration from the transcript plus a one-second handle each side. The mission list is generated <span style="color:#ECECF1">from the cut</span>: only the clips the video actually uses, in timeline order, expiring sources first. Cut a clip and its mission disappears. Each grab fills a hole in place.</div>
+          <sc-if value="{{ cutEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:14px;padding:20px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);font-size:13px;color:rgba(236,236,241,0.5)">Attach moments on the Board and the cut assembles here, ghosts and all.</div>
+          </sc-if>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE TIMELINE</span>
+            <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ cutMeta }}</span>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:3px;height:34px;border-radius:6px;overflow:hidden;background:#111114">
+            <sc-for list="{{ cutBlocks }}" as="k" hint-placeholder-count="4">
+              <div title="{{ k.title }}" style="flex:{{ k.flex }};min-width:0;border-radius:3px;background:{{ k.bg }};border:1.5px {{ k.border }} {{ k.borderColor }};display:flex;align-items:center;justify-content:center;overflow:hidden"><span style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:{{ k.labelColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px">{{ k.label }}</span></div>
+            </sc-for>
+          </div>
+          <div style="margin-top:6px;display:flex;gap:14px;font-size:11px;color:rgba(236,236,241,0.45)"><span><span style="display:inline-block;width:10px;height:6px;border:1.5px dashed #D9B36A;border-radius:2px;vertical-align:middle;margin-right:5px"></span>ghost · needs grabbing</span><span><span style="display:inline-block;width:10px;height:6px;background:rgba(94,201,143,0.5);border-radius:2px;vertical-align:middle;margin-right:5px"></span>acquired · verified</span><span><span style="display:inline-block;width:10px;height:6px;background:#2A2A31;border-radius:2px;vertical-align:middle;margin-right:5px"></span>yours</span></div>
+          <div style="margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">MISSIONS · FROM THE CUT</span>
+            <span style="font-size:11px;color:rgba(236,236,241,0.4);text-wrap:pretty">only what the video uses · timeline order · expiring first</span>
+          </div>
+          <sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:8px;padding:12px 14px;border-radius:9px;background:rgba(217,179,106,0.06);box-shadow:inset 0 0 0 1.5px rgba(217,179,106,0.45);display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+              <dc-import name="Recce" state="mission" name-of="{{ scoutName }}" size="40" hint-size="52px,42px"></dc-import>
+              <div style="flex:1 1 240px;min-width:0"><div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#D9B36A">NEXT TO GRAB · {{ nextPos }}</div><div style="margin-top:3px;font-size:13.5px;line-height:1.5;color:#ECECF1;text-wrap:pretty">{{ nextQuote }}</div><div style="margin-top:3px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.55)">{{ nextMeta }}</div></div>
+              <div tabindex="0" role="button" onclick="{{ onNext }}" style="flex:none;font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:5px;background:#ECECF1;color:#131316;cursor:pointer;white-space:nowrap">{{ nextLabel }}</div>
+            </div>
+          </sc-if>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ missions }}" as="m" hint-placeholder-count="2">
+              <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <div style="flex:none;width:72px;aspect-ratio:16/9;border-radius:4px;border:1.5px dashed rgba(217,179,106,0.6);display:flex;align-items:center;justify-content:center"><span style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">{{ m.dur }}</span></div>
+                <div style="flex:1 1 220px;min-width:0">
+                  <div style="font-size:13px;line-height:1.5;color:#ECECF1;text-wrap:pretty">{{ m.quote }}</div>
+                  <div style="margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:rgba(236,236,241,0.5)"><span style="font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.7);white-space:nowrap">{{ m.src }} · in {{ m.tin }} · out {{ m.tout }}</span><span style="white-space:nowrap">{{ m.beat }}</span><sc-if value="{{ m.hasExpiry }}" hint-placeholder-val="{{ false }}"><span style="color:#E06A6A;white-space:nowrap">{{ m.expiry }}</span></sc-if></div>
+                  <div style="margin-top:4px;font-size:11.5px;color:rgba(236,236,241,0.55);text-wrap:pretty">{{ m.why }}</div>
+                </div>
+                <div style="flex:none;display:flex;gap:4px"><div tabindex="0" role="button" onclick="{{ m.onGo }}" style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:4px;background:{{ m.bg }};color:{{ m.color }};cursor:pointer;white-space:nowrap">{{ m.label }}</div></div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasGhostsLeft }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:rgba(217,179,106,0.06);box-shadow:inset 0 0 0 1px rgba(217,179,106,0.25);font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.75);text-wrap:pretty"><span style="color:#D9B36A;font-weight:600">Previews render with placeholders, marked as drafts.</span> A final render asks, per ghost still standing: hold for the grab · drop the beat (the solver re-cuts) · or a quote card — the attributed words on screen. The video never ships with a silent hole.</div>
+          </sc-if>
+          <sc-if value="{{ allReal }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:18px;padding:12px 14px;border-radius:8px;background:rgba(94,201,143,0.06);box-shadow:inset 0 0 0 1px rgba(94,201,143,0.25);font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.75);text-wrap:pretty"><span style="color:#5EC98F;font-weight:600">No ghosts left.</span> Every external clip in the cut is acquired and verified against its quote. Ready for a final render — with the source credit burned in for each one.</div>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ isSources }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;line-height:1.6;color:rgba(236,236,241,0.55);text-wrap:pretty;max-width:720px">What Scout could read, and what it could only link. The rule: it reads a transcript only where reading is legitimate — podcast RSS, open archives, your own captures. Everything else is metadata, chapters, crowd timestamps and a deep link.</div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ sources }}" as="s" hint-placeholder-count="5">
+              <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <span style="flex:none;width:76px;font-size:10.5px;font-weight:600;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:{{ s.trBg }};color:{{ s.trColor }};text-align:center;white-space:nowrap">{{ s.tr }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap"><span style="font-size:13px;font-weight:500">{{ s.name }}</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45);white-space:nowrap">{{ s.host }} · {{ s.dur }} · {{ s.views }}</span><sc-if value="{{ s.hasCrowd }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:#5EB8C9;white-space:nowrap">{{ s.crowd }}</span></sc-if></div>
+                  <div style="margin-top:3px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.5);text-wrap:pretty">{{ s.note }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:22px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">HOW CLIPS GET IN</div>
+          <div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:8px">
+            <div style="padding:12px 14px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)"><div style="font-size:12.5px;font-weight:600">Open sources, automatically</div><div style="margin-top:4px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.5);text-wrap:pretty">Public domain, Creative Commons, government and council video, podcast feeds, licensed stock.</div></div>
+            <div style="padding:12px 14px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)"><div style="font-size:12.5px;font-weight:600">You bring the rest</div><div style="margin-top:4px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.5);text-wrap:pretty">Uploads or links you have the right to use. Scout tells you exactly which moment to bring.</div></div>
+            <div style="padding:12px 14px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)"><div style="font-size:12.5px;font-weight:600">The companion app</div><div style="margin-top:4px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.5);text-wrap:pretty">Captures on your own machine and uploads to your archive as your material. Aldershot's servers never touch the platform.</div></div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isLedger }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;line-height:1.6;color:rgba(236,236,241,0.55);text-wrap:pretty;max-width:720px">Every window the small model scanned, one narrow question each. A quote reaches the board only if it's found word-for-word in the chunk the model saw; the time comes from the word timings, never from the model. The rejection rate is our measured hallucination rate.</div>
+          <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
+            <sc-for list="{{ ledgerStats }}" as="k" hint-placeholder-count="3">
+              <div><div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">{{ k.label }}</div><div style="margin-top:2px;font-size:20px;font-weight:600;letter-spacing:-0.02em;font-family:'IBM Plex Mono',monospace;color:{{ k.color }}">{{ k.value }}</div></div>
+            </sc-for>
+          </div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ ledger }}" as="l" hint-placeholder-count="6">
+              <div style="display:flex;gap:12px;align-items:flex-start;padding:9px 12px;border-radius:7px;background:{{ l.bg }}">
+                <span style="flex:none;width:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:{{ l.markColor }}">{{ l.mark }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;line-height:1.5;color:{{ l.color }};text-wrap:pretty">“{{ l.quote }}”</div>
+                  <div style="margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:rgba(236,236,241,0.45)"><span style="font-family:'IBM Plex Mono',monospace;white-space:nowrap">{{ l.src }} · {{ l.t }} · {{ l.beat }}</span><span style="text-wrap:pretty">asked: {{ l.q }}</span><span style="font-family:'IBM Plex Mono',monospace;color:{{ l.scoreColor }};white-space:nowrap">match {{ l.score }}</span><sc-if value="{{ l.hasWhy }}" hint-placeholder-val="{{ false }}"><span style="color:{{ l.scoreColor }};text-wrap:pretty">{{ l.why }}</span></sc-if></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:22px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHEN IT STOPPED, AND WHY</div>
+          <div style="margin-top:8px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+            <sc-for list="{{ rounds }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:44px;height:{{ r.h }}px;border-radius:4px 4px 0 0;background:{{ r.bg }}"></div><span style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5);white-space:nowrap">{{ r.label }}</span></div>
+            </sc-for>
+            <div style="flex:1 1 260px;min-width:min(260px,100%);font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.6);text-wrap:pretty">{{ stopText }}</div>
+          </div>
+          <div style="margin-top:22px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">THE DILIGENCE LOG · exportable</div>
+          <div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.6);text-wrap:pretty">{{ diligence }}</div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:16px;background:#1F1F25;border-radius:9px;padding:12px 16px;box-shadow:0 0 0 1px rgba(255,255,255,0.08), 0 18px 50px rgba(0,0,0,0.55)">
+      <span style="font-size:13px;color:rgba(236,236,241,0.85);white-space:nowrap">{{ toastText }}</span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const ROLE = { subject: ["SUBJECT", "#ECECF1", "rgba(236,236,241,0.1)"], context: ["CONTEXT", "#D9B36A", "rgba(217,179,106,0.14)"], counter: ["COUNTERPOINT", "#5EC98F", "rgba(94,201,143,0.14)"] };
+class Component extends DCLogic {
+  state = { M: null, brief: "", step: 0, running: false, tab: "board", attached: {}, acq: {}, toast: null, outside: "ask", projectOutside: null, name: "Scout" };
+  // acquisition: scouted → mission → acquired → verified. Auto-fetch only where downloads exist by design (podcast RSS); YouTube/Twitch are missions.
+  acquire(key, S, quote) {
+    const cur = (this.state.acq[key] || {}).st || "scouted";
+    if (S.transcript === "yours") return;
+    if (S.transcript === "rss") { this.setState({ acq: { ...this.state.acq, [key]: { st: "fetching" } } }); this.toast("Fetching the episode audio from the feed — a public file, by design."); this.later(900, () => { this.setState({ acq: { ...this.state.acq, [key]: { st: "verified", how: "auto" } } }); this.toast("Verified against the source at the quoted words · 100% coverage, offset 0.2 s."); }); return; }
+    if (cur === "scouted") { this.setState({ acq: { ...this.state.acq, [key]: { st: "mission" } } }); this.toast("Mission card ready — opens the source at the in-point; grab it, drop it here."); return; }
+    if (cur === "mission") { this.setState({ acq: { ...this.state.acq, [key]: { st: "matching" } } }); this.toast("Upload received — transcribing and matching the words back to the scouted moment…"); this.later(1100, () => { this.setState({ acq: { ...this.state.acq, [key]: { st: "verified", how: "mission" } } }); this.toast("Verified · the words match at 12:34 · 96% coverage. Credit written."); }); }
+  }
+  componentDidMount() { import("./scout-sample.js").then(M => this.setState({ M, brief: M.BRIEF })).catch(e => console.error("scout-sample.js failed", e)); }
+  componentWillUnmount() { (this.timers || []).forEach(clearTimeout); clearTimeout(this._t); }
+  later(ms, fn) { this.timers = this.timers || []; this.timers.push(setTimeout(fn, ms)); }
+  toast(text) { clearTimeout(this._t); this.setState({ toast: text }); this._t = setTimeout(() => this.setState({ toast: null }), 2600); }
+  run() {
+    if (this.state.running || !this.state.M) return;
+    (this.timers || []).forEach(clearTimeout); this.timers = [];
+    this.setState({ running: true, step: 1, attached: {} });
+    [2, 3, 4, 5, 6, 7].forEach((st, i) => this.later(900 + i * 1100, () => this.setState({ step: st, running: st < 7 })));
+  }
+  renderVals() {
+    const s = this.state, M = s.M, out = {}, step = s.step;
+    out.brief = s.brief; out.onBrief = e => this.setState({ brief: e.target.value });
+    const N = (s.name || "Scout").trim() || "Scout"; out.scoutName = s.name; out.onName = e => this.setState({ name: e.target.value });
+    out.runLabel = s.running ? N + " is out…" : step >= 7 ? "Send " + N + " again" : "Send " + N;
+    out.runBg = s.running ? "#232329" : "#ECECF1"; out.runColor = s.running ? "rgba(236,236,241,0.5)" : "#131316";
+    // the toggle: a Settings default (always · ask · never) and a per-project override — the project's choice wins
+    const dflt = s.outside, proj = s.projectOutside, outside = proj !== null ? proj : dflt === "always";
+    out.outsideOn = outside; out.outsideLabel = outside ? "Outside · on" : "Outside · off";
+    out.outsideBg = outside ? "rgba(94,201,143,0.14)" : "#1A1A1F"; out.outsideColor = outside ? "#5EC98F" : "rgba(236,236,241,0.55)";
+    out.outsideNote = proj !== null ? "This project · " + (outside ? "looks outside" : "your footage only") + " · the default is “" + ({ always: "Always", ask: "Ask me", never: "Never" })[dflt] + "” in Settings" : dflt === "ask" ? "Default “Ask me” — it asks once per project, when your footage comes up thin" : dflt === "always" ? "Default “Always” — change it in Settings" : "Default “Never” — change it in Settings";
+    out.onOutsideToggle = () => this.setState({ projectOutside: !outside });
+    out.needsAsk = !step && proj === null && dflt === "ask";
+    out.onAskYes = () => { this.setState({ projectOutside: true }); this.toast("Looking outside for this project. The default stays “Ask me”."); };
+    out.onAskNo = () => { this.setState({ projectOutside: false }); this.toast("Your footage only, for this project."); };
+    out.dfltOpts = [["always", "Always"], ["ask", "Ask me"], ["never", "Never"]].map(([k, n]) => ({ name: n, bg: dflt === k ? "#2E2E36" : "transparent", color: dflt === k ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => this.setState({ outside: k, projectOutside: null }) }));
+    out.onRun = () => { if (!outside) { this.toast("Outside sources are off for this project — switch them on to scout. Otherwise it stays with your footage."); return; } this.run(); };
+    out.onReset = () => { (this.timers || []).forEach(clearTimeout); this.setState({ step: 0, running: false, attached: {}, acq: {}, brief: M ? M.BRIEF : "" }); };
+    out.hasToast = !!s.toast; out.toastText = s.toast || "";
+    if (!M) { out.log = []; out.board = []; out.sources = []; out.ledger = []; out.ledgerStats = []; out.rounds = []; out.tabs = []; out.boardMeta = "loading…"; out.costLine = ""; out.balSubj = 0; out.balCounter = 0; out.balCounterBg = "transparent"; out.balText = "—"; out.srcVerified = 0; out.srcAcquired = 0; out.srcText = "—"; out.isBoard = true; out.boardEmpty = true; out.recceState = outside ? "idle" : "off"; out.recceLine = ""; out.log = []; out.scoutName = s.name; out.onName = e => this.setState({ name: e.target.value }); return out; }
+    const verified = M.SCAN.filter(x => x.verified), scanned = step >= 5 ? M.SCAN : [], ver = step >= 5 ? verified : [];
+    const crowd = step >= 4 ? M.CROWD : [];
+    { const gaps = M.BEATS.filter(b => ver.filter(v => v.beat === b.id).length < b.need).length, rec = !outside ? "off" : step === 0 ? "idle" : step < 7 ? "looking" : (gaps ? "thin" : "found"); out.recceState = rec;
+      out.recceLine = rec === "off" ? N + " is grounded — outside is off for this project." : rec === "idle" ? N + " is waiting. Send him and he goes looking — your footage first." : rec === "looking" ? N + " is out — four query families, in parallel; only verified rows come back." : rec === "thin" ? N + " is back — " + gaps + (gaps === 1 ? " beat has" : " beats have") + " less than wanted; the gap list says what was tried." : N + " is back — every beat covered."; }
+    const srcOf = id => M.SOURCES.find(x => x.id === id) || {};
+    // left: the log, built up by step
+    const line = (text, color, sub, dot) => ({ text, color: color || "rgba(236,236,241,0.85)", dot: dot || "rgba(236,236,241,0.35)", anim: "none", hasSub: !!(sub && sub.length), sub: sub || [], recce: "idle", recceOpacity: "0.45", hasChips: false, chips: [] });
+    const log = [];
+    if (step >= 1) log.push(line("Turning the brief into things a viewer could point to on camera. Two claims rejected — a diagnosis and a motive — and rewritten as behaviours.", null, [
+      ...M.BEATS.filter(b => b.role === "subject").map(b => ({ k: b.id, v: b.behaviour, color: "#ECECF1" })),
+      ...M.BEATS.filter(b => b.role === "context").map(b => ({ k: b.id, v: b.behaviour, color: "#D9B36A" })),
+      ...M.BEATS.filter(b => b.role === "counter").map(b => ({ k: b.id, v: b.behaviour, color: "#5EC98F" })),
+      ...M.REJECTED.map(r => ({ k: "✕", v: "“" + r.said + "” — " + r.why, color: "#E06A6A" })),
+    ], "#D9B36A"));
+    if (step >= 2) log.push(line("Four query families, in parallel. The counterpoint family isn't optional — a battle shown from one side is the bias a fairness defence would expose.", null, M.FAMILIES.map(f => ({ k: f.name, v: f.queries.join(" · ") + (f.note ? " — " + f.note : ""), color: f.color })), "#D9B36A"));
+    if (step >= 3) log.push(line("Triage on metadata only — titles, length, views, who uploaded it, how many comments carry a timestamp. " + M.SOURCES.length + " sources kept. Transcripts are read only where reading is legitimate: " + M.SOURCES.filter(x => x.transcript !== "none").length + " of " + M.SOURCES.length + ".", null, M.SOURCES.map(x => ({ k: x.transcript === "none" ? "link" : "read", v: x.name + " — " + x.note, color: x.transcript === "none" ? "rgba(236,236,241,0.4)" : "#5EC98F" })), "#5EB8C9"));
+    if (step >= 4) log.push(line("Crowd signals first — Twitch clip offsets and comment timestamps point at " + M.CROWD.length + " stretches. Chat lags the moment by about 20 seconds, so each scan window starts earlier.", null, null, "#5EB8C9"));
+    if (step >= 5) log.push(line("Scanning transcripts in 2,000-token windows with a small model, one narrow question each. " + M.SCAN.length + " candidates. The verifier accepted " + verified.length + ": each quote found word-for-word in its chunk, time taken from the word timings. " + M.SCAN.filter(x => !x.verified && x.score < 0.8).length + " rejected, " + M.SCAN.filter(x => !x.verified && x.score >= 0.8).length + " flagged for a human.", null, null, "#5EC98F"));
+    if (step >= 6) log.push(line("Snowballing from what was verified: " + M.SEEDS.length + " new seeds.", null, M.SEEDS.map(x => ({ k: x.family, v: x.from + " → " + x.seed, color: (M.FAMILIES.find(f => f.id === x.family) || {}).color || "#ECECF1" })), "#D9B36A"));
+    if (step >= 7) { const gaps = M.BEATS.filter(b => verified.filter(v => v.beat === b.id).length < b.need); log.push(line("Stopped. Round 3 found nothing new (knee rule), and every beat is covered or listed as a gap. " + gaps.length + (gaps.length === 1 ? " gap" : " gaps") + ": " + gaps.map(g => g.id + " " + g.name).join(", ") + ". Gaps say which queries were tried, so you can tell “doesn't exist” from “not found yet”.", "#ECECF1", null, "#5EC98F")); }
+    if (s.running) log.push({ text: ["", "decomposing…", "fanning out…", "triaging…", "reading crowd signals…", "scanning…", "snowballing…"][step] || "", color: "rgba(236,236,241,0.5)", dot: "#D9B36A", anim: "none", hasSub: false, sub: [], recce: "looking", recceOpacity: "1", hasChips: false, chips: [] });
+    if (step === 0) log.push(line("I'm the part that goes out. Your brief never says “berates his audience” — I get there because the thesis implies it, and I search for the opposite too. Send me.", "rgba(236,236,241,0.55)"));
+    if (log.length) { const last = log[log.length - 1]; last.recce = out.recceState; last.recceOpacity = "1";
+      if (step >= 7) { const chip = (text, primary, onGo) => ({ text, bg: primary ? "rgba(236,236,241,0.14)" : "rgba(236,236,241,0.08)", color: primary ? "#ECECF1" : "rgba(236,236,241,0.65)", onGo }); last.hasChips = true; last.chips = [chip("Make missions from the cut", true, () => this.setState({ tab: "cut" })), chip("Fill the gaps", false, () => this.toast("Each gap lists what was tried. An interview or a long-time viewer is the usual way in — or bring the capture.")), chip("Cut it", false, () => this.toast("Would open the editor on the plan — verified moments as blocks, outside finds as ghosts, the five rules carried."))]; } }
+    out.log = log;
+    // right: board
+    out.tabs = [["board", "Board"], ["cut", "The cut · ghosts"], ...(s.tab === "sources" ? [["sources", "Sources · " + M.SOURCES.length]] : []), ...(s.tab === "ledger" ? [["ledger", "Ledger · " + scanned.length]] : [])].map(([k, n]) => ({ name: n, bg: s.tab === k ? "#2E2E36" : "transparent", color: s.tab === k ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => this.setState({ tab: k }) }));
+    out.isBoard = s.tab === "board"; out.isCut = s.tab === "cut"; out.isSources = s.tab === "sources"; out.isLedger = s.tab === "ledger";
+    const nSubj = ver.filter(v => (M.BEATS.find(b => b.id === v.beat) || {}).role === "subject").length, nCounter = ver.filter(v => (M.BEATS.find(b => b.id === v.beat) || {}).role === "counter").length, tot = nSubj + nCounter || 1;
+    { const keys = [...ver.map(v => v.src + v.t), ...crowd.map(c => c.src + c.t)], total = keys.length || 1; const vN = keys.filter(k => { const S = srcOf(k.slice(0, 2)); return S.transcript === "yours" || (s.acq[k] || {}).st === "verified"; }).length, aN = keys.filter(k => ["mission", "fetching", "matching"].indexOf((s.acq[k] || {}).st) >= 0).length; out.srcVerified = step ? Math.round(vN / total * 100) : 0; out.srcAcquired = step ? Math.round(aN / total * 100) : 0; out.srcText = step ? vN + " of " + keys.length + " verified" : "—"; }
+    out.balSubj = nSubj + nCounter ? Math.round(nSubj / tot * 100) : 0; out.balCounter = nSubj + nCounter ? 100 - out.balSubj : 0; out.balCounterBg = nSubj + nCounter ? "#5EC98F" : "transparent"; out.balText = nSubj + nCounter ? nSubj + " · " + nCounter : "—";
+    out.boardMeta = step === 0 ? "no brief run yet" : ver.length + " verified moments · " + crowd.length + " crowd-indexed, link only · " + M.BEATS.length + " beats · " + (step >= 7 ? "stopped at saturation" : "working");
+    out.boardEmpty = step === 0;
+    const beatsShown = step >= 1 ? M.BEATS : [];
+    out.board = beatsShown.map(b => {
+      const R = ROLE[b.role], rowsV = ver.filter(v => v.beat === b.id), rowsC = crowd.filter(c => c.beat === b.id);
+      const ACQ = { scouted: ["SCOUTED", "rgba(236,236,241,0.08)", "rgba(236,236,241,0.5)"], mission: ["MISSION", "rgba(217,179,106,0.14)", "#D9B36A"], fetching: ["FETCHING", "rgba(94,184,201,0.14)", "#5EB8C9"], matching: ["MATCHING", "rgba(94,184,201,0.14)", "#5EB8C9"], verified: ["ACQUIRED · VERIFIED", "rgba(94,201,143,0.14)", "#5EC98F"], owned: ["YOURS", "rgba(94,201,143,0.14)", "#5EC98F"] };
+      const creditFor = (S) => S.transcript === "yours" ? "no credit needed — your own capture" : "Source: " + (S.host === "Podcast RSS" ? "The Backseat Show" : S.host === "Twitch" ? "DarksydePhil on Twitch" : "DarksydePhil on YouTube") + " · " + (S.host || "") + " · " + (S.host === "Podcast RSS" ? "Mar 2024" : "Jan 2024");
+      const acqRow = (S, key) => { const a = s.acq[key] || {}, st = S.transcript === "yours" ? "owned" : a.st || "scouted", A = ACQ[st]; const route = S.transcript === "yours" ? "ALREADY YOURS" : S.transcript === "rss" ? "AUTO · open feed" : "MISSION · you grab it"; return {
+        hasAcq: true, route, routeBg: S.transcript === "none" ? "rgba(217,179,106,0.14)" : "rgba(94,201,143,0.14)", routeColor: S.transcript === "none" ? "#D9B36A" : "#5EC98F",
+        acqText: st === "owned" ? "In your archive already." : st === "scouted" ? (S.transcript === "rss" ? "The feed publishes the file — Aldershot can fetch it and match it to the quote." : "This platform doesn't let a server fetch it, and its rules say not to. The mission card opens the source at the in-point with the quote and the out-point; grab it your way, drop it here, and it's matched back by its words.") : st === "mission" ? "Mission card open · in 2:13:58 · out 2:14:46 · 48 s · grab it, then drop the file here." : st === "fetching" ? "Fetching from the feed…" : st === "matching" ? "Transcribing the upload and aligning its words to the scouted quote…" : (a.how === "auto" ? "Fetched from the feed · verified at the quoted words · 100% coverage." : "Your upload · verified · the words match at 12:34 · 96% coverage, offset 0.4 s."),
+        acqColor: st === "verified" || st === "owned" ? "rgba(236,236,241,0.75)" : "rgba(236,236,241,0.55)", credit: creditFor(S),
+        canAcquire: st !== "owned" && st !== "verified" && st !== "fetching" && st !== "matching", acqLabel: st === "scouted" ? (S.transcript === "rss" ? "Fetch it" : "Make it a mission") : "Drop the file", acqBg: st === "mission" ? "#D9B36A" : "#232329", acqBtnColor: st === "mission" ? "#131316" : "rgba(236,236,241,0.85)",
+        onAcquire: () => this.acquire(key, S), stOverride: st }; };
+      const rows = [...rowsV.map(v => { const S = srcOf(v.src), key = v.src + v.t, on = !!s.attached[key], AQ = acqRow(S, key), A = ACQ[AQ.stOverride]; return { ...AQ,
+        st: A[0], stBg: A[1], stColor: A[2], quote: "“" + v.quote + "”", qColor: "#ECECF1", qStyle: "normal", hasCtx: !!(v.before || v.after), before: v.before || "", after: v.after || "", src: S.name ? S.name.split(" — ")[0] : v.src, t: v.t, host: S.host || "", hasCrowd: !!S.crowd, crowd: S.crowd ? S.crowd + " crowd timestamps" : "", note: S.transcript === "yours" ? "your capture · original" : S.transcript === "rss" ? "podcast transcript · original" : "", bg: on ? "rgba(94,201,143,0.05)" : "#141418",
+        canAttach: true, attachLabel: on ? "Attached ✓" : "Attach", attachBg: on ? "transparent" : "#ECECF1", attachColor: on ? "#5EC98F" : "#131316",
+        onOpen: () => this.toast("Would open " + (S.host || "the source") + " at " + v.t + " — a deep link, nothing downloaded."), onAttach: () => { this.setState({ attached: { ...s.attached, [key]: !on } }); if (!on) this.toast("Attached · " + b.id + " · it's in the cut now as a ghost — see The cut tab. Grab it when you're ready."); } }; }),
+      ...rowsC.map(c => { const S = srcOf(c.src), key = c.src + c.t, AQ = acqRow(S, key); return { ...AQ, acqText: (s.acq[key] || {}).st ? AQ.acqText : "Nothing to verify against yet — the crowd points here but Scout couldn't read it. Grab it and the matcher will try the words first, then the audio.",
+        st: c.status === "trace" ? "TRACE" : "CROWD", stBg: c.status === "trace" ? "rgba(217,179,106,0.14)" : "rgba(94,184,201,0.14)", stColor: c.status === "trace" ? "#D9B36A" : "#5EB8C9", quote: c.note, qColor: "rgba(236,236,241,0.7)", qStyle: "italic", src: S.name ? S.name.split(" — ")[0] : c.src, t: c.t, host: S.host || "", hasCrowd: false, crowd: "", note: S.transcript === "none" ? "no transcript to verify · link only" : "", bg: "#121215",
+        canAttach: false, attachLabel: "", attachBg: "", attachColor: "", onOpen: () => this.toast("Would open " + (S.host || "the source") + " at " + c.t + "."), onAttach: () => {} }; })];
+      const have = rowsV.length, isGap = step >= 7 && have < b.need;
+      const tried = M.FAMILIES.filter(f => (b.role === "counter" ? f.id === "counter" || f.id === "crowd" : f.id !== "counter")).reduce((n, f) => n + f.queries.length, 0);
+      return { id: b.id, name: b.name, behaviour: b.behaviour, roleName: R[0], roleColor: R[1], roleBg: R[2], rows, isGap,
+        status: step < 5 ? (rowsC.length ? rowsC.length + " crowd" : "searching") : have >= b.need ? have + " verified" : have + " of " + b.need, statusColor: step < 5 ? "rgba(236,236,241,0.4)" : have >= b.need ? "#5EC98F" : "#E06A6A",
+        gapText: have ? "Only " + have + " verified; wanted " + b.need + ". " + tried + " queries tried across " + (b.role === "counter" ? "the counterpoint and crowd families" : "three families") + "." : (rowsC.length ? "Nothing verified — the crowd points at " + rowsC.length + (rowsC.length === 1 ? " stretch" : " stretches") + " on sources Scout can't read. Bring the capture and it'll verify them." : tried + " queries tried, nothing verified. Either it doesn't exist or it isn't where these families look — try an interview, or ask a long-time viewer.") };
+    });
+    out.board.sort((a, b) => (b.isGap ? 1 : 0) - (a.isGap ? 1 : 0));
+    const fix = (name, onGo, primary) => ({ name, bg: primary ? "rgba(236,236,241,0.14)" : "#1F1F26", color: primary ? "#ECECF1" : "rgba(236,236,241,0.7)", onGo });
+    out.gaps = out.board.filter(b => b.isGap).map(g => ({ ...g, fixes: [fix("Try an interview", () => this.toast("Adds the counterpoint family's interview queries for " + g.id + " and runs one more round."), true), fix("Bring the capture", () => this.toast("Opens a mission for the crowd-pointed stretch — grab it and the matcher verifies it by its words.")), fix("Your voice", () => this.toast("Marks " + g.id + " as a line you say to camera; the plan keeps the beat without a clip."))] }));
+    out.hasGaps = out.gaps.length > 0; out.gapCount = out.gaps.length;
+    out.hasFoot = step >= 3; out.footText = "Searched: " + M.SOURCES.filter(x => x.transcript !== "none").length + " sources read (podcast transcripts, your captures) · " + M.SOURCES.filter(x => x.transcript === "none").length + " link only (YouTube metadata, Twitch clips) · " + (step >= 5 ? scanned.length + " candidates scanned, " + ver.length + " verified" : "scanning…");
+    out.onSources = () => this.setState({ tab: "sources" }); out.onLedger = () => this.setState({ tab: "ledger" });
+    // sources
+    out.sources = M.SOURCES.map(x => ({ name: x.name, host: x.host, dur: x.dur, views: x.views, note: x.note, hasCrowd: !!x.crowd, crowd: x.crowd ? x.crowd + " crowd timestamps" : "",
+      tr: x.transcript === "none" ? "LINK ONLY" : x.transcript === "rss" ? "READ · RSS" : "READ · YOURS", trBg: x.transcript === "none" ? "rgba(236,236,241,0.08)" : "rgba(94,201,143,0.14)", trColor: x.transcript === "none" ? "rgba(236,236,241,0.5)" : "#5EC98F" }));
+    // ledger
+    out.ledger = scanned.map(x => { const S = srcOf(x.src), ok = x.verified, flag = !ok && x.score >= 0.8; return { quote: x.quote, src: S.name ? S.name.split(" — ")[0] : x.src, t: x.t, beat: x.beat, q: x.q, score: x.score.toFixed(2), hasWhy: !!x.why, why: x.why || "",
+      mark: ok ? "✓" : flag ? "?" : "✕", markColor: ok ? "#5EC98F" : flag ? "#D9B36A" : "#E06A6A", color: ok ? "#ECECF1" : "rgba(236,236,241,0.5)", scoreColor: ok ? "#5EC98F" : flag ? "#D9B36A" : "#E06A6A", bg: ok ? "#141418" : "transparent" }; });
+    const nRej = scanned.filter(x => !x.verified && x.score < 0.8).length, nFlag = scanned.filter(x => !x.verified && x.score >= 0.8).length;
+    out.ledgerStats = [{ label: "SCANNED", value: scanned.length, color: "#ECECF1" }, { label: "VERIFIED", value: ver.length, color: "#5EC98F" }, { label: "FLAGGED", value: nFlag, color: "#D9B36A" }, { label: "REJECTED", value: nRej, color: "#E06A6A" }, { label: "REJECTION RATE", value: scanned.length ? Math.round(nRej / scanned.length * 100) + "%" : "—", color: "rgba(236,236,241,0.7)" }];
+    const maxF = Math.max(...M.ROUNDS.map(r => r.found), 1);
+    out.rounds = (step >= 7 ? M.ROUNDS : M.ROUNDS.slice(0, Math.max(0, step - 4))).map((r, i, arr) => ({ label: "r" + r.n + " · " + r.queries + "q → " + r.found, h: 18 + Math.round(r.found / maxF * 60), bg: i === arr.length - 1 && step >= 7 && arr.length > 1 && r.found === arr[i - 1].found ? "#2A2A31" : "#5EC98F" }));
+    out.stopText = step >= 7 ? "Cumulative distinct verified moments against queries issued. Round 3 added nothing after 13 more queries — the slope fell below a sixth of the early slope (the knee rule) — and every beat is either covered or listed as a gap with its tried queries. Capture–recapture agreed: the direct and crowd families overlapped on 4 of 5 shared stretches, so the pool isn't much bigger than what's here." : "Scout stops on two conditions, both required: finds level off, and every beat is covered or listed as a gap.";
+    out.diligence = step >= 7 ? M.ROUNDS[M.ROUNDS.length - 1].queries + " queries across 4 families · " + M.SOURCES.length + " sources triaged, " + M.SOURCES.filter(x => x.transcript !== "none").length + " read · " + scanned.length + " candidates, " + ver.length + " verified · counterpoints sought for every subject beat · " + M.BEATS.filter(b => b.role === "counter" && verified.some(v => v.beat === b.id)).length + " of 4 counterpoint beats covered. Exported with the project as evidence that the other side was sought." : "Written as Scout works: every query, every source checked, every counterpoint sought. It exports with the project.";
+    // the cut: attached moments in beat order; ghosts are attached rows not yet acquired
+    { const att = ver.filter(v => s.attached[v.src + v.t]);
+      const order = M.BEATS.map(b => b.id); att.sort((a, b) => order.indexOf(a.beat) - order.indexOf(b.beat));
+      const stateOf = v => { const S = srcOf(v.src); return S.transcript === "yours" ? "yours" : ((s.acq[v.src + v.t] || {}).st === "verified" ? "verified" : "ghost"); };
+      const durOf = v => { const q = v.quote.split(/\s+/).length; return Math.max(6, Math.round(q / 2.6) + 2); };
+      const blocks = []; att.forEach(v => { const S = srcOf(v.src), st = stateOf(v), d = durOf(v); blocks.push({ flex: d, title: v.quote, label: v.beat + " · " + d + "s", bg: st === "yours" ? "#2A2A31" : st === "verified" ? "rgba(94,201,143,0.35)" : "rgba(217,179,106,0.06)", border: st === "ghost" ? "dashed" : "solid", borderColor: st === "ghost" ? "#D9B36A" : "transparent", labelColor: st === "ghost" ? "#D9B36A" : "rgba(236,236,241,0.8)" }); if (M.BEATS.find(b => b.id === v.beat) && (M.BEATS.find(b => b.id === v.beat).role === "subject")) blocks.push({ flex: 4, title: "narration — you", label: "you · 4s", bg: "#1A1A1F", border: "solid", borderColor: "transparent", labelColor: "rgba(236,236,241,0.5)" }); });
+      out.cutBlocks = blocks; out.cutEmpty = att.length === 0;
+      const total = blocks.reduce((n, b) => n + b.flex, 0), ghosts = att.filter(v => stateOf(v) === "ghost");
+      out.cutMeta = att.length ? Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0") + " · " + att.length + " external moments · " + ghosts.length + (ghosts.length === 1 ? " ghost" : " ghosts") : "nothing attached yet";
+      const expiring = v => srcOf(v.src).host === "Twitch";
+      ghosts.sort((a, b) => (expiring(b) ? 1 : 0) - (expiring(a) ? 1 : 0));
+      out.missions = ghosts.map(v => { const S = srcOf(v.src), key = v.src + v.t, a = s.acq[key] || {}, st = a.st || "scouted", B = M.BEATS.find(b => b.id === v.beat) || {}, d = durOf(v), [mm, ss] = v.t.split(":").map(Number).slice(-2); const tin = v.t, tout = (mm + Math.floor((ss + d) / 60)) + ":" + String((ss + d) % 60).padStart(2, "0"); return {
+        quote: "“" + v.quote + "”", src: S.name ? S.name.split(" — ")[0] : v.src, tin, tout, dur: d + "s", beat: B.id + " · " + B.name, hasExpiry: expiring(v), expiry: "VOD expires in 11 days", why: S.transcript === "rss" ? "The feed publishes the file — one press fetches and verifies it." : (B.role === "counter" ? "His side, in his words — the cut is fairer with it." : "Carries the beat's proof — the cut has a hole without it."),
+        label: st === "scouted" ? (S.transcript === "rss" ? "Fetch it" : "Open at " + tin + " · grab it") : st === "mission" ? "Drop the file" : "Working…", bg: st === "mission" ? "#D9B36A" : "#ECECF1", color: "#131316", onGo: () => this.acquire(key, S) }; });
+      out.hasGhostsLeft = att.length > 0 && ghosts.length > 0; out.allReal = att.length > 0 && ghosts.length === 0;
+      const nm = out.missions[0]; out.hasNext = !!nm;
+      if (nm) { const done = att.length - ghosts.length; out.nextPos = (done + 1) + " of " + att.length + " · expiring first"; out.nextQuote = nm.quote; out.nextMeta = nm.src + " · in " + nm.tin + " · out " + nm.tout + " · " + nm.dur + (nm.hasExpiry ? " · " + nm.expiry : ""); out.nextLabel = nm.label; out.onNext = nm.onGo; } }
+    out.costLine = step === 0 ? (outside ? "this run: about $0.40 · about two minutes" : "") : step < 5 ? "metadata only · ~$0 so far" : "~$0.04 · 7.4 h of transcript scanned by a small model";
+    return out;
+  }
+}
+</script>
+</body>
+</html>
