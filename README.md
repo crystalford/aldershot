@@ -1,16 +1,65 @@
 # Aldershot
 
-**Editing is reading now.** Drop an hour of someone else's footage, type a
-sentence, get a publishable cut. No timeline, no scrubbing, no NLE.
+**The edit you can interrogate.** Attach footage — yours or other people's —
+say what you want in a sentence, and get a finished cut built from rules you
+can see and switch off, with a receipt for every claim.
 
 ## The spec is the prototype
 
-`design/Aldershot.dc.html` is the product, working, as a prototype. It is
-authoritative: where this repo's documentation and the prototype disagree, the
-prototype wins. `design/docs/` explains how to read it — start with
-`design/docs/08-HOW-TO-READ-THE-PROTOTYPE.md`, then `01-PRODUCT.md`.
+**`design/one-take/Aldershot One Take.dc.html` is the product** — One Take,
+handoff v3, 16 October 2026. It is authoritative: where this repo's
+documentation and the prototype disagree, the prototype wins. `docs/handoff/`
+explains how to build it — start with `docs/handoff/00-START-HERE.md`, or open
+`docs/handoff/Aldershot System.dc.html` to read the whole package as a site.
+`docs/labs/` holds the research the design rests on; its behaviour is spec.
 
-Open the prototype directly in a browser; `support.js` must be a sibling.
+Alongside it: `Aldershot Settings.dc.html` (plan, meters, BYOK, defaults),
+`Aldershot Manual.dc.html`, `Landing.dc.html`, `Scout.dc.html`, and
+`footage.js` — the reference rule engine, which is to be ported rather than
+reinvented (`docs/handoff/04-RULE-ENGINE.md`).
+
+Open any prototype directly in a browser; `support.js` must be a sibling, and
+in `design/one-take/` it is a symlink to the one copy in `design/`.
+
+### What is still the OLD design, and why
+
+`design/Aldershot.dc.html` is the **retired** monolith and `docs/archive/` the
+retired handoff. Neither is a specification any more. They are still here for
+one reason: **the fidelity scripts check the shipped UI against the retired
+prototype, and repointing them at One Take would red-line the build on day
+one** — One Take is one room where the old design had Home, Footage, Projects
+and a staged Editor, so almost every rendered string would fail at once.
+
+They get repointed per surface, as each surface is rebuilt, which is the
+sequencing `docs/handoff/16-STATE-OF-PLAY.md` argues for under its own risks.
+Until a surface is rebuilt, its fidelity check is measuring conformance to a
+superseded design — deliberately, and only to keep the gate meaningful for the
+code that has not moved yet.
+
+## Where the repo is ahead of the handoff
+
+`docs/handoff/16-STATE-OF-PLAY.md` was written against `main` on 14 October and
+is accurate for that date. Three things it lists as missing have since landed,
+and the build order should start from them rather than from zero:
+
+- **Hybrid retrieval, both halves.** `src/embeddings.ts` writes the clip
+  library into Vectorize from the hourly sweep, resumable and library-wide;
+  the index, its `user_id` metadata index and the binding all exist as of
+  17 Oct 2026. `findMaterial` runs meaning and word search as peers and fuses
+  them by reciprocal rank, rather than treating words as a fallback.
+- **A retrieval eval that runs today.** `npm run eval` reports recall@k over
+  your own library through the real page, using kept clips as labels, with
+  `--exact` as the keyword baseline to beat. It is an upper bound rather than
+  a prediction, and it is not the ~200-claim labelled set
+  `docs/handoff/06-FOOTAGE-SYSTEM.md` asks for — it is what measures pipeline
+  variants before that set exists.
+- **A scorer readout.** `npm run labels` says which decisions exist in the
+  database, refuses to print an AUC on too few, and reports how often the top
+  score band breaks the scoring prompt's own first two rules
+  (`src/portability.ts`).
+
+One correction to the same document: `src/essay.ts` outlines **four** acts
+(Setup · Development · Turn · Resolution), not five.
 
 ## Why the fidelity checks exist
 
@@ -43,8 +92,8 @@ face, making every type judgement worthless.
 
 ```
 src/
-  index.ts        Hono routes — one real URL per surface (design/docs/10-ROUTES-AND-KEYS.md)
-  schema.ts       D1 tables, lazy-created (design/docs/03-DATA-MODEL.md)
+  index.ts        Hono routes — one real URL per surface (docs/archive/handoff-v2/10-ROUTES-AND-KEYS.md)
+  schema.ts       D1 tables, lazy-created (docs/archive/handoff-v2/03-DATA-MODEL.md)
   models.ts       per-role AI model router, with the context-window constraints
   ui/
     tokens.ts     every colour, size, and radius, copied from the prototype
@@ -68,5 +117,5 @@ Durable Objects, Analytics Engine.
 
 ## Build order
 
-`design/docs/06-BUILD-PLAN.md`, phase by phase, each with acceptance criteria.
+`docs/archive/handoff-v2/06-BUILD-PLAN.md`, phase by phase, each with acceptance criteria.
 Open questions for the owner are in `docs/decisions/open-questions.md`.

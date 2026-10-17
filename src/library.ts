@@ -26,6 +26,8 @@ export interface Moment {
   source_key: string;
   short_key: string | null;
   thread_name: string | null;
+  /** 0, 1 or 2 from the scorer. Internal: it decides tags, never pixels. */
+  heat: number | null;
   /* Always 1 in this list — the query filters on it — but carried so the card
      can render its own state and put it back after an undo. */
   kept: number;
@@ -34,6 +36,16 @@ export interface Moment {
 const SELECT_MOMENTS = `
   SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.used_count, c.frame_r2_key,
          c.source_id, c.kept,
+         /* heat is how densely interesting the scorer found the stretch, and
+            it is read here for ONE reason: the rule engine's cap must never
+            drop a "strong" moment, and heat is the only signal we have about
+            which those are (src/moment-tags.ts). It is never shown — invariant
+            3, reasons not scores — and score is deliberately still not
+            selected, because nothing needs it outside the readout.
+            NO BACKTICKS IN HERE. This is inside a template literal, and the
+            first version of this comment quoted the column names with them,
+            which ended the literal and took the whole module with it. */
+         c.heat,
          s.title AS source_title,
          /* The footage this came from, so a clip can PLAY. A moment is a range
             of a video, and a video element given #t=start,end plays exactly
@@ -138,10 +150,23 @@ export async function searchExact(db: D1Database, userId: string, query: string,
 /**
  * Meaning search — embeddings, via Vectorize.
  *
- * Returns null when the index is not configured, so the caller can say so
- * plainly. Returning [] instead would be indistinguishable from "your library
- * has nothing like that in it", which is a different and much more misleading
- * statement.
+ * Returns null when the index does not answer, so the caller can say so
+ * plainly and fall back. Returning [] instead would be indistinguishable from
+ * "your library has nothing like that in it", which is a different and much
+ * more misleading statement.
+ *
+ * NOT CONFIGURED AND NOT WORKING ARE THE SAME ANSWER HERE, and they were not
+ * until the index existed. The guard was `if (!env.VECTORIZE)`, which asks
+ * whether the BINDING is declared — and the moment the binding was declared,
+ * every call went through to a Vectorize that throws in local development
+ * (there is no local implementation) and took the whole Footage page and the
+ * whole assembly path with it: two 500s on the first request after switching
+ * it on.
+ *
+ * The same hole is a production outage waiting for a bad minute. Vectorize
+ * being briefly unreachable should cost you the better half of search, not
+ * the page. So anything the index does — or fails to do — resolves to null,
+ * and the caller does what it already does when there is no index at all.
  */
 export async function searchMeaning(
   env: Env,
@@ -151,14 +176,22 @@ export async function searchMeaning(
 ): Promise<Moment[] | null> {
   if (!env.VECTORIZE) return null;
 
-  const { EMBED } = await import("./models.ts");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<{ data?: number[][] }>;
-  const embedded = await run(EMBED.id, { text: [query] });
-  const vector = embedded.data?.[0];
-  if (!vector) return null;
+  let ids: string[];
+  try {
+    const { EMBED } = await import("./models.ts");
+    const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<{ data?: number[][] }>;
+    const embedded = await run(EMBED.id, { text: [query] });
+    const vector = embedded.data?.[0];
+    if (!vector) return null;
 
-  const matches = await env.VECTORIZE.query(vector, { topK: limit, filter: { user_id: userId } });
-  const ids = (matches.matches ?? []).map((m) => m.id);
+    const matches = await env.VECTORIZE.query(vector, { topK: limit, filter: { user_id: userId } });
+    ids = (matches.matches ?? []).map((m) => m.id);
+  } catch (err) {
+    /* Logged rather than swallowed silently: "search got quietly worse" is a
+       thing somebody has to be able to find out about afterwards. */
+    console.log(`[meaning] ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
   if (!ids.length) return [];
 
   const marks = ids.map(() => "?").join(",");

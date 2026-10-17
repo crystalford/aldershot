@@ -40,7 +40,21 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
  * silently lose half the editor. One contract, two readings, nothing in
  * src/ui/client.ts changed at all.
  */
-export type CutView = "blocks" | "script";
+/*
+ * THE CENTRE'S TABS. One Take names four — Footage · Blocks · Words · Shorts.
+ *
+ * Three are here. SHORTS is not, and that is the honest answer rather than a
+ * gap: its tab lists candidates graded Strong / Worth a look / Long shot with
+ * a reason for each, and the three-way judge that produces those gradings is
+ * Phase 4. A fourth tab holding a list the product cannot grade would be a
+ * promise in a tab bar, which is the thing the conventions check exists to
+ * stop. It goes in when the judge does.
+ *
+ * `script` keeps its name in the URL — /p/:id/script is an existing link —
+ * and reads as WORDS in the bar, which is what the prototype calls it and
+ * what it always meant.
+ */
+export type CutView = "footage" | "blocks" | "script";
 
 export interface CutData {
   projectId: string;
@@ -83,8 +97,43 @@ export interface CutData {
   cameFrom: [string, string];
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
+  /**
+   * Every moment in the library, seen THROUGH THE RULES.
+   *
+   * The Footage tab inside a project is not the library — it is the library
+   * with the cut's verdict on each moment: in and which rule put it there, or
+   * out and which rule took it, and that one is clickable because disagreeing
+   * with a rule is the point.
+   */
+  moments: Array<{ id: string; quote: string; source_title: string; in: boolean; note: string }>;
+  /**
+   * Videos this cut is NOT drawing on, and could.
+   *
+   * Empty when the cut has no scope — it already draws on everything, so
+   * there is nothing to add and offering to would be a control that cannot
+   * do anything.
+   */
+  addable: Array<{ id: string; title: string }>;
+  /**
+   * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
+   *
+   * The product's whole claim is that you can see why a moment is in the cut.
+   * The rules pane said it at the top of the column and every block below it
+   * stayed silent, so the answer was available and never attached to the
+   * thing it was about. The prototype puts "rule 01" on the block.
+   */
+  blockRule: Record<string, string>;
+  /** "2:04 · 3 blocks · from 2 videos · one thread at a time". */
+  cutLine: string;
   /** Every instruction given to the model on this cut, and what came of it. */
   passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
+  /**
+   * The rules that produced this cut, when it was made from rules at all.
+   *
+   * Empty for every edit that began with a video, because those are still the
+   * staged editor's and have no rule set. An assembled cut has one.
+   */
+  rules: Array<{ id: string; text: string; on: boolean; effect: string; hand: boolean }>;
 }
 
 /**
@@ -95,7 +144,14 @@ export interface CutData {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
-function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView = "blocks"): string {
+function blockRow(
+  b: Block,
+  cuts: Cut[],
+  i: number,
+  total: number,
+  view: CutView = "blocks",
+  rule = "",
+): string {
   const script = view === "script";
   const struck = b.struck;
 
@@ -317,10 +373,16 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView
    */
   const dur = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
   const why = (b.why ?? "").trim();
+  /* The rule, on the block. Quiet — it is a label, not a control — and only
+     in Blocks, because the script view is a page of prose. */
+  const ruleChip =
+    rule && !script
+      ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(rule)}</span>`
+      : "";
   const meta = why
-    ? `<div class="blk-why" data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</div>`
-    : dur
-      ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(dur)}</div>`
+    ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span class="blk-why" data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</span></div>`
+    : dur || ruleChip
+      ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span data-content style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5">${esc(dur)}</span></div>`
       : "";
 
   /* Reading, not managing: no card, no frame, no rule between lines. The
@@ -485,6 +547,63 @@ function passLogPanel(passes: CutData["passes"]): string {
 }
 
 /**
+ * THE RULES THAT MADE THIS CUT, and what each one is doing right now.
+ *
+ * "Every rule shows what it does right now … This is the explanation layer;
+ * without it the product is a black box with toggles" — 04-RULE-ENGINE.md.
+ * Until this existed an assembled cut arrived as a list of moments from
+ * several videos with no account of why those and not others, which is the
+ * exact review gap this product is meant to be better at than everyone else.
+ *
+ * Each row is a real switch now. Invariant 6: nothing is deleted, rules
+ * switch off — so the control is a toggle rather than a remove, and a rule
+ * that is off stays in the list saying "off — footage as shot" rather than
+ * vanishing and leaving the cut unexplained.
+ */
+function rulesPanel(rules: CutData["rules"]): string {
+  if (!rules.length) return "";
+
+  /*
+   * NUMBERED, AND THE NUMBERS COME FROM THE RULES PROPER.
+   *
+   * A moment says "in · rule 01" and the pane has to agree with it, so the
+   * numbering counts only the rules that are rules — a hand decision is the
+   * escape hatch FROM them and is listed apart, exactly as the reference does
+   * it (main = rules.filter(r => !r.hand)). Number the whole list and every
+   * reference from a moment points one line too far down.
+   */
+  const main = rules.filter((r) => !r.hand);
+  const byHand = rules.filter((r) => r.hand);
+  const number = (r: CutData["rules"][number]) => {
+    const i = main.indexOf(r);
+    return i < 0 ? "" : String(i + 1).padStart(2, "0");
+  };
+
+  const rows = (list: CutData["rules"]) => list
+    .map(
+      (r) => `<button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
+        style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;width:100%;text-align:left;
+        background:none;border:none;padding:3px 0;cursor:pointer;font-family:inherit;color:inherit">
+        <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${number(r)}</span>
+        <span data-content style="flex:1 1 150px;min-width:min(140px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,${r.on ? "0.8" : "0.38"});line-height:1.5;${r.on ? "" : "text-decoration:line-through;text-decoration-color:rgba(236,236,241,0.3)"}">${esc(r.text)}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};color:${r.on ? ACCENT.gold : C.ink32}">${esc(r.effect)}</span>
+      </button>`,
+    )
+    .join("");
+
+  return `<div style="padding-bottom:13px;border-bottom:1px solid rgba(255,255,255,0.05)">
+    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">THE RULES</div>
+    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(main)}</div>
+    ${
+      byHand.length
+        ? `<div style="margin-top:12px;font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">by hand</div>
+           <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(byHand)}</div>`
+        : ""
+    }
+  </div>`;
+}
+
+/**
  * FIND, ON THE DOCUMENT WHERE IT BELONGS.
  *
  * This was merged into the assistant yesterday, on the argument that find and
@@ -605,7 +724,11 @@ function assistant(d: CutData, player: string): string {
     : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Press one, or say it in your own words.</div>`;
 
   return `<div class="asst" data-project="${esc(d.projectId)}">
-    <div class="asst-top">${player}</div>
+    <!-- THE RULES, at the top of direction. They are the standing answer to
+         "why these moments"; the conversation below is the history of asking,
+         and the composer under that is where the next one goes. The player
+         used to sit here and is now its own column. -->
+    <div class="asst-top">${player}${rulesPanel(d.rules)}</div>
 
     <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}
@@ -714,6 +837,62 @@ export function renderBlockSlice(
   return out.join("");
 }
 
+/**
+ * The library with the cut's verdict on each moment.
+ *
+ * "in · rule 01" or "out · rule 02 · click to keep" — the reference's own
+ * wording, and the numbering has to match the pane exactly or a moment points
+ * at the wrong line. Green for in, because the colour carries the verdict for
+ * anyone scanning rather than reading.
+ */
+/**
+ * ADD A VIDEO TO THIS CUT.
+ *
+ * The same gesture as attaching before a project exists, after it does. Its
+ * moments are judged by the rules already on the board the moment it lands —
+ * which is what "they join left out until a rule or your hand keeps them"
+ * means once there are rules to do the keeping.
+ */
+function addToCut(d: CutData): string {
+  if (!d.addable.length) return "";
+  return `<div style="margin-top:14px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">not in this cut</span>
+    ${d.addable
+      .map(
+        (s) => `<button class="add-source" type="button" data-source="${esc(s.id)}"
+          style="font-size:${SIZE.meta};padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit;max-width:min(220px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span data-content>${esc(s.title)}</span></button>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function momentsThroughRules(d: CutData): string {
+  if (!d.moments.length) {
+    return `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
+  }
+  /*
+   * EVERY ROW IS A BUTTON, because every row's note promises a click.
+   *
+   * "out · rule 02 · click to keep" shipped on a div with no handler — a
+   * sentence on screen telling somebody to do something that does nothing.
+   * The same failure as the MAKE cards one commit earlier, and the gate did
+   * not catch this one either, so it grew a rule about promised clicks too.
+   *
+   * Disagreeing with a rule is the point of this tab: a hand decision
+   * overrides every rule above it (step 6 of the engine), so keeping a moment
+   * the cap dropped is one press, and the cut is re-produced around it.
+   */
+  return `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.moments
+    .map(
+      (m) => `<button class="moment-hand" type="button" data-moment="${esc(m.id)}" data-in="${m.in ? 1 : 0}"
+        style="display:flex;gap:12px;align-items:baseline;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};opacity:${m.in ? "1" : ".62"};width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit">
+        <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70}">${esc(m.quote.slice(0, 120))}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${m.in ? ACCENT.green : C.ink45}">${esc(m.note)}</span>
+      </button>`,
+    )
+    .join("")}</div>`;
+}
+
 export function renderCut(d: CutData): string {
   const [backLabel, backHref] = d.cameFrom;
 
@@ -740,8 +919,9 @@ export function renderCut(d: CutData): string {
       existed as a legacy alias and this is what it always should have meant.
     -->
     <div class="view-swap" style="margin-left:auto">
+      <a href="/p/${esc(d.projectId)}/footage"${d.view === "footage" ? ' aria-current="page"' : ""}>Footage</a>
       <a href="/p/${esc(d.projectId)}/cut"${(d.view ?? "blocks") === "blocks" ? ' aria-current="page"' : ""}>Blocks</a>
-      <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Script</a>
+      <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Words</a>
     </div>
   </div>`;
 
@@ -889,7 +1069,7 @@ export function renderCut(d: CutData): string {
   const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length, view));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? ""));
     list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
@@ -903,22 +1083,47 @@ export function renderCut(d: CutData): string {
   <div style="margin-top:16px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
 
     <!--
-      THE DOCUMENT, and it goes first because it is what you are reading.
-      Left and wide: the transcript is the work, and it used to be whatever
-      was left over after a rail of controls took its 300px.
+      DIRECTION, on the left: the rules that made this cut, the conversation
+      about it, and the box you say the next thing in. First in the markup
+      because it is first on the screen and because it is the thing the
+      product is about — the document is the result, this is the control.
+    -->
+    ${assistant(d, "")}
+
+    <!--
+      THE THING ITSELF, in the centre. The transcript is the work.
     -->
     <div class="editor-doc">
-      ${findBar(d.projectId)}
+      ${
+        d.view === "footage"
+          ? addToCut(d) + momentsThroughRules(d)
+          : `${
+              /*
+               * WHAT THE CUT IS, in one line, before the blocks.
+               *
+               * "5:59 · 12 blocks · 3 of 3 vlogs · one thread at a time" —
+               * the prototype opens the centre column with it and I had a
+               * search bar there and nothing else. The numbers are the same
+               * ones the bottom bar carries; this says them where you are
+               * reading rather than where you scroll to.
+               */
+              `<div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
+                <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">The cut</span>
+                <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(d.cutLine)}</span>
+              </div>`
+            }${findBar(d.projectId)}
       <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
         ${list.join("")}
-      </div>
+      </div>`
+      }
     </div>
 
     <!--
-      THE ASSISTANT. Video at the top because it is what you are both looking
-      at, the conversation under it, the composer pinned at the bottom.
+      THE PLAYER, in its own column on the right. One Take is three columns
+      and this is the third; it used to sit at the top of the assistant, which
+      made one column do two jobs and left the document what was left over.
     -->
-    ${assistant(d, player + sourceLine)}
+    <div class="editor-player">${player}${sourceLine}</div>
   </div>
   <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
     <span id="cut-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${d.keptCount} kept · ${hms(d.runtimeMs / 1000)}</span>

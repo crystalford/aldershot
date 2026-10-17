@@ -1,11 +1,11 @@
 /**
  * The complete icon set — eight icons, copied verbatim from
- * design/docs/09-ICONS.md, which in turn transcribes the inline SVGs in
+ * docs/archive/handoff-v2/09-ICONS.md, which in turn transcribes the inline SVGs in
  * design/Aldershot.dc.html.
  *
  * THERE IS NO ICON LIBRARY AND THERE MUST NOT BE ONE. The previous build
  * substituted a library's lookalikes and the whole product read differently
- * (see design/docs/PROMPTING-NOTES.md). Geometry never varies; only width,
+ * (see docs/archive/handoff-v2/PROMPTING-NOTES.md). Geometry never varies; only width,
  * height, stroke, and fill do.
  *
  * If a feature seems to need a ninth icon, it doesn't — this design draws with

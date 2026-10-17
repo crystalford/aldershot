@@ -1,5 +1,5 @@
 /**
- * The three static fidelity checks from design/docs/PROMPTING-NOTES.md.
+ * The three static fidelity checks from docs/archive/handoff-v2/PROMPTING-NOTES.md.
  * (Check #1, the screenshot diff, is scripts/shoot.cjs — it needs eyes.)
  *
  *   2. Every icon, with its source. If the answer is a library name, it's wrong.
@@ -26,8 +26,25 @@ const ROOT = path.resolve(__dirname, '..');
  * against the app prototype alone reported both of those as inventions.
  */
 const APP_PROTO = fs.readFileSync(path.join(ROOT, 'design/Aldershot.dc.html'), 'utf8');
+/*
+ * THE NEW PROTOTYPE, AS A SECOND ACCEPTED SOURCE — which is how this check
+ * gets repointed without red-lining the build.
+ *
+ * One Take is the design authority (see the README), but the shipped surfaces
+ * are still the retired design's, so swapping this file for that one fails
+ * almost every rendered string at once. Accepting EITHER is the migration:
+ * a surface that has not moved keeps passing against the prototype it was
+ * built from, anything written for One Take passes against One Take, and copy
+ * that exists in neither still fails — which is the only thing this check is
+ * actually for.
+ *
+ * It gets stricter as surfaces move, not looser: when a surface is rebuilt,
+ * its strings stop matching the retired file and start matching this one.
+ * Drop the retired file from PROTO once nothing needs it.
+ */
+const ONE_TAKE_PROTO = fs.readFileSync(path.join(ROOT, 'design/one-take/Aldershot One Take.dc.html'), 'utf8');
 const LANDING_PROTO = fs.readFileSync(path.join(ROOT, 'design/Landing.dc.html'), 'utf8');
-const PROTO = APP_PROTO + '\n' + LANDING_PROTO;
+const PROTO = APP_PROTO + '\n' + LANDING_PROTO + '\n' + ONE_TAKE_PROTO;
 const TOKENS = fs.readFileSync(path.join(ROOT, 'src/ui/tokens.ts'), 'utf8');
 
 let findings = 0;
@@ -185,7 +202,13 @@ function checkWired() {
     const d = path.join(ROOT, root);
     if (fs.existsSync(d)) walkAny(d, files);
   }
-  const text = Object.fromEntries(files.map((f) => [f, decomment(fs.readFileSync(f, 'utf8'))]));
+  /* MODULE PATHS ARE NOT USES. `scout-decompose.ts` contains the word
+     "decompose", so every file that imports anything out of it counted as a
+     caller for `decompose()` — which was exported and called nowhere, and
+     this check said it was wired. Any export whose name is a word in its own
+     filename got the same free pass. */
+  const nospec = (t) => t.replace(/(["'])[^"'\n]*\1/g, (m) => (/[./]/.test(m) ? ' ' : m));
+  const text = Object.fromEntries(files.map((f) => [f, nospec(decomment(fs.readFileSync(f, 'utf8')))]));
   for (const f of files) {
     if (!f.includes(`${path.sep}src${path.sep}`)) continue;
     for (const m of fs.readFileSync(f, 'utf8').matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)) {
@@ -338,6 +361,46 @@ async function checkStrings() {
     return;
   }
 
+  /*
+   * TEXT THAT PROMISES A CLICK MUST BE ON SOMETHING CLICKABLE.
+   *
+   * "out · rule 02 · click to keep" shipped on a plain div — a sentence on
+   * screen telling somebody to do something that did nothing. The second of
+   * these in two commits, after six MAKE cards linking to a query nobody
+   * read, and neither was caught: the strings were the prototype's own, the
+   * colours were tokens, and nothing anywhere asked whether a promise was
+   * kept.
+   *
+   * Checked on the RENDERED page rather than in the source, which is the
+   * mistake the first version of this rule made: it scanned src/ui and the
+   * promise is assembled in index.ts, so it found nothing and passed the very
+   * bug it was written for. What matters is what reaches the browser.
+   *
+   * A promise is kept when the text sits inside a button or a link. That is
+   * deliberately narrow — those are the two things a person can press — and
+   * it cannot be satisfied by rewording, because the words come from the
+   * prototype and the strings check holds them there.
+   */
+  const promises = [];
+  const scanPromises = async (list) => {
+  for (const route of list) {
+    let html = '';
+    try {
+      html = await (await fetch(BASE + route)).text();
+    } catch {
+      continue;
+    }
+    for (const m of html.matchAll(/click to \w+/g)) {
+      const before = html.slice(0, m.index);
+      const openBtn = Math.max(before.lastIndexOf('<button'), before.lastIndexOf('<a '));
+      const closeBtn = Math.max(before.lastIndexOf('</button>'), before.lastIndexOf('</a>'));
+      if (openBtn < 0 || closeBtn > openBtn) {
+        promises.push(route + ': "' + m[0] + '" — promised on something nothing can press');
+      }
+    }
+  }
+  };
+
   const normalise = (s) => s.replace(/\s+/g, ' ').replace(/[\u2019']/g, "'").trim();
   const proto = normalise(PROTO.replace(/<[^>]+>/g, ' '));
   const protoRaw = normalise(PROTO);
@@ -370,6 +433,31 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    /*
+     * THE EMPTY STATES, which this check could not see until today.
+     *
+     * Both of these render only when the account has nothing in it, and there
+     * was always something in it — so a gate that has passed for weeks had
+     * never once reached either string. They surfaced the first time a local
+     * database was emptied on purpose.
+     *
+     * Signed off rather than rewritten because the prototype has no empty
+     * states at all: every frame of it shows a populated library, which is the
+     * normal way a design is drawn and the reason this gap existed. The words
+     * say the one thing a person needs at that moment — what to do next, and
+     * roughly how long it takes — and neither invents a capability.
+     */
+    ...[
+      "Drop a file or paste a link above. An hour of footage takes a few minutes to transcribe.",
+      "Nothing here yet — upload a video and it starts transcribing.",
+    ].map((t) => [
+      t,
+      "An empty state. The prototype draws every surface populated, so it has " +
+        "no wording for a library with nothing in it, and these two were " +
+        "unreachable by this check until a local database was emptied on " +
+        "purpose. Kept as written: each says what to do next and how long it " +
+        "takes, and claims nothing the product does not do.",
+    ]),
     ...[
       "As recorded",
       "Clean it up",
@@ -809,8 +897,18 @@ async function checkStrings() {
       // One editor, one URL. The four stage paths are aliases of it, so
       // crawling all four checked the same HTML four times.
       routes.push('/p/' + projects[0].id + '/cut');
+      /*
+       * And the Footage tab, which is NOT an alias — it renders a different
+       * centre column, with the most consequential copy in the editor on it:
+       * every moment's verdict and the rule that reached it. It was outside
+       * the crawl entirely, which is how "click to keep" shipped on a plain
+       * div and no check saw the promise at all.
+       */
+      routes.push('/p/' + projects[0].id + '/footage');
     }
   } catch {}
+
+  await scanPromises(routes);
 
   for (const route of routes) {
     const html = await (await fetch(BASE + route)).text();
@@ -916,12 +1014,14 @@ async function checkStrings() {
   }
 
   if (suspect.length) {
-    fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.join('\n'));
+    fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.concat(promises).join('\n'));
+  } else if (promises.length) {
+    fail('strings', 'A promise on screen that nothing can keep. Make it pressable or stop saying it.', promises.join('\n'));
   } else {
     const used = [...SIGNED_OFF.keys()].filter((k) => seen.has(k));
     pass(
       'strings',
-      `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype` +
+      `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype, every promised click pressable` +
         (used.length ? ` (+${used.length} signed off: ${used.map((u) => JSON.stringify(u)).join(', ')})` : ''),
     );
   }
@@ -1068,7 +1168,12 @@ function checkReachable() {
         pass has written a row since the feature shipped, its own comment says
         "shown as the Passes log", and the only other statement about it in
         the codebase was a DELETE. */
-  const schema = fs.readFileSync(path.join(ROOT, 'migrations/0006_v2_core.sql'), 'utf8');
+  /* READ WHAT ACTUALLY RUNS. This read migrations/0006_v2_core.sql, which
+     src/schema.ts's own header calls "a checked-in mirror ... kept for
+     readability; THESE are what actually run". Nine Scout tables added to
+     schema.ts were therefore invisible to this rule, and so would any table
+     added the way every table in this repo is added. */
+  const schema = walk(path.join(ROOT, 'src')).map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const all = fs.readFileSync(path.join(ROOT, 'src/index.ts'), 'utf8') + '\n' + server + '\n' + pages;
   for (const m of schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
     const table = m[1];
@@ -1077,14 +1182,163 @@ function checkReachable() {
     if (written && !read) problems.push('table ' + table + ' — written, and nothing ever reads it back');
   }
 
+  /*
+   * A LINK TO A QUERY NOBODY READS IS A DEAD CONTROL.
+   *
+   * Six MAKE cards shipped as <a href="/?make=cut">. The server never reads
+   * `make`, so pressing one reloaded the page unchanged — and every other
+   * check passed it: the strings were real, the colours were tokens, and
+   * `wiring` only looks at classes the client binds, which a plain link has
+   * no business having. A control that looks like it does something and does
+   * nothing is the exact failure this file exists for, and it walked straight
+   * through.
+   *
+   * So: every query parameter a page LINKS to must be one the server asks
+   * for. Cheap, total, and it cannot be satisfied by anything but wiring the
+   * parameter up or taking the link out.
+   */
+  const asked = new Set([...all.matchAll(/\.query\(\s*["'`](\w+)["'`]/g)].map((m) => m[1]));
+  const linked = new Map();
+  for (const m of pages.matchAll(/href="[^"]*\?([^"]+)"/g)) {
+    for (const pair of m[1].split('&')) {
+      const key = pair.split('=')[0].replace(/^\$\{[^}]*\}/, '').trim();
+      /* Skip an interpolated key — it is computed and cannot be read here. */
+      if (/^\w+$/.test(key) && !asked.has(key)) linked.set(key, m[0].slice(0, 60));
+    }
+  }
+  for (const [key, where] of linked) {
+    problems.push('link ?' + key + '= — nothing on the server reads it (' + where + '…)');
+  }
+
+  /*
+   * NOTHING FETCHES VIDEO FROM A PLATFORM THAT FORBIDS IT.
+   *
+   * Invariant 9, and Scout v0's first acceptance test: "No code path fetches
+   * audiovisual content from YouTube or Twitch (a test greps for media-fetch
+   * calls on those adapters)."
+   *
+   * WRITTEN BEFORE THE ADAPTERS, which is the whole point. The rule is easy
+   * to hold while nobody has tried, and the moment somebody is three hours
+   * into a YouTube adapter and wants one video file for one test, it is a
+   * judgement call made alone at the wrong time. A check that already exists
+   * is not a judgement call. It also outlives whoever writes the adapter,
+   * which a comment does not.
+   *
+   * It looks for a FETCH whose URL names one of those hosts' media. Searching
+   * for the host alone would fire on every honest thing Scout does — storing
+   * an id, writing a watch link, reading an RSS feed — and a check that fires
+   * on correct code gets switched off.
+   */
+  const MEDIA_HOSTS = [
+    'googlevideo\\.com',
+    'ytimg\\.com/vi/[^"\']*\\.mp4',
+    'youtube\\.com/get_video',
+    'youtube\\.com/watch\\?[^"\']*&?format=',
+    'ttvnw\\.net',
+    'twitch\\.tv/[^"\']*\\.m3u8',
+    'cloudfront\\.net/[^"\']*twitch',
+    'yt-dlp',
+    'youtube-dl',
+    'ytdl',
+  ];
+  const MEDIA = new RegExp('(' + MEDIA_HOSTS.join('|') + ')', 'i');
+  for (const f of walk(path.join(ROOT, 'src'))) {
+    const src = fs.readFileSync(f, 'utf8');
+    /* Comments are where the rule gets EXPLAINED, so they are stripped — a
+       paragraph naming yt-dlp to say we do not use it must not trip it. The
+       line is blanked rather than removed so the number still points at the
+       right line of the real file. */
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+      .replace(/^(\s*)\/\/.*$/gm, '$1');
+    code.split('\n').forEach((line, i) => {
+      if (MEDIA.test(line) && /fetch\(|axios|request\(|exec|spawn/.test(line)) {
+        problems.push(
+          path.relative(ROOT, f) + ':' + (i + 1) +
+            ' — fetches audiovisual content from a platform that forbids it (invariant 9): ' +
+            line.trim().slice(0, 70),
+        );
+      }
+    });
+  }
+
   if (problems.length) {
     fail(
       'reachable',
-      'Something on the server has no way to reach a person. Either wire it up or take it out.',
+      'Something on the server has no way to reach a person, or reaches somewhere it may not. Wire it up, take it out, or stop fetching it.',
       problems.join('\n'),
     );
   } else {
-    pass('reachable', 'every API route is asked for, and every table written is read back');
+    pass('reachable', 'every API route is asked for, every table written is read back, every linked query is read, nothing downloads footage it may not');
+  }
+}
+
+/* ── 10. Schema document ───────────────────────────────────────────────────
+ *
+ * THE SCHEMA DOCUMENT HAD NOT BEEN TRUE FOR A LONG TIME.
+ *
+ * src/schema.ts's header calls migrations/ "a checked-in mirror of the
+ * statements below, kept for readability; THESE are what actually run". When
+ * this check was written the mirror disagreed with the running schema about
+ * twelve tables and had never heard of thirteen more — and the table rule in
+ * checkReachable was reading it, so it had been reporting on a schema that
+ * stopped existing some time in the summer.
+ *
+ * A wrong schema document is worse than no schema document: it is the thing
+ * somebody reads to find out what a column means, at exactly the moment they
+ * have decided not to read the code.
+ *
+ * So migrations/schema.sql is GENERATED — `npm run schema` — and this check
+ * fails if it has fallen behind. The numbered files beside it stay as
+ * history; nothing here is deleted, and nothing reads them.
+ *
+ * Compared on whitespace-flattened statement text, so indentation and line
+ * breaks are free and a renamed column is not.
+ */
+function checkSchema() {
+  /* Block comments are stripped before anything else: they are not schema,
+     and one of them contains a semicolon ("presigned URLs; \"worker\" = …"),
+     which split that table in half when the document was read statement by
+     statement and reported it as drift. */
+  const nocomment = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const flat = (t) =>
+    nocomment(t).replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim().toLowerCase();
+  const name = (t) => (t.match(/create (?:table|index) if not exists (\w+)/i) || [])[1];
+
+  const live = new Map();
+  for (const f of walk(path.join(ROOT, 'src'))) {
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
+      const n = name(m[1]);
+      if (n) live.set(n, flat(m[1]));
+    }
+  }
+
+  const doc = path.join(ROOT, 'migrations/schema.sql');
+  const bad = [];
+  if (!fs.existsSync(doc)) {
+    bad.push('migrations/schema.sql is missing — run `npm run schema`');
+  } else {
+    const written = new Map();
+    const sql = nocomment(fs.readFileSync(doc, 'utf8')).replace(/^\s*--.*$/gm, '');
+    for (const stmt of sql.split(';')) {
+      const n = name(stmt);
+      if (n && !written.has(n)) written.set(n, flat(stmt));
+    }
+    for (const [n, stmt] of live) {
+      if (!written.has(n)) bad.push(n + ' — runs, and the schema document has never heard of it');
+      else if (written.get(n) !== stmt) bad.push(n + ' — the code and the schema document disagree about its shape');
+    }
+    /* And the other way: a table in the document that nothing creates is a
+       table a reader will look for and not find. */
+    for (const n of written.keys()) {
+      if (!live.has(n)) bad.push(n + ' — in the schema document and created by nothing');
+    }
+  }
+
+  if (bad.length) {
+    fail('schema', 'The schema that runs and the schema a person reads have come apart. `npm run schema`.', bad.join('\n'));
+  } else {
+    pass('schema', live.size + ' tables and indexes, each in migrations/schema.sql with the same shape');
   }
 }
 
@@ -1092,6 +1346,7 @@ checkTemplate();
 checkWired();
 checkConventions();
 checkReachable();
+checkSchema();
 checkWiring();
 
 checkStrings().then(() => {

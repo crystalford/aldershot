@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+  <div style="display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">LABS</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Scout — or whatever you call him · the one who looks outside · a character prototype</span>
+    <a href="Scout.dc.html" style="font-size:12px;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Scout</a>
+  </div>
+
+  <div style="display:flex;justify-content:center;padding:0 clamp(16px,4vw,40px) 120px">
+    <div style="width:min(1040px,100%)">
+
+      <div style="padding-top:48px;display:flex;gap:40px;align-items:center;flex-wrap:wrap">
+        <div style="flex:none;width:260px;height:260px;display:flex;align-items:center;justify-content:center;border-radius:16px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+          <dc-import name="Recce" state="{{ heroState }}" name-of="{{ heroName }}" size="200" hint-size="200px,208px"></dc-import>
+        </div>
+        <div style="flex:1 1 380px;min-width:min(380px,100%)">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">HIS NAME</span><input value="{{ heroName }}" oninput="{{ onHeroName }}" title="Scout by default. Name him and every line he says uses it." style="width:9em;background:transparent;border:none;outline:none;border-bottom:1px dashed rgba(236,236,241,0.3);color:#ECECF1;font-family:'Instrument Sans',sans-serif;font-size:15px;font-weight:600;padding:0 0 2px"/><span style="font-size:11px;color:rgba(236,236,241,0.4)">Scout by default · we called ours Recce — army slang for reconnaissance</span></div>
+          <h1 style="margin:10px 0 0;font-size:clamp(30px,4vw,44px);font-weight:600;letter-spacing:-0.025em;line-height:1.05;text-wrap:pretty">{{ heroName }} — the one who looks outside your footage.</h1>
+          <p style="margin:14px 0 0;font-size:15px;line-height:1.65;color:rgba(236,236,241,0.72);text-wrap:pretty">Recce appears only when Scout is looking beyond what you've uploaded. He shows one thing — the state of the search — and says it in the product's voice. He finds and links; he never downloads, never cheers, and never has an opinion about anyone. He's a scout probe — a pale pod that faces forward, a dark visor with one lens, two swept fins, a thin sensor mast with a light, a thruster at the back — because a scout is the thing you send out past your own footage. The shell is pale so he reads on the dark interface. He carries <span style="color:#ECECF1">one colour at a time, and it says what he's doing</span>: teal while he's out looking, green when a find verifies, gold when there's a card for you to grab, red when he's come back with nothing. The same meanings those colours have on every other screen.</p>
+          <div style="margin-top:18px;display:flex;gap:2px;padding:2px;border-radius:6px;background:#17171B;width:max-content;max-width:100%;flex-wrap:wrap">
+            <sc-for list="{{ states }}" as="st" hint-placeholder-count="6">
+              <div tabindex="0" role="button" onclick="{{ st.onGo }}" style="font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:4px;background:{{ st.bg }};color:{{ st.color }};cursor:pointer;white-space:nowrap">{{ st.name }}</div>
+            </sc-for>
+          </div>
+          <div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <dc-import name="Recce" state="{{ heroState }}" size="22" hint-size="22px,24px"></dc-import>
+            <div style="flex:1;min-width:0;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.85);text-wrap:pretty">{{ heroLine }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:56px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:28px">
+        <div>
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT HE'S MADE OF</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.78)">
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">01</span><span style="text-wrap:pretty"><span style="color:#ECECF1">The silhouette.</span> A forward-facing pod with a visor, two fins swept back, a mast, a flame behind — a small craft going somewhere, readable in black at 18px, pale enough to stand off the dark UI at a glance. A probe, because <em style="font-style:normal;color:#ECECF1">recce</em> is reconnaissance: you send it out to see past your own footage.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">02</span><span style="text-wrap:pretty"><span style="color:#ECECF1">One eye, one colour at a time.</span> The lens, the mast light, the flame and the glow beneath all take the same colour, and the colour is the state: teal out looking, green verified, gold a mission, red thin, grey off. Never two colours at once — that was the version that read as a badge. A white catchlight keeps the eye alive; it blinks while he waits and scans side to side while he looks.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">03</span><span style="text-wrap:pretty"><span style="color:#ECECF1">Motion says the rest.</span> Idle is a slow hover and a short flame. Looking is flight — a lean forward, a long flickering flame, the lens scanning with the searchlight sweeping ahead, two speed lines behind. Thin is a tilt down and a weak flame. A mission is the card slung underneath. Off is grounded: shell dulled, no flame, lens dark.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">04</span><span style="text-wrap:pretty"><span style="color:#ECECF1">The tick.</span> On a verified find the colour turns green and a small tick appears inside the lens — under half a second. No confetti, no sound.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">05</span><span style="text-wrap:pretty"><span style="color:#ECECF1">Why this and not the last one.</span> The first drafts carried the wordmark's bars and then four colours; both read as badges, and colour fields fight a dark UI at small sizes. The redesign follows the rules every good small character follows: silhouette first, one accent, the eye as the focal point, and state carried by motion.</span></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">HOW HE BEHAVES</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.78)">
+            <div style="text-wrap:pretty"><span style="color:#ECECF1">He only shows up when looking outside is on.</span> Inside your own footage the system speaks as itself; Recce is the part of it that went out.</div>
+            <div style="text-wrap:pretty"><span style="color:#ECECF1">He shows state, not personality.</span> Six states, nothing else. He has no face when it's bad news — a thin result is a dimmed lens and a flat line, not a frown.</div>
+            <div style="text-wrap:pretty"><span style="color:#ECECF1">He never celebrates.</span> A find is a tick and a sentence with a timestamp. "Verified against the source at 12:34", not "Nice catch!".</div>
+            <div style="text-wrap:pretty"><span style="color:#ECECF1">He never has an opinion about a person.</span> He reports behaviour — what was said, on camera, when — and brings the other side with it.</div>
+            <div style="text-wrap:pretty"><span style="color:#ECECF1">He finds and links.</span> When something has to be grabbed, he hands you the card. He doesn't go and get it.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:56px">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT HE SAYS · one line per state, newsroom tone</div>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ lines }}" as="l" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+              <dc-import name="Recce" state="{{ l.state }}" size="34" hint-size="34px,36px"></dc-import>
+              <span style="flex:none;width:64px;font-size:10.5px;font-weight:600;letter-spacing:.06em;color:rgba(236,236,241,0.45)">{{ l.label }}</span>
+              <span style="flex:1 1 280px;min-width:0;font-size:13.5px;line-height:1.5;color:rgba(236,236,241,0.85);text-wrap:pretty">{{ l.text }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="margin-top:56px">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHERE HE APPEARS</div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px">
+          <div style="padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">HOME · the conversation</div>
+            <div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px">
+              <dc-import name="Recce" state="looking" size="18" hint-size="18px,20px"></dc-import>
+              <div style="flex:1;min-width:0;font-size:13px;line-height:1.6;color:rgba(236,236,241,0.8);text-wrap:pretty">Looking outside for beats 04 and 07 — your footage first came up thin. News captions, podcasts, the crowd's maps.</div>
+            </div>
+            <div style="margin-top:8px;font-size:11.5px;color:rgba(236,236,241,0.45);text-wrap:pretty">He replaces the gold mark on the rows that went outside. The system's own rows keep the mark.</div>
+          </div>
+          <div style="padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">SCOUT · the board header</div>
+            <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+              <dc-import name="Recce" state="found" size="40" hint-size="40px,42px"></dc-import>
+              <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">The Scout board</div><div style="margin-top:2px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">11 verified · 4 crowd · 2 gaps · sourced 7/14</div></div>
+            </div>
+            <div style="margin-top:8px;font-size:11.5px;color:rgba(236,236,241,0.45);text-wrap:pretty">His state follows the run: idle → looking → found or thin. With outside off, he's dark.</div>
+          </div>
+          <div style="padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">THE CUT · a mission</div>
+            <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+              <dc-import name="Recce" state="mission" size="40" hint-size="52px,42px"></dc-import>
+              <div style="flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.8);text-wrap:pretty">One to grab — Thursday stream, 2:13:58 → 2:14:46. Expires in 11 days.</div>
+            </div>
+            <div style="margin-top:8px;font-size:11.5px;color:rgba(236,236,241,0.45);text-wrap:pretty">On a ghost's row he holds the card. When you drop the file, the tick.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:56px;padding:18px 20px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHY A CHARACTER AT ALL, IN A PRODUCT THAT BANS MASCOTS</div>
+        <div style="margin-top:10px;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.75);text-wrap:pretty">Meta's Muse found it in user research: long conversations with an agent that had no face or personality felt like talking to a corporate logo — so Muse asks you to name yours, and people respond best to the one they named. The same holds here, narrowly: looking outside is the one thing the system does that isn't about your footage, and the user should feel the difference. So he has a shape, and a name you choose. Recce marks the boundary: inside, the system speaks as itself; outside, something went and came back with a report. He's an indicator with a shape, not a friend — the design-language rule stands: he never celebrates, never decorates, and never appears where nothing was searched.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;looking&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;looking&quot;,&quot;found&quot;,&quot;thin&quot;,&quot;mission&quot;,&quot;off&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Hero&quot;}}">
+const STATES = [["idle", "Idle"], ["looking", "Looking"], ["found", "Found"], ["thin", "Thin"], ["mission", "Mission"], ["off", "Off"]];
+const LINES = {
+  idle: "Outside is on for this project. Say what to look for, or start a plan — I'll go when your footage comes up thin.",
+  looking: "Looking — your footage first, then news captions, podcasts, and the crowd's maps of his streams. Four query families, in parallel.",
+  found: "Verified against the source at 2:13:58 · 96% of the words match · credit written. Two more for beat 07, one against him.",
+  thin: "Thin. Searched four ways, nothing on this in open sources. A card, your own voice, or bring the clip yourself.",
+  mission: "One to grab — Thursday stream, 2:13:58 → 2:14:46, 48 seconds. The VOD expires in 11 days. The card opens it at the in-point.",
+  off: "Outside is off for this project. Your footage only. Switch it on and I'll look.",
+};
+class Component extends DCLogic {
+  state = { hero: null, name: "Scout" };
+  renderVals() {
+    const hero = this.state.hero || this.props.defaultState || "looking";
+    return {
+      heroState: hero, heroLine: LINES[hero], heroName: this.state.name, onHeroName: e => this.setState({ name: e.target.value }),
+      states: STATES.map(([k, n]) => ({ name: n, bg: hero === k ? "#2E2E36" : "transparent", color: hero === k ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => this.setState({ hero: k }) })),
+      lines: STATES.map(([k, n]) => ({ state: k, label: n.toUpperCase(), text: LINES[k] })),
+    };
+  }
+}
+</script>
+</body>
+</html>

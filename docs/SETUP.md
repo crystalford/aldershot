@@ -76,18 +76,66 @@ until the queue exists.
 
 ## 5. Vectorize — meaning search and automatic threads
 
-Blocked on a permission, not on code:
+**Done, 17 October 2026.** The index `aldershot-clips` exists, its `user_id`
+metadata index exists, and the binding is live in `wrangler.jsonc`. Nothing
+below needs doing again; it is kept because the ORDER is the part that cannot
+be recovered from, and anyone adding a second filterable property has to
+follow it too.
+
+The one thing the original instructions got wrong: `create-metadata-index`
+returns "successfully enqueued", not "created". It took about 45 seconds to
+appear in `wrangler vectorize list-metadata-index`, and nothing may write a
+vector until it does.
+
+**Run them in this order** — the order is not a style preference, see the
+warning below:
 
 ```
 npx wrangler vectorize create aldershot-clips --dimensions=1024 --metric=cosine
+npx wrangler vectorize create-metadata-index aldershot-clips --propertyName=user_id --type=string
 ```
 
-needs an API token with **Vectorize: Edit**. The token in
-`CLOUDFLARE_API_TOKEN` doesn't have it. Add that permission, run the
-command, then uncomment the `vectorize` block in `wrangler.jsonc`.
+Then uncomment the `vectorize` block in `wrangler.jsonc` and deploy.
 
-Until then Footage's search falls back to exact word matching and says so on
-screen; Threads stays empty rather than inventing groupings.
+The first command needs an API token with **Vectorize: Edit**. The token used
+here is `aldershot-claude-code-env`; the permission was added on 17 Oct 2026.
+
+### The metadata index has to exist before the first vector
+
+`searchMeaning` filters every query by `user_id`, and Vectorize **cannot
+filter on vectors that were written before the metadata index for that
+property existed**. It does not error — it simply does not match them. So a
+deploy in the wrong order gives you an index full of vectors, a search that
+runs cleanly, and no results, with nothing anywhere saying why. Recovering
+means re-writing every vector.
+
+Create the index, create the metadata index, *then* uncomment the binding.
+That is why the binding is commented out rather than merely absent.
+
+### Filling it
+
+Nothing has to be re-scored. `backfillClipIndex` in `src/embeddings.ts` runs
+from the hourly sweep, takes the oldest 200 clips that have no `embedded_at`
+yet, and works forward through the library — so a few thousand clips are
+indexed within a few hours of the binding going live, and a clip made after
+that is searchable within the hour. `reapClipIndex` drops vectors for clips
+you have binned, from the same sweep.
+
+### Checking it actually works
+
+```
+npx wrangler dev --port 8787        # needs DEV_LOGIN_EMAIL in .dev.vars
+npm run eval                        # and: npm run eval -- --exact
+```
+
+`scripts/eval-retrieval.ts` queries your own library with each kept clip's
+`why` and reports recall@k — how often a clip comes back when you describe
+it. `--exact` runs the same labels through the old word search, which is the
+baseline meaning search has to beat to be worth paying for. Read the header
+of that file before trusting a number out of it.
+
+Until all of this happens Footage's search falls back to exact word matching
+and says so on screen; Threads stays empty rather than inventing groupings.
 
 ## 6. Anthropic — optional, better reasoning
 

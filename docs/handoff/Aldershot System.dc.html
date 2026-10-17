@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: rgba(236,236,241,0.14) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-thumb { background: rgba(236,236,241,0.14); border-radius: 99px; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+</style>
+</helmet>
+<div style="height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column">
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">SYSTEM</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">The handoff — what Aldershot is, how it works underneath, and how to build it · One Take · 16 Oct 2026</span>
+    <div style="flex:none;display:flex;gap:16px;align-items:center">
+      <a href="../Aldershot One Take.dc.html" style="font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Home</a>
+      <a href="../Aldershot Manual.dc.html" style="font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Manual</a>
+      <a href="../labs/README.md" style="font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Labs</a>
+    </div>
+  </div>
+  <div style="flex:1;min-height:0;display:flex">
+    <div style="flex:0 0 min(252px,30%);min-width:0;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.06);padding:18px 12px 40px">
+      <div style="padding:0 10px 8px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">THE PACKAGE</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ nav }}" as="n" hint-placeholder-count="8">
+          <a href="{{ n.href }}" style="display:flex;gap:9px;align-items:baseline;padding:7px 10px;border-radius:6px;background:{{ n.bg }};color:{{ n.color }}" style-hover="background:#17171B;color:#ECECF1">
+            <span style="flex:none;width:22px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:{{ n.numColor }}">{{ n.num }}</span>
+            <span style="flex:1;min-width:0;font-size:12.5px;font-weight:500;line-height:1.35;text-wrap:pretty">{{ n.name }}</span>
+          </a>
+        </sc-for>
+      </div>
+      <div style="margin:22px 10px 0;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);font-size:11.5px;line-height:1.55;color:rgba(236,236,241,0.45);text-wrap:pretty">The research under every page is in <a href="../labs/README.md" style="color:rgba(236,236,241,0.7)">labs/</a>. The prototype is the behavioural spec; <span style="font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.6)">footage.js</span> is the reference engine.</div>
+    </div>
+    <div ref="{{ mainRef }}" style="flex:1;min-width:0;overflow-y:auto;padding:36px clamp(20px,5vw,56px) 120px">
+      <div style="max-width:780px">
+        <sc-if value="{{ isCover }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-bottom:40px;padding:28px 28px 26px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07);position:relative;overflow:hidden">
+            <div style="position:absolute;right:-10px;top:-14px;display:flex;align-items:flex-end;gap:10px;opacity:.9"><span style="width:26px;height:110px;background:#D9B36A;border-radius:6px"></span><span style="width:26px;height:110px;background:#D9B36A;opacity:.5;border-radius:6px"></span><span style="width:26px;height:110px;background:#D9B36A;opacity:.22;border-radius:6px"></span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">ONE TAKE</span><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">handoff v3 · 16 October 2026</span></div>
+            <div style="margin-top:14px;font-size:clamp(30px,4vw,42px);font-weight:600;letter-spacing:-0.025em;line-height:1.05;max-width:560px;text-wrap:pretty">Aldershot — the edit you can interrogate.</div>
+            <div style="margin-top:12px;font-size:14.5px;line-height:1.6;color:rgba(236,236,241,0.72);max-width:600px;text-wrap:pretty">Attach footage, say what you want in a sentence, get a finished cut built from rules you can see and switch off — with a receipt for every claim. Everything the people building it need is in this package; the research under it is in labs.</div>
+            <div style="margin-top:22px;display:flex;gap:22px;flex-wrap:wrap">
+              <sc-for list="{{ stats }}" as="st" hint-placeholder-count="4">
+                <div><div style="font-size:22px;font-weight:600;letter-spacing:-0.02em;font-family:'IBM Plex Mono',monospace">{{ st.n }}</div><div style="font-size:11.5px;color:rgba(236,236,241,0.5)">{{ st.label }}</div></div>
+              </sc-for>
+            </div>
+            <div style="margin-top:22px;display:flex;gap:8px;flex-wrap:wrap">
+              <a href="#01-PRODUCT" style="font-size:12.5px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316" style-hover="background:#FFFFFF;color:#131316">Start reading →</a>
+              <a href="#11-BUILD-ORDER" style="font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.85)" style-hover="background:#2E2E36;color:#ECECF1">Build order</a>
+              <a href="#16-STATE-OF-PLAY" style="font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.85)" style-hover="background:#2E2E36;color:#ECECF1">Where the repo is</a>
+              <a href="#CLAUDE" style="font-size:12.5px;font-weight:500;padding:8px 14px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.85)" style-hover="background:#2E2E36;color:#ECECF1">CLAUDE.md</a>
+            </div>
+            <div style="margin-top:18px;font-size:11.5px;line-height:1.5;color:rgba(236,236,241,0.4);text-wrap:pretty">Version names follow the edit: Rough Cut (v2) → One Take (this handoff) → Fine Cut (the first working build on real footage) → Picture Lock (feature-complete) → Answer Print (launch).</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ loading }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:12.5px;color:rgba(236,236,241,0.4)">Loading…</div>
+        </sc-if>
+        <sc-if value="{{ hasErr }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.35);font-size:13px;line-height:1.55;color:rgba(236,236,241,0.8)">{{ errText }}</div>
+        </sc-if>
+        <sc-if value="{{ hasToc }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:26px">
+            <sc-for list="{{ toc }}" as="t" hint-placeholder-count="4">
+              <div tabindex="0" role="button" onclick="{{ t.onGo }}" style="font-size:11px;font-weight:500;padding:4px 9px;border-radius:4px;background:rgba(236,236,241,0.07);color:rgba(236,236,241,0.6);cursor:pointer;white-space:nowrap" style-hover="background:rgba(236,236,241,0.15);color:#ECECF1">{{ t.text }}</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="6">
+          <sc-if value="{{ b.isH1 }}" hint-placeholder-val="{{ false }}"><h1 id="{{ b.anchor }}" style="margin:0 0 18px;font-size:28px;font-weight:600;letter-spacing:-0.025em;line-height:1.15;text-wrap:pretty">{{ b.rich }}</h1></sc-if>
+          <sc-if value="{{ b.isH2 }}" hint-placeholder-val="{{ false }}"><h2 id="{{ b.anchor }}" style="margin:38px 0 10px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.07);font-size:17px;font-weight:600;letter-spacing:-0.015em;line-height:1.3;text-wrap:pretty">{{ b.rich }}</h2></sc-if>
+          <sc-if value="{{ b.isH3 }}" hint-placeholder-val="{{ false }}"><h3 id="{{ b.anchor }}" style="margin:24px 0 8px;font-size:13.5px;font-weight:600;letter-spacing:.02em;line-height:1.4;color:rgba(236,236,241,0.85)">{{ b.rich }}</h3></sc-if>
+          <sc-if value="{{ b.isP }}" hint-placeholder-val="{{ false }}"><p style="margin:0 0 12px;font-size:14px;line-height:1.7;color:rgba(236,236,241,0.8);text-wrap:pretty">{{ b.rich }}</p></sc-if>
+          <sc-if value="{{ b.isQuote }}" hint-placeholder-val="{{ false }}"><div style="margin:4px 0 14px;padding:12px 14px;border-radius:8px;background:rgba(217,179,106,0.06);box-shadow:inset 0 0 0 1px rgba(217,179,106,0.25);font-size:13.5px;line-height:1.65;color:rgba(236,236,241,0.85);text-wrap:pretty">{{ b.rich }}</div></sc-if>
+          <sc-if value="{{ b.isCode }}" hint-placeholder-val="{{ false }}"><pre style="margin:4px 0 14px;padding:12px 14px;border-radius:8px;background:#0C0C0F;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6;color:rgba(236,236,241,0.8);white-space:pre-wrap;word-break:break-word">{{ b.text }}</pre></sc-if>
+          <sc-if value="{{ b.isHr }}" hint-placeholder-val="{{ false }}"><div style="height:1px;background:rgba(255,255,255,0.07);margin:24px 0"></div></sc-if>
+          <sc-if value="{{ b.isUl }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:2px 0 14px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ b.items }}" as="it" hint-placeholder-count="3">
+                <div style="display:flex;gap:10px;align-items:baseline;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.8)"><span style="flex:none;width:5px;height:5px;border-radius:50%;background:#D9B36A;transform:translateY(-2px)"></span><span style="flex:1;min-width:0;text-wrap:pretty">{{ it.rich }}</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ b.isOl }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:2px 0 14px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ b.items }}" as="it" hint-placeholder-count="3">
+                <div style="display:flex;gap:10px;align-items:baseline;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.8)"><span style="flex:none;width:22px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">{{ it.num }}</span><span style="flex:1;min-width:0;text-wrap:pretty">{{ it.rich }}</span></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ b.isTable }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:6px 0 16px;overflow-x:auto;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+              <div style="display:grid;grid-template-columns:{{ b.cols }};min-width:520px">
+                <sc-for list="{{ b.head }}" as="c" hint-placeholder-count="3">
+                  <div style="padding:9px 12px;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:rgba(236,236,241,0.45);background:#141418;border-bottom:1px solid rgba(255,255,255,0.07)">{{ c.rich }}</div>
+                </sc-for>
+                <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="6">
+                  <div style="padding:9px 12px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.8);border-bottom:1px solid rgba(255,255,255,0.05);background:{{ c.bg }};text-wrap:pretty">{{ c.rich }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </sc-for>
+        <sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:48px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.07);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <a href="{{ prevHref }}" style="font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.55);display:{{ prevDisplay }}" style-hover="color:#ECECF1">← {{ prevName }}</a>
+            <a href="{{ nextHref }}" style="font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.55);margin-left:auto" style-hover="color:#ECECF1">{{ nextName }} →</a>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const DOCS = [
+  ["00-START-HERE", "Start here"], ["01-PRODUCT", "The product"], ["02-SCREENS", "Screens and states"], ["03-DATA-MODEL", "Data model"],
+  ["04-RULE-ENGINE", "The rule engine"], ["05-PIPELINE", "Brief to first cut"], ["06-FOOTAGE-SYSTEM", "Finding footage"], ["07-SCOUT", "Scout, missions, ghosts"],
+  ["08-PICTURES-AND-VOICE", "Pictures and voice"], ["09-EXPORT-AND-INTEGRITY", "Export and integrity"], ["10-OPERATIONS-AND-PRICING", "Operations and pricing"],
+  ["11-BUILD-ORDER", "Build order and tests"], ["12-DEFERRED", "Deferred"], ["13-DECISIONS", "Decisions"], ["14-GLOSSARY", "Glossary"], ["15-DESIGN-LANGUAGE", "Design language"], ["16-STATE-OF-PLAY", "State of play — prototype, repo, spec"], ["17-STORAGE-AND-NEOLOG", "Storage, transcripts, Neolog"], ["PR-1-HYGIENE", "PR 1 — hygiene, step by step"], ["CLAUDE", "CLAUDE.md — the manual for Claude Code"],
+];
+const h = React.createElement;
+const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[[^\]]+\]\([^)]+\))/g;
+const codeStyle = { fontFamily: "'IBM Plex Mono',monospace", fontSize: "0.92em", padding: "1px 5px", borderRadius: 4, background: "rgba(236,236,241,0.08)", color: "#ECECF1" };
+function inline(s) {
+  const parts = String(s == null ? "" : s).split(INLINE).filter(x => x !== "");
+  return h(React.Fragment, null, ...parts.map((p, i) => {
+    if (p.length > 2 && p[0] === "`" && p[p.length - 1] === "`") return h("code", { key: i, style: codeStyle }, p.slice(1, -1));
+    if (p.length > 4 && p.slice(0, 2) === "**" && p.slice(-2) === "**") return h("strong", { key: i, style: { color: "#ECECF1", fontWeight: 600 } }, inline(p.slice(2, -2)));
+    if (p.length > 2 && p[0] === "*" && p[p.length - 1] === "*") return h("em", { key: i }, inline(p.slice(1, -1)));
+    const m = p.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (m) { let href = m[2]; const d = DOCS.find(x => href.indexOf(x[0] + ".md") >= 0); if (d) href = "#" + d[0]; else if (/^labs\//.test(href)) href = "../" + href; return h("a", { key: i, href, style: { color: "#D9B36A", borderBottom: "1px solid rgba(217,179,106,0.35)" } }, m[1]); }
+    return p;
+  }));
+}
+function parse(md) {
+  const lines = md.replace(/\r/g, "").split("\n"), out = []; let para = [], list = null, table = null, code = null, quote = [];
+  const flushP = () => { if (para.length) { out.push({ t: "p", text: para.join(" ") }); para = []; } };
+  const flushL = () => { if (list) { out.push(list); list = null; } };
+  const flushT = () => { if (table) { out.push(table); table = null; } };
+  const flushQ = () => { if (quote.length) { out.push({ t: "q", text: quote.join(" ") }); quote = []; } };
+  const flushAll = () => { flushP(); flushL(); flushT(); flushQ(); };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (code) { if (/^```/.test(line)) { out.push(code); code = null; } else code.lines.push(raw); continue; }
+    if (/^```/.test(line)) { flushAll(); code = { t: "code", lines: [] }; continue; }
+    if (!line.trim()) { flushAll(); continue; }
+    let m;
+    if ((m = line.match(/^(#{1,4})\s+(.*)$/))) { flushAll(); out.push({ t: "h" + m[1].length, text: m[2] }); continue; }
+    if (/^(-{3,}|\*{3,})$/.test(line.trim())) { flushAll(); out.push({ t: "hr" }); continue; }
+    if (/^\|/.test(line.trim())) { flushP(); flushL(); flushQ(); const cells = line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim()); if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue; if (!table) table = { t: "table", head: cells, rows: [] }; else table.rows.push(cells); continue; }
+    if ((m = line.match(/^\s*([-*]|\d+[.)])\s+(.*)$/))) { flushP(); flushT(); flushQ(); const ordered = /\d/.test(m[1]); if (!list || list.ordered !== ordered) { flushL(); list = { t: "list", ordered, items: [] }; } list.items.push(m[2]); continue; }
+    if ((m = line.match(/^>\s?(.*)$/))) { flushP(); flushL(); flushT(); quote.push(m[1]); continue; }
+    if (list && /^\s{2,}\S/.test(raw)) { list.items[list.items.length - 1] += " " + line.trim(); continue; }
+    flushL(); flushT(); flushQ(); para.push(line.trim());
+  }
+  flushAll(); if (code) out.push(code);
+  return out;
+}
+const slug = s => String(s).toLowerCase().replace(/[`*]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+class Component extends DCLogic {
+  mainRef = React.createRef();
+  state = { id: (() => { try { const x = (location.hash || "").slice(1); return DOCS.some(d => d[0] === x) ? x : "00-START-HERE"; } catch (e) { return "00-START-HERE"; } })(), text: "", loading: true, err: null };
+  componentDidMount() {
+    this.load(this.state.id);
+    this._onHash = () => { try { const x = (location.hash || "").slice(1); if (DOCS.some(d => d[0] === x) && x !== this.state.id) this.load(x); } catch (e) {} };
+    window.addEventListener("hashchange", this._onHash);
+  }
+  componentWillUnmount() { window.removeEventListener("hashchange", this._onHash); }
+  load(id) {
+    this.setState({ id, loading: true, err: null });
+    fetch("./" + id + ".md", { cache: "no-store" }).then(r => r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))).then(t => { this.setState({ text: t, loading: false }); if (this.mainRef.current) this.mainRef.current.scrollTop = 0; }).catch(e => this.setState({ loading: false, err: "Couldn't load " + id + ".md — " + String(e.message || e) }));
+  }
+  renderVals() {
+    const s = this.state, idx = DOCS.findIndex(d => d[0] === s.id);
+    const blocks = s.loading || s.err ? [] : parse(s.text).map((b, i) => {
+      const o = { key: i, isH1: b.t === "h1", isH2: b.t === "h2", isH3: b.t === "h3" || b.t === "h4", isP: b.t === "p", isQuote: b.t === "q", isCode: b.t === "code", isHr: b.t === "hr", isUl: b.t === "list" && !b.ordered, isOl: b.t === "list" && b.ordered, isTable: b.t === "table", anchor: b.text ? slug(b.text) : "", rich: inline(b.text), text: b.lines ? b.lines.join("\n") : "" };
+      if (b.t === "list") o.items = b.items.map((it, j) => ({ rich: inline(it), num: String(j + 1).padStart(2, "0") }));
+      if (b.t === "table") { const n = b.head.length; o.cols = b.head.map((c, k) => k === 0 ? "minmax(120px,0.9fr)" : "minmax(140px,1fr)").join(" "); o.head = b.head.map(c => ({ rich: inline(c) })); o.cells = []; b.rows.forEach((r, ri) => { for (let k = 0; k < n; k++) o.cells.push({ rich: inline(r[k] || ""), bg: ri % 2 ? "rgba(255,255,255,0.015)" : "transparent" }); }); }
+      return o;
+    });
+    const toc = blocks.filter(b => b.isH2).map(b => ({ text: (s.text.split("\n").find(l => l.indexOf("## ") === 0 && slug(l.slice(3)) === b.anchor) || "").replace(/^##\s+/, "").replace(/[`*]/g, ""), onGo: () => { const el = document.getElementById(b.anchor), c = this.mainRef.current; if (el && c) c.scrollTop += el.getBoundingClientRect().top - c.getBoundingClientRect().top - 14; } }));
+    return {
+      mainRef: this.mainRef, loading: s.loading, hasErr: !!s.err, errText: s.err || "", blocks: s.id === "00-START-HERE" ? blocks.filter((b, i) => !(i === 0 && b.isH1)) : blocks, toc, hasToc: toc.length > 2,
+      isCover: s.id === "00-START-HERE" && !s.loading && !s.err, stats: [{ n: "17", label: "documents" }, { n: "12", label: "research passes" }, { n: "42", label: "decisions" }, { n: "10", label: "invariants" }],
+      nav: DOCS.map(d => { const on = d[0] === s.id, num = d[0] === "CLAUDE" ? "md" : d[0] === "PR-1-HYGIENE" ? "PR" : d[0].slice(0, 2); return { href: "#" + d[0], name: d[1], num, bg: on ? "#17171B" : "transparent", color: on ? "#ECECF1" : "rgba(236,236,241,0.6)", numColor: on ? "#D9B36A" : "rgba(236,236,241,0.35)" }; }),
+      hasNext: idx >= 0 && !s.loading, prevHref: idx > 0 ? "#" + DOCS[idx - 1][0] : "#", prevName: idx > 0 ? DOCS[idx - 1][1] : "", prevDisplay: idx > 0 ? "block" : "none",
+      nextHref: idx < DOCS.length - 1 ? "#" + DOCS[idx + 1][0] : "#00-START-HERE", nextName: idx < DOCS.length - 1 ? DOCS[idx + 1][1] : "Back to the start",
+    };
+  }
+}
+</script>
+</body>
+</html>

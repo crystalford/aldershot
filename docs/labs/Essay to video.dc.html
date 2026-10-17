@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #101013; }
+  * { box-sizing: border-box; }
+  a { color: #ECECF1; text-decoration: none; }
+  a:hover { color: #D9B36A; }
+  input, textarea, button { font: inherit; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column">
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="../Aldershot One Take.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1" style-hover="color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#D9B36A;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#D9B36A;opacity:.22;border-radius:2px"></span></span></a>
+    <span style="font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 8px;border-radius:4px;background:rgba(217,179,106,0.14);color:#D9B36A">LABS</span>
+    <span style="flex:1;min-width:0;font-size:12.5px;color:rgba(236,236,241,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Essay → video · a conversion worked by hand, now with the director layer · nothing here is wired into the product</span>
+    <a href="Footage sets.dc.html" style="flex:none;font-size:12.5px;font-weight:500;color:rgba(236,236,241,0.5)" style-hover="color:#ECECF1">Footage sets</a>
+  </div>
+
+  <div style="flex:1;display:flex;justify-content:center;padding:0 clamp(16px,4vw,40px) 120px">
+    <div style="width:min(1180px,100%)">
+
+      <div style="padding-top:44px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1 1 420px;min-width:min(420px,100%)">
+          <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">FROM CANOPTICON · ESSAY · INSIGHT &amp; METACOGNITION</div>
+          <h1 style="margin:10px 0 0;font-size:clamp(30px,4vw,44px);font-weight:600;letter-spacing:-0.025em;line-height:1.05;text-wrap:pretty">The Feeling of Rightness</h1>
+          <div style="margin-top:10px;font-size:13px;color:rgba(236,236,241,0.5)">Chris Telford · 29 September 2026 · written as a 6-minute read</div>
+          <div style="margin-top:22px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">THESIS · UNCHANGED</div>
+            <div style="margin-top:6px;font-size:15px;line-height:1.55;text-wrap:pretty">What seems to be one signal — the intuition — is two: the idea, and the feeling that it is right. The feeling decides whether you check.</div>
+          </div>
+        </div>
+        <div style="flex:0 1 380px;min-width:min(320px,100%);display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WRITTEN</div>
+            <div style="margin-top:4px;font-size:22px;font-weight:600;letter-spacing:-0.02em;font-family:'IBM Plex Mono',monospace">{{ writtenWords }}</div>
+            <div style="font-size:11.5px;color:rgba(236,236,241,0.5)">words · 6 sections · {{ receiptCount }} receipts</div>
+          </div>
+          <div style="padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.35)">
+            <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#D9B36A">SPOKEN</div>
+            <div style="margin-top:4px;font-size:22px;font-weight:600;letter-spacing:-0.02em;font-family:'IBM Plex Mono',monospace">{{ spokenWords }}</div>
+            <div style="font-size:11.5px;color:rgba(236,236,241,0.5)">words · 6 acts · {{ beatCount }} beats</div>
+          </div>
+          <div style="grid-column:1 / -1;padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">RUNS ABOUT</span>
+            <span style="font-size:22px;font-weight:600;letter-spacing:-0.02em;font-family:'IBM Plex Mono',monospace">{{ runtime }}</span>
+            <span style="font-size:11.5px;color:rgba(236,236,241,0.5);text-wrap:pretty">{{ runtimeNote }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:28px">
+        <div>
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT CHANGED IN THE CONVERSION</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.78)">
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">01</span><span style="text-wrap:pretty">It opens on the anecdote, not the thesis. The 37% lands as the hook; the thesis arrives at the end of act one, once you've felt the problem.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">02</span><span style="text-wrap:pretty">Citations came out of the sentences and onto the screen. The voice paraphrases; the receipt card is verbatim, with its source. Nothing is read twice.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">03</span><span style="text-wrap:pretty">Numbers are shown, not said — “37% · 417 of 1,124”, “n = 300 · d = .629”.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">04</span><span style="text-wrap:pretty">Each kind of sentence found its own picture: first person → you to camera; research → receipt over footage; the two abstractions → two diagrams; the agent → the screen.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">05</span><span style="text-wrap:pretty">“What cuts against this” stays where it is — it's the turn before the close, and the video is more trustworthy for it.</span></div>
+            <div style="display:flex;gap:10px"><span style="flex:none;color:#D9B36A">06</span><span style="text-wrap:pretty">Sentences got shorter, for breath. A few of the author's best lines are left exactly as written and given a card of their own.</span></div>
+          </div>
+          <div style="margin-top:22px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">THE RULES THIS BOARD RUNS ON</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;gap:10px;align-items:baseline;padding:9px 12px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+                <span style="flex:none;font-size:11px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">{{ r.n }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;line-height:1.5;color:#ECECF1;text-wrap:pretty">{{ r.text }}</div>
+                  <div style="margin-top:2px;font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.45);text-wrap:pretty">{{ r.effect }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">HOW TO READ THE BOARD</div>
+          <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.78);text-wrap:pretty">Each row is one beat: what's <span style="color:#ECECF1">said</span> on the left, what's <span style="color:#ECECF1">on screen</span> on the right. Read the left column top to bottom and you have the script. Read the rows and you have the cut. The script and the beats are the same object — which is the answer to “script or beats?”.</div>
+          <div style="margin-top:16px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT'S ON SCREEN</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ legend }}" as="l" hint-placeholder-count="6">
+              <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px;line-height:1.5">
+                <span style="flex:none;width:86px;font-size:10.5px;font-weight:600;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:{{ l.bg }};color:{{ l.color }};text-align:center;white-space:nowrap">{{ l.name }}</span>
+                <span style="color:rgba(236,236,241,0.6);text-wrap:pretty">{{ l.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:16px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT THE SOUND DOES · the director role</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ roles }}" as="l" hint-placeholder-count="4">
+              <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px;line-height:1.5">
+                <span style="flex:none;width:86px;font-size:10.5px;font-weight:500;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:#1F1F26;color:rgba(236,236,241,0.8);text-align:center;white-space:nowrap">{{ l.name }}</span>
+                <span style="color:rgba(236,236,241,0.6);text-wrap:pretty">{{ l.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:16px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHERE THE PICTURE COMES FROM</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ sources }}" as="l" hint-placeholder-count="4">
+              <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px;line-height:1.5">
+                <span style="flex:none;width:86px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;padding:2px 7px;border-radius:4px;background:#17171B;color:{{ l.color }};text-align:center;white-space:nowrap">{{ l.name }}</span>
+                <span style="color:rgba(236,236,241,0.6);text-wrap:pretty">{{ l.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:16px;display:flex;align-items:center;gap:10px">
+            <div tabindex="0" role="button" onclick="{{ onToggleWritten }}" style="font-size:12px;font-weight:500;padding:6px 12px;border-radius:5px;background:#232329;color:rgba(236,236,241,0.85);cursor:pointer;white-space:nowrap" style-hover="background:#2E2E36;color:#ECECF1">{{ writtenLabel }}</div>
+            <span style="font-size:11.5px;color:rgba(236,236,241,0.4)">the paragraph each act was converted from</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:48px;display:flex;flex-direction:column;gap:44px">
+        <sc-for list="{{ acts }}" as="act" hint-placeholder-count="6">
+          <div>
+            <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.08)">
+              <span style="font-size:12px;font-family:'IBM Plex Mono',monospace;color:#D9B36A">ACT {{ act.n }}</span>
+              <span style="flex:1 1 auto;font-size:20px;font-weight:600;letter-spacing:-0.02em;text-wrap:pretty">{{ act.title }}</span>
+              <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45);white-space:nowrap">{{ act.meta }}</span>
+            </div>
+            <sc-if value="{{ showWritten }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:14px;padding:14px 16px;border-radius:9px;background:#0C0C0F;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+                <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.35)">AS WRITTEN</div>
+                <sc-for list="{{ act.written }}" as="p" hint-placeholder-count="2">
+                  <p style="margin:8px 0 0;font-size:13px;line-height:1.65;color:rgba(236,236,241,0.5);text-wrap:pretty">{{ p }}</p>
+                </sc-for>
+              </div>
+            </sc-if>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ act.beats }}" as="b" hint-placeholder-count="4">
+                <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+                  <span style="flex:none;width:26px;padding-top:3px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">{{ b.idx }}</span>
+                  <div style="flex:1 1 300px;min-width:min(300px,100%)">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.35)">SAID · {{ b.secs }}</span>
+                      <span style="font-size:10.5px;font-weight:500;letter-spacing:.04em;padding:1px 7px;border-radius:4px;background:#1F1F26;color:rgba(236,236,241,0.75);white-space:nowrap">{{ b.roleName }}</span>
+                    </div>
+                    <div style="margin-top:5px;font-size:15px;line-height:1.55;color:#ECECF1;text-wrap:pretty">{{ b.vo }}</div>
+                    <div style="margin-top:6px;font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.45);text-wrap:pretty">{{ b.roleNote }}</div>
+                  </div>
+                  <div style="flex:1 1 280px;min-width:min(280px,100%)">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="flex:none;font-size:10.5px;font-weight:600;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:{{ b.typeBg }};color:{{ b.typeColor }};white-space:nowrap">{{ b.typeName }}</span>
+                      <span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.35)">ON SCREEN</span>
+                      <span style="flex:1"></span>
+                      <span style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;padding:1px 7px;border-radius:4px;background:#17171B;color:{{ b.srcColor }};white-space:nowrap">{{ b.srcName }}</span>
+                    </div>
+                    <div style="margin-top:6px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.72);text-wrap:pretty">{{ b.screen }}</div>
+                    <sc-if value="{{ b.hasSplit }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                        <span style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:#D9B36A;white-space:nowrap">{{ b.splitLabel }}</span>
+                        <sc-for list="{{ b.subs }}" as="s" hint-placeholder-count="3">
+                          <span style="height:5px;border-radius:2px;background:rgba(217,179,106,0.45);width:{{ s.w }}"></span>
+                        </sc-for>
+                        <span style="font-size:10.5px;color:rgba(236,236,241,0.4);white-space:nowrap">{{ b.splitNote }}</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ b.hasReceipt }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:9px;padding:10px 12px;border-radius:6px;background:#0C0C0F;border-left:2px solid #5EB8C9">
+                        <div style="font-size:13px;line-height:1.5;color:rgba(236,236,241,0.85);font-style:italic;text-wrap:pretty">“{{ b.receipt.q }}”</div>
+                        <div style="margin-top:5px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:#5EB8C9">{{ b.receipt.src }}</div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top:56px;padding:18px 20px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4)">WHAT THIS BOARD DOESN'T SETTLE</div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:14px 28px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.7)">
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">The formula.</span> These lines were rewritten by ear. The standard the voice column should follow — sentence length, where the breath goes, how a receipt is introduced — is the research still to come.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Record or read.</span> Every SAID cell is a line to record, or to hear first in a scratch voice. {{ toCameraCount }} are you to camera, so they're recorded as video, not voice.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">The scout.</span> Nothing in the Archive is about insight, so {{ scoutCount }} beats here go out to be scouted — Archive first, then YouTube, candidates in one drawer marked Local or External, ranked by the transcript line that matched, never by a score. An essay from someone's own footage would mostly resolve in the first pass.</div>
+          <div style="text-wrap:pretty"><span style="color:#ECECF1">Exhibits.</span> This essay has no PRIMARY EXHIBIT — no clip whose own sound takes the floor — because its evidence is text. A DSP or parliament essay would be mostly exhibits, with J-cuts leading into each one. The board can hold that; this essay doesn't test it.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;pace&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:150,&quot;min&quot;:120,&quot;max&quot;:180,&quot;step&quot;:5,&quot;unit&quot;:&quot;wpm&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Running time&quot;},&quot;showWritten&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+const CB = "Correct but Not Yet Known";
+const TYPES = {
+  cam: { name: "TO CAMERA", color: "#D9B36A", text: "You, speaking. Recorded as video — the first-person sentences." },
+  receipt: { name: "RECEIPT", color: "#5EB8C9", text: "A quotation on screen, verbatim, with its source. The voice paraphrases around it." },
+  footage: { name: "FOOTAGE", color: "#5EC98F", text: "Stock, or shot new. In a footage-first project this is where the Archive would be searched." },
+  diagram: { name: "DIAGRAM", color: "#B08CD4", text: "A generated visual for an abstraction the camera can't show." },
+  screen: { name: "SCREEN", color: "#E06A6A", text: "A screen recording — the prompt, the agent, the record." },
+  title: { name: "TITLE", color: "rgba(236,236,241,0.7)", text: "Words alone on black. For the lines worth leaving exactly as written." },
+};
+const ACTS = [
+  { title: "The rightness arrives before the reasons", written: [
+    "Twice this year I rebuilt something because a sentence arrived in my head fully formed — this is architecturally wrong — and I passed it on as a decision. Both times the intuition was partly right. Both times the rework came from what I skipped. The research on insight says this is not a personal failing but the shape of the thing: because insight solutions are produced below the threshold of consciousness, it is not possible to monitor and adjust processing before the solution enters awareness. [" + CB + " · §1] The idea arrives finished. There is no working to inspect.",
+    "And it arrives with a feeling attached. In a study of people explaining magic tricks, 37% of incorrect solutions (417 of 1,124) had Aha ratings above the average for correct ones. [" + CB + " · §2] The same study defined an Aha for its participants as feeling relatively confident that your solution is correct without having to check it once more… if you feel you still need to check it that would not be an Aha! [" + CB + " · §2] Part of what makes an insight an insight is the felt absence of any need to verify it." ], beats: [
+    { type: "cam", vo: "Twice this year I rebuilt something because a sentence arrived in my head fully formed. This is architecturally wrong. And I passed it on as a decision.", screen: "You, to camera. No music yet. Cold open — no title before this." },
+    { type: "cam", vo: "Both times the intuition was partly right. Both times the rework came from what I skipped.", screen: "Hold on you. A beat of silence after “skipped”." },
+    { type: "receipt", vo: "The research on insight says that isn't a personal failing. It's the shape of the thing.", screen: "Receipt card, verbatim, source under it. Stays up through the next line.", receipt: { q: "because insight solutions are produced below the threshold of consciousness, it is not possible to monitor and adjust processing before the solution enters awareness", src: CB + " · §1" } },
+    { type: "diagram", vo: "The idea arrives finished. There's no working to inspect. And it arrives with a feeling attached.", screen: "One line splits into two as the words land: THE IDEA · THE FEELING IT'S RIGHT. This diagram comes back in act two." },
+    { type: "footage", vo: "In a study of people explaining magic tricks, more than a third of the wrong answers felt more like an Aha than the average right one.", screen: "Hands, cards, a coin — stock. The number lands as text over it; the fraction is shown, never read.", receipt: { q: "37% · 417 of 1,124", src: CB + " · §2" } },
+    { type: "receipt", vo: "The study's own definition of an Aha: you feel confident you're right, without needing to check. If you still feel you need to check — that's not an Aha.", screen: "Receipt card. Let the exclamation mark sit there.", receipt: { q: "feeling relatively confident that your solution is correct without having to check it once more… if you feel you still need to check it that would not be an Aha!", src: CB + " · §2" } },
+    { type: "title", vo: "Part of what makes an insight an insight is the felt absence of any need to verify it. So what looks like one signal is two: the idea — and the feeling that it's right. And the feeling decides whether you check.", screen: "Thesis card, then the title of the video. First music enters under “two”." },
+  ] },
+  { title: "Certainty is a stop signal", written: [
+    "The reasoning literature names the gate. An intuitive answer comes with a Feeling of Rightness, and that feeling, not the answer, sets how much slow thinking follows: a low FOR predicted longer rethinking and more answer changes. A high FOR predicted accepting the first answer. [" + CB + " · §2] Worse, the feeling is driven largely by answer fluency, meaning how quickly and easily the answer came to mind, not by its validity. [" + CB + " · §2] Under load the imbalance grows: in word puzzles with rising working-memory demand, Insight solutions were largely unaffected. [" + CB + " · §1] The intuitions keep coming at full strength while the capacity to check them shrinks.",
+    "Medicine has a name for where this ends: “the failure to continue considering reasonable alternatives after an initial diagnosis was reached,” [" + CB + " · §2] premature closure, the single most common cognitive cause in a review of a hundred diagnostic errors. Not ignorance. Stopping too early." ], beats: [
+    { type: "diagram", vo: "The reasoning literature has a name for the gate. An intuitive answer comes with a Feeling of Rightness. And that feeling — not the answer — sets how much slow thinking follows.", screen: "The two-signal diagram returns. The FEELING line swings across the path to CHECK and becomes a gate." },
+    { type: "receipt", vo: "Low feeling: you rethink longer, you change your answer more. High feeling: you take the first one.", screen: "Receipt card. Two halves, low and high, lit as each is said.", receipt: { q: "a low FOR predicted longer rethinking and more answer changes. A high FOR predicted accepting the first answer.", src: CB + " · §2" } },
+    { type: "receipt", vo: "Worse — the feeling is driven mostly by how quickly the answer came to mind. Not by whether it's valid.", screen: "Receipt card. “fluency” underlined as it's said.", receipt: { q: "answer fluency, meaning how quickly and easily the answer came to mind, not by its validity", src: CB + " · §2" } },
+    { type: "footage", vo: "And under load it gets worse. In word puzzles with rising memory demand, the insights kept coming at full strength — while the capacity to check them shrank.", screen: "Anagram letters rearranging, faster each cycle. Receipt small, lower third.", receipt: { q: "Insight solutions were largely unaffected.", src: CB + " · §1" } },
+    { type: "footage", vo: "Medicine has a name for where this ends. Premature closure. The single most common cognitive cause in a review of a hundred diagnostic errors. Not ignorance. Stopping too early.", screen: "A chart being closed, a corridor — stock. Receipt card over it on “premature closure”. Music out on “early”.", receipt: { q: "the failure to continue considering reasonable alternatives after an initial diagnosis was reached", src: CB + " · §2" } },
+  ] },
+  { title: "Why the second time feels more certain than the first", written: [
+    "I returned to the same intuition for weeks, and it felt truer each time. Koriat's work explains why that is not evidence: confidence tracks the consensuality and self-consistency of an answer, not its correctness. [" + CB + " · §2] An idea that fits everything else you believe grows more certain on every visit. When it is wrong, the relationship inverts: When the popular answer is wrong, the correlation turns negative: people are more confident in the wrong answer. [" + CB + " · §2] Repetition is not replication. It only feels like it." ], beats: [
+    { type: "cam", vo: "I went back to the same intuition for weeks. And it felt truer every time.", screen: "You, to camera. Quieter than the open." },
+    { type: "receipt", vo: "Koriat's work explains why that isn't evidence. Confidence tracks how well an answer fits everything else you believe. Not whether it's correct.", screen: "Receipt card.", receipt: { q: "confidence tracks the consensuality and self-consistency of an answer, not its correctness", src: CB + " · §2" } },
+    { type: "receipt", vo: "An idea that fits everything else you believe grows more certain on every visit. And when the popular answer is wrong, it flips: people are more confident in the wrong answer.", screen: "Receipt card. Hold on “more confident in the wrong answer”.", receipt: { q: "When the popular answer is wrong, the correlation turns negative: people are more confident in the wrong answer.", src: CB + " · §2" } },
+    { type: "title", vo: "Repetition is not replication. It only feels like it.", screen: "The line alone, as written. Two seconds of black after it." },
+  ] },
+  { title: "The second illusion: that they understood", written: [
+    "Then I said it to a collaborator — an AI agent — as though the reason travelled with the words. Speakers do this reliably: they underestimate the ambiguity of their own utterances and overestimate the extent to which their disambiguating cues make their intention transparent. [" + CB + " · §3] The agent received “rename this” without the model of the system that made the rename obvious to me. A high Feeling of Rightness closes the question in your head; the illusion of transparency tells you it is closed in theirs too." ], beats: [
+    { type: "screen", vo: "Then I said it to a collaborator — an AI agent — as though the reason travelled with the words.", screen: "Screen recording: the prompt being typed. Just “rename this”. The cursor blinks." },
+    { type: "receipt", vo: "Speakers do this reliably. We underestimate how ambiguous we are — and overestimate how obvious our intention is.", screen: "Receipt card over the frozen screen.", receipt: { q: "underestimate the ambiguity of their own utterances and overestimate the extent to which their disambiguating cues make their intention transparent", src: CB + " · §3" } },
+    { type: "screen", vo: "The agent got “rename this” without the model of the system that made the rename obvious to me. A high Feeling of Rightness closes the question in your head. The illusion of transparency tells you it's closed in theirs too.", screen: "Back to the screen: the agent's reply scrolling past, wrong in a way only you can see." },
+  ] },
+  { title: "What cuts against this", written: [
+    "The intuition is usually worth having; insight is right more often than not, which is exactly why trusting it feels rational. And the fix is not to talk every hunch to death: Articulation isn't a free, neutral transfer. Forcing words onto a half-formed pattern too early can degrade it. [" + CB + " · §2] The evidence also comes from the wrong room: Most insight research uses lab puzzles (remote associates, anagrams, magic tricks, Mooney images). Carrying it over to software architecture judgments is reasonable but untested. [" + CB + " · Caveats] And the precise claim this essay leans on — that unverified intuitions handed to coding agents cause rework — has not been measured: That specific link is still an open research gap. [" + CB + " · §3]" ], beats: [
+    { type: "cam", vo: "Now. The intuition is usually worth having. Insight is right more often than not — which is exactly why trusting it feels rational.", screen: "You, to camera. This is the turn; say it like you mean it." },
+    { type: "receipt", vo: "And the fix is not to talk every hunch to death.", screen: "Receipt card. Let it sit — don't read it.", receipt: { q: "Articulation isn't a free, neutral transfer. Forcing words onto a half-formed pattern too early can degrade it.", src: CB + " · §2" } },
+    { type: "footage", vo: "The evidence also comes from the wrong room. Lab puzzles — not software. Carrying it over is reasonable. It's also untested.", screen: "Quick montage: an anagram, a Mooney image, the card trick from act one.", receipt: { q: "Most insight research uses lab puzzles (remote associates, anagrams, magic tricks, Mooney images).", src: CB + " · Caveats" } },
+    { type: "title", vo: "And the exact claim this video leans on — that unverified intuitions handed to coding agents cause rework — hasn't been measured.", screen: "Text card: “open research gap”, with the receipt as its source.", receipt: { q: "That specific link is still an open research gap.", src: CB + " · §3" } },
+  ] },
+  { title: "What would settle it", written: [
+    "A separate report reaches the same place from the other side. An Aha moment from solving an unrelated anagram made false statements feel truer (n = 300, d = .629) [Net-Casting · Key finding 7], so Any net-casting practice needs a cooling-off step between \"wow\" and \"publish.\" [Net-Casting · Key finding 7] The record I am building already refuses to let an assertion become a fact until it has a receipt. The practice is to do the same at the prompt: state the intuition, list the evidence for it, list what would contradict it, name one alternative, and then tag it for the agent as a hypothesis or a decision. [" + CB + " · Recommendations] What would settle whether that works is the measurement nobody has made: log each instruction as hypothesis or decision for a month, and count the rework on each side." ], beats: [
+    { type: "receipt", vo: "A separate report lands in the same place from the other side. An Aha from solving an unrelated anagram made false statements feel truer.", screen: "Receipt card with the numbers — shown, not said.", receipt: { q: "n = 300 · d = .629", src: "Net-Casting · Key finding 7" } },
+    { type: "receipt", vo: "So any practice built on insight needs a cooling-off step. Between “wow” and “publish”.", screen: "Receipt card.", receipt: { q: "Any net-casting practice needs a cooling-off step between \"wow\" and \"publish.\"", src: "Net-Casting · Key finding 7" } },
+    { type: "screen", vo: "The record I'm building already refuses to let an assertion become a fact until it has a receipt. The practice is to do the same at the prompt. State the intuition. List the evidence for it. List what would contradict it. Name one alternative. Then tag it — hypothesis, or decision.", screen: "Screen: a prompt written the slow way, the five parts appearing as lines. The last word typed is “hypothesis”.", receipt: { q: "state the intuition, list the evidence for it, list what would contradict it, name one alternative, and then tag it for the agent as a hypothesis or a decision", src: CB + " · Recommendations" } },
+    { type: "cam", vo: "What would settle whether that works is the measurement nobody has made. Log each instruction as hypothesis or decision for a month. Count the rework on each side.", screen: "You, to camera. Cut to black on “side”. Title card." },
+  ] },
+];
+const ROLES = {
+  vo: { name: "Voice over", text: "Your voice carries; the picture covers it and must change on the pacing rule. Music bed sits under at −18 dB." },
+  exhibit: { name: "Exhibit", text: "A clip whose own sound takes the floor. Your voice stops; music drops to −24 dB; its audio leads the cut by 1.5 s (a J-cut)." },
+  doc: { name: "Document", text: "The source itself on screen — a receipt, an article, a page — held still, with its line marked. One page-turn, no whoosh." },
+  card: { name: "Card", text: "A number, a line, a title. Silence or the music alone — the one place the bed is allowed to swell." },
+};
+const SOURCES = {
+  cam: { name: "shot new", color: "#D9B36A", text: "You, recorded — to camera or as voice. Nothing to search for." },
+  archive: { name: "archive", color: "#5EC98F", text: "Your own footage, matched by meaning. First pass; free; gets better as the Archive grows." },
+  scout: { name: "scout", color: "#5EB8C9", text: "Not in the Archive — searched for outside, on demand, with the transcript line that matched shown as the reason." },
+  gen: { name: "generated", color: "#B08CD4", text: "Made, not found: a diagram, a receipt card, a title. Marked as generated at export." },
+};
+const MAX_SHOT = 5;
+const words = t => t.trim().split(/\s+/).filter(Boolean).length;
+const fmt = n => Math.floor(n / 60) + ":" + String(Math.round(n) % 60).padStart(2, "0");
+class Component extends DCLogic {
+  state = { showWritten: null };
+  renderVals() {
+    const pace = Number(this.props.pace) || 150;
+    const showWritten = this.state.showWritten === null ? (this.props.showWritten ?? true) : this.state.showWritten;
+    let idx = 0, spoken = 0, written = 0, receipts = 0, cams = 0, total = 0, scouts = 0, splits = 0;
+    const secsOf = b => { const w = words(b.vo); return w / pace * 60 + (b.receipt ? 3 : 0) + (b.type === "title" ? 2 : 0) + (b.type === "cam" ? 1.5 : 0); };
+    const acts = ACTS.map((a, i) => {
+      a.written.forEach(p => { written += words(p.replace(/\[[^\]]+\]/g, "")); });
+      let actSecs = 0;
+      const beats = a.beats.map(b => {
+        idx++; const w = words(b.vo), s = secsOf(b); spoken += w; actSecs += s; if (b.receipt) receipts++; if (b.type === "cam") cams++;
+        const T = TYPES[b.type];
+        const roleKey = b.role || ({ cam: "vo", receipt: "doc", footage: "vo", diagram: "vo", screen: "vo", title: "card" })[b.type];
+        const srcKey = b.source || ({ cam: "cam", receipt: "gen", footage: "scout", diagram: "gen", screen: "cam", title: "gen" })[b.type];
+        if (srcKey === "scout") scouts++;
+        const R = ROLES[roleKey], S = SOURCES[srcKey];
+        const roleNote = roleKey === "vo" && b.type === "cam" ? "You on camera — your own face is the picture, so the pacing rule doesn't apply." : roleKey === "vo" ? "Voice leads. Music under at −18 dB." : roleKey === "doc" ? "Held still while you speak. The marked line is the only motion." : roleKey === "card" ? "Let it breathe. Music may swell here." : "Its sound takes the floor; yours stops.";
+        const vSecs = w / pace * 60, cover = roleKey === "vo" && b.type !== "cam", n = cover ? Math.max(1, Math.ceil(vSecs / MAX_SHOT)) : 1;
+        if (n > 1) splits++;
+        return { idx: String(idx).padStart(2, "0"), vo: b.vo, screen: b.screen, secs: "~" + Math.round(s) + "s", typeName: T.name, typeColor: T.color, typeBg: T.color.indexOf("rgba") === 0 ? "rgba(236,236,241,0.1)" : T.color + "26", hasReceipt: !!b.receipt, receipt: b.receipt || { q: "", src: "" },
+          roleName: R.name, roleNote, srcName: S.name, srcColor: S.color,
+          hasSplit: n > 1, splitLabel: n + " sub-shots", subs: Array.from({ length: n }, () => ({ w: Math.round(Math.min(MAX_SHOT, vSecs / n) * 7) + "px" })), splitNote: Math.round(vSecs) + "s of voice — the picture changes every ~" + Math.round(vSecs / n) + "s" };
+      });
+      total += actSecs;
+      return { n: i + 1, title: a.title, written: a.written, beats, meta: beats.length + " beats · ~" + fmt(actSecs) };
+    });
+    return {
+      acts, showWritten, writtenWords: written, spokenWords: spoken, receiptCount: receipts, beatCount: idx, toCameraCount: cams,
+      runtime: fmt(total), runtimeNote: "at " + pace + " words a minute, plus a hold on every receipt and title. The 6-minute read becomes a video of about the same length — the pictures take the time the citations gave back.",
+      scoutCount: scouts,
+      roles: Object.keys(ROLES).map(k => ({ name: ROLES[k].name, text: ROLES[k].text })),
+      sources: Object.keys(SOURCES).map(k => ({ name: SOURCES[k].name, color: SOURCES[k].color, text: SOURCES[k].text })),
+      rules: [
+        { n: "01", text: "Under a voice-over, change the picture at least every " + MAX_SHOT + " seconds.", effect: splits + (splits === 1 ? " beat splits" : " beats split") + " into sub-shots on this board. You on camera is exempt — your face is the picture." },
+        { n: "02", text: "Look in the Archive before looking anywhere else.", effect: "Here the Archive has nothing on insight, so " + scouts + " beats go out to be scouted. The candidates come back in one drawer, Local or External, with the line that matched as the reason." },
+        { n: "03", text: "When a clip's own sound matters, let it take the floor.", effect: "Marks a beat as an Exhibit: voice stops, music to −24 dB, its sound leads the cut by 1.5 s. None on this board — the evidence is text." },
+        { n: "04", text: "Music stays under the voice, at −18 dB, and only swells on a card.", effect: "Applies to every Voice over beat; the four Cards are the only places it's allowed up." },
+      ],
+      legend: Object.keys(TYPES).map(k => ({ name: TYPES[k].name, color: TYPES[k].color, bg: TYPES[k].color.indexOf("rgba") === 0 ? "rgba(236,236,241,0.1)" : TYPES[k].color + "26", text: TYPES[k].text })),
+      writtenLabel: showWritten ? "Hide the written version" : "Show the written version",
+      onToggleWritten: () => this.setState({ showWritten: !showWritten }),
+    };
+  }
+}
+</script>
+</body>
+</html>

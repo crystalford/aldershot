@@ -27,13 +27,86 @@
 
 import type { Env } from "./env.ts";
 import { listMoments, searchMeaning, type Moment } from "./library.ts";
+import { applyRule, compute, describe, ruleKey, toFootageSet, type Rule } from "./rules.ts";
+import { contentWords, momentTags, NOISE } from "./moment-tags.ts";
+import { honestReply, parseRules } from "./rule-parse.ts";
+import { saveRules } from "./rule-store.ts";
 import { createProject, putBeats } from "./projects.ts";
 import { recordPass } from "./passes.ts";
 import { titleFromBrief } from "./projects.ts";
 import { ulid } from "./id.ts";
 
-/** How many moments one assembly may pull in. */
-export const ASSEMBLE_MAX = 24;
+/*
+ * ASSEMBLE_MAX IS GONE, and the fidelity gate is what noticed.
+ *
+ * It was a count ceiling — take the first 24 and stop — then a guard against
+ * an editor holding a hundred and forty blocks once the budget replaced it.
+ * With the rule engine deciding, there is nothing left for it to guard: the
+ * engine has no count step, the reference has none either, and adding one
+ * would be a second departure from the specification to solve a problem that
+ * is already solved.
+ *
+ * CANDIDATE_POOL is the real ceiling. The engine never sees more moments than
+ * retrieval handed it, so sixty is the most blocks any assembly can produce,
+ * and it is enforced at the only place that can enforce it honestly.
+ */
+
+/**
+ * How much of the library to look at before choosing. Larger than the output,
+ * because a budget that selects from exactly as many moments as it can fit is
+ * not selecting.
+ */
+export const CANDIDATE_POOL = 60;
+
+/**
+ * What "say what you want" means when it does not say how long.
+ *
+ * Deliberately generous rather than tight, and this is the one place the
+ * staged-reduction research changed a number. Professional practice reduces in
+ * passes — a first assembly runs well over the final length and the editor
+ * strikes down to it — so an assembly nobody gave a duration to should
+ * over-deliver material and let the user cut, not guess short and silently
+ * leave good moments in the library.
+ *
+ * A brief that names a duration overrides it; see targetFromBrief.
+ */
+export const DEFAULT_TARGET_MS = 12 * 60_000;
+
+/**
+ * RECIPROCAL RANK FUSION.
+ *
+ * Two retrievers, fused by where each put a thing rather than by what each
+ * scored it. A cosine similarity and a count of matched words are numbers on
+ * scales with no exchange rate between them, and any constant mixing the two
+ * would be invented. Ranks are comparable by construction, which is the whole
+ * reason this is the standard way to combine retrievers.
+ *
+ * score(d) = Σ 1 / (K + rank(d)) over the lists that returned it.
+ *
+ * K = 60 is the conventional value from the original TREC work. It flattens
+ * the top of each list — the difference between first and second matters less
+ * than the difference between returned and not returned — which is what makes
+ * agreement between two retrievers beat a confident first place from one.
+ */
+export const RRF_K = 60;
+
+export function fuseByRank<T>(lists: T[][], key: (item: T) => string): T[] {
+  const score = new Map<string, number>();
+  const first = new Map<string, T>();
+
+  for (const list of lists) {
+    list.forEach((item, i) => {
+      const k = key(item);
+      score.set(k, (score.get(k) ?? 0) + 1 / (RRF_K + i + 1));
+      if (!first.has(k)) first.set(k, item);
+    });
+  }
+
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => first.get(k))
+    .filter((x): x is T => x !== undefined);
+}
 
 /**
  * The moments a brief asks for, best first.
@@ -51,13 +124,10 @@ export async function findMaterial(
   env: Env,
   userId: string,
   brief: string,
-  limit = ASSEMBLE_MAX,
+  limit = CANDIDATE_POOL,
 ): Promise<{ moments: Moment[]; how: "meaning" | "words" | "recent" }> {
   const q = brief.trim();
   if (!q) return { moments: await listMoments(env.DB, userId, limit), how: "recent" };
-
-  const meant = await searchMeaning(env, userId, q, limit);
-  if (meant && meant.length) return { moments: dedupe(meant), how: "meaning" };
 
   /*
    * A BRIEF IS NOT A SEARCH BOX QUERY.
@@ -67,12 +137,64 @@ export async function findMaterial(
    * library holding exactly that, it returned nothing, because no single
    * moment contains all four words including "the" and "about".
    *
-   * So the words fallback ranks instead of filters: how many of the brief's
+   * So the words retriever ranks instead of filtering: how many of the brief's
    * content words a moment actually says. Deterministic, over our own
-   * transcripts, and it degrades to "the most recent" rather than to nothing.
+   * transcripts.
    */
-  const ranked = rankByWords(await listMoments(env.DB, userId, 200), q);
-  if (ranked.length) return { moments: dedupe(ranked).slice(0, limit), how: "words" };
+  /* Genuinely in parallel: the embedding call and the row read are the two
+     waits, and neither needs the other's answer. */
+  const [meant, recent] = await Promise.all([
+    searchMeaning(env, userId, q, limit),
+    listMoments(env.DB, userId, 200),
+  ]);
+  const ranked = rankByWords(recent, q);
+
+  /*
+   * TWO PEER RETRIEVERS, FUSED BY RANK — not one with the other as a fallback.
+   *
+   * This used to return the meaning results whenever there were any, and only
+   * fall back to words when the index gave nothing. That is not hybrid
+   * retrieval, and the failure is specific rather than theoretical: words can
+   * only ever surface what the vector missed if words are allowed to run when
+   * the vector succeeded. A proper name, a number, a piece of jargon — the
+   * things an embedding is worst at and an exact match is best at — were
+   * unreachable on any account where the index existed.
+   *
+   * 06-FOOTAGE-SYSTEM.md: "Never re-score vector results with BM25 — then
+   * keywords can't surface what the vector missed. On transcripts, keyword
+   * search is a peer retriever." Both run, both rank, ranks fuse.
+   *
+   * `how` says whether the INDEX took part, which is the only thing it was
+   * ever for: it exists to warn somebody that they are looking at the weaker
+   * answer. So "meaning" means the index contributed something, not that words
+   * contributed nothing — usually both did, and that is the point.
+   */
+  if (meant?.length || ranked.length) {
+    const fused = fuseByRank(
+      [meant ?? [], ranked].filter((l) => l.length),
+      (m) => m.id,
+    );
+    return {
+      moments: dedupe(fused).slice(0, limit),
+      how: meant?.length ? "meaning" : "words",
+    };
+  }
+
+  /*
+   * AND WHEN NO WORD MATCHES, THE MOST RECENT — which is what the paragraph
+   * above has always claimed and what this function did not do.
+   *
+   * It returned an empty list, so every brief whose words appear nowhere in
+   * the library was refused with "nothing matches that yet". "Eight minutes on
+   * whatever you have" is an explicit request for ANYTHING and got turned
+   * away; so did any brief phrased around what to make rather than what it is
+   * about. Found by driving the real route rather than by reading this.
+   *
+   * The pass line says "your most recent" when this happens, so a person can
+   * see the search missed and that they are looking at a starting point rather
+   * than an answer.
+   */
+  if (recent.length) return { moments: dedupe(recent).slice(0, limit), how: "recent" };
 
   return { moments: [], how: "words" };
 }
@@ -101,14 +223,6 @@ export function dedupe<T extends { source_id: string; start_ms: number; end_ms: 
   }
   return taken;
 }
-
-/* Words that appear in every sentence and mean nothing about the footage. */
-const NOISE = new Set(
-  ("a an and are as at be but by for from how i in is it its me my of on or " +
-   "our so that the their them then there these they this to too was we were " +
-   "what when where which who why will with you your about into over just " +
-   "some any all thing things bit bits part parts video clip clips make made").split(" "),
-);
 
 /**
  * The moments that actually say what the brief is about, best first.
@@ -140,6 +254,150 @@ export function rankByWords<T extends { quote: string; source_title?: string }>(
     .map((r) => r.m);
 }
 
+/* Written-out numbers people actually say to a video editor. */
+const SPOKEN: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+  nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20,
+  thirty: 30, forty: 40, fifty: 50, sixty: 60, ninety: 90,
+};
+
+/**
+ * HOW LONG THEY ASKED FOR, when they said.
+ *
+ * "three minutes on the gym stuff", "a 90 second cut about filters", "make it
+ * 2 mins". The brief is the only place this can come from: there is no
+ * duration control anywhere in the product, and inventing one would be a
+ * worse answer than reading the sentence somebody already typed.
+ *
+ * Returns `said: false` when it found nothing, so the caller can tell the
+ * difference between "they asked for twelve minutes" and "nobody said" — those
+ * mean different things about whether going under budget is a problem.
+ */
+export function targetFromBrief(brief: string): { ms: number; said: boolean } {
+  const q = " " + brief.toLowerCase().replace(/[,]/g, " ") + " ";
+
+  /*
+   * Minutes before seconds, and "and a half" folded in, because "a minute and
+   * a half" is a thing people say and 60_000 would be the wrong answer to it.
+   */
+  const unit = /(\d+(?:\.\d+)?|[a-z]+)\s*(?:-|\s)?\s*(minutes?|mins?|m|seconds?|secs?|s)\b/g;
+  for (const m of q.matchAll(unit)) {
+    const raw = m[1];
+    const n = /^\d/.test(raw) ? Number(raw) : (SPOKEN[raw] ?? (raw === "a" || raw === "an" ? 1 : NaN));
+    if (!Number.isFinite(n) || n <= 0) continue;
+
+    const minutes = m[2].startsWith("m");
+    /* "and a half" only ever follows the number it halves. */
+    const half = q.slice((m.index ?? 0) + m[0].length).startsWith(" and a half") ? 0.5 : 0;
+    const ms = Math.round((n + half) * (minutes ? 60_000 : 1_000));
+
+    /*
+     * A SANITY WINDOW, because a brief is prose and prose contains numbers.
+     * "cut the 3 second gap" and "the 2 minute mark" both parse, and neither
+     * is a runtime. Ten seconds to two hours is the range a cut can be; a
+     * number outside it is somebody talking about something else.
+     */
+    if (ms >= 10_000 && ms <= 2 * 3_600_000) return { ms, said: true };
+  }
+  return { ms: DEFAULT_TARGET_MS, said: false };
+}
+
+
+/*
+ * WHAT USED TO BE HERE.
+ *
+ * selectForBudget: greedy budgeted-submodular selection, coverage over content
+ * words, cost-scaled by duration. It worked and it was measured, and it is
+ * gone, because the rule engine landed and a cut is what the RULES produce
+ * (invariant 1). A selector here would have been a second answer to the same
+ * question, drifting from the first the moment either was tuned.
+ *
+ * The logic is not lost: it is capDropOrder in src/rules.ts, deciding which
+ * moments the cap rule drops first. That is a better home for it than this
+ * was — attributable to a rule the user can see and switch off, rather than an
+ * optimisation happening somewhere they cannot reach.
+ */
+
+/** The runtime of a set of moments, which is what a person asked about. */
+export function runtimeMs(moments: Array<{ start_ms: number; end_ms: number }>): number {
+  return moments.reduce((n, m) => n + Math.max(0, m.end_ms - m.start_ms), 0);
+}
+
+/** m:ss, for a line somebody reads rather than parses. */
+export function clock(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
+ * RE-PRODUCE THE CUT FROM THE RULES AS THEY STAND.
+ *
+ * This is invariant 1 made operable rather than merely stated. Until it
+ * existed the rules were a record of how a cut had been made once; now they
+ * are the thing the cut is made FROM, every time, and switching one off is a
+ * real edit rather than a note in a table.
+ *
+ * Shared with the assembly path on purpose. Two functions turning a rule set
+ * into beats would drift the first time either was touched, and the drift
+ * would show up as a cut that changes when you toggle a rule off and on —
+ * which is precisely the behaviour Phase 2 accepts on.
+ *
+ * The POOL is re-read rather than remembered. A moment binned since the cut
+ * was made must not come back, and a moment scored since should be available
+ * to a rule that asks for it: the rules are the record, the library is the
+ * material, and neither is a snapshot of the other.
+ */
+export async function recomputeFromRules(
+  env: Env,
+  opts: { userId: string; projectId: string; rules: Rule[]; scope?: string[] | null },
+): Promise<{ kept: number; secs: number; moments: Moment[] } | null> {
+  const pool = inScope(await listMoments(env.DB, opts.userId, CANDIDATE_POOL), opts.scope);
+  if (!pool.length) return null;
+
+  const set = toFootageSet(pool, momentTags);
+  const cut = compute(opts.rules, { set });
+  const byId = new Map(pool.map((m) => [m.id, m]));
+  const moments = cut.rows
+    .filter((r) => r.kind === "clip" && r.moment)
+    .map((r) => byId.get(String(r.moment!.id)))
+    .filter((m): m is Moment => !!m);
+
+  await putBeats(env.DB, opts.projectId, beatsFor(moments));
+  return { kept: moments.length, secs: cut.secs, moments };
+}
+
+/**
+ * The moments that belong to this cut's attached footage.
+ *
+ * A null scope is the whole library, which is what "three minutes on whatever
+ * I have" means and what every project made before scope existed has. A list
+ * is what somebody pointed at — and once they have pointed, filling the cut
+ * with anything else is the product choosing footage they did not choose.
+ *
+ * Applied to the POOL rather than inside the engine, so the engine keeps one
+ * notion of a footage set and the rules never have to know where it came from.
+ */
+export function inScope<T extends { source_id: string }>(moments: T[], scope?: string[] | null): T[] {
+  if (!scope?.length) return moments;
+  const want = new Set(scope);
+  return moments.filter((m) => want.has(m.source_id));
+}
+
+/** The clip beats for a set of moments, in the order given. */
+function beatsFor(moments: Moment[]) {
+  return moments.map((m) => ({
+    id: ulid(),
+    kind: "clip" as const,
+    act: null,
+    struck: "0",
+    text: m.quote,
+    clip_id: m.id,
+    dur_ms: Math.max(0, m.end_ms - m.start_ms),
+    media_r2_key: null,
+    recorded_at: null,
+  }));
+}
+
 /**
  * One edit, made of clips from wherever they came from.
  *
@@ -155,14 +413,105 @@ export function rankByWords<T extends { quote: string; source_title?: string }>(
  */
 export async function assembleFromLibrary(
   env: Env,
-  opts: { userId: string; brief: string },
-): Promise<{ projectId: string; used: number; how: string } | { error: string }> {
-  const { moments, how } = await findMaterial(env, opts.userId, opts.brief);
-  if (!moments.length) {
+  opts: { userId: string; brief: string; scope?: string[] | null },
+): Promise<
+  { projectId: string; used: number; how: string; runtimeMs: number; targetMs: number } | { error: string }
+> {
+  const found = await findMaterial(env, opts.userId, opts.brief);
+  const how = found.how;
+  /* Attached footage only, when they attached some. */
+  const pool = inScope(found.moments, opts.scope);
+  if (!pool.length) {
     return {
-      error: "Nothing in your library matches that yet — read a few more videos in, or say it differently.",
+      error: opts.scope?.length
+        ? "Nothing in what you attached matches that — try another video, or say it differently."
+        : "Nothing in your library matches that yet — read a few more videos in, or say it differently.",
     };
   }
+
+  /*
+   * THE RULES DECIDE, NOT THIS FUNCTION.
+   *
+   * Selection used to be greedy coverage-per-second here. That logic is not
+   * gone — it is the cap rule's drop order now (src/rules.ts) — but the thing
+   * that chooses is the engine, because invariant 1 says a cut is what a rule
+   * set produces and is never stored as an outcome. A selector living in the
+   * assembly path is a second answer to the same question, and the two would
+   * drift the first time either was tuned.
+   *
+   * Three rules to start, from the reference's own seed set: keep what the
+   * person is working out, lose the hellos and mic checks, run it one thread
+   * at a time. Then whatever the brief itself asked for on top — a length, an
+   * order, something to lose. They are rules, so every one of them is visible
+   * and switch-off-able the moment the pane exists to show them.
+   */
+  const set = toFootageSet(pool, momentTags);
+  const asked = parseRules(opts.brief);
+
+  /*
+   * FOLDED IN WITH applyRule, NOT APPENDED — and the difference is a bug I
+   * shipped for one commit by concatenating instead.
+   *
+   * compute() takes the FIRST order rule it finds. Append the user's and the
+   * seed's "one thread at a time" still wins, so "the start drags" parsed
+   * correctly, produced the right rule, and changed nothing — the worst
+   * possible outcome for a product whose promise is that you can see what the
+   * rules did. applyRule is what the editor uses and it exists precisely
+   * because orders and caps are single-valued: a second one REPLACES.
+   */
+  const seed: Array<Omit<Rule, "id">> = [
+    { kind: "keep", tag: "core", on: true, text: "Keep the parts where you're working something out." },
+    { kind: "drop", tag: "housekeeping", on: true, text: "Take out the hellos and the mic checks." },
+    { kind: "order", order: "strand", on: true, text: "Run it one thread at a time." },
+  ];
+  /* Named by what they are, never by position — see ruleKey. */
+  let rules: Rule[] = seed.map((r) => ({ ...r, id: ruleKey(r) }));
+  asked.rules.forEach((r) => {
+    /*
+     * SAYING WHAT THE DEFAULT ALREADY DOES ADDS NOTHING.
+     *
+     * "Take out the hellos" parses to a drop on `housekeeping`, and the seed
+     * set already has one — so folding it in blind put the same rule in the
+     * pane twice, in the user's words and ours, both reporting the same
+     * effect. applyRule is right not to dedupe (a second KEEP on a different
+     * tag is a real second rule), so the check belongs here: same kind, same
+     * tag, already on, nothing to add.
+     */
+    const same = rules.some((x) => x.on && x.kind === r.kind && x.tag && x.tag === r.tag);
+    if (!same) rules = applyRule(rules, { ...r, id: ruleKey(r) });
+  });
+
+  /*
+   * A LENGTH NOBODY ASKED FOR IS STILL A CEILING, not a target.
+   *
+   * The generous default stays — an assembly nobody gave a length to should
+   * over-deliver material and let the user cut, which is what the staged
+   * reduction research argues — but it arrives as a cap RULE rather than as a
+   * number buried in a selector, so it shows up in the pane with everything
+   * else and can be switched off like everything else.
+   */
+  const target = targetFromBrief(opts.brief);
+  if (!rules.some((r) => r.kind === "cap")) {
+    rules = applyRule(rules, {
+      id: ruleKey({ kind: "cap", on: true }),
+      kind: "cap",
+      secs: Math.round(target.ms / 1000),
+      on: true,
+      text: `Keep it under ${Math.round(target.ms / 60_000)} minutes.`,
+    });
+  }
+
+  const cut = compute(rules, { set });
+  const chosen = cut.rows.filter((r) => r.kind === "clip" && r.moment).map((r) => r.moment!);
+  if (!chosen.length) {
+    return {
+      error: "Nothing in there survived the rules — it may all be hellos and hedging. Try saying it differently.",
+    };
+  }
+
+  /* Back to the library rows, in the order the engine put them. */
+  const byId = new Map(pool.map((m) => [m.id, m]));
+  const moments = chosen.map((c) => byId.get(String(c.id))).filter((m): m is Moment => !!m);
 
   const project = await createProject(env.DB, {
     user_id: opts.userId,
@@ -171,21 +520,26 @@ export async function assembleFromLibrary(
     /* No video of its own. The one thing that makes this different. */
     source_id: null,
     brief: opts.brief,
+    scope: opts.scope,
   });
 
-  const beats = moments.map((m) => ({
-    id: ulid(),
-    kind: "clip" as const,
-    act: null,
-    struck: "0",
-    text: m.quote,
-    clip_id: m.id,
-    dur_ms: Math.max(0, m.end_ms - m.start_ms),
-    media_r2_key: null,
-    recorded_at: null,
-  }));
+  /* The engine's own total, not the clips' — it includes the to-camera gaps
+     the gap rule put in, which are real seconds of the finished cut. */
+  const runtime = cut.secs * 1000;
+  const beats = beatsFor(moments);
 
   await putBeats(env.DB, project.id, beats);
+
+  /*
+   * AND THE RULES, which are the actual record.
+   *
+   * Beats are the outcome; this is the input that produced them. Without it an
+   * assembled cut arrived with no account of why those moments and not others,
+   * and nothing could be switched off because nothing had been written down —
+   * invariant 1 says a cut is re-produced from rules, and until this line it
+   * could not be re-produced at all.
+   */
+  await saveRules(env.DB, project.id, rules);
 
   /*
    * IT SAYS WHAT IT DID.
@@ -201,19 +555,51 @@ export async function assembleFromLibrary(
    * state of this edit to go back to, and a button that offered one would lie.
    */
   const from = new Set(moments.map((m) => m.source_id)).size;
+
+  /*
+   * IT SAYS HOW LONG IT IS, AND WHY IT IS NOT LONGER.
+   *
+   * This line used to read "6 moments from 2 videos" and leave out the only
+   * number somebody asking for three minutes wanted.
+   *
+   * The two reasons it can come up short are NOT the same fact and a single
+   * sentence covering both would be a lie about one of them. Either the
+   * library had more that matched and none of it was short enough to fit —
+   * which is what trimming inside a pulled clip would fix, and nothing else
+   * will — or that is simply everything that matched, and no amount of
+   * cleverness here will find more. Caught driving the real route: a
+   * two-minute ask returned 34 seconds and the first version of this said
+   * "nothing shorter left that fits" when the truth was "that is all there is".
+   */
+  const gap = target.said && target.ms - runtime > 15_000;
+  const exhausted = moments.length >= pool.length;
+  const why = !gap
+    ? ""
+    : exhausted
+      ? ` of ${clock(target.ms)} — that is everything ${how === "recent" ? "you have" : "that matched"}`
+      : ` of ${clock(target.ms)} — nothing shorter left that fits`;
   await recordPass(env.DB, {
     projectId: project.id,
     sourceId: null,
     instruction: opts.brief,
     result:
-      `${moments.length} moment${moments.length === 1 ? "" : "s"} from ` +
-      `${from} video${from === 1 ? "" : "s"}` +
-      (how === "meaning" ? "" : how === "words" ? " · matched on words" : " · your most recent"),
+      describe(cut, rules, why) +
+      ` · from ${from} video${from === 1 ? "" : "s"}` +
+      (how === "meaning" ? "" : how === "words" ? " · matched on words" : " · your most recent") +
+      /* A sentence that carried no rule says so, rather than appearing to
+         have been understood. 04-RULE-ENGINE.md: never a silent no-op. */
+      (honestReply(asked.unparsed) ? ` — ${honestReply(asked.unparsed)}` : ""),
     firstChange: `b:${beats[0].id}`,
   }).catch(() => {
     /* The edit exists and is usable; a missing opening line is not worth
        failing the whole assembly for. */
   });
 
-  return { projectId: project.id, used: moments.length, how };
+  return {
+    projectId: project.id,
+    used: moments.length,
+    how,
+    runtimeMs: runtime,
+    targetMs: target.ms,
+  };
 }

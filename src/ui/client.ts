@@ -4,7 +4,7 @@
  * Deliberately small: the design's interactions are simple enough that
  * hydration islands are plenty (07-CLAUDE-CODE-BRIEF.md §Stack). No framework.
  *
- * The keyboard map is from design/docs/10-ROUTES-AND-KEYS.md. Two rules from
+ * The keyboard map is from docs/archive/handoff-v2/10-ROUTES-AND-KEYS.md. Two rules from
  * that doc are load-bearing and easy to get wrong:
  *   1. Keyboard actions and their mouse equivalents must route through the
  *      SAME undo-wrapped handler, or ⌘Z reverts only half of them.
@@ -3559,6 +3559,224 @@ function readDuration(file) {
     el.src = URL.createObjectURL(file);
   });
 }
+
+/* ── Labelling: what backs what ───────────────────────────────────────
+   Two hundred judgements is an hour of somebody's evening, so there is no
+   confirmation and no save step: the answer IS the tap, and changing it is
+   another tap. No reload either — reloading after every judgement would
+   re-run retrieval and lose the reading position partway down a list. */
+document.querySelectorAll(".eval-say").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const row = btn.parentElement;
+    const verdict = btn.getAttribute("data-verdict");
+    try {
+      const res = await fetch(
+        "/api/eval/" + btn.getAttribute("data-claim") + "/" + btn.getAttribute("data-clip"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdict }) },
+      );
+      if (!res.ok) { window.toast("That didn't save."); return; }
+      /* The chosen one lights; the other two go quiet. Done here rather than
+         by reloading, because the page is a list you are working down. */
+      if (row) {
+        row.querySelectorAll(".eval-say").forEach((b) => {
+          const on = b === btn;
+          b.style.background = on ? b.getAttribute("data-on-bg") || "rgba(94,201,143,0.14)" : "#1A1A1F";
+          b.style.color = on ? b.getAttribute("data-on-fg") || "#5EC98F" : "rgba(236,236,241,0.7)";
+        });
+      }
+    } catch {
+      window.toast("That didn't save.");
+    }
+  });
+});
+
+/* ── The plan: keep or cut a beat, then the two steps past the stop ───
+   The flow stops exactly once, here, and nothing downstream runs until the
+   beats are answered — which is why Find the footage and Cut it are separate
+   presses rather than one that does both. */
+const planPost = async (url, btn, go) => {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.style.opacity = ".5";
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      window.toast(out.error || "That didn't work.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+      return;
+    }
+    go(out);
+  } catch {
+    window.toast("That didn't work.");
+    btn.disabled = false;
+    btn.style.opacity = "";
+  }
+};
+
+document.querySelectorAll(".beat-keep").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const plan = btn.closest("[data-plan]");
+    if (!plan) return;
+    const next = btn.getAttribute("data-kept") !== "1";
+    try {
+      await fetch("/api/plans/" + plan.getAttribute("data-plan") + "/beats/" + btn.getAttribute("data-beat"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kept: next }),
+      });
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+    }
+  });
+});
+
+document.querySelectorAll(".plan-find").forEach((btn) => {
+  btn.addEventListener("click", () =>
+    planPost("/api/plans/" + btn.getAttribute("data-plan") + "/find", btn, () => location.reload()),
+  );
+});
+
+document.querySelectorAll(".plan-cut").forEach((btn) => {
+  btn.addEventListener("click", () =>
+    planPost("/api/plans/" + btn.getAttribute("data-plan") + "/cut", btn, (out) => {
+      location.href = out.href || "/";
+    }),
+  );
+});
+
+/* ── The footage tab: add a video to this cut ─────────────────────────
+   The same gesture as attaching before the project existed. Its moments are
+   judged by the rules already on the board the moment it lands, so the whole
+   cut is re-produced and the page reloads. */
+document.querySelectorAll(".add-source").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + project.getAttribute("data-project") + "/attach", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: btn.getAttribute("data-source") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/* ── The footage tab: keep or cut a moment by hand ────────────────────
+   Every row's note promises this — "out · rule 02 · click to keep" — and it
+   shipped once on a div with no handler, which is a sentence on screen
+   telling somebody to do something that does nothing. A hand decision
+   overrides every rule above it, so the whole cut is re-produced and the page
+   reloads: membership AND order may have changed, and a partial DOM update
+   would be a second answer to what the cut is. */
+document.querySelectorAll(".moment-hand").forEach((row) => {
+  row.addEventListener("click", async () => {
+    if (row.disabled) return;
+    const project = row.closest("[data-project]");
+    if (!project) return;
+    /* An "out" row keeps; an "in" row cuts. Pressing the same one twice takes
+       the hand back rather than pinning it the other way. */
+    const keep = row.getAttribute("data-in") !== "1";
+    row.disabled = true;
+    row.style.opacity = ".4";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + row.getAttribute("data-moment"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keep }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        row.disabled = false;
+        row.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      row.disabled = false;
+      row.style.opacity = "";
+    }
+  });
+});
+
+/* ── The room: the MAKE cards ──────────────────────────────────────────
+   Each card writes the sentence you would have typed and leaves the cursor
+   at the end of it. They shipped once as links to a query the server never
+   read — six controls that looked like they started something and reloaded
+   the page unchanged — which is why they are buttons now and why the fidelity
+   gate grew a rule about hrefs nobody reads. */
+document.querySelectorAll(".make-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const brief = $("#brief");
+    if (!brief) return;
+    brief.value = card.getAttribute("data-make") || "";
+    brief.focus();
+    /* At the END, because half of these are openings to finish — "a video
+       about ", "every time I mention " — and dropping the cursor at the
+       start would put the typing in front of the sentence. */
+    brief.setSelectionRange(brief.value.length, brief.value.length);
+    brief.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+});
+
+/* ── The rules pane: switch one off ───────────────────────────────────
+   Invariant 1: a cut is re-produced from rules. So this does not patch the
+   document it disagrees with — it tells the server the rule's new state and
+   reloads, because the whole cut may have changed membership AND order and
+   a partial DOM update would be a second, drifting answer to what the cut is.
+
+   NOT routed through doUndoable. A toggle is its own inverse and is already
+   reversible by pressing it again; an undo entry would be a second way to say
+   the same thing that could disagree with the first. */
+document.querySelectorAll(".rule-toggle").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const next = btn.getAttribute("data-on") !== "1";
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: next }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      /* Offline or the worker died. Say so and put the control back, rather
+         than leaving a greyed-out row that looks like it worked. */
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
 
 /* ── The editor: keep and drop ─────────────────────────────────────────
    Every change goes through doUndoable, so ⌘Z reverts it and the toast's

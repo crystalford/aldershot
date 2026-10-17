@@ -2,9 +2,9 @@
  * Aldershot — Workers entry point.
  *
  * Editing is reading. No timeline, no scrubbing, no NLE. See design/ for the
- * spec: design/Aldershot.dc.html is authoritative, design/docs/ explains it.
+ * spec: design/Aldershot.dc.html is authoritative, docs/archive/handoff-v2/ explains it.
  *
- * Routing follows design/docs/10-ROUTES-AND-KEYS.md exactly. The prototype
+ * Routing follows docs/archive/handoff-v2/10-ROUTES-AND-KEYS.md exactly. The prototype
  * switches surfaces on a single `view` string; the built app gives each one a
  * real URL so work is linkable and the back button works — the prototype's
  * biggest limitation, called out in that doc.
@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -51,6 +51,8 @@ const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
+import { draftPlan, findForBeats } from "./plan.ts";
+import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
@@ -62,6 +64,11 @@ import { abortMultipart, canPresign, completeMultipart, createMultipart, presign
 import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
+import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
+import { loadRules, saveRules } from "./rule-store.ts";
+import { honestReply, parseRules } from "./rule-parse.ts";
+import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
+import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -72,8 +79,13 @@ import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
-import { assembleFromLibrary } from "./assemble.ts";
-import { claimPassUndo, passLog } from "./passes.ts";
+import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
+import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
+import { renderPlan } from "./ui/pages/plan.ts";
+import { renderEval, type EvalData } from "./ui/pages/eval.ts";
+import { isVerdict, type Verdict } from "./eval-set.ts";
+import { findMaterial } from "./assemble.ts";
+import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
 export { AudioContainer, RenderContainer } from "./render.ts";
@@ -394,7 +406,7 @@ async function nameLooseRefs(
   return out;
 }
 
-app.get("/", async (c) => {
+const homeHandler = async (c: Ctx) => {
   await ensureV2Schema(c.env.DB);
 
   /*
@@ -628,6 +640,28 @@ app.get("/", async (c) => {
       user.email,
     ),
   );
+};
+
+/*
+ * THE ROOM IS THE FRONT DOOR. The old Home keeps a URL.
+ *
+ * `/` was Home — a composer and a feed — while /footage and /projects were
+ * two more pages over the same library. One Take is one room, so / serves it
+ * and the nav's Home link already points here.
+ *
+ * Home is not deleted. It carries a finished-while-you-were-away feed and a
+ * "what is part-made" section the room does not cover yet, and removing a
+ * surface before its replacement covers it is how a product loses features
+ * quietly. It goes when the room covers it, not before — and until then it is
+ * at /home, reachable and unadvertised.
+ *
+ * Signed out, / is still the landing site, which is Home's own branch: a
+ * shared link has to work for someone with no account.
+ */
+app.get("/home", homeHandler);
+app.get("/", async (c) => {
+  const visitor = await currentUser(c.env, c.req.header("cookie"));
+  return visitor ? roomHandler(c) : homeHandler(c);
 });
 
 /**
@@ -692,6 +726,162 @@ app.get("/projects", async (c) => {
     surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows), user.email),
   );
 });
+
+/**
+ * THE ROOM — One Take's front door, with no project open.
+ *
+ * Home, Footage and Projects were three pages describing one library. This is
+ * the one surface they fold into (docs/handoff/02-SCREENS.md). It is mounted
+ * at /room while the old pages are still linked to from the nav and from the
+ * editor's back links; /room becomes / once nothing points at them.
+ *
+ * Every count is read, never estimated. The tab lists are loaded ALL of them
+ * rather than only the active one, for the same reason the Footage page does:
+ * the tab bar shows each count, and a count that disagrees with its list is a
+ * bug this product has already had twice.
+ */
+const roomHandler = async (c: Ctx) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const t = c.req.query("tab");
+  const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
+  const q = (c.req.query("q") || "").trim();
+
+  /*
+   * WHAT IS ATTACHED, from the URL.
+   *
+   * Server-rendered, so the selection has to survive a page load and the URL
+   * is the only place that cannot get out of step with what is on screen.
+   * Filtered against the user's own sources on render as well as on submit:
+   * a stale id in a bookmarked link should quietly drop out rather than show
+   * a video that is not there.
+   */
+  const attachParam = (c.req.query("attach") || "").split(",").filter(Boolean);
+  /* Which retriever the person asked for. Both still run and fuse — this
+     says which one they chose to see first, and whether to say the index is
+     off. "exact" means they asked for the words, so the notice is not news. */
+  const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
+
+  const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
+    listSources(c.env.DB, user.id, "newest"),
+    listProjects(c.env.DB, user.id),
+    listThreads(c.env.DB, user.id),
+    clipCountsBySource(c.env.DB, user.id),
+    countMoments(c.env.DB, user.id),
+    activeJobs(c.env.DB, user.id),
+  ]);
+
+  /*
+   * A JOB WITH NOTHING TO NAME IS NOT SHOWN.
+   *
+   * The same rule Home follows: a job whose ref_id matches no source and no
+   * project would render as "a video", which is a progress bar for something
+   * the person cannot find. Better to say nothing about it than to say that.
+   */
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const working = jobs
+    .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+    .map((j) => ({
+      label:
+        sourceById.get(j.ref_id ?? "")?.title ??
+        projects.find((p) => p.id === j.ref_id)?.title ??
+        "a video",
+      type: j.type,
+      stage: j.stage_label ?? "working on",
+      pct: j.pct,
+    }));
+
+  /*
+   * SEARCH IS THE SAME RETRIEVAL THE ASSEMBLY PATH USES.
+   *
+   * findMaterial runs meaning and exact words as peers and fuses them by
+   * rank. Calling it here rather than writing a second search means the room
+   * and the cut can never disagree about what the library contains — and when
+   * somebody types a sentence into the box and then asks for a cut of it, the
+   * same moments come back.
+   *
+   * `how` tells us whether the index took part, which is the only thing the
+   * notice on screen claims.
+   */
+  let moments: Awaited<ReturnType<typeof listMoments>>;
+  let meaningUnavailable = false;
+  if (q) {
+    const found = await findMaterial(c.env, user.id, q, 60);
+    /*
+     * A SEARCH THAT MATCHED NOTHING RETURNS NOTHING.
+     *
+     * findMaterial falls back to the most recent moments when neither
+     * retriever matches, which is right for a BRIEF — "eight minutes on
+     * whatever you have" is a request for material — and wrong for a search
+     * box, where it answered "turpentine" with the whole library. Caught by
+     * searching for a word that is not in the seeded footage and getting
+     * nine moments back.
+     *
+     * `how === "recent"` is findMaterial saying so itself, which is why it
+     * reports it.
+     */
+    moments = found.how === "recent" ? [] : found.moments;
+    meaningUnavailable = found.how !== "meaning";
+  } else {
+    moments = await listMoments(c.env.DB, user.id, 60);
+  }
+
+  const mine = new Set(sources.map((s) => s.id));
+  const attached = attachParam.filter((id) => mine.has(id));
+
+  return c.html(
+    page(
+      { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
+      renderRoom({
+        tab,
+        attached,
+        q,
+        mode,
+        meaningUnavailable: mode === "exact" ? false : meaningUnavailable,
+        threadNames: threads.map((t) => t.name),
+        working,
+        sources: sources.map((s) => ({
+          id: s.id,
+          title: s.title,
+          poster_r2_key: s.poster_r2_key,
+          transcript_state: s.transcript_state,
+          duration_s: s.duration_s,
+          clips: clipsPer.get(s.id) ?? 0,
+        })),
+        moments: moments.map((m) => ({
+          id: m.id,
+          quote: m.quote,
+          frame_r2_key: m.frame_r2_key,
+          source_title: m.source_title,
+          thread_name: m.thread_name,
+        })),
+        projects: projects.map((p) => ({
+          id: p.id,
+          title: p.title,
+          kind: p.kind,
+          updated_at: p.updated_at,
+        })),
+        counts: { sources: sources.length, moments: momentCount, threads: threads.length },
+      }),
+    ),
+  );
+};
+
+/*
+ * THE ROOM IS THE FRONT DOOR NOW.
+ *
+ * `/` was Home — a composer and a feed — and /footage and /projects were two
+ * more pages over the same library. One Take is one room, so / serves it, and
+ * the nav's Home link already points here.
+ *
+ * The old Home stays at /home rather than being deleted. It carries a feed
+ * and a "what is part-made" section the room does not have yet, and deleting
+ * a surface before its replacement covers it is how a product loses features
+ * quietly. It goes when the room covers it, not before.
+ *
+ * /room stays as an alias so anything already linking to it keeps working.
+ */
+app.get("/room", roomHandler);
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -1130,7 +1320,7 @@ app.get("/clipping", (c) => c.redirect("/footage?tab=exports", 302));
  * This list had `cut` MISSING, so the canonical URL 404ed while all four
  * legacy aliases worked. The walk caught it.
  */
-const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts"]);
+const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts", "footage"]);
 
 /**
  * The editor. One route, one surface.
@@ -1152,7 +1342,10 @@ app.get("/p/:id/:stagePath", async (c) => {
    * word always meant. ?view= is honoured too, the same shape Footage's ?tab=
    * uses, so the blocks endpoint can ask for a matching slice.
    */
-  const view: CutView = stage === "script" || c.req.query("view") === "script" ? "script" : "blocks";
+  const view: CutView =
+    stage === "footage" || c.req.query("view") === "footage" ? "footage"
+    : stage === "script" || c.req.query("view") === "script" ? "script"
+    : "blocks";
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.notFound();
@@ -1209,6 +1402,21 @@ app.get("/p/:id/:stagePath", async (c) => {
         view,
         windowSize: BLOCK_WINDOW,
         /*
+         * WHAT THE CUT IS, in the line the centre column opens with. The
+         * same numbers the bottom bar carries, said where you are reading
+         * rather than where you scroll to.
+         */
+        cutLine: (() => {
+          const live = blocks.filter((b) => !b.struck);
+          const runtime = live.reduce((n, b) => n + Math.max(0, b.end_ms - b.start_ms), 0);
+          const videos = new Set(live.map((b) => b.mediaKey ?? "own")).size;
+          return [
+            hms(runtime / 1000),
+            `${live.length} block${live.length === 1 ? "" : "s"}`,
+            source ? source.title : `from ${videos} video${videos === 1 ? "" : "s"}`,
+          ].join(" · ");
+        })(),
+        /*
          * What the clean-ups would actually do, counted from THIS transcript.
          *
          * "A chip whose number cannot be computed honestly yet shows its
@@ -1244,6 +1452,111 @@ app.get("/p/:id/:stagePath", async (c) => {
         cameFrom: cameFrom(c.req.header("referer")),
         job,
         passes,
+        /*
+         * THE RULES THAT PRODUCED THIS CUT, with what each is doing now.
+         *
+         * Empty for an edit that began with a video — those are the staged
+         * editor's and have no rule set. An assembled cut has one, stored at
+         * assembly, and its effect is recomputed here rather than stored:
+         * an effect is a fact about the CURRENT footage, and a stored one goes
+         * stale the moment a moment is struck.
+         */
+        ...(await (async () => {
+          /*
+           * THE RULES AND THE MOMENTS THEY JUDGED, from one computation.
+           *
+           * Both halves of the project state read the same cut: the pane
+           * numbers the rules, the Footage tab says which rule put each
+           * moment in or took it out, and they have to agree or a moment
+           * points at the wrong line. Computing twice would let them.
+           */
+          const stored = await loadRules(c.env.DB, project.id);
+          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {} };
+
+          /* Attached footage only. Without this the Footage tab lists every
+             moment in the library against a cut that can only ever draw on
+             two videos, and every one of them reads "out · no rule keeps it"
+             — which is true and useless. */
+          const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
+          const set = toFootageSet(pool, momentTags);
+          const judged = compute(stored, { set }).st;
+
+          /* The pane numbers only the rules proper; a hand decision is the
+             escape hatch from them. Same rule, same order, same numbers. */
+          const main = stored.filter((r) => !r.hand);
+          const numberOf = (id: unknown) => {
+            const i = main.findIndex((r) => String(r.id) === String(id));
+            return i < 0 ? "—" : String(i + 1).padStart(2, "0");
+          };
+          const isHand = (id: unknown) =>
+            Boolean(stored.find((r) => String(r.id) === String(id))?.hand);
+          const titles = new Map(pool.map((m) => [m.id, m.source_title]));
+
+          /*
+           * The videos this cut is NOT drawing on. Only when it has a scope:
+           * a cut without one already draws on everything, so there is
+           * nothing to add and a control offering to would do nothing.
+           */
+          const scope = scopeOf(project);
+          const addable = scope
+            ? (await listSources(c.env.DB, user.id, "newest"))
+                .filter((x) => !scope.includes(x.id))
+                .map((x) => ({ id: x.id, title: x.title }))
+            : [];
+
+          /*
+           * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
+           *
+           * A block from a beat has the id b:<beatId>, and the beat carries
+           * the clip — so the attribution the Footage tab already computes
+           * can be attached to the block the person is reading. Same
+           * compute(), same numbering, so the chip on a block and the number
+           * in the pane cannot disagree.
+           */
+          const ruleOf = new Map(
+            judged.map((m) => [
+              String(m.id),
+              m.in
+                ? m.byId === null || isHand(m.byId)
+                  ? "by hand"
+                  : `rule ${numberOf(m.byId)}`
+                : "",
+            ]),
+          );
+          const blockRule: Record<string, string> = {};
+          for (const bt of beats) {
+            if (bt.clip_id && ruleOf.get(bt.clip_id)) blockRule[`b:${bt.id}`] = ruleOf.get(bt.clip_id)!;
+          }
+
+          return {
+            addable,
+            blockRule,
+            rules: stored.map((r) => ({
+              id: String(r.id),
+              text: r.text ?? r.kind,
+              on: r.on,
+              hand: Boolean(r.hand),
+              effect: effectLine(stored, r, { set }),
+            })),
+            moments: judged.map((m) => ({
+              id: String(m.id),
+              quote: m.text,
+              source_title: titles.get(String(m.id)) ?? "",
+              in: m.in,
+              note: m.in
+                ? m.byId === null
+                  ? "in · kept by hand"
+                  : isHand(m.byId)
+                    ? "in · kept by hand"
+                    : `in · rule ${numberOf(m.byId)}`
+                : m.dropId === null
+                  ? "out · no rule keeps it"
+                  : isHand(m.dropId)
+                    ? "out · by hand · click to keep"
+                    : `out · rule ${numberOf(m.dropId)} · click to keep`,
+            })),
+          };
+        })()),
       }) +
         exportPanel(project.id, user.plan) +
         exportsStrip({ projectId: project.id, renders }),
@@ -1318,6 +1631,42 @@ app.post("/api/passes/:passId/undo", async (c) => {
 
   const snap = await claimPassUndo(c.env.DB, c.req.param("passId"), project.id);
   if (!snap) return c.json({ error: "that one has already been taken back" }, 409);
+
+  /*
+   * A RULES-BACKED CUT GOES BACK BY ITS RULES.
+   *
+   * Restoring {cuts, order} on an assembled project would put the beats back
+   * and leave the rules table describing a cut that no longer exists — the
+   * pane would explain one thing and the document would be another. So the
+   * rule set is restored and the cut re-produced from it, which is the same
+   * path every other change to it takes.
+   */
+  if (snap.rules) {
+    let restored: Rule[];
+    let scope: string[] | null;
+    try {
+      restored = JSON.parse(snap.rules) as Rule[];
+      /*
+       * A pass that did not touch the scope leaves it absent, and the
+       * project's own stands. A pass that DID — attaching a video — carries
+       * what it was, and that is what goes back. Restoring only the rules
+       * would undo an "Added that video" pass and leave the video added.
+       */
+      scope = snap.scope == null ? scopeOf(project) : (JSON.parse(snap.scope) as string[] | null);
+    } catch {
+      return c.json({ error: "that one can't be taken back" }, 422);
+    }
+    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored, scope });
+    if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, restored);
+    if (snap.scope != null) {
+      await c.env.DB
+        .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
+        .bind(scope?.length ? JSON.stringify(scope) : null, Date.now(), project.id, user.id)
+        .run();
+    }
+    return c.json({ ok: true, kept: out.kept, secs: out.secs });
+  }
 
   /* Re-serialised rather than trusted, the same as /restore: this writes
      straight into the columns the render is built from. */
@@ -1877,6 +2226,479 @@ app.post("/api/projects/:id/pass/stop", async (c) => {
   return c.json({ ok: true, stopped: meta?.changes ?? 0 });
 });
 
+/**
+ * SWITCH A RULE OFF, OR BACK ON, AND RE-PRODUCE THE CUT.
+ *
+ * The rules pane could say what every rule was doing and could not change any
+ * of it, which is a report rather than a control. This is the other half:
+ * invariant 1 says a cut is re-produced from rules, so flipping one has to
+ * rebuild the cut from the whole set rather than patch the beats it happens to
+ * disagree with.
+ *
+ * Nothing is deleted — `on` is a state. Toggling off and on again returns the
+ * cut exactly, because both passes run the same engine over the same rules;
+ * that is Phase 2's acceptance and it is a property of recomputing rather than
+ * a thing this route has to be careful about.
+ *
+ * It records a pass, so the conversation carries it like every other edit.
+ * Deliberately NOT undoable through /api/passes/:id/undo: a toggle is its own
+ * inverse and already reversible by pressing it again, and an undo snapshot
+ * would be a second way to say the same thing that could disagree with the
+ * first.
+ */
+app.post("/api/projects/:id/rules/:ruleId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ on: boolean }>(c);
+  const ruleId = c.req.param("ruleId");
+  const rules = await loadRules(c.env.DB, project.id);
+  const rule = rules.find((r) => String(r.id) === ruleId);
+  if (!rule) return c.json({ error: "no such rule" }, 404);
+
+  const on = Boolean(b.on);
+  if (rule.on === on) return c.json({ ok: true, unchanged: true });
+
+  const next = rules.map((r) => (String(r.id) === ruleId ? { ...r, on } : r));
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+
+  await saveRules(c.env.DB, project.id, next);
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: `${on ? "Back on" : "Off"}: ${rule.text ?? rule.kind}`,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    firstChange: null,
+  }).catch(() => {
+    /* The cut changed and is correct; a missing line in the log is not worth
+       failing the edit for. */
+  });
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs });
+});
+
+/**
+ * KEEP THIS ONE, OR CUT IT, WHATEVER THE RULES SAY.
+ *
+ * The Footage tab says "out · rule 02 · click to keep" on every moment a rule
+ * dropped. Disagreeing with a rule is the point of showing which rule did it,
+ * and the engine already has the mechanism: a hand rule overrides everything
+ * above it (step 6). So this writes one and re-produces the cut.
+ *
+ * PRESSING IT AGAIN TAKES THE HAND BACK, rather than writing the opposite
+ * hand rule. Those are different things and only one of them is reversible:
+ * "I disagree with the rules here" should be undoable to "whatever the rules
+ * say", and a second hand rule in the other direction would leave the moment
+ * pinned by hand for ever with no way back to the rule's own answer.
+ */
+app.post("/api/projects/:id/moments/:momentId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const momentId = c.req.param("momentId");
+  const b = await body<{ keep: boolean }>(c);
+  const keep = Boolean(b.keep);
+
+  const rules = await loadRules(c.env.DB, project.id);
+  if (!rules.length) return c.json({ error: "this cut was not made from rules" }, 422);
+
+  const key = ruleKey({ kind: keep ? "keep" : "drop", cid: momentId, hand: true, on: true });
+  const already = rules.find((r) => String(r.id) === key && r.on);
+
+  /* Any hand rule on this moment goes, whichever direction it pointed —
+     leaving the other one on would have two hands fighting over one moment. */
+  const other = ruleKey({ kind: keep ? "drop" : "keep", cid: momentId, hand: true, on: true });
+  const next = rules.filter((r) => String(r.id) !== key && String(r.id) !== other);
+  if (!already) {
+    next.push({
+      id: key,
+      kind: keep ? "keep" : "drop",
+      cid: momentId,
+      hand: true,
+      on: true,
+      text: keep ? "Kept by hand." : "Cut by hand.",
+    });
+  }
+
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+  await saveRules(c.env.DB, project.id, next);
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: already ? "Back to what the rules say" : keep ? "Kept by hand" : "Cut by hand",
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    undo: { cuts: null, order: null, rules: JSON.stringify(rules) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs, byHand: !already });
+});
+
+/**
+ * ADD A VIDEO TO AN OPEN CUT.
+ *
+ * Attaching happens before a project exists; this is the same gesture after
+ * it does. The source joins the scope and the cut is re-produced — so its
+ * moments are judged by the rules already on the board rather than appearing
+ * in the cut unexamined, which is what "its moments join left out until a
+ * rule or your hand keeps them" means once there are rules.
+ *
+ * A cut with NO scope already draws on the whole library, so there is nothing
+ * to add to it and this says so rather than pretending to act.
+ */
+app.post("/api/projects/:id/attach", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const scope = scopeOf(project);
+  if (!scope) return c.json({ error: "this cut already draws on everything you have" }, 422);
+
+  const b = await body<{ sourceId: string }>(c);
+  const sourceId = (b.sourceId || "").trim();
+  /* Checked against the user's own sources, for the same reason the scope is
+     on the way in: it is a filter, and a filter taking arbitrary strings is a
+     way to ask about somebody else's library. */
+  const src = sourceId ? await getSource(c.env.DB, sourceId, user.id) : null;
+  if (!src) return c.json({ error: "that video isn't here" }, 404);
+  if (scope.includes(src.id)) return c.json({ ok: true, unchanged: true });
+
+  const next = [...scope, src.id];
+  const rules = await loadRules(c.env.DB, project.id);
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: next,
+  });
+  if (!out) return c.json({ error: "there is nothing in that video to cut from" }, 422);
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(JSON.stringify(next), Date.now(), project.id, user.id)
+    .run();
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: `Added ${src.title}`,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    /* BOTH, because the scope is what this pass changed and the rules are
+       what re-produces the cut from it. Restoring only the rules would undo
+       an "Added that video" pass and leave the video added — which is what
+       the first version of this did, and driving it is how that was found. */
+    undo: { cuts: null, order: null, rules: JSON.stringify(rules), scope: JSON.stringify(scope) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs });
+});
+
+/**
+ * LABELLING: what backs what.
+ *
+ * Phase 0's eval set, made from inside the product because the footage is.
+ * A claim arrives in the query string so the page is shareable and a reload
+ * comes back to the same claim — there is no state here worth losing.
+ *
+ * The claim row is created on FIRST SIGHT rather than on first judgement, so
+ * a claim the library backs with nothing is still in the set. Those are the
+ * ones that teach a threshold to answer "nothing here backs this", and a set
+ * without them teaches the opposite.
+ */
+app.get("/eval", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const text = (c.req.query("claim") || "").trim();
+
+  const [claims, counted] = await Promise.all([
+    c.env.DB
+      .prepare(
+        `SELECT c.id, c.text, (SELECT COUNT(*) FROM eval_labels l WHERE l.claim_id = c.id) AS judged
+           FROM eval_claims c WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 40`,
+      )
+      .bind(user.id)
+      .all<{ id: string; text: string; judged: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT COUNT(*) AS n FROM eval_labels l
+           JOIN eval_claims c ON c.id = l.claim_id WHERE c.user_id=?`,
+      )
+      .bind(user.id)
+      .first<{ n: number }>(),
+  ]);
+
+  let claim: { id: string; text: string } | null = null;
+  let candidates: EvalData["candidates"] = [];
+  let foundNothing = false;
+
+  if (text) {
+    const existing = (claims.results ?? []).find((x) => x.text === text);
+    if (existing) {
+      claim = { id: existing.id, text: existing.text };
+    } else {
+      const id = ulid();
+      await c.env.DB
+        .prepare(`INSERT INTO eval_claims (id,user_id,text,created_at) VALUES (?,?,?,?)`)
+        .bind(id, user.id, text, Date.now())
+        .run();
+      claim = { id, text };
+    }
+
+    /* The same retrieval the room and the cut use, so the set is about the
+       thing that actually runs rather than about a second search built to
+       be measured. */
+    const found = await findMaterial(c.env, user.id, text, 8);
+    const moments = found.how === "recent" ? [] : found.moments;
+    foundNothing = moments.length === 0;
+
+    const { results: said } = await c.env.DB
+      .prepare(`SELECT clip_id, verdict FROM eval_labels WHERE claim_id=?`)
+      .bind(claim.id)
+      .all<{ clip_id: string; verdict: string }>();
+    const byClip = new Map((said ?? []).map((r) => [r.clip_id, r.verdict]));
+
+    candidates = moments.map((m) => ({
+      id: m.id,
+      quote: m.quote,
+      sourceTitle: m.source_title,
+      verdict: isVerdict(byClip.get(m.id)) ? (byClip.get(m.id) as Verdict) : null,
+    }));
+  }
+
+  return c.html(
+    page(
+      { title: "What backs what — Aldershot", view: "archive", screenLabel: "Labelling", email: user.email },
+      renderEval({
+        claim,
+        candidates,
+        claims: claims.results ?? [],
+        labels: counted?.n ?? 0,
+        foundNothing,
+      }),
+    ),
+  );
+});
+
+/** One judgement. Replaces any earlier answer — changing your mind is a
+    correction, not a second opinion. */
+app.post("/api/eval/:claimId/:clipId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ verdict: string }>(c);
+  if (!isVerdict(b.verdict)) return c.json({ error: "no such answer" }, 400);
+
+  /* Ownership is checked on the CLAIM, which carries the user — a label row
+     has no user of its own. */
+  const owns = await c.env.DB
+    .prepare(`SELECT id FROM eval_claims WHERE id=? AND user_id=?`)
+    .bind(c.req.param("claimId"), user.id)
+    .first<{ id: string }>();
+  if (!owns) return c.json({ error: "not found" }, 404);
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO eval_labels (claim_id,clip_id,verdict,created_at) VALUES (?,?,?,?)
+         ON CONFLICT(claim_id,clip_id) DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
+    )
+    .bind(c.req.param("claimId"), c.req.param("clipId"), b.verdict, Date.now())
+    .run();
+
+  return c.json({ ok: true });
+});
+
+/** The plan on screen: the claim, the beats, and where the flow got to. */
+app.get("/plan/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.notFound();
+
+  return c.html(
+    page(
+      { title: `${plan.topic} — Aldershot`, view: "essay", screenLabel: "The plan", email: user.email },
+      renderPlan({
+        id: plan.id,
+        topic: plan.topic,
+        claim: plan.claim,
+        state: plan.state,
+        projectId: plan.projectId,
+        beats: plan.beats.map((b) => ({
+          id: b.id,
+          role: b.role,
+          name: b.name,
+          need: b.need,
+          kept: b.kept,
+          found: b.found.length,
+          /* The same sentence findForBeats gives, recomputed rather than
+             stored: it is a fact about what this product can do, not about
+             this plan, and storing it would freeze today's answer into a row
+             that outlives it. */
+          gap: b.role === "outside" ? "a voice that isn't yours — nothing here can find that yet" : null,
+        })),
+      }),
+    ),
+  );
+});
+
+/**
+ * START A PLAN. The claim and the beats, and then it stops.
+ *
+ * Nothing is searched and nothing is cut: this is the cheap, reversible half,
+ * and the flow holds here until the beats are answered. 11-BUILD-ORDER's
+ * acceptance says it stops exactly once, and this is the once.
+ */
+app.post("/api/plans", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ topic: string }>(c);
+  const topic = (b.topic || "").trim();
+  if (!topic) return c.json({ error: "what is it about?" }, 400);
+
+  const draft = await draftPlan(c.env, topic);
+  if (!draft.beats.length) {
+    return c.json({ error: "Couldn't find an argument in that — try saying what it should argue." }, 422);
+  }
+
+  const planId = await createPlan(c.env.DB, {
+    userId: user.id,
+    topic,
+    claim: draft.claim,
+    beats: draft.beats,
+  });
+  return c.json({ planId, claim: draft.claim, beats: draft.beats.length });
+});
+
+/** Keep or cut one beat — the answer to the stop, beat by beat. */
+app.post("/api/plans/:id/beats/:beatId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const beatId = c.req.param("beatId");
+  if (!plan.beats.some((x) => x.id === beatId)) return c.json({ error: "no such beat" }, 404);
+
+  const b = await body<{ kept: boolean }>(c);
+  await setBeatKept(c.env.DB, plan.id, beatId, Boolean(b.kept));
+  return c.json({ ok: true });
+});
+
+/**
+ * PAST THE STOP: find footage for every kept beat.
+ *
+ * The expensive half, and it does not run until the beats have been answered
+ * — which is the point of the stop. Each beat's `need` goes through the same
+ * retrieval the room's search box uses, so the plan and the library can never
+ * disagree about what is in it.
+ */
+app.post("/api/plans/:id/find", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const kept = plan.beats.filter((x) => x.kept);
+  if (!kept.length) return c.json({ error: "every beat is cut — keep at least one" }, 422);
+
+  const found = await findForBeats(kept, async (need) => {
+    const out = await findMaterial(c.env, user.id, need, 6);
+    /* "Your most recent" is findMaterial answering a brief that matched
+       nothing. A beat's need is a search, not a brief, so that fallback is
+       the same lie here as it is in the room's search box: nothing found. */
+    return out.how === "recent" ? [] : out.moments.map((m) => m.id);
+  });
+
+  await setFound(c.env.DB, plan.id, new Map(found.map((f) => [f.beatId, f.clipIds])));
+  return c.json({
+    ok: true,
+    beats: found.map((f) => ({ beatId: f.beatId, found: f.clipIds.length, thin: f.thin, gap: f.gap })),
+  });
+});
+
+/**
+ * CUT IT. The plan becomes a project.
+ *
+ * 11-BUILD-ORDER's acceptance: "Cut it saves a project the Editor restores
+ * with the plan's order as rule 03". The plan's order is a RULE rather than
+ * baked into the beats, so it can be switched off like any other — which is
+ * invariant 1 holding even for an order somebody spent a planning flow
+ * arriving at.
+ */
+app.post("/api/plans/:id/cut", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+  if (plan.state === "beats") return c.json({ error: "find the footage first" }, 422);
+  if (plan.projectId) return c.json({ ok: true, projectId: plan.projectId, already: true });
+
+  const clipIds = plan.beats.filter((b) => b.kept).flatMap((b) => b.found);
+  if (!clipIds.length) return c.json({ error: "nothing was found for any beat" }, 422);
+
+  const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
+  const wanted = new Set(clipIds);
+  const moments = pool.filter((m) => wanted.has(m.id));
+  if (!moments.length) return c.json({ error: "that footage is no longer here" }, 422);
+
+  const project = await createProject(c.env.DB, {
+    user_id: user.id,
+    title: titleFromBrief(plan.topic, "An essay"),
+    kind: "essay",
+    source_id: null,
+    brief: plan.claim || plan.topic,
+    /* Scoped to whatever the beats actually found, so the cut draws on the
+       footage the plan was built from and not the whole library. */
+    scope: [...new Set(moments.map((m) => m.source_id))],
+  });
+
+  /*
+   * THE PLAN'S ORDER, AS A RULE. Beat order is not chronological and not by
+   * thread — it is the argument — so it arrives as a `cids` keep rule listing
+   * the moments in the order the beats put them, and an order rule saying to
+   * run them as given.
+   */
+  const ordered = clipIds.filter((id) => moments.some((m) => m.id === id));
+  const rules: Rule[] = [
+    {
+      id: "r-keep-plan",
+      kind: "keep",
+      cids: ordered,
+      on: true,
+      text: "Keep what the plan found.",
+    },
+    { id: "r-order", kind: "order", order: "time", on: true, text: "Run it as the plan has it." },
+  ];
+
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: [...new Set(moments.map((m) => m.source_id))],
+  });
+  if (!out) return c.json({ error: "that footage is no longer here" }, 422);
+  await saveRules(c.env.DB, project.id, rules);
+  await setPlanProject(c.env.DB, plan.id, project.id);
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: plan.claim || plan.topic,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)} · from the plan`,
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, projectId: project.id, href: `/p/${project.id}/cut`, kept: out.kept });
+});
+
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -2423,11 +3245,57 @@ app.post("/api/projects/:id/passes", async (c) => {
    * plain words, rather than returning "not found" about a project that is
    * plainly right there.
    */
-  if (!project.source_id && !wantsArrange(instruction)) {
-    return c.json(
-      { error: "This cut is assembled from your library, so there is no transcript to read yet — but I can put it in a different order." },
-      422,
-    );
+  /*
+   * ON AN ASSEMBLED CUT, A SENTENCE IS A RULE.
+   *
+   * This used to refuse everything but a reorder: "there is no transcript to
+   * read yet — but I can put it in a different order." That was true when a
+   * selecting pass meant reading a transcript, and a pulled block carries
+   * none. It stopped being true when the rule engine landed. Selection on an
+   * assembled cut is not a reading problem at all — the moments are already
+   * chosen and tagged, and "lose the hedging", "keep it under 90 seconds",
+   * "the start drags" are all rules the engine can apply with no model call
+   * and no transcript.
+   *
+   * Deterministic, synchronous, and no job: there is nothing to wait for.
+   * That is the point of rules rather than passes — the cut is re-produced
+   * from them, and re-producing it is arithmetic.
+   */
+  if (!project.source_id) {
+    const asked = parseRules(instruction);
+    if (asked.rules.length) {
+      const before = await loadRules(c.env.DB, project.id);
+      let next = before;
+      for (const r of asked.rules) {
+        /* Saying what a rule already on the board does adds nothing. */
+        const same = next.some((x) => x.on && x.kind === r.kind && x.tag && x.tag === r.tag);
+        if (!same) next = applyRule(next, { ...r, id: ruleKey(r) });
+      }
+
+      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
+      if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+      await saveRules(c.env.DB, project.id, next);
+
+      await recordPass(c.env.DB, {
+        projectId: project.id,
+        sourceId: null,
+        instruction,
+        result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+        /* The RULE SET as it stood, not the cuts — on a rules-backed project
+           the rules are the state and the beats are the consequence. */
+        undo: { cuts: null, order: null, rules: JSON.stringify(before) },
+        firstChange: null,
+      }).catch(() => {});
+
+      return c.json({ ok: true, kept: out.kept, secs: out.secs });
+    }
+
+    /*
+     * Nothing in it was a rule. Say what would be, rather than the old line
+     * about transcripts — which named the wrong reason and offered the one
+     * thing that is now only a special case of the right one.
+     */
+    return c.json({ error: honestReply([instruction]) }, 422);
   }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
@@ -3325,7 +4193,7 @@ app.get("/api/sources/:id", async (c) => {
 app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ sourceId: string; brief: string; upgrade: boolean }>(c);
+  const b = await body<{ sourceId: string; sourceIds?: unknown[]; brief: string; upgrade: boolean }>(c);
 
   /*
    * A BRIEF WITH NO VIDEO MEANS "OUT OF EVERYTHING I HAVE".
@@ -3343,7 +4211,25 @@ app.post("/api/begin", async (c) => {
     const brief = (b.brief || "").trim();
     if (!brief) return c.json({ error: "pick a video, or say what you want" }, 400);
 
-    const made = await assembleFromLibrary(c.env, { userId: user.id, brief });
+    /*
+     * ATTACHED FOOTAGE, WHEN THEY ATTACHED SOME.
+     *
+     * `sourceId` is one video and takes the single-source path. This is the
+     * many-video answer: say what you want with two videos attached and the
+     * rules apply to those two, which is what "tighten this" means when you
+     * have pointed at something. Ids are checked against the user's own
+     * sources rather than trusted, because a scope is a filter and a filter
+     * taking arbitrary strings is a way to ask about somebody else's library.
+     */
+    const asked = Array.isArray(b.sourceIds) ? b.sourceIds.filter((x) => typeof x === "string") : [];
+    let scope: string[] | null = null;
+    if (asked.length) {
+      const mine = new Set((await listSources(c.env.DB, user.id, "newest")).map((x) => x.id));
+      scope = asked.filter((id) => mine.has(id));
+      if (!scope.length) return c.json({ error: "those videos aren't here any more" }, 422);
+    }
+
+    const made = await assembleFromLibrary(c.env, { userId: user.id, brief, scope });
     if ("error" in made) return c.json({ error: made.error }, 422);
     return c.json({
       intent: "assemble",
@@ -3471,6 +4357,31 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (made) console.log(`[sweep] made ${made} editing cop${made === 1 ? "y" : "ies"}`);
   } catch (err) {
     console.log(`[sweep] proxy: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /*
+   * THE MEANING INDEX CATCHES UP WITH THE LIBRARY.
+   *
+   * Deliberately here rather than at the three places clips are written. A
+   * call site you have to remember is one a fourth call site will forget —
+   * that is exactly how the signed-in avatar ended up missing on half the app.
+   * Every clip lands with embedded_at NULL, so the sweep finds it whatever
+   * wrote it, and a new way of making clips is indexed without anyone wiring
+   * anything.
+   *
+   * Cheap and self-terminating, unlike the proxy backfill that used to live
+   * here: no container, no encode, a couple of hundred short strings through
+   * an embedding model, and nothing at all to do once the library is caught
+   * up. It costs roughly a thousandth of a cent per clip.
+   *
+   * A no-op until someone creates the index — see docs/SETUP.md.
+   */
+  try {
+    const added = await backfillClipIndex(env);
+    const gone = await reapClipIndex(env);
+    if (added || gone) console.log(`[sweep] meaning index: +${added} -${gone}`);
+  } catch (err) {
+    console.log(`[sweep] index: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   /* Videos that failed because a container slot was busy rather than because

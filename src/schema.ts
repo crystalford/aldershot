@@ -3,9 +3,14 @@
  *
  * This project has no migration runner — deploy explicitly skips one and every
  * table is created on first request (see .github/workflows/deploy.yml and the
- * existing ensure*Schema functions). `migrations/0006_v2_core.sql` is a
- * checked-in mirror of the statements below, kept for readability; THESE are
- * what actually run.
+ * existing ensure*Schema functions). THESE statements are what actually run.
+ *
+ * migrations/schema.sql is the readable copy, GENERATED from these by
+ * scripts/schema-doc.cjs and checked by the fidelity gate. It used to be
+ * migrations/0006_v2_core.sql, hand-written, and by the time anyone compared
+ * them it disagreed about twelve tables and had never heard of thirteen more
+ * — while the gate's "table written and never read" rule was reading it. The
+ * numbered files are history now; nothing reads them.
  *
  * Every statement is `IF NOT EXISTS` and therefore safe to run on every
  * request. The v1 tables are left untouched — nothing is dropped, nothing is
@@ -94,6 +99,142 @@ const STATEMENTS: string[] = [
      media_r2_key TEXT,
      recorded_at INTEGER,
      UNIQUE(project_id, idx)
+   )`,
+
+  /*
+   * THE RULES THAT MADE THE CUT, which is the only thing a cut actually is.
+   *
+   * Invariant 1: "Rules are the source of truth; a cut is re-produced from
+   * rules + moments, never stored as an outcome." The beats table stores the
+   * outcome, and until this existed that was ALL there was — so an assembled
+   * cut arrived with no account of why those moments and not others, and
+   * nothing could be switched off because nothing had been written down.
+   *
+   * `on` rather than a delete, because nothing in this product is deleted:
+   * a rule you disagree with switches off and the cut re-produces without it.
+   *
+   * Nullable everywhere below `kind` on purpose — a keep rule has a tag and
+   * no seconds, a cap has seconds and no tag, an order has neither. One table
+   * because they are one list in one pane, in one order, and splitting them
+   * by shape would make reading that list a union of five queries.
+   */
+  `CREATE TABLE IF NOT EXISTS rules (
+     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     /*
+      * THE RULE'S OWN NAME, stable across saves, scoped to the project.
+      *
+      * The id column is the ROW and is re-minted on every save, because saving replaces
+      * the list. So anything outside this table that refers to a rule — the
+      * toggle in the pane, a future reorder, an undo — has to hold this
+      * instead, or it is holding an id that stopped existing the moment
+      * anything else about the cut changed. Measured: toggling one rule off
+      * changed all four rules' row ids, and only a full page reload hid it.
+      *
+      * Project-scoped rather than global because the names are human: every
+      * project has an "r-core", and a global unique on them would make the
+      * second project that wanted one fail to save.
+      */
+     key TEXT NOT NULL,
+     idx INTEGER NOT NULL,
+     kind TEXT NOT NULL,
+     on_ INTEGER NOT NULL DEFAULT 1,
+     text TEXT,
+     tag TEXT,
+     clip_ids TEXT,
+     ord TEXT,
+     secs INTEGER,
+     hand INTEGER NOT NULL DEFAULT 0,
+     wins INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     UNIQUE(project_id, idx),
+     UNIQUE(project_id, key)
+   )`,
+  `CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx)`,
+
+  /*
+   * A PLAN, BEFORE THERE IS A PROJECT.
+   *
+   * "Cut it turns the plan into the project" — so the plan has to exist
+   * first, and survive the one stop where the user answers which beats to
+   * keep. A project at that point would be a project with no cut in it.
+   *
+   * `state` is where the flow got to, because the stop is the whole design:
+   * the pipeline runs sized → claim → beats, STOPS, then found → plan → cut.
+   * Storing the step means a reload during the stop comes back to the stop
+   * rather than starting again or silently carrying on.
+   */
+  `CREATE TABLE IF NOT EXISTS plans (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+     topic TEXT NOT NULL,
+     claim TEXT,
+     state TEXT NOT NULL DEFAULT 'beats',
+     project_id TEXT REFERENCES v2_projects(id),
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS plans_by_user ON plans(user_id, created_at)`,
+
+  /*
+   * One beat of a plan.
+   *
+   * `need` is what the beat wants in the user's terms — "the trade priced in
+   * rent, then the admission that the price is embarrassing" — and it is a
+   * RETRIEVAL QUERY, not prose for a person. That is the whole shape of this
+   * pipeline: the model says what each beat needs, and search decides which
+   * footage meets it. The model never names a clip, so it cannot name one
+   * that does not exist.
+   *
+   * `found` is the clip ids retrieval returned, as JSON. Written after the
+   * stop, empty before it.
+   */
+  `CREATE TABLE IF NOT EXISTS plan_beats (
+     id TEXT PRIMARY KEY, plan_id TEXT NOT NULL REFERENCES plans(id),
+     idx INTEGER NOT NULL,
+     role TEXT NOT NULL,
+     name TEXT NOT NULL,
+     need TEXT NOT NULL,
+     kept INTEGER NOT NULL DEFAULT 1,
+     found TEXT,
+     UNIQUE(plan_id, idx)
+   )`,
+
+  /*
+   * THE EVAL SET. Human judgements about what backs what.
+   *
+   * 06-FOOTAGE-SYSTEM.md: "~200 claims over ~10 hours across three kinds of
+   * footage, each labelled with the backing utterance or 'none', plus
+   * near-miss negatives written on purpose." Every retrieval and threshold
+   * choice is tuned against it, every model swap is gated by it, and no
+   * vendor number is trusted until it has run on it.
+   *
+   * It lives in the product's own database rather than a file in the repo
+   * because the footage does: a claim is only labellable against the library
+   * it was written for, and a labelled set that does not travel with the
+   * footage is a set about footage nobody has.
+   */
+  `CREATE TABLE IF NOT EXISTS eval_claims (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+     text TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS eval_claims_by_user ON eval_claims(user_id, created_at)`,
+
+  /*
+   * One judgement: this moment, against this claim.
+   *
+   * THREE-WAY, not two. "Related but not enough" is the whole reason the set
+   * is worth building — near-miss evidence, the same speaker on the same
+   * topic making a different point, is the dominant false positive, and a
+   * yes/no set cannot teach a threshold to refuse it.
+   *
+   * One row per claim and clip, replaced on a second answer: somebody
+   * changing their mind is a correction, not a second opinion.
+   */
+  `CREATE TABLE IF NOT EXISTS eval_labels (
+     claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+     clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+     verdict TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (claim_id, clip_id)
    )`,
 
   `CREATE TABLE IF NOT EXISTS renders (
@@ -215,6 +356,242 @@ const STATEMENTS: string[] = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS uploads_by_user ON uploads(user_id, created_at)`,
+
+  /*
+   * SCOUT: a per-project research run, and what it found.
+   *
+   * Spec 18 section 2. One thing in it is deliberately NOT as written:
+   * Scout's beats are "scout_beats" here, not "beats".
+   *
+   * WHY. This repo already has two beat tables and they mean different
+   * things. "beats" is a cut's blocks — the outcome of applying rules, which
+   * invariant 1 says is never the source of truth. "plan_beats" is a plan's
+   * beats, keyed to a plan, each carrying a "need" that is a retrieval query
+   * against the user's OWN library. Scout's beats are neither: they are
+   * keyed to a run on a PROJECT, which may have no plan at all (a project
+   * made by attaching footage has none), and each carries a "behaviour" —
+   * what a viewer would see in SOMEBODY ELSE'S footage. Writing a behaviour
+   * into a column called "need" and a project-scoped row into a
+   * plan-scoped table is how the first two beat tables got confused with
+   * each other, and that confusion cost a day.
+   *
+   * The spec's "shared with the plan" promise is kept by plan_beat_id: where
+   * a Scout beat came from a plan beat, it says so, and coverage written here
+   * can be read back through the link. What it does not do is let a run
+   * rewrite a beat the person decided on — invariant 1's spirit, applied to
+   * the plan.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_runs (
+     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     trigger TEXT NOT NULL,
+     brief TEXT,
+     status TEXT NOT NULL DEFAULT 'queued',
+     stop_reason TEXT,
+     rounds INTEGER NOT NULL DEFAULT 0,
+     spend_usd REAL NOT NULL DEFAULT 0,
+     model_versions_json TEXT,
+     created_at INTEGER NOT NULL, finished_at INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_runs_by_project ON scout_runs(project_id, created_at)`,
+
+  /*
+   * "narrow" and "rejected_json" are the decompose step's own honesty, kept
+   * on the run rather than thrown away: a brief whose diagnosis was dropped
+   * has to be able to say so on the board, or the user is told six searches
+   * were run and never told their sentence was not one of them.
+   *
+   * "counter_gap" is a subject beat with nothing sought against it. It is a
+   * marked beat, not a missing one — see src/scout-decompose.ts.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_beats (
+     id TEXT PRIMARY KEY,
+     run_id TEXT NOT NULL REFERENCES scout_runs(id),
+     project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     plan_beat_id TEXT REFERENCES plan_beats(id),
+     idx INTEGER NOT NULL,
+     role TEXT NOT NULL,
+     name TEXT NOT NULL,
+     behaviour TEXT NOT NULL,
+     inverts TEXT,
+     need_min INTEGER NOT NULL DEFAULT 2,
+     counter_gap INTEGER NOT NULL DEFAULT 0,
+     status TEXT NOT NULL DEFAULT 'gap',
+     queries_tried_json TEXT,
+     UNIQUE(run_id, idx)
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_beats_by_run ON scout_beats(run_id, idx)`,
+
+  /*
+   * WHAT WAS TRIED, whether or not it found anything. This table is the
+   * diligence log the dispute file exports, and the reason a gap is a result:
+   * "sought 6 searches, found 2" is only sayable if the six were written down
+   * at the time. A search row with results_n 0 is the point, not a failure.
+   *
+   * quota_units is what the call cost against the adapter's daily cap — 100
+   * search.list calls a day per YouTube project, and a run that quietly spent
+   * them is a run that breaks the next twenty.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_searches (
+     id TEXT PRIMARY KEY,
+     run_id TEXT NOT NULL REFERENCES scout_runs(id),
+     beat_id TEXT REFERENCES scout_beats(id),
+     family TEXT NOT NULL,
+     adapter TEXT NOT NULL,
+     query TEXT NOT NULL,
+     hyde TEXT,
+     issued_at INTEGER NOT NULL,
+     results_n INTEGER NOT NULL DEFAULT 0,
+     new_verified_n INTEGER NOT NULL DEFAULT 0,
+     quota_units INTEGER NOT NULL DEFAULT 0,
+     cost_usd REAL NOT NULL DEFAULT 0,
+     outcome TEXT NOT NULL DEFAULT 'ok',
+     fail_reason TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_searches_by_run ON scout_searches(run_id, issued_at)`,
+
+  /*
+   * A source EXAMINED, not a source owned. Nothing audiovisual is stored
+   * here: an id, a URL, metadata, and whether a transcript was readable.
+   * Invariant 9.
+   *
+   * expires_at is the 30-day metadata refresh. YouTube's terms require it and
+   * a row older than that is a claim about a video that may no longer exist.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_sources (
+     id TEXT PRIMARY KEY,
+     run_id TEXT NOT NULL REFERENCES scout_runs(id),
+     adapter TEXT NOT NULL,
+     external_id TEXT NOT NULL,
+     url TEXT NOT NULL,
+     title TEXT,
+     channel TEXT,
+     published_at INTEGER,
+     duration_s INTEGER,
+     kind TEXT,
+     transcript TEXT NOT NULL DEFAULT 'none',
+     licence TEXT,
+     triage_score REAL,
+     scanned INTEGER NOT NULL DEFAULT 0,
+     yield_n INTEGER NOT NULL DEFAULT 0,
+     dead_end INTEGER NOT NULL DEFAULT 0,
+     fetched_at INTEGER NOT NULL, expires_at INTEGER,
+     UNIQUE(run_id, adapter, external_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_sources_by_run ON scout_sources(run_id, triage_score)`,
+
+  /*
+   * THE LEDGER: one row per find, and the receipt for it.
+   *
+   * t_start_s and t_end_s DERIVE FROM word_span_json — invariant 2 and the
+   * timing contract in src/align.ts. A model never typed either of them. A
+   * row whose verify is not "verified" is a ghost: shown, marked, and never
+   * usable as proof.
+   *
+   * context_before and context_after are plus or minus ninety seconds either
+   * side, stored at find time. A quote that is accurate and unfair is still
+   * unfair, and the only moment the surrounding words are cheap to keep is
+   * the moment the window was already open.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_ledger (
+     id TEXT PRIMARY KEY,
+     run_id TEXT NOT NULL REFERENCES scout_runs(id),
+     beat_id TEXT REFERENCES scout_beats(id),
+     role TEXT NOT NULL,
+     source_id TEXT NOT NULL REFERENCES scout_sources(id),
+     quote_exact TEXT NOT NULL,
+     quote_norm TEXT NOT NULL,
+     word_span_json TEXT NOT NULL,
+     t_start_s REAL NOT NULL, t_end_s REAL NOT NULL,
+     context_before TEXT, context_after TEXT,
+     found_by_family TEXT,
+     verify TEXT NOT NULL DEFAULT 'rejected',
+     match_score REAL,
+     crowd_signals_n INTEGER NOT NULL DEFAULT 0,
+     original_of TEXT REFERENCES scout_ledger(id),
+     is_compilation_only INTEGER NOT NULL DEFAULT 0,
+     model_version TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify)`,
+
+  /*
+   * Where fans already indexed the moment. lag_corrected_t_s is the comment
+   * timestamp moved to where the thing actually is: a viewer types the time
+   * they noticed, which is after it happened.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_crowd (
+     id TEXT PRIMARY KEY,
+     source_id TEXT NOT NULL REFERENCES scout_sources(id),
+     kind TEXT NOT NULL,
+     t_s REAL,
+     lag_corrected_t_s REAL,
+     weight REAL NOT NULL DEFAULT 1,
+     text TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_crowd_by_source ON scout_crowd(source_id, lag_corrected_t_s)`,
+
+  /*
+   * A MISSION is the only way platform media enters: the user fetches it
+   * themselves, and the product matches what came back to the quote it was
+   * supposed to be. "how" says which — auto for an open licence, capture or
+   * upload for the user's own hands.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_missions (
+     id TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),
+     in_s REAL NOT NULL, out_s REAL NOT NULL,
+     quote TEXT NOT NULL,
+     url_at_in TEXT,
+     state TEXT NOT NULL DEFAULT 'scouted',
+     how TEXT,
+     verdict TEXT,
+     coverage REAL,
+     offset_s REAL,
+     fail_reason TEXT,
+     created_at INTEGER NOT NULL, expires_at INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_missions_by_project ON scout_missions(project_id, state)`,
+
+  /*
+   * The credit line, and the chain back through a reupload to the original.
+   * "removed" rather than a delete, because nothing here is deleted: a
+   * source that vanished keeps its row and says it vanished.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_attributions (
+     id TEXT PRIMARY KEY,
+     ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),
+     credit_text TEXT NOT NULL,
+     url TEXT,
+     platform TEXT,
+     date INTEGER,
+     chain_parent TEXT REFERENCES scout_attributions(id),
+     removed INTEGER NOT NULL DEFAULT 0
+   )`,
+
+  /*
+   * THE LEXICON PERSISTS ACROSS PROJECTS, which is the one piece of Scout
+   * that gets better the more he is used. The community's own words for a
+   * thing — a nickname, a catchphrase, the name of a compilation — are what
+   * the "vocab" query family is made of, and they are not guessable. Learning
+   * them once and keeping them is why the second run on a subject costs less
+   * and finds more.
+   *
+   * Scoped to a user, not to a run or a project. first_seen is kept so a term
+   * that stopped being used can be aged out rather than searched forever.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_lexicon (
+     id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL REFERENCES v2_users(id),
+     entity TEXT NOT NULL,
+     term TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     source_count INTEGER NOT NULL DEFAULT 1,
+     first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+     UNIQUE(user_id, entity, term)
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_lexicon_by_entity ON scout_lexicon(user_id, entity, source_count)`,
+
 ];
 
 /**
@@ -223,6 +600,47 @@ const STATEMENTS: string[] = [
  * project uses for lazy migrations.
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
+  /*
+   * THE MOMENT'S ADDRESS, independent of its timing.
+   *
+   * start_ms and end_ms are where the moment is according to a RECOGNISER,
+   * accurate to about a tenth of a second (src/align.ts). Forced alignment
+   * will move those numbers — that is what it is for — and a moment pinned to
+   * them would move with them, or worse, stay still while the audio did not.
+   *
+   * A word span survives it, because re-aligning changes WHEN a word is and
+   * never WHICH word it is. Null for a moment whose source has no word
+   * timings: a transcript that failed, or one stored before they were kept.
+   * The milliseconds remain the fallback and remain correct.
+   */
+  { table: "v2_clips", column: "start_word", ddl: "ALTER TABLE v2_clips ADD COLUMN start_word INTEGER" },
+  { table: "v2_clips", column: "end_word", ddl: "ALTER TABLE v2_clips ADD COLUMN end_word INTEGER" },
+
+  /*
+   * When this clip was written into the meaning index, or null if it never
+   * was. A backfill reads this to know what is left to do, so the work is
+   * resumable and a library of thousands does not restart from the top every
+   * run. See src/embeddings.ts.
+   */
+  { table: "v2_clips", column: "embedded_at", ddl: "ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER" },
+
+  /*
+   * WHAT THIS PROJECT WAS ATTACHED TO, as a JSON array of source ids.
+   *
+   * A cut assembled from the library drew on ALL of it, which is right for
+   * "three minutes on whatever I have" and wrong for "tighten this" — the
+   * moment somebody points at two videos, the rules have to apply to those
+   * two and nothing else, or the cut quietly fills up with footage they did
+   * not choose.
+   *
+   * On the project rather than a join table because it is one short list that
+   * is always read whole, written once at assembly, and meaningless without
+   * the project. source_id stays what it is — a cut that belongs to ONE video
+   * — and this is the many-video answer beside it. Null means the whole
+   * library, which is what every project made before this column existed did.
+   */
+  { table: "v2_projects", column: "scope", ddl: "ALTER TABLE v2_projects ADD COLUMN scope TEXT" },
+
   // Script mode's transcript cuts, as JSON ranges. On the project because
   // Script edits the whole source transcript, not one block.
   { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },

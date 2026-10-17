@@ -1,11 +1,11 @@
 /**
  * Design tokens — lifted verbatim from design/Aldershot.dc.html and cross-checked
- * against design/docs/02-DESIGN-SYSTEM.md.
+ * against docs/archive/handoff-v2/02-DESIGN-SYSTEM.md.
  *
  * These are COPIED VALUES, not a derived palette. The previous build of this
  * product failed review because dozens of small substitutions (a rounded font
  * size, a near-miss grey, a library's icon set) accumulated into a different
- * product. See design/docs/PROMPTING-NOTES.md.
+ * product. See docs/archive/handoff-v2/PROMPTING-NOTES.md.
  *
  * Rule: if a hex code or px value appears in the built app, it must be
  * greppable back to the prototype. scripts/check-tokens.sh enforces that no
@@ -136,6 +136,16 @@ export const SIZE = {
  */
 export const LAYOUT = {
   width: "min(960px,100%)",
+  /*
+   * THE ROOM IS WIDER, and it is the shell that says so.
+   *
+   * One Take is three columns — direction at 360, the thing itself, the
+   * player at 300 — and 960 cannot hold them. The law is that a PAGE never
+   * declares its own width, not that every surface is 960: the shell decides,
+   * which is what stops six pages drifting to six measures. Every surface not
+   * yet rebuilt still gets `width` above.
+   */
+  room: "min(1440px,100%)",
   gutter: "clamp(24px,5vw,40px)",
   pagePad: "40px 0 96px",
 } as const;

@@ -8,7 +8,7 @@
  *
  * Markup transcribed from the `<sc-if value="{{ isHome }}">` block of
  * design/Aldershot.dc.html. Every string here is copied from the prototype and
- * cross-checked against design/docs/11-STRINGS.md — do not rewrite, shorten,
+ * cross-checked against docs/archive/handoff-v2/11-STRINGS.md — do not rewrite, shorten,
  * or "improve" any of them.
  *
  * Phase 0 renders the fresh (empty-account) state: composer + example chips +
@@ -81,17 +81,48 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
   return hello;
 }
 
-function composer(): string {
+/**
+ * The ask box, exported because the room needs the same one.
+ *
+ * One Take's left column ends in the composer, so the room and Home both
+ * carry it — and they carry the SAME one. A second copy would be a second
+ * thing to keep in step with client.ts, which wires it by id: #composer,
+ * #brief, #filePick, #dropHint, #attached, #clearFile and the chips. Two
+ * renderings of those ids that drifted would leave one surface silently
+ * unwired, which is exactly the kind of failure the wiring check exists for
+ * and would not catch, because the ids would still all be present somewhere.
+ */
+export function composer(attached: string[] = [], opts: { room?: boolean } = {}): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
   ).join("");
 
-  return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
+  /*
+   * ATTACHED FOOTAGE RIDES WITH THE SENTENCE.
+   *
+   * The room holds the selection in the URL so it survives a page load; the
+   * composer carries it into the request as hidden fields, so "tighten this"
+   * with two videos attached means those two and nothing else. Hidden rather
+   * than client state for the same reason the URL holds it: one copy of the
+   * truth, and the server reads exactly what the page showed.
+   */
+  const carry = attached
+    .map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`)
+    .join("");
+
+  return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">${carry}
     <div id="dropHint" hidden style="position:absolute;inset:0;border-radius:${RADIUS.composer};box-shadow:inset 0 0 0 2px ${ACCENT.gold};background:rgba(217,179,106,0.07);pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:2">
       <span style="font-size:${SIZE.body};font-weight:600;color:${ACCENT.gold}">Drop it here</span>
     </div>
-    <textarea name="brief" id="brief" rows="2" placeholder="Say what you want out of it — or drop a video in first" style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.wordmark};padding:14px 14px 10px;resize:none;line-height:1.5;font-family:${FONT.ui}"></textarea>
+    <!--
+      THE ROOM'S COMPOSER SAYS SOMETHING DIFFERENT, because in the room there
+      is footage on the right to attach and here there was not. Rendering the
+      prototype beside the build is what showed it: mine still read "Say what
+      you want out of it — or drop a video in first" and ended in "Begin →",
+      which is the retired design's wording for a page that no longer exists.
+    -->
+    <textarea name="brief" id="brief" rows="2" placeholder="${opts.room ? "Attach footage on the right, or say what you want" : "Say what you want out of it — or drop a video in first"}" style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.wordmark};padding:14px 14px 10px;resize:none;line-height:1.5;font-family:${FONT.ui}"></textarea>
     <div id="attached" hidden style="display:flex;align-items:center;gap:10px;margin:0 8px 4px 14px;padding:7px 9px;border-radius:${RADIUS.input};background:#111114">
       <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)"></div>
       <span id="attachedName" style="flex:1;min-width:0;font-size:${SIZE.secondary};color:rgba(236,236,241,0.8);font-family:${FONT.mono};overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -104,8 +135,14 @@ function composer(): string {
         <span>Video</span>
         <input type="file" accept="video/*" multiple id="filePick" style="display:none"/>
       </label>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${chips}</div>
-      <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Begin →</button>
+      <!--
+        No chips in the room. One Take's composer is the text, the dial and
+        the mic — the chips belong to the project state, where they are
+        "Lose the house thread" and "Keep it under three minutes" rather than
+        generic openers. Kept on the retired Home, which still has them.
+      -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${opts.room ? "" : chips}</div>
+      <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${opts.room ? "Run it" : "Begin →"}</button>
     </div>
   </form>`;
 }
@@ -199,7 +236,15 @@ function sectionHead(title: string, count: string): string {
   </div>`;
 }
 
-function workingRow(jobs: WorkingJob[]): string {
+/**
+ * Exported for the room, for the same reason the composer is.
+ *
+ * It is wired by #workingRow and #workingLine and it POLLS — a second copy
+ * that drifted would leave one surface showing a progress line that never
+ * moves, which is worse than showing none at all, and no check catches it
+ * because both ids would still exist somewhere.
+ */
+export function workingRow(jobs: WorkingJob[]): string {
   return `<div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
     <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
     <!-- data-content: this sentence is assembled around the user's own video

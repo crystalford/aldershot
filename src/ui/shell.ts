@@ -12,7 +12,7 @@ import { iconBell, iconSearch } from "./icons.ts";
 import { FONT_CSS } from "./fontfaces.ts";
 
 /** The prototype's `view` strings. Routing maps URLs onto these (10-ROUTES-AND-KEYS.md). */
-export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
+export type View = "room" | "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
 
 /**
  * Which nav item lights for a given view. Note `shorts` is context-dependent:
@@ -25,6 +25,8 @@ type NavItem = "home" | "editor" | "footage" | null;
 
 export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
   switch (view) {
+    /* The room IS home — one surface with two states. */
+    case "room":
     case "home":
       return "home";
     case "cut":
@@ -256,6 +258,22 @@ p,div{text-wrap:pretty}
   position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
   display:flex;flex-direction:column;overflow:hidden}
 .asst-top{flex:none}
+/*
+ * THE PLAYER'S OWN COLUMN, in a project.
+ *
+ * One Take is three columns: direction at 360, the thing itself in the
+ * centre, the player at 300. The player used to sit at the top of the
+ * direction column, which made the column it shared do two unrelated jobs and
+ * left the document whatever width was left over after both.
+ *
+ * It is sticky for the same reason the direction column is: you scroll the
+ * document, and what you are watching has to stay with you. Below 1180 it
+ * drops under the document rather than squeezing it, which is where the
+ * prototype folds it into a corner player — this is the honest half of that
+ * until the corner player exists.
+ */
+.editor-player{flex:0 0 300px;max-width:min(320px,100%);position:sticky;top:88px}
+@media (max-width:1180px){.editor-player{position:static;flex:1 1 100%;max-width:100%;order:3}}
 /*
  * 16:9, BECAUSE THAT IS WHAT THE FOOTAGE IS.
  *
@@ -578,11 +596,16 @@ export interface PageOpts {
 }
 
 /**
- * Wraps a surface's body in the shell. `body` is placed inside the 960px
- * column — a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM).
+ * Wraps a surface's body in the shell. `body` is placed inside the column —
+ * a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM). Which
+ * column is the SHELL's decision: 960 for everything built to the retired
+ * design, LAYOUT.room for the One Take room, which is three columns and does
+ * not fit in 960. The law is that a page does not choose, not that there is
+ * only one measure.
  */
 export function page(opts: PageOpts, body: string): string {
   const { title, view, shortsCtx = "nav", screenLabel, email } = opts;
+  const column = view === "room" ? LAYOUT.room : LAYOUT.width;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -597,7 +620,7 @@ ${GLOBAL_CSS}</style>
 <div style="min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT.ui}">
 ${nav(view, shortsCtx, opts.email)}
 <div data-screen-label="${esc(screenLabel)}" style="display:flex;justify-content:center;padding:0 ${LAYOUT.gutter}">
-  <div style="width:${LAYOUT.width};padding:${LAYOUT.pagePad}">
+  <div style="width:${column};padding:${LAYOUT.pagePad}">
 ${body}
   </div>
 </div>

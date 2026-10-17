@@ -157,20 +157,31 @@
   //   npx wrangler secret put SESSION_SECRET
   //   npx wrangler secret put RESEND_API_KEY
 
-  // Clip embeddings — powers Threads' semantic clustering (src/embeddings.ts,
-  // src/threads.ts) instead of exact-tag-string matching. Unlike Containers/
+  // Clip embeddings — meaning search over the clip library (src/library.ts
+  // reads, src/embeddings.ts writes) and Threads' semantic clustering
+  // (src/threads.ts) instead of exact-tag-string matching. Unlike Containers/
   // R2/D1, `wrangler deploy` HARD-FAILS if a declared vectorize index doesn't
   // already exist (confirmed live: error code 10159, "index ... was not
   // found") — so this binding must stay commented out, not just optionally
   // absent, until the index is actually created. One-time setup, in order:
+  // DONE, 17 Oct 2026, in this order and verified at each step:
   //   1. wrangler vectorize create aldershot-clips --dimensions=1024 --metric=cosine
-  //      (needs a token with Vectorize edit permission — not yet granted)
-  //   2. THEN uncomment the block below and deploy.
-  // Until both of those happen, env.VECTORIZE is simply undefined and
-  // threads.ts falls back to the old tag-equality grouping automatically.
-  // "vectorize": [
-  //   { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
-  // ]
+  //   2. wrangler vectorize create-metadata-index aldershot-clips \
+  //        --propertyName=user_id --type=string
+  //      (enqueued, not instant — it took about 45s to appear in
+  //       `vectorize list-metadata-index`, and nothing may write a vector
+  //       until it does)
+  //   3. this binding.
+  //
+  // STEP 2 IS NOT OPTIONAL AND THE ORDER IS NOT COSMETIC. Every query is
+  // filtered by user_id, and Vectorize cannot filter on vectors written
+  // before the metadata index for that property existed — it does not error,
+  // it just never matches them. Bind before step 2 completes and you get a
+  // full index, a clean search and no results, with nothing saying why; the
+  // only fix is re-writing every vector. See docs/SETUP.md §5.
+  "vectorize": [
+    { "binding": "VECTORIZE", "index_name": "aldershot-clips" }
+  ],
 
   // Job pipeline (04-API-AND-JOBS.md). Long work — reading a source, scoring,
   // rendering — is dispatched as a message rather than run inside the
