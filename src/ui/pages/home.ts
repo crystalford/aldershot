@@ -81,7 +81,18 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
   return hello;
 }
 
-function composer(): string {
+/**
+ * The ask box, exported because the room needs the same one.
+ *
+ * One Take's left column ends in the composer, so the room and Home both
+ * carry it — and they carry the SAME one. A second copy would be a second
+ * thing to keep in step with client.ts, which wires it by id: #composer,
+ * #brief, #filePick, #dropHint, #attached, #clearFile and the chips. Two
+ * renderings of those ids that drifted would leave one surface silently
+ * unwired, which is exactly the kind of failure the wiring check exists for
+ * and would not catch, because the ids would still all be present somewhere.
+ */
+export function composer(): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
@@ -199,7 +210,15 @@ function sectionHead(title: string, count: string): string {
   </div>`;
 }
 
-function workingRow(jobs: WorkingJob[]): string {
+/**
+ * Exported for the room, for the same reason the composer is.
+ *
+ * It is wired by #workingRow and #workingLine and it POLLS — a second copy
+ * that drifted would leave one surface showing a progress line that never
+ * moves, which is worse than showing none at all, and no check catches it
+ * because both ids would still exist somewhere.
+ */
+export function workingRow(jobs: WorkingJob[]): string {
   return `<div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
     <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
     <!-- data-content: this sentence is assembled around the user's own video

@@ -22,11 +22,14 @@
 
 import { ACCENT, C, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
+import { composer, workingRow, type WorkingJob } from "./home.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
 export interface RoomData {
   tab: RoomTab;
+  /** What is being read or rendered right now. Empty when nothing is. */
+  working: WorkingJob[];
   /** What was searched for. */
   q: string;
   /** True when meaning search was asked for and could not answer. */
@@ -116,13 +119,26 @@ function verbCard(v: { tag: string; name: string; what: string; href: string }, 
   </a>`;
 }
 
-/** The left column: what you can make. */
+/**
+ * The left column: what you can make, and the box you say it in.
+ *
+ * The composer is the bottom of this column in One Take, and it is the same
+ * composer Home renders — imported rather than copied, because client.ts
+ * wires it by id and two renderings that drifted would leave one surface
+ * silently dead.
+ *
+ * It is here rather than above the columns because the verbs and the box are
+ * one gesture: the cards say what can be made, the box is where you say it in
+ * your own words, and splitting them put the menu and the way to order from
+ * it on opposite halves of the screen.
+ */
 function direction(): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
     ${label("MAKE")}
     <div style="display:flex;flex-direction:column;gap:5px">${VERBS.map((v) => verbCard(v, v.accent)).join("")}</div>
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
+    ${composer()}
   </div>`;
 }
 
@@ -189,7 +205,14 @@ const empty = (text: string) =>
   `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">${esc(text)}</div>`;
 
 function videoRow(s: RoomData["sources"][number]): string {
-  const read = s.transcript_state === "done" ? "read" : s.transcript_state === "error" ? "couldn't read it" : "reading";
+  /* The four real states (src/sources.ts), not invented ones — an earlier
+     version of this checked for "done" and "error", which the column never
+     holds, so every video read as "reading" for ever. */
+  const read =
+    s.transcript_state === "ready" ? "read"
+    : s.transcript_state === "failed" ? "couldn't read it"
+    : s.transcript_state === "running" ? "reading"
+    : "queued";
   return `<a href="/sources/${esc(s.id)}" style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};text-decoration:none;color:inherit">
     <span style="flex:none;width:72px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:${C.canvas};display:block">${
       s.poster_r2_key
@@ -250,7 +273,17 @@ function footage(d: RoomData): string {
 }
 
 export function renderRoom(d: RoomData): string {
-  return `<div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+  /*
+   * WHAT IS HAPPENING RIGHT NOW, above everything.
+   *
+   * The same row Home renders, imported rather than copied: it polls, and two
+   * renderings that drifted would leave one surface showing a progress line
+   * that never moves. It is above the columns because it is about the whole
+   * account rather than either half, and because an upload in progress is the
+   * thing a person is most likely to have come back to check.
+   */
+  return `${d.working.length ? workingRow(d.working) : ""}
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:${d.working.length ? "20px" : "0"}">
     ${direction()}
     ${footage(d)}
   </div>`;

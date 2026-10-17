@@ -401,7 +401,7 @@ async function nameLooseRefs(
   return out;
 }
 
-app.get("/", async (c) => {
+const homeHandler = async (c: Ctx) => {
   await ensureV2Schema(c.env.DB);
 
   /*
@@ -635,6 +635,28 @@ app.get("/", async (c) => {
       user.email,
     ),
   );
+};
+
+/*
+ * THE ROOM IS THE FRONT DOOR. The old Home keeps a URL.
+ *
+ * `/` was Home — a composer and a feed — while /footage and /projects were
+ * two more pages over the same library. One Take is one room, so / serves it
+ * and the nav's Home link already points here.
+ *
+ * Home is not deleted. It carries a finished-while-you-were-away feed and a
+ * "what is part-made" section the room does not cover yet, and removing a
+ * surface before its replacement covers it is how a product loses features
+ * quietly. It goes when the room covers it, not before — and until then it is
+ * at /home, reachable and unadvertised.
+ *
+ * Signed out, / is still the landing site, which is Home's own branch: a
+ * shared link has to work for someone with no account.
+ */
+app.get("/home", homeHandler);
+app.get("/", async (c) => {
+  const visitor = await currentUser(c.env, c.req.header("cookie"));
+  return visitor ? roomHandler(c) : homeHandler(c);
 });
 
 /**
@@ -713,20 +735,41 @@ app.get("/projects", async (c) => {
  * the tab bar shows each count, and a count that disagrees with its list is a
  * bug this product has already had twice.
  */
-app.get("/room", async (c) => {
+const roomHandler = async (c: Ctx) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const t = c.req.query("tab");
   const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
   const q = (c.req.query("q") || "").trim();
 
-  const [sources, projects, threads, clipsPer, momentCount] = await Promise.all([
+  const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
     listSources(c.env.DB, user.id, "newest"),
     listProjects(c.env.DB, user.id),
     listThreads(c.env.DB, user.id),
     clipCountsBySource(c.env.DB, user.id),
     countMoments(c.env.DB, user.id),
+    activeJobs(c.env.DB, user.id),
   ]);
+
+  /*
+   * A JOB WITH NOTHING TO NAME IS NOT SHOWN.
+   *
+   * The same rule Home follows: a job whose ref_id matches no source and no
+   * project would render as "a video", which is a progress bar for something
+   * the person cannot find. Better to say nothing about it than to say that.
+   */
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const working = jobs
+    .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+    .map((j) => ({
+      label:
+        sourceById.get(j.ref_id ?? "")?.title ??
+        projects.find((p) => p.id === j.ref_id)?.title ??
+        "a video",
+      type: j.type,
+      stage: j.stage_label ?? "working on",
+      pct: j.pct,
+    }));
 
   /*
    * SEARCH IS THE SAME RETRIEVAL THE ASSEMBLY PATH USES.
@@ -770,6 +813,7 @@ app.get("/room", async (c) => {
         tab,
         q,
         meaningUnavailable,
+        working,
         sources: sources.map((s) => ({
           id: s.id,
           title: s.title,
@@ -795,7 +839,23 @@ app.get("/room", async (c) => {
       }),
     ),
   );
-});
+};
+
+/*
+ * THE ROOM IS THE FRONT DOOR NOW.
+ *
+ * `/` was Home — a composer and a feed — and /footage and /projects were two
+ * more pages over the same library. One Take is one room, so / serves it, and
+ * the nav's Home link already points here.
+ *
+ * The old Home stays at /home rather than being deleted. It carries a feed
+ * and a "what is part-made" section the room does not have yet, and deleting
+ * a surface before its replacement covers it is how a product loses features
+ * quietly. It goes when the room covers it, not before.
+ *
+ * /room stays as an alias so anything already linking to it keeps working.
+ */
+app.get("/room", roomHandler);
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);

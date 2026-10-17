@@ -70,7 +70,19 @@ function stateChip(state: SourceRow["transcript_state"]): string {
     // The prototype's own word for this state, and its own red.
     failed: ["Failed", ACCENT.red],
   };
-  const [label, color] = map[state];
+  /*
+   * A STATE WE DO NOT KNOW IS NOT A CRASH.
+   *
+   * This destructured map[state] directly, so a transcript_state outside the
+   * four — a value written by an older build, a renamed state, a row seeded
+   * by hand — threw on undefined and took the WHOLE Footage page down with a
+   * 500. One unexpected string in one column, and the library is unreachable.
+   *
+   * Found by seeding a local row with 'done'. The honest fallback is the
+   * state's own word: it is at least true, and it cannot be mistaken for one
+   * of the four the product means.
+   */
+  const [label, color] = map[state] ?? [state, C.ink45];
   return `<span style="flex:none;font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${color}">${esc(label)}</span>`;
 }
 
