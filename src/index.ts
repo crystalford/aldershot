@@ -78,6 +78,8 @@ import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, recomputeFromRules } from "./assemble.ts";
+import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
+import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
@@ -695,6 +697,103 @@ app.get("/projects", async (c) => {
   const rows = await editRows(c.env.DB, user.id);
   return c.html(
     surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows), user.email),
+  );
+});
+
+/**
+ * THE ROOM — One Take's front door, with no project open.
+ *
+ * Home, Footage and Projects were three pages describing one library. This is
+ * the one surface they fold into (docs/handoff/02-SCREENS.md). It is mounted
+ * at /room while the old pages are still linked to from the nav and from the
+ * editor's back links; /room becomes / once nothing points at them.
+ *
+ * Every count is read, never estimated. The tab lists are loaded ALL of them
+ * rather than only the active one, for the same reason the Footage page does:
+ * the tab bar shows each count, and a count that disagrees with its list is a
+ * bug this product has already had twice.
+ */
+app.get("/room", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const t = c.req.query("tab");
+  const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
+  const q = (c.req.query("q") || "").trim();
+
+  const [sources, projects, threads, clipsPer, momentCount] = await Promise.all([
+    listSources(c.env.DB, user.id, "newest"),
+    listProjects(c.env.DB, user.id),
+    listThreads(c.env.DB, user.id),
+    clipCountsBySource(c.env.DB, user.id),
+    countMoments(c.env.DB, user.id),
+  ]);
+
+  /*
+   * SEARCH IS THE SAME RETRIEVAL THE ASSEMBLY PATH USES.
+   *
+   * findMaterial runs meaning and exact words as peers and fuses them by
+   * rank. Calling it here rather than writing a second search means the room
+   * and the cut can never disagree about what the library contains — and when
+   * somebody types a sentence into the box and then asks for a cut of it, the
+   * same moments come back.
+   *
+   * `how` tells us whether the index took part, which is the only thing the
+   * notice on screen claims.
+   */
+  let moments: Awaited<ReturnType<typeof listMoments>>;
+  let meaningUnavailable = false;
+  if (q) {
+    const found = await findMaterial(c.env, user.id, q, 60);
+    /*
+     * A SEARCH THAT MATCHED NOTHING RETURNS NOTHING.
+     *
+     * findMaterial falls back to the most recent moments when neither
+     * retriever matches, which is right for a BRIEF — "eight minutes on
+     * whatever you have" is a request for material — and wrong for a search
+     * box, where it answered "turpentine" with the whole library. Caught by
+     * searching for a word that is not in the seeded footage and getting
+     * nine moments back.
+     *
+     * `how === "recent"` is findMaterial saying so itself, which is why it
+     * reports it.
+     */
+    moments = found.how === "recent" ? [] : found.moments;
+    meaningUnavailable = found.how !== "meaning";
+  } else {
+    moments = await listMoments(c.env.DB, user.id, 60);
+  }
+
+  return c.html(
+    page(
+      { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
+      renderRoom({
+        tab,
+        q,
+        meaningUnavailable,
+        sources: sources.map((s) => ({
+          id: s.id,
+          title: s.title,
+          poster_r2_key: s.poster_r2_key,
+          transcript_state: s.transcript_state,
+          duration_s: s.duration_s,
+          clips: clipsPer.get(s.id) ?? 0,
+        })),
+        moments: moments.map((m) => ({
+          id: m.id,
+          quote: m.quote,
+          frame_r2_key: m.frame_r2_key,
+          source_title: m.source_title,
+          thread_name: m.thread_name,
+        })),
+        projects: projects.map((p) => ({
+          id: p.id,
+          title: p.title,
+          kind: p.kind,
+          updated_at: p.updated_at,
+        })),
+        counts: { sources: sources.length, moments: momentCount, threads: threads.length },
+      }),
+    ),
   );
 });
 

@@ -136,6 +136,16 @@ export const SIZE = {
  */
 export const LAYOUT = {
   width: "min(960px,100%)",
+  /*
+   * THE ROOM IS WIDER, and it is the shell that says so.
+   *
+   * One Take is three columns — direction at 360, the thing itself, the
+   * player at 300 — and 960 cannot hold them. The law is that a PAGE never
+   * declares its own width, not that every surface is 960: the shell decides,
+   * which is what stops six pages drifting to six measures. Every surface not
+   * yet rebuilt still gets `width` above.
+   */
+  room: "min(1440px,100%)",
   gutter: "clamp(24px,5vw,40px)",
   pagePad: "40px 0 96px",
 } as const;

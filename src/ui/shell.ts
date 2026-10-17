@@ -12,7 +12,7 @@ import { iconBell, iconSearch } from "./icons.ts";
 import { FONT_CSS } from "./fontfaces.ts";
 
 /** The prototype's `view` strings. Routing maps URLs onto these (10-ROUTES-AND-KEYS.md). */
-export type View = "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
+export type View = "room" | "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
 
 /**
  * Which nav item lights for a given view. Note `shorts` is context-dependent:
@@ -25,6 +25,8 @@ type NavItem = "home" | "editor" | "footage" | null;
 
 export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
   switch (view) {
+    /* The room IS home — one surface with two states. */
+    case "room":
     case "home":
       return "home";
     case "cut":
@@ -578,11 +580,16 @@ export interface PageOpts {
 }
 
 /**
- * Wraps a surface's body in the shell. `body` is placed inside the 960px
- * column — a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM).
+ * Wraps a surface's body in the shell. `body` is placed inside the column —
+ * a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM). Which
+ * column is the SHELL's decision: 960 for everything built to the retired
+ * design, LAYOUT.room for the One Take room, which is three columns and does
+ * not fit in 960. The law is that a page does not choose, not that there is
+ * only one measure.
  */
 export function page(opts: PageOpts, body: string): string {
   const { title, view, shortsCtx = "nav", screenLabel, email } = opts;
+  const column = view === "room" ? LAYOUT.room : LAYOUT.width;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -597,7 +604,7 @@ ${GLOBAL_CSS}</style>
 <div style="min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT.ui}">
 ${nav(view, shortsCtx, opts.email)}
 <div data-screen-label="${esc(screenLabel)}" style="display:flex;justify-content:center;padding:0 ${LAYOUT.gutter}">
-  <div style="width:${LAYOUT.width};padding:${LAYOUT.pagePad}">
+  <div style="width:${column};padding:${LAYOUT.pagePad}">
 ${body}
   </div>
 </div>
