@@ -87,7 +87,7 @@ test("a self-closing tag carries its attributes and no text", () => {
   /* "<podcast:transcript url='…'/>" is the whole element. */
   const xml = `<podcast:transcript type="text/vtt" url="https://example.test/t.vtt"/>`;
   const [t] = tags(xml, "podcast:transcript");
-  assert.equal(t.inner, "");
+  assert.equal(t.text, "");
   assert.equal(attr(t.raw, "url"), "https://example.test/t.vtt");
   assert.equal(attr(t.raw, "type"), "text/vtt");
 });
@@ -106,12 +106,12 @@ test("ACCEPTANCE: a self-closing tag does not borrow the next element's text", (
    * answer by luck.
    */
   const xml = "<feed><title/><entry><title>the real one</title></entry></feed>";
-  assert.deepEqual(tags(xml, "title").map((t) => t.inner), ["", "the real one"]);
+  assert.deepEqual(tags(xml, "title").map((t) => t.text), ["", "the real one"]);
 
   /* And the mixed case, which is how a truncated feed arrives. */
   const mixed = `<e><link href="a"/></e><e><link>b</link></e>`;
   const got = tags(mixed, "link");
-  assert.deepEqual(got.map((t) => t.inner), ["", "b"]);
+  assert.deepEqual(got.map((t) => t.text), ["", "b"]);
   assert.equal(attr(got[0].raw, "href"), "a");
 });
 
@@ -134,13 +134,34 @@ test("a tag name is matched whole, not as a prefix", () => {
    * they are different strings.
    */
   const xml = "<title>the entry</title><media:title>the media one</media:title><titles>no</titles>";
-  assert.deepEqual(tags(xml, "title").map((t) => t.inner), ["the entry"]);
-  assert.deepEqual(tags(xml, "media:title").map((t) => t.inner), ["the media one"]);
+  assert.deepEqual(tags(xml, "title").map((t) => t.text), ["the entry"]);
+  assert.deepEqual(tags(xml, "media:title").map((t) => t.text), ["the media one"]);
 });
 
 test("every element of a name comes back, in document order", () => {
   const xml = "<e><id>1</id></e><e><id>2</id></e><e><id>3</id></e>";
   assert.deepEqual(tags(xml, "e").map((t) => text(t.inner, "id")), ["1", "2", "3"]);
+});
+
+test("ACCEPTANCE: nesting a read inside a read does not lose the CDATA", () => {
+  /*
+   * THE BUG THIS READER HAD. Reading a feed means tags(xml, "item") and then
+   * text(item.inner, "description"). When `inner` came back already
+   * unwrapped, the CDATA markers were gone by the second call and the
+   * "</description>" that CDATA exists to protect had become a plain closing
+   * tag — so the description truncated there, which reads as a short
+   * description rather than as an error.
+   *
+   * `inner` is raw, `text` is unwrapped, and nesting uses the first.
+   */
+  const xml = "<item><description><![CDATA[Read more at </description> no really]]></description></item>";
+  const [item] = tags(xml, "item");
+  assert.equal(text(item.inner, "description"), "Read more at </description> no really");
+
+  /* And an entity survives one level of nesting undecoded, so it is decoded
+     exactly once at the end rather than once per level. */
+  const nested = "<item><title>a &amp;amp; b</title></item>";
+  assert.equal(text(tags(nested, "item")[0].inner, "title"), "a &amp; b");
 });
 
 test("an unclosed tag is an empty element, not a lost document", () => {
@@ -149,7 +170,7 @@ test("an unclosed tag is an empty element, not a lost document", () => {
   const got = tags(xml, "e");
   assert.equal(got.length, 2);
   assert.equal(text(got[0].inner, "id"), "1");
-  assert.equal(got[1].inner, "");
+  assert.equal(got[1].text, "");
 });
 
 test("a tag that is not there is no tags and empty text", () => {

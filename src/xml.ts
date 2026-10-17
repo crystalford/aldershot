@@ -66,8 +66,22 @@ export function unwrap(inner: string): string {
 export interface XmlTag {
   /** Everything between the angle brackets of the opening tag. */
   raw: string;
-  /** The text between the tags, CDATA unwrapped and entities decoded. */
+  /**
+   * Everything between the tags, EXACTLY AS IT ARRIVED — CDATA markers and
+   * entities intact.
+   *
+   * Raw on purpose, and the reason is a bug this had. `inner` used to be
+   * unwrapped, and then reading a feed meant `tags(xml, "item")` followed by
+   * `text(item.inner, "description")` — by which point the CDATA markers were
+   * gone and the `</description>` that CDATA exists to protect had become a
+   * plain closing tag. The description truncated there, which looks like a
+   * short description rather than like an error.
+   *
+   * So nesting reads `inner` and anything wanting the words reads `text`.
+   */
   inner: string;
+  /** The text between the tags, CDATA unwrapped and entities decoded. */
+  text: string;
 }
 
 /**
@@ -105,7 +119,7 @@ export function tags(xml: string, name: string): XmlTag[] {
     if (tagEnd < 0) break;
     const raw = xml.slice(m.index + 1, tagEnd);
     if (raw.endsWith("/")) {
-      out.push({ raw: raw.slice(0, -1), inner: "" });
+      out.push({ raw: raw.slice(0, -1), inner: "", text: "" });
       open.lastIndex = tagEnd + 1;
       continue;
     }
@@ -128,11 +142,12 @@ export function tags(xml: string, name: string): XmlTag[] {
       break;
     }
     if (close < 0) {
-      out.push({ raw, inner: "" });
+      out.push({ raw, inner: "", text: "" });
       open.lastIndex = tagEnd + 1;
       continue;
     }
-    out.push({ raw, inner: unwrap(xml.slice(tagEnd + 1, close)) });
+    const inner = xml.slice(tagEnd + 1, close);
+    out.push({ raw, inner, text: unwrap(inner) });
     open.lastIndex = close + closing.length;
   }
   return out;
@@ -146,7 +161,7 @@ export function attr(raw: string, name: string): string | null {
   return decodeEntities(m[2] ?? m[3] ?? "");
 }
 
-/** The first `<name>`'s text, or "". */
+/** The first `<name>`'s text, unwrapped and decoded, or "". */
 export function text(xml: string, name: string): string {
-  return tags(xml, name)[0]?.inner ?? "";
+  return tags(xml, name)[0]?.text ?? "";
 }
