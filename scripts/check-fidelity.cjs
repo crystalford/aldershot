@@ -1168,7 +1168,12 @@ function checkReachable() {
         pass has written a row since the feature shipped, its own comment says
         "shown as the Passes log", and the only other statement about it in
         the codebase was a DELETE. */
-  const schema = fs.readFileSync(path.join(ROOT, 'migrations/0006_v2_core.sql'), 'utf8');
+  /* READ WHAT ACTUALLY RUNS. This read migrations/0006_v2_core.sql, which
+     src/schema.ts's own header calls "a checked-in mirror ... kept for
+     readability; THESE are what actually run". Nine Scout tables added to
+     schema.ts were therefore invisible to this rule, and so would any table
+     added the way every table in this repo is added. */
+  const schema = walk(path.join(ROOT, 'src')).map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const all = fs.readFileSync(path.join(ROOT, 'src/index.ts'), 'utf8') + '\n' + server + '\n' + pages;
   for (const m of schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) {
     const table = m[1];
@@ -1268,10 +1273,80 @@ function checkReachable() {
   }
 }
 
+/* ── 10. Schema document ───────────────────────────────────────────────────
+ *
+ * THE SCHEMA DOCUMENT HAD NOT BEEN TRUE FOR A LONG TIME.
+ *
+ * src/schema.ts's header calls migrations/ "a checked-in mirror of the
+ * statements below, kept for readability; THESE are what actually run". When
+ * this check was written the mirror disagreed with the running schema about
+ * twelve tables and had never heard of thirteen more — and the table rule in
+ * checkReachable was reading it, so it had been reporting on a schema that
+ * stopped existing some time in the summer.
+ *
+ * A wrong schema document is worse than no schema document: it is the thing
+ * somebody reads to find out what a column means, at exactly the moment they
+ * have decided not to read the code.
+ *
+ * So migrations/schema.sql is GENERATED — `npm run schema` — and this check
+ * fails if it has fallen behind. The numbered files beside it stay as
+ * history; nothing here is deleted, and nothing reads them.
+ *
+ * Compared on whitespace-flattened statement text, so indentation and line
+ * breaks are free and a renamed column is not.
+ */
+function checkSchema() {
+  /* Block comments are stripped before anything else: they are not schema,
+     and one of them contains a semicolon ("presigned URLs; \"worker\" = …"),
+     which split that table in half when the document was read statement by
+     statement and reported it as drift. */
+  const nocomment = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const flat = (t) =>
+    nocomment(t).replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim().toLowerCase();
+  const name = (t) => (t.match(/create (?:table|index) if not exists (\w+)/i) || [])[1];
+
+  const live = new Map();
+  for (const f of walk(path.join(ROOT, 'src'))) {
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
+      const n = name(m[1]);
+      if (n) live.set(n, flat(m[1]));
+    }
+  }
+
+  const doc = path.join(ROOT, 'migrations/schema.sql');
+  const bad = [];
+  if (!fs.existsSync(doc)) {
+    bad.push('migrations/schema.sql is missing — run `npm run schema`');
+  } else {
+    const written = new Map();
+    const sql = nocomment(fs.readFileSync(doc, 'utf8')).replace(/^\s*--.*$/gm, '');
+    for (const stmt of sql.split(';')) {
+      const n = name(stmt);
+      if (n && !written.has(n)) written.set(n, flat(stmt));
+    }
+    for (const [n, stmt] of live) {
+      if (!written.has(n)) bad.push(n + ' — runs, and the schema document has never heard of it');
+      else if (written.get(n) !== stmt) bad.push(n + ' — the code and the schema document disagree about its shape');
+    }
+    /* And the other way: a table in the document that nothing creates is a
+       table a reader will look for and not find. */
+    for (const n of written.keys()) {
+      if (!live.has(n)) bad.push(n + ' — in the schema document and created by nothing');
+    }
+  }
+
+  if (bad.length) {
+    fail('schema', 'The schema that runs and the schema a person reads have come apart. `npm run schema`.', bad.join('\n'));
+  } else {
+    pass('schema', live.size + ' tables and indexes, each in migrations/schema.sql with the same shape');
+  }
+}
+
 checkTemplate();
 checkWired();
 checkConventions();
 checkReachable();
+checkSchema();
 checkWiring();
 
 checkStrings().then(() => {

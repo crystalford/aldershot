@@ -81,7 +81,11 @@ paragraph of what the product is.
 - `npm test` — unit and engine tests. The `footage.js` port must reproduce the
   sample cut (8 of 14 moments, 5:59, 4 to-camera gaps) when it lands.
 - `npm run check` — **the gate.** Typecheck, tests, container, editor, then the
-  nine fidelity checks. Nothing merges red.
+  ten fidelity checks. Nothing merges red.
+- `npm run schema` — rewrites `migrations/schema.sql` from the CREATE
+  statements in `src/`. The numbered migrations are hand-written history and
+  were never run by anything; this one file is the current shape, and `check`
+  fails if it has fallen behind.
 - `npm run eval` — retrieval recall@k over your own library, with
   `-- --exact` as the keyword baseline. Not yet the Phase 0 labelled set.
 - `npm run labels` — what decisions exist in the database, and whether the top
