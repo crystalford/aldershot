@@ -202,7 +202,13 @@ function checkWired() {
     const d = path.join(ROOT, root);
     if (fs.existsSync(d)) walkAny(d, files);
   }
-  const text = Object.fromEntries(files.map((f) => [f, decomment(fs.readFileSync(f, 'utf8'))]));
+  /* MODULE PATHS ARE NOT USES. `scout-decompose.ts` contains the word
+     "decompose", so every file that imports anything out of it counted as a
+     caller for `decompose()` — which was exported and called nowhere, and
+     this check said it was wired. Any export whose name is a word in its own
+     filename got the same free pass. */
+  const nospec = (t) => t.replace(/(["'])[^"'\n]*\1/g, (m) => (/[./]/.test(m) ? ' ' : m));
+  const text = Object.fromEntries(files.map((f) => [f, nospec(decomment(fs.readFileSync(f, 'utf8')))]));
   for (const f of files) {
     if (!f.includes(`${path.sep}src${path.sep}`)) continue;
     for (const m of fs.readFileSync(f, 'utf8').matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)) {
