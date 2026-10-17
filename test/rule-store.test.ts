@@ -47,6 +47,30 @@ const round = async (rules: Rule[]): Promise<Rule[]> => {
   return loadRules(db, "p1");
 };
 
+test("a rule's name survives the save, because everything else holds it", async () => {
+  /*
+   * The row id is re-minted on every save — saving replaces the list — so
+   * anything outside the table that refers to a rule has to hold the rule's
+   * own name instead. Measured before this existed: toggling one rule off
+   * changed all four rules' ids, and only a full page reload hid it. The next
+   * thing to hold a rule id (a reorder, an undo) would not have been so lucky.
+   */
+  const rules: Rule[] = [
+    { id: "r-core", kind: "keep", tag: "core", on: true },
+    { id: "r-cap", kind: "cap", secs: 120, on: true },
+  ];
+  const db = fakeDb();
+  await saveRules(db, "p1", rules);
+  const once = await loadRules(db, "p1");
+  assert.deepEqual(once.map((r) => r.id), ["r-core", "r-cap"]);
+
+  /* Save what came back, twice more. The names must not move. */
+  await saveRules(db, "p1", once.map((r) => (r.id === "r-cap" ? { ...r, on: false } : r)));
+  const twice = await loadRules(db, "p1");
+  assert.deepEqual(twice.map((r) => r.id), ["r-core", "r-cap"]);
+  assert.equal(twice.find((r) => r.id === "r-cap")!.on, false);
+});
+
 test("a rule set survives the round trip, in order", async () => {
   const rules: Rule[] = [
     { id: "a", kind: "keep", tag: "core", on: true, text: "Keep the parts where you're working something out." },

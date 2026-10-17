@@ -16,7 +16,7 @@ import type { Rule, Order } from "./rules.ts";
 import { ulid } from "./id.ts";
 
 interface Row {
-  id: string;
+  key: string;
   kind: string;
   on_: number;
   text: string | null;
@@ -43,14 +43,17 @@ export async function saveRules(db: D1Database, projectId: string, rules: Rule[]
 
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT INTO rules (id,project_id,idx,kind,on_,text,tag,clip_ids,ord,secs,hand,wins,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO rules (id,project_id,key,idx,kind,on_,text,tag,clip_ids,ord,secs,hand,wins,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
   await db.batch(
     rules.map((r, i) =>
       stmt.bind(
+        /* The ROW id, re-minted because saving replaces the list. The rule's
+           own name is the next column and is what anything else holds. */
         ulid(),
         projectId,
+        String(r.id),
         i,
         r.kind,
         r.on ? 1 : 0,
@@ -73,7 +76,7 @@ export async function saveRules(db: D1Database, projectId: string, rules: Rule[]
 export async function loadRules(db: D1Database, projectId: string): Promise<Rule[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, kind, on_, text, tag, clip_ids, ord, secs, hand, wins
+      `SELECT key, kind, on_, text, tag, clip_ids, ord, secs, hand, wins
          FROM rules WHERE project_id=? ORDER BY idx`,
     )
     .bind(projectId)
@@ -82,7 +85,8 @@ export async function loadRules(db: D1Database, projectId: string): Promise<Rule
   return (results ?? []).map((r) => {
     const ids = r.clip_ids ? (JSON.parse(r.clip_ids) as Array<string | number>) : null;
     const rule: Rule = {
-      id: r.id,
+      /* Its own name, not the row's — see the `key` column's comment. */
+      id: r.key,
       kind: r.kind as Rule["kind"],
       on: !!r.on_,
     };

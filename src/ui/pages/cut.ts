@@ -91,7 +91,7 @@ export interface CutData {
    * Empty for every edit that began with a video, because those are still the
    * staged editor's and have no rule set. An assembled cut has one.
    */
-  rules: Array<{ text: string; on: boolean; effect: string }>;
+  rules: Array<{ id: string; text: string; on: boolean; effect: string }>;
 }
 
 /**
@@ -500,20 +500,22 @@ function passLogPanel(passes: CutData["passes"]): string {
  * several videos with no account of why those and not others, which is the
  * exact review gap this product is meant to be better at than everyone else.
  *
- * Read-only for now: it says what the rules did. Switching one off re-produces
- * the cut, and that needs the recompute route Phase 2 finishes with — showing
- * a toggle that does nothing would be worse than showing none, and the
- * conventions check fails a permanently disabled control for that reason.
+ * Each row is a real switch now. Invariant 6: nothing is deleted, rules
+ * switch off — so the control is a toggle rather than a remove, and a rule
+ * that is off stays in the list saying "off — footage as shot" rather than
+ * vanishing and leaving the cut unexplained.
  */
 function rulesPanel(rules: CutData["rules"]): string {
   if (!rules.length) return "";
 
   const rows = rules
     .map(
-      (r) => `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-        <span data-content style="flex:1 1 160px;min-width:min(150px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,${r.on ? "0.8" : "0.38"});line-height:1.5">${esc(r.text)}</span>
+      (r) => `<button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
+        style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;width:100%;text-align:left;
+        background:none;border:none;padding:3px 0;cursor:pointer;font-family:inherit;color:inherit">
+        <span data-content style="flex:1 1 160px;min-width:min(150px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,${r.on ? "0.8" : "0.38"});line-height:1.5;${r.on ? "" : "text-decoration:line-through;text-decoration-color:rgba(236,236,241,0.3)"}">${esc(r.text)}</span>
         <span data-content style="flex:none;font-size:${SIZE.meta};color:${r.on ? ACCENT.gold : C.ink32}">${esc(r.effect)}</span>
-      </div>`,
+      </button>`,
     )
     .join("");
 

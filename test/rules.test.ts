@@ -24,6 +24,7 @@ import {
   compute,
   applyRule,
   ruleEffect,
+  ruleKey,
   describe,
   effectLine,
   fmt,
@@ -385,4 +386,86 @@ test("every other rule's effect comes from the diff", () => {
 
   const off = SEED.map((r) => (r.id === 1 ? { ...r, on: false } : r));
   assert.equal(effectLine(off, off[0], { set }), "off — footage as shot");
+});
+
+test("a rule's name says what it is, so two briefs cannot collide", () => {
+  /*
+   * Rules are stored under a project-scoped unique name, so the name must be
+   * stable across re-parses AND unique within a set. Numbering by position is
+   * neither, and the failure is a crash rather than a wrong cut: a brief
+   * parsing to [order, cap] names them r-said-0 and r-said-1; a later "make it
+   * 90 seconds" parses to [cap], names it r-said-0, and applyRule replaces the
+   * CAP with it while the ORDER rule still holds that name. The unique
+   * constraint rejects the save.
+   */
+  assert.equal(ruleKey({ kind: "keep", tag: "core", on: true }), "r-keep-core");
+  assert.equal(ruleKey({ kind: "drop", tag: "hedge", on: true }), "r-drop-hedge");
+  assert.equal(ruleKey({ kind: "cap", secs: 90, on: true }), "r-cap");
+  assert.equal(ruleKey({ kind: "order", order: "open", on: true }), "r-order");
+
+  /* A cap is a cap whatever its length, because applyRule makes it
+     single-valued — so a second one must take the FIRST one's name. */
+  assert.equal(ruleKey({ kind: "cap", secs: 120, on: true }), ruleKey({ kind: "cap", secs: 90, on: true }));
+  /* An order likewise, whichever order it asks for. */
+  assert.equal(ruleKey({ kind: "order", order: "time", on: true }), ruleKey({ kind: "order", order: "strand", on: true }));
+  /* But a keep and a drop on the same tag are different rules, and a hand
+     decision is the escape hatch from the tag rule rather than the same one. */
+  assert.notEqual(ruleKey({ kind: "keep", tag: "core", on: true }), ruleKey({ kind: "drop", tag: "core", on: true }));
+  /*
+   * TWO HAND DECISIONS ON DIFFERENT MOMENTS, which is the collision that
+   * actually happens — keeping clip 3 by hand and keeping clip 9 by hand are
+   * two rules, and without the moment in the name both are "r-keep". The
+   * first version of this compared a hand rule to a TAGGED one, which differ
+   * for an unrelated reason, so it passed whether the moment was in the name
+   * or not.
+   */
+  assert.notEqual(
+    ruleKey({ kind: "keep", cid: "c3", hand: true, on: true }),
+    ruleKey({ kind: "keep", cid: "c9", hand: true, on: true }),
+  );
+  assert.notEqual(
+    ruleKey({ kind: "keep", tag: "core", on: true }),
+    ruleKey({ kind: "keep", cid: "c9", hand: true, on: true }),
+  );
+
+  /* And every rule in a realistic set gets a distinct one. */
+  const set2: Array<Omit<Rule, "id">> = [
+    { kind: "keep", tag: "core", on: true },
+    { kind: "drop", tag: "housekeeping", on: true },
+    { kind: "drop", tag: "hedge", on: true },
+    { kind: "order", order: "strand", on: true },
+    { kind: "cap", secs: 180, on: true },
+    { kind: "gap", on: true },
+    { kind: "keep", cid: 13, hand: true, on: true },
+    { kind: "keep", cid: 4, hand: true, on: true },
+    { kind: "drop", cid: 9, hand: true, on: true },
+  ];
+  const keys = set2.map(ruleKey);
+  assert.equal(new Set(keys).size, keys.length, keys.join(", "));
+});
+
+test("switching a rule off and on restores the cut exactly", () => {
+  /*
+   * PHASE 2'S ACCEPTANCE, and it is a property of re-producing the cut rather
+   * than something the toggle has to be careful about: both states run the
+   * same engine over the same rules, so there is nothing to drift. It is
+   * pinned because the obvious alternative — patching the beats the rule
+   * disagrees with — would NOT have this property, and the difference is
+   * invisible until somebody toggles twice.
+   */
+  const capped = applyRule(SEED, { id: "r-cap", kind: "cap", secs: 180, on: true });
+  const before = compute(capped, { set });
+
+  const off = capped.map((r) => (r.id === "r-cap" ? { ...r, on: false } : r));
+  const loosened = compute(off, { set });
+  assert.notEqual(loosened.secs, before.secs, "the rule has to be doing something, or this proves nothing");
+
+  const backOn = off.map((r) => (r.id === "r-cap" ? { ...r, on: true } : r));
+  const after = compute(backOn, { set });
+  assert.equal(after.secs, before.secs);
+  assert.deepEqual(after.rows.map((r) => r.key), before.rows.map((r) => r.key));
+  assert.deepEqual(
+    after.st.filter((m) => m.in).map((m) => m.id),
+    before.st.filter((m) => m.in).map((m) => m.id),
+  );
 });

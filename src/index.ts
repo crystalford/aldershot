@@ -63,8 +63,8 @@ import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
-import { loadRules } from "./rule-store.ts";
-import { effectLine, toFootageSet } from "./rules.ts";
+import { loadRules, saveRules } from "./rule-store.ts";
+import { effectLine, fmt as fmtSecs, toFootageSet } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
@@ -76,8 +76,8 @@ import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
-import { assembleFromLibrary, CANDIDATE_POOL } from "./assemble.ts";
-import { claimPassUndo, passLog } from "./passes.ts";
+import { assembleFromLibrary, CANDIDATE_POOL, recomputeFromRules } from "./assemble.ts";
+import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
 export { AudioContainer, RenderContainer } from "./render.ts";
@@ -1263,6 +1263,7 @@ app.get("/p/:id/:stagePath", async (c) => {
           const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
           const set = toFootageSet(pool, momentTags);
           return stored.map((r) => ({
+            id: String(r.id),
             text: r.text ?? r.kind,
             on: r.on,
             effect: effectLine(stored, r, { set }),
@@ -1899,6 +1900,60 @@ app.post("/api/projects/:id/pass/stop", async (c) => {
     .run();
 
   return c.json({ ok: true, stopped: meta?.changes ?? 0 });
+});
+
+/**
+ * SWITCH A RULE OFF, OR BACK ON, AND RE-PRODUCE THE CUT.
+ *
+ * The rules pane could say what every rule was doing and could not change any
+ * of it, which is a report rather than a control. This is the other half:
+ * invariant 1 says a cut is re-produced from rules, so flipping one has to
+ * rebuild the cut from the whole set rather than patch the beats it happens to
+ * disagree with.
+ *
+ * Nothing is deleted — `on` is a state. Toggling off and on again returns the
+ * cut exactly, because both passes run the same engine over the same rules;
+ * that is Phase 2's acceptance and it is a property of recomputing rather than
+ * a thing this route has to be careful about.
+ *
+ * It records a pass, so the conversation carries it like every other edit.
+ * Deliberately NOT undoable through /api/passes/:id/undo: a toggle is its own
+ * inverse and already reversible by pressing it again, and an undo snapshot
+ * would be a second way to say the same thing that could disagree with the
+ * first.
+ */
+app.post("/api/projects/:id/rules/:ruleId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ on: boolean }>(c);
+  const ruleId = c.req.param("ruleId");
+  const rules = await loadRules(c.env.DB, project.id);
+  const rule = rules.find((r) => String(r.id) === ruleId);
+  if (!rule) return c.json({ error: "no such rule" }, 404);
+
+  const on = Boolean(b.on);
+  if (rule.on === on) return c.json({ ok: true, unchanged: true });
+
+  const next = rules.map((r) => (String(r.id) === ruleId ? { ...r, on } : r));
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+
+  await saveRules(c.env.DB, project.id, next);
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: `${on ? "Back on" : "Off"}: ${rule.text ?? rule.kind}`,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    firstChange: null,
+  }).catch(() => {
+    /* The cut changed and is correct; a missing line in the log is not worth
+       failing the edit for. */
+  });
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

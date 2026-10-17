@@ -568,3 +568,28 @@ export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof co
   if (e.secs) return `adds ${Math.round(e.secs)}s to camera`;
   return "nothing here touches it — it watches for it";
 }
+
+/**
+ * A RULE'S NAME, derived from what it is rather than from where it appeared.
+ *
+ * Rules are stored under a project-scoped unique name, so the name has to be
+ * both stable across re-parses and unique within a set. Numbering by position
+ * is neither, and the failure is a crash rather than a wrong cut: a brief that
+ * parses to [order, cap] names them r-said-0 and r-said-1, and a later "make
+ * it 90 seconds" parses to [cap] and names it r-said-0 — which applyRule then
+ * replaces the CAP with while the ORDER rule still holds that name. The unique
+ * constraint rejects the save.
+ *
+ * Kind plus tag cannot collide within a set, because applyRule already makes
+ * order, cap, len, count and hook single-valued, and keep/drop rules are
+ * distinguished by the tag they match. Two keeps on the same tag are the same
+ * rule said twice.
+ */
+export function ruleKey(rule: Omit<Rule, "id">): string {
+  const parts = ["r", rule.kind];
+  if (rule.tag) parts.push(rule.tag);
+  /* A hand decision names one moment and is not the same rule as the tag rule
+     of the same kind — it is the escape hatch from it. */
+  if (rule.hand && rule.cid !== undefined) parts.push("hand", String(rule.cid));
+  return parts.join("-");
+}

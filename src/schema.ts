@@ -115,6 +115,21 @@ const STATEMENTS: string[] = [
    */
   `CREATE TABLE IF NOT EXISTS rules (
      id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     /*
+      * THE RULE'S OWN NAME, stable across saves, scoped to the project.
+      *
+      * The id column is the ROW and is re-minted on every save, because saving replaces
+      * the list. So anything outside this table that refers to a rule — the
+      * toggle in the pane, a future reorder, an undo — has to hold this
+      * instead, or it is holding an id that stopped existing the moment
+      * anything else about the cut changed. Measured: toggling one rule off
+      * changed all four rules' row ids, and only a full page reload hid it.
+      *
+      * Project-scoped rather than global because the names are human: every
+      * project has an "r-core", and a global unique on them would make the
+      * second project that wanted one fail to save.
+      */
+     key TEXT NOT NULL,
      idx INTEGER NOT NULL,
      kind TEXT NOT NULL,
      on_ INTEGER NOT NULL DEFAULT 1,
@@ -126,7 +141,8 @@ const STATEMENTS: string[] = [
      hand INTEGER NOT NULL DEFAULT 0,
      wins INTEGER NOT NULL DEFAULT 0,
      created_at INTEGER NOT NULL,
-     UNIQUE(project_id, idx)
+     UNIQUE(project_id, idx),
+     UNIQUE(project_id, key)
    )`,
   `CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx)`,
 

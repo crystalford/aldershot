@@ -3560,6 +3560,46 @@ function readDuration(file) {
   });
 }
 
+/* ── The rules pane: switch one off ───────────────────────────────────
+   Invariant 1: a cut is re-produced from rules. So this does not patch the
+   document it disagrees with — it tells the server the rule's new state and
+   reloads, because the whole cut may have changed membership AND order and
+   a partial DOM update would be a second, drifting answer to what the cut is.
+
+   NOT routed through doUndoable. A toggle is its own inverse and is already
+   reversible by pressing it again; an undo entry would be a second way to say
+   the same thing that could disagree with the first. */
+document.querySelectorAll(".rule-toggle").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const next = btn.getAttribute("data-on") !== "1";
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: next }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      /* Offline or the worker died. Say so and put the control back, rather
+         than leaving a greyed-out row that looks like it worked. */
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 /* ── The editor: keep and drop ─────────────────────────────────────────
    Every change goes through doUndoable, so ⌘Z reverts it and the toast's
    Undo does exactly the same thing — one path, not two that drift apart. */

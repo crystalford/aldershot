@@ -27,7 +27,7 @@
 
 import type { Env } from "./env.ts";
 import { listMoments, searchMeaning, type Moment } from "./library.ts";
-import { applyRule, compute, describe, toFootageSet, type Rule } from "./rules.ts";
+import { applyRule, compute, describe, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { contentWords, momentTags, NOISE } from "./moment-tags.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
 import { saveRules } from "./rule-store.ts";
@@ -330,6 +330,58 @@ export function clock(ms: number): string {
 }
 
 /**
+ * RE-PRODUCE THE CUT FROM THE RULES AS THEY STAND.
+ *
+ * This is invariant 1 made operable rather than merely stated. Until it
+ * existed the rules were a record of how a cut had been made once; now they
+ * are the thing the cut is made FROM, every time, and switching one off is a
+ * real edit rather than a note in a table.
+ *
+ * Shared with the assembly path on purpose. Two functions turning a rule set
+ * into beats would drift the first time either was touched, and the drift
+ * would show up as a cut that changes when you toggle a rule off and on —
+ * which is precisely the behaviour Phase 2 accepts on.
+ *
+ * The POOL is re-read rather than remembered. A moment binned since the cut
+ * was made must not come back, and a moment scored since should be available
+ * to a rule that asks for it: the rules are the record, the library is the
+ * material, and neither is a snapshot of the other.
+ */
+export async function recomputeFromRules(
+  env: Env,
+  opts: { userId: string; projectId: string; rules: Rule[] },
+): Promise<{ kept: number; secs: number; moments: Moment[] } | null> {
+  const pool = await listMoments(env.DB, opts.userId, CANDIDATE_POOL);
+  if (!pool.length) return null;
+
+  const set = toFootageSet(pool, momentTags);
+  const cut = compute(opts.rules, { set });
+  const byId = new Map(pool.map((m) => [m.id, m]));
+  const moments = cut.rows
+    .filter((r) => r.kind === "clip" && r.moment)
+    .map((r) => byId.get(String(r.moment!.id)))
+    .filter((m): m is Moment => !!m);
+
+  await putBeats(env.DB, opts.projectId, beatsFor(moments));
+  return { kept: moments.length, secs: cut.secs, moments };
+}
+
+/** The clip beats for a set of moments, in the order given. */
+function beatsFor(moments: Moment[]) {
+  return moments.map((m) => ({
+    id: ulid(),
+    kind: "clip" as const,
+    act: null,
+    struck: "0",
+    text: m.quote,
+    clip_id: m.id,
+    dur_ms: Math.max(0, m.end_ms - m.start_ms),
+    media_r2_key: null,
+    recorded_at: null,
+  }));
+}
+
+/**
  * One edit, made of clips from wherever they came from.
  *
  * The project gets NO source_id — that is the whole point, and everything
@@ -385,12 +437,14 @@ export async function assembleFromLibrary(
    * rules did. applyRule is what the editor uses and it exists precisely
    * because orders and caps are single-valued: a second one REPLACES.
    */
-  let rules: Rule[] = [
-    { id: "r-core", kind: "keep", tag: "core", on: true, text: "Keep the parts where you're working something out." },
-    { id: "r-chat", kind: "drop", tag: "housekeeping", on: true, text: "Take out the hellos and the mic checks." },
-    { id: "r-order", kind: "order", order: "strand", on: true, text: "Run it one thread at a time." },
+  const seed: Array<Omit<Rule, "id">> = [
+    { kind: "keep", tag: "core", on: true, text: "Keep the parts where you're working something out." },
+    { kind: "drop", tag: "housekeeping", on: true, text: "Take out the hellos and the mic checks." },
+    { kind: "order", order: "strand", on: true, text: "Run it one thread at a time." },
   ];
-  asked.rules.forEach((r, i) => {
+  /* Named by what they are, never by position — see ruleKey. */
+  let rules: Rule[] = seed.map((r) => ({ ...r, id: ruleKey(r) }));
+  asked.rules.forEach((r) => {
     /*
      * SAYING WHAT THE DEFAULT ALREADY DOES ADDS NOTHING.
      *
@@ -402,7 +456,7 @@ export async function assembleFromLibrary(
      * tag, already on, nothing to add.
      */
     const same = rules.some((x) => x.on && x.kind === r.kind && x.tag && x.tag === r.tag);
-    if (!same) rules = applyRule(rules, { ...r, id: `r-said-${i}` });
+    if (!same) rules = applyRule(rules, { ...r, id: ruleKey(r) });
   });
 
   /*
@@ -417,7 +471,7 @@ export async function assembleFromLibrary(
   const target = targetFromBrief(opts.brief);
   if (!rules.some((r) => r.kind === "cap")) {
     rules = applyRule(rules, {
-      id: "r-cap",
+      id: ruleKey({ kind: "cap", on: true }),
       kind: "cap",
       secs: Math.round(target.ms / 1000),
       on: true,
@@ -449,17 +503,7 @@ export async function assembleFromLibrary(
   /* The engine's own total, not the clips' — it includes the to-camera gaps
      the gap rule put in, which are real seconds of the finished cut. */
   const runtime = cut.secs * 1000;
-  const beats = moments.map((m) => ({
-    id: ulid(),
-    kind: "clip" as const,
-    act: null,
-    struck: "0",
-    text: m.quote,
-    clip_id: m.id,
-    dur_ms: Math.max(0, m.end_ms - m.start_ms),
-    media_r2_key: null,
-    recorded_at: null,
-  }));
+  const beats = beatsFor(moments);
 
   await putBeats(env.DB, project.id, beats);
 
