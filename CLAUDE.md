@@ -14,6 +14,36 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
 - `design/one-take/Aldershot One Take.dc.html` is the behavioural spec; `design/one-take/footage.js` is the reference rule engine. Port it, don't reinvent it.
 - `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
 
+## When the documents disagree
+
+They do. The handoff and the Manual were written at different points and the
+owner has said so plainly. The order of precedence, highest first:
+
+1. **The rendered prototype.** Not the file read as text — the thing open in a
+   browser. `node scripts/shoot.cjs proto Home` renders it; put it beside the
+   build and look. Everything below is a description of it.
+2. **`design/one-take/Aldershot Manual.dc.html`** — how the product explains
+   itself to a person. Where it and the handoff differ about what the product
+   IS, the Manual is the later word and the one a user would read.
+3. **`docs/handoff/`** — how to build it. Authoritative on sequencing,
+   acceptance and infrastructure, which the Manual says nothing about.
+4. **`docs/labs/`** — the research the design rests on. Explains WHY, and
+   loses to all three about what.
+
+WHY THIS IS WRITTEN DOWN. A night was spent building the room from the handoff
+documents and from grepping the prototype for strings, without once rendering
+it. The words came out right and the product came out wrong — the title row
+was missing, the tabs were in the centre instead of the bar, the archive
+summary was a count where a paragraph goes. `scripts/shoot.cjs` existed the
+whole time, pointed at the retired prototype, with a header explaining this
+exact failure.
+
+The Manual also carries two things the handoff does not weight the same way:
+the conversation answering questions about your footage with timed lines, and
+Scout as central rather than a later phase ("Scout is how the video gets
+better than your footage alone"). Neither is built. Both are in the second
+paragraph of what the product is.
+
 ## Invariants (never break these)
 
 1. Rules are the source of truth; a cut is re-produced from rules + moments, never stored as an outcome.
