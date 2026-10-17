@@ -358,13 +358,22 @@ test("an order rule's effect says what changed, not what it is called", () => {
     return effectLine(rs, rs[1], { set: woven });
   };
 
-  assert.equal(orderOf("strand"), "moves 2 of 3", "why, why, cost — against why, cost, why");
-  assert.ok(!/one thread/.test(orderOf("strand")), "not a restatement of the rule");
+  /*
+   * I ARGUED THE WRONG WAY ROUND HERE, and rendering the prototype settled
+   * it. This used to demand "moves 2 of 3" and forbid any restatement, on
+   * the grounds that "Run it one thread at a time" answered by "one thread
+   * at a time" tells nobody anything. The prototype says exactly that — and
+   * it is right, because the distinction an effect line draws for an order
+   * rule is ON versus OFF, not measured versus restated. "moves 2 of 3" was
+   * a metric I invented; "the cut runs one thread at a time" is what is
+   * true, against "off — footage as shot".
+   */
+  assert.equal(orderOf("strand"), "the cut runs one thread at a time");
   /* With the rule off compute() falls back to chronological, so asking for
      chronological is asking for what you already have. */
   assert.equal(orderOf("time"), "already in that order");
   assert.notEqual(orderOf("strand"), orderOf("time"));
-  assert.equal(orderOf("open"), "moves 3 of 3", "the strongest line to the front moves everything");
+  assert.equal(orderOf("open"), "the cut runs sharpest line first");
 
   /* And the sample's own order rule genuinely changes nothing about the
      sequence — only the gaps, which the gap rule is credited for. */
@@ -373,7 +382,7 @@ test("an order rule's effect says what changed, not what it is called", () => {
 });
 
 test("every other rule's effect comes from the diff", () => {
-  assert.equal(effectLine(SEED, SEED[0], { set }), "brings in 8", "the keep rule is why there is a cut");
+  assert.equal(effectLine(SEED, SEED[0], { set }), "keeps 8 blocks", "the prototype's own phrasing — eight of WHAT");
   assert.equal(
     effectLine(SEED, SEED[1], { set }),
     "nothing here touches it — it watches for it",
@@ -382,7 +391,7 @@ test("every other rule's effect comes from the diff", () => {
   assert.equal(effectLine(SEED, SEED[3], { set }), "adds 48s to camera", "the gap rule adds seconds, not moments");
 
   const capped = applyRule(SEED, { id: 9, kind: "cap", secs: 180, on: true });
-  assert.match(effectLine(capped, capped.find((r) => r.kind === "cap")!, { set }), /^takes \d+ off the cut$/);
+  assert.match(effectLine(capped, capped.find((r) => r.kind === "cap")!, { set }), /^takes out \d+ moments?$/);
 
   const off = SEED.map((r) => (r.id === 1 ? { ...r, on: false } : r));
   assert.equal(effectLine(off, off[0], { set }), "off — footage as shot");

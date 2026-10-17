@@ -114,6 +114,17 @@ export interface CutData {
    * do anything.
    */
   addable: Array<{ id: string; title: string }>;
+  /**
+   * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
+   *
+   * The product's whole claim is that you can see why a moment is in the cut.
+   * The rules pane said it at the top of the column and every block below it
+   * stayed silent, so the answer was available and never attached to the
+   * thing it was about. The prototype puts "rule 01" on the block.
+   */
+  blockRule: Record<string, string>;
+  /** "2:04 · 3 blocks · from 2 videos · one thread at a time". */
+  cutLine: string;
   /** Every instruction given to the model on this cut, and what came of it. */
   passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
   /**
@@ -133,7 +144,14 @@ export interface CutData {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
-function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView = "blocks"): string {
+function blockRow(
+  b: Block,
+  cuts: Cut[],
+  i: number,
+  total: number,
+  view: CutView = "blocks",
+  rule = "",
+): string {
   const script = view === "script";
   const struck = b.struck;
 
@@ -355,10 +373,16 @@ function blockRow(b: Block, cuts: Cut[], i: number, total: number, view: CutView
    */
   const dur = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
   const why = (b.why ?? "").trim();
+  /* The rule, on the block. Quiet — it is a label, not a control — and only
+     in Blocks, because the script view is a page of prose. */
+  const ruleChip =
+    rule && !script
+      ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(rule)}</span>`
+      : "";
   const meta = why
-    ? `<div class="blk-why" data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</div>`
-    : dur
-      ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:4px;line-height:1.5">${esc(dur)}</div>`
+    ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span class="blk-why" data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</span></div>`
+    : dur || ruleChip
+      ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span data-content style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5">${esc(dur)}</span></div>`
       : "";
 
   /* Reading, not managing: no card, no frame, no rule between lines. The
@@ -1045,7 +1069,7 @@ export function renderCut(d: CutData): string {
   const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length, view));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? ""));
     list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
@@ -1073,7 +1097,21 @@ export function renderCut(d: CutData): string {
       ${
         d.view === "footage"
           ? addToCut(d) + momentsThroughRules(d)
-          : `${findBar(d.projectId)}
+          : `${
+              /*
+               * WHAT THE CUT IS, in one line, before the blocks.
+               *
+               * "5:59 · 12 blocks · 3 of 3 vlogs · one thread at a time" —
+               * the prototype opens the centre column with it and I had a
+               * search bar there and nothing else. The numbers are the same
+               * ones the bottom bar carries; this says them where you are
+               * reading rather than where you scroll to.
+               */
+              `<div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
+                <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">The cut</span>
+                <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(d.cutLine)}</span>
+              </div>`
+            }${findBar(d.projectId)}
       <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
         ${list.join("")}
       </div>`

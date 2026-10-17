@@ -50,6 +50,8 @@ const base: CutData = {
   rules: [],
   moments: [],
   addable: [],
+  blockRule: {},
+  cutLine: "2:04 · 3 blocks · from 2 videos",
   /*
    * The cast is why `addable` going missing was a runtime crash rather than a
    * typecheck failure: `as unknown as CutData` turns off the one thing that
@@ -57,6 +59,12 @@ const base: CutData = {
    * this file does not exercise, and the alternative is a fixture that has to
    * grow with every field the editor gains — but it means a new REQUIRED
    * field lands as three broken tests instead of a red squiggle.
+   *
+   * It has now cost that twice: `addable`, then `blockRule` and `cutLine`.
+   * Both times the failure was a runtime crash in an unrelated-looking test
+   * rather than the compiler pointing at this line. Still the right trade for
+   * a type with two dozen fields this file does not exercise — but the cost
+   * is real and is written down rather than rediscovered a third time.
    */
 } as unknown as CutData;
 
@@ -163,7 +171,10 @@ test("the route computes the pane and the tab from one call", () => {
    */
   const src = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
   const block = src.slice(src.indexOf("THE RULES AND THE MOMENTS THEY JUDGED"));
-  const upto = block.slice(0, block.indexOf("})()),"));
+  /* Comments stripped before counting: a paragraph explaining that there is
+     ONE such call contains the word itself, and counting raw text made this
+     fail on code that was correct. */
+  const upto = block.slice(0, block.indexOf("})()),")).replace(/\/\*[\s\S]*?\*\//g, "");
   assert.equal((upto.match(/compute\(/g) ?? []).length, 1, "one compute, feeding both");
   assert.match(upto, /stored\.filter\(\(r\) => !r\.hand\)/, "and the same hand split the pane uses");
 });

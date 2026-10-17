@@ -1402,6 +1402,21 @@ app.get("/p/:id/:stagePath", async (c) => {
         view,
         windowSize: BLOCK_WINDOW,
         /*
+         * WHAT THE CUT IS, in the line the centre column opens with. The
+         * same numbers the bottom bar carries, said where you are reading
+         * rather than where you scroll to.
+         */
+        cutLine: (() => {
+          const live = blocks.filter((b) => !b.struck);
+          const runtime = live.reduce((n, b) => n + Math.max(0, b.end_ms - b.start_ms), 0);
+          const videos = new Set(live.map((b) => b.mediaKey ?? "own")).size;
+          return [
+            hms(runtime / 1000),
+            `${live.length} block${live.length === 1 ? "" : "s"}`,
+            source ? source.title : `from ${videos} video${videos === 1 ? "" : "s"}`,
+          ].join(" · ");
+        })(),
+        /*
          * What the clean-ups would actually do, counted from THIS transcript.
          *
          * "A chip whose number cannot be computed honestly yet shows its
@@ -1456,7 +1471,7 @@ app.get("/p/:id/:stagePath", async (c) => {
            * points at the wrong line. Computing twice would let them.
            */
           const stored = await loadRules(c.env.DB, project.id);
-          if (!stored.length) return { rules: [], moments: [], addable: [] };
+          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {} };
 
           /* Attached footage only. Without this the Footage tab lists every
              moment in the library against a cut that can only ever draw on
@@ -1489,8 +1504,33 @@ app.get("/p/:id/:stagePath", async (c) => {
                 .map((x) => ({ id: x.id, title: x.title }))
             : [];
 
+          /*
+           * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
+           *
+           * A block from a beat has the id b:<beatId>, and the beat carries
+           * the clip — so the attribution the Footage tab already computes
+           * can be attached to the block the person is reading. Same
+           * compute(), same numbering, so the chip on a block and the number
+           * in the pane cannot disagree.
+           */
+          const ruleOf = new Map(
+            judged.map((m) => [
+              String(m.id),
+              m.in
+                ? m.byId === null || isHand(m.byId)
+                  ? "by hand"
+                  : `rule ${numberOf(m.byId)}`
+                : "",
+            ]),
+          );
+          const blockRule: Record<string, string> = {};
+          for (const bt of beats) {
+            if (bt.clip_id && ruleOf.get(bt.clip_id)) blockRule[`b:${bt.id}`] = ruleOf.get(bt.clip_id)!;
+          }
+
           return {
             addable,
+            blockRule,
             rules: stored.map((r) => ({
               id: String(r.id),
               text: r.text ?? r.kind,

@@ -504,15 +504,11 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
   /* The same rule compute() uses — the FIRST enabled order rule — or this
      line reports an order the cut was not built in. */
   const order = rules.find((r) => r.on && r.kind === "order")?.order ?? out.ord;
-  const orderName =
-    order === "strand" ? "one thread at a time"
-    : order === "open" ? "sharpest line first"
-    : "as it happened";
 
   /* `note` goes immediately after the runtime, because that is what it
      explains. Appended at the end it read "one thread at a time of 2:00". */
   return (
-    `${kept} of ${total} moment${total === 1 ? "" : "s"} · ${fmt(out.secs)}${note} · ${orderName}` +
+    `${kept} of ${total} moment${total === 1 ? "" : "s"} · ${fmt(out.secs)}${note} · ${orderName(order)}` +
     (gaps ? ` · ${gaps} to-camera gap${gaps === 1 ? "" : "s"}` : "")
   );
 }
@@ -535,6 +531,10 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
  * of its own sentence — "Run it one thread at a time" answered by "one thread
  * at a time" tells nobody anything.
  */
+/** What an order rule reads as, in the words the prototype uses. */
+const orderName = (o?: Order): string =>
+  o === "time" ? "as it happened" : o === "open" ? "sharpest line first" : "one thread at a time";
+
 export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof compute>[1]): string {
   if (!rule.on) return "off — footage as shot";
 
@@ -558,12 +558,21 @@ export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof co
       .map((r) => r.key);
     if (!withIt.length) return "nothing to order yet";
     const moved = withIt.filter((k, i) => without[i] !== k).length;
-    return moved ? `moves ${moved} of ${withIt.length}` : "already in that order";
+    return moved ? `the cut runs ${orderName(rule.order)}` : "already in that order";
   }
 
+  /*
+   * THE PROTOTYPE'S OWN PHRASING, which is more concrete than mine was.
+   *
+   * It reads "keeps 8 blocks", "takes out 3 moments", "the cut runs one
+   * thread at a time". Mine read "brings in 8" and "takes 3 off the cut" —
+   * the same arithmetic said in fewer words, and fewer words here is worse:
+   * a rule's effect line is the sentence somebody uses to decide whether to
+   * switch it off, and "brings in 8" does not say eight of what.
+   */
   const e = ruleEffect(rules, rule, opts);
-  if (e.removed) return `takes ${e.removed} off the cut`;
-  if (e.added) return `brings in ${e.added}`;
+  if (e.removed) return `takes out ${e.removed} moment${e.removed === 1 ? "" : "s"}`;
+  if (e.added) return `keeps ${e.added} block${e.added === 1 ? "" : "s"}`;
   /* A gap rule adds seconds without adding moments. */
   if (e.secs) return `adds ${Math.round(e.secs)}s to camera`;
   return "nothing here touches it — it watches for it";
