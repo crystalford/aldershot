@@ -192,6 +192,46 @@ const STATEMENTS: string[] = [
      UNIQUE(plan_id, idx)
    )`,
 
+  /*
+   * THE EVAL SET. Human judgements about what backs what.
+   *
+   * 06-FOOTAGE-SYSTEM.md: "~200 claims over ~10 hours across three kinds of
+   * footage, each labelled with the backing utterance or 'none', plus
+   * near-miss negatives written on purpose." Every retrieval and threshold
+   * choice is tuned against it, every model swap is gated by it, and no
+   * vendor number is trusted until it has run on it.
+   *
+   * It lives in the product's own database rather than a file in the repo
+   * because the footage does: a claim is only labellable against the library
+   * it was written for, and a labelled set that does not travel with the
+   * footage is a set about footage nobody has.
+   */
+  `CREATE TABLE IF NOT EXISTS eval_claims (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+     text TEXT NOT NULL,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS eval_claims_by_user ON eval_claims(user_id, created_at)`,
+
+  /*
+   * One judgement: this moment, against this claim.
+   *
+   * THREE-WAY, not two. "Related but not enough" is the whole reason the set
+   * is worth building — near-miss evidence, the same speaker on the same
+   * topic making a different point, is the dominant false positive, and a
+   * yes/no set cannot teach a threshold to refuse it.
+   *
+   * One row per claim and clip, replaced on a second answer: somebody
+   * changing their mind is a correction, not a second opinion.
+   */
+  `CREATE TABLE IF NOT EXISTS eval_labels (
+     claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+     clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+     verdict TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (claim_id, clip_id)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS renders (
      id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
      kind TEXT NOT NULL,

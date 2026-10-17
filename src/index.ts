@@ -82,6 +82,8 @@ import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
+import { renderEval, type EvalData } from "./ui/pages/eval.ts";
+import { isVerdict, type Verdict } from "./eval-set.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
@@ -2352,6 +2354,119 @@ app.post("/api/projects/:id/attach", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, kept: out.kept, secs: out.secs });
+});
+
+/**
+ * LABELLING: what backs what.
+ *
+ * Phase 0's eval set, made from inside the product because the footage is.
+ * A claim arrives in the query string so the page is shareable and a reload
+ * comes back to the same claim — there is no state here worth losing.
+ *
+ * The claim row is created on FIRST SIGHT rather than on first judgement, so
+ * a claim the library backs with nothing is still in the set. Those are the
+ * ones that teach a threshold to answer "nothing here backs this", and a set
+ * without them teaches the opposite.
+ */
+app.get("/eval", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const text = (c.req.query("claim") || "").trim();
+
+  const [claims, counted] = await Promise.all([
+    c.env.DB
+      .prepare(
+        `SELECT c.id, c.text, (SELECT COUNT(*) FROM eval_labels l WHERE l.claim_id = c.id) AS judged
+           FROM eval_claims c WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 40`,
+      )
+      .bind(user.id)
+      .all<{ id: string; text: string; judged: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT COUNT(*) AS n FROM eval_labels l
+           JOIN eval_claims c ON c.id = l.claim_id WHERE c.user_id=?`,
+      )
+      .bind(user.id)
+      .first<{ n: number }>(),
+  ]);
+
+  let claim: { id: string; text: string } | null = null;
+  let candidates: EvalData["candidates"] = [];
+  let foundNothing = false;
+
+  if (text) {
+    const existing = (claims.results ?? []).find((x) => x.text === text);
+    if (existing) {
+      claim = { id: existing.id, text: existing.text };
+    } else {
+      const id = ulid();
+      await c.env.DB
+        .prepare(`INSERT INTO eval_claims (id,user_id,text,created_at) VALUES (?,?,?,?)`)
+        .bind(id, user.id, text, Date.now())
+        .run();
+      claim = { id, text };
+    }
+
+    /* The same retrieval the room and the cut use, so the set is about the
+       thing that actually runs rather than about a second search built to
+       be measured. */
+    const found = await findMaterial(c.env, user.id, text, 8);
+    const moments = found.how === "recent" ? [] : found.moments;
+    foundNothing = moments.length === 0;
+
+    const { results: said } = await c.env.DB
+      .prepare(`SELECT clip_id, verdict FROM eval_labels WHERE claim_id=?`)
+      .bind(claim.id)
+      .all<{ clip_id: string; verdict: string }>();
+    const byClip = new Map((said ?? []).map((r) => [r.clip_id, r.verdict]));
+
+    candidates = moments.map((m) => ({
+      id: m.id,
+      quote: m.quote,
+      sourceTitle: m.source_title,
+      verdict: isVerdict(byClip.get(m.id)) ? (byClip.get(m.id) as Verdict) : null,
+    }));
+  }
+
+  return c.html(
+    page(
+      { title: "What backs what — Aldershot", view: "archive", screenLabel: "Labelling", email: user.email },
+      renderEval({
+        claim,
+        candidates,
+        claims: claims.results ?? [],
+        labels: counted?.n ?? 0,
+        foundNothing,
+      }),
+    ),
+  );
+});
+
+/** One judgement. Replaces any earlier answer — changing your mind is a
+    correction, not a second opinion. */
+app.post("/api/eval/:claimId/:clipId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ verdict: string }>(c);
+  if (!isVerdict(b.verdict)) return c.json({ error: "no such answer" }, 400);
+
+  /* Ownership is checked on the CLAIM, which carries the user — a label row
+     has no user of its own. */
+  const owns = await c.env.DB
+    .prepare(`SELECT id FROM eval_claims WHERE id=? AND user_id=?`)
+    .bind(c.req.param("claimId"), user.id)
+    .first<{ id: string }>();
+  if (!owns) return c.json({ error: "not found" }, 404);
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO eval_labels (claim_id,clip_id,verdict,created_at) VALUES (?,?,?,?)
+         ON CONFLICT(claim_id,clip_id) DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
+    )
+    .bind(c.req.param("claimId"), c.req.param("clipId"), b.verdict, Date.now())
+    .run();
+
+  return c.json({ ok: true });
 });
 
 /** The plan on screen: the claim, the beats, and where the flow got to. */

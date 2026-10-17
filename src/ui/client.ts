@@ -3560,6 +3560,36 @@ function readDuration(file) {
   });
 }
 
+/* ── Labelling: what backs what ───────────────────────────────────────
+   Two hundred judgements is an hour of somebody's evening, so there is no
+   confirmation and no save step: the answer IS the tap, and changing it is
+   another tap. No reload either — reloading after every judgement would
+   re-run retrieval and lose the reading position partway down a list. */
+document.querySelectorAll(".eval-say").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const row = btn.parentElement;
+    const verdict = btn.getAttribute("data-verdict");
+    try {
+      const res = await fetch(
+        "/api/eval/" + btn.getAttribute("data-claim") + "/" + btn.getAttribute("data-clip"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdict }) },
+      );
+      if (!res.ok) { window.toast("That didn't save."); return; }
+      /* The chosen one lights; the other two go quiet. Done here rather than
+         by reloading, because the page is a list you are working down. */
+      if (row) {
+        row.querySelectorAll(".eval-say").forEach((b) => {
+          const on = b === btn;
+          b.style.background = on ? b.getAttribute("data-on-bg") || "rgba(94,201,143,0.14)" : "#1A1A1F";
+          b.style.color = on ? b.getAttribute("data-on-fg") || "#5EC98F" : "rgba(236,236,241,0.7)";
+        });
+      }
+    } catch {
+      window.toast("That didn't save.");
+    }
+  });
+});
+
 /* ── The plan: keep or cut a beat, then the two steps past the stop ───
    The flow stops exactly once, here, and nothing downstream runs until the
    beats are answered — which is why Find the footage and Cut it are separate
