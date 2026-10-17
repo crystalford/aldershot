@@ -26,7 +26,7 @@
  */
 
 /** How a source's word timings were produced. */
-export type TimingSource = "recogniser" | "forced";
+export type TimingSource = "caption" | "recogniser" | "forced";
 
 /**
  * What each is worth, in milliseconds of expected error.
@@ -39,6 +39,22 @@ export type TimingSource = "recogniser" | "forced";
  * rather than of adjectives.
  */
 export const TOLERANCE_MS: Record<TimingSource, number> = {
+  /*
+   * A CAPTION CUE IS NOT A WORD TIMING, and this is the honest number for
+   * pretending otherwise.
+   *
+   * A published WebVTT transcript gives a start and an end per CUE — five to
+   * seven words over one to two seconds in the real files Scout reads. The
+   * cue boundaries themselves are good, often better than a recogniser's,
+   * because they came off an alignment. What is invented is the position of
+   * each word INSIDE the cue, which this product interpolates by length.
+   *
+   * Half a word of a seven-word, 1.5-second cue is about 100ms, and cues run
+   * longer than that, so 400 covers it. Worse than a recogniser, nowhere near
+   * a frame, and a stated number rather than an adjective — which is the
+   * whole point of this file.
+   */
+  caption: 400,
   recogniser: 110,
   forced: 20,
 };

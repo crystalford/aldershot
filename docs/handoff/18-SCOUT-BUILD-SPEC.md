@@ -112,8 +112,21 @@ Each adapter implements `search(query, family) → SourceCandidate[]` and `metad
 | `twitch` | clips (`vod_offset`, `view_count`, title), VOD metadata | Helix; app token. VODs expire after 7, 14 or 60 days, so set `expires_at`. Clip download only for the user's own channel (tier 4). No VOD chat API. |
 | `websearch` | discovery across the open web (Reddit threads, fan wikis, articles) by URL | Brave Search API, about $5 per 1,000 requests; store URLs and snippets per its terms. Reddit content is not fetched (commercial use needs a contract). |
 | `podcast` | episode list, audio enclosure URL, `<podcast:transcript>` where present | RSS is public by design, so audio may be fetched and transcribed (~$0.03/hr). About 6% of feeds ship a transcript. |
-| `gdelt_tv` | US TV caption search, 15-second blocks, clip links | Keyless. Quote and link only; broadcasters own the footage. **Make one live test call before building on it.** |
+| `gdelt_tv` | US TV caption search, 15-second blocks, clip links | Keyless. Quote and link only; broadcasters own the footage. **NOT BUILT — the live test call was made on 17 Oct 2026 and the answer was no.** See below. |
 | `user_captures` | the user's own uploads and missions | Fully readable; part of the archive. |
+
+**`gdelt_tv`, and why the live test call was the right instruction.** Made on 17 Oct 2026 against
+`api.gdeltproject.org/api/v2/tv/tv`. The service answers — HTTP 200, `Server: GDELT Server`, and a
+query with no station gets the real error `Your query must contain at least one station` — so the
+endpoint is live and still parses its own query language. Every *valid* query returns `{}`: empty for
+`clipgallery`, `timelinevol` and `stationchart` alike, for one station and two, over a week, three
+months and a year. It is answering, and it has nothing to answer with.
+
+So the adapter is not built, and the note is here rather than in a commit message because the next
+person to read the table would otherwise spend a day on it. If it comes back, the shape to build is
+unchanged. What it would have given — US TV captions, 15-second blocks, keyless — has no
+substitute among the other adapters, so a brief about broadcast coverage has no path in v0 and
+should be an honest gap rather than a thin beat.
 
 The adapter layer enforces quotas and returns `quota_exhausted` as a typed error. The run moves on to other adapters and records the reason. Every call writes a `searches` row.
 
