@@ -18,6 +18,11 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
   it is the mistake this line exists to prevent.
 - `docs/research/raw/` is the original research, unedited. The handoff wins
   where they disagree; the raw is there for when the handoff is silent.
+- `docs/research/PASS-4-BRIEF.md` — what the research still does not answer.
+  Chiefly: `FORMATS.md` specifies the Pattern spine ("variation escalates; one
+  closing instance reframes") and nothing computes it, so a library of a
+  thousand clips about one subject has no mechanism for choosing eight of them
+  in an order.
 - `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
 
 ## When the documents disagree

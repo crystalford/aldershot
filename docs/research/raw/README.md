@@ -4,6 +4,9 @@ These are the original research passes, unedited. `docs/labs/` holds the distill
 
 Missing on purpose: the Scout, Dossier and Sources passes (9, 11, 12) and the operations and strategy passes were pasted into the design conversation rather than uploaded. Only their distillations survive (`docs/labs/SCOUT.md`, `DOSSIER.md`, `SOURCES.md`, `OPERATIONS.md`, `STRATEGY.md`). Add the originals here if you have them.
 
+The brief for the next pass is `docs/research/PASS-4-BRIEF.md` — what to ask,
+and what three of these passes already answered so it is not asked twice.
+
 - `Aldershot Handoff Spec v3.md`
 - `compass_artifact_wf-047d6e38-d917-5c29-9f2d-60ba4dca2e5a_text_markdown.md`
 - `compass_artifact_wf-4b2a233c-6f74-5549-9441-39dd33a735e1_text_markdown.md`
