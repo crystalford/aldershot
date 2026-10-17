@@ -73,6 +73,8 @@ test("attaching toggles, and survives a page load in the URL", () => {
   const base: RoomData = {
     tab: "videos",
     attached: [],
+  threadNames: [],
+  mode: "meaning" as const,
     q: "",
     meaningUnavailable: false,
     working: [],
@@ -89,7 +91,10 @@ test("attaching toggles, and survives a page load in the URL", () => {
   /* &amp;, because the href is HTML-escaped — which is correct, and the thing
      a test written against the source rather than the output gets wrong. */
   assert.match(none, /href="\/\?tab=videos&amp;attach=srcA"/, "attaching adds it");
-  assert.equal((none.match(/>Attach</g) ?? []).length, 2);
+  /* "Attach all" is the prototype's word — a video row attaches the whole
+     video, and "Attach" alone read as attaching the row you were looking at.
+     The old label was mine; this test was pinning it. */
+  assert.equal((none.match(/>Attach all</g) ?? []).length, 2);
   assert.ok(!/>Attached</.test(none));
   assert.ok(!/name="sourceIds"/.test(none), "nothing attached, nothing carried");
 

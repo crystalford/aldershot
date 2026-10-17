@@ -36,6 +36,8 @@ export interface RoomData {
   q: string;
   /** True when meaning search was asked for and could not answer. */
   meaningUnavailable: boolean;
+  /** Which retriever was asked for. Both run; this is what the person chose. */
+  mode: "meaning" | "exact";
   /** Every video read, newest first. */
   sources: Array<{
     id: string;
@@ -55,6 +57,8 @@ export interface RoomData {
   projects: Array<{ id: string; title: string; kind: string; updated_at: number }>;
   /** Totals for the summary line, counted rather than estimated. */
   counts: { sources: number; moments: number; threads: number };
+  /** What the threads are called, for the archive card. */
+  threadNames: string[];
 }
 
 /**
@@ -118,6 +122,35 @@ const GROW: Array<{ tag: string; name: string; what: string; say: string }> = [
   },
 ];
 
+/**
+ * THE TITLE ROW. It did not exist, and it carries the product's main nav.
+ *
+ * Rendering the prototype next to the build showed this first: "Your footage"
+ * with the archive's counts beside it, and on the right + Add and the four
+ * tabs — Footage · Blocks · Words · Shorts. I had put the counts loose in the
+ * centre column and the tabs inside it, which made the centre do the job of
+ * the chrome and left the product with no visible top-level navigation.
+ *
+ * BLOCKS, WORDS AND SHORTS ARE NOT CONTROLS HERE. They are what the centre
+ * becomes once a project is open, and with none open there is nothing for
+ * them to show. Rendered as dim text rather than as links, because a link
+ * that goes nowhere is the failure this codebase keeps catching — and they
+ * are not permanently disabled, they are simply a state away.
+ */
+function titleRow(d: RoomData): string {
+  const tab = (name: string, on: boolean) =>
+    `<span data-content style="font-size:${SIZE.secondary};font-weight:${on ? 600 : 500};padding:4px 11px;border-radius:${RADIUS.button};background:${on ? C.raised : "transparent"};color:${on ? C.ink : C.ink32}">${name}</span>`;
+
+  return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Your footage</span>
+    <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(summaryLine(d.counts))}</span>
+    <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};padding:5px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};text-decoration:none">+ Add</a>
+    <span style="flex:none;display:flex;gap:2px;align-items:center">
+      ${tab("Footage", true)}${tab("Blocks", false)}${tab("Words", false)}${tab("Shorts", false)}
+    </span>
+  </div>`;
+}
+
 const label = (text: string) =>
   `<div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">${text}</div>`;
 
@@ -148,11 +181,12 @@ function verbCard(v: { tag: string; name: string; what: string; say: string }, a
  */
 function direction(attached: string[]): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
-    ${label("MAKE")}
+    <div data-content style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">Pick what to make, or attach footage on the right and say it. Either way this becomes the project — its read, its rules, every change with Undo.</div>
+    <div style="margin-top:6px">${label("MAKE")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${VERBS.map((v) => verbCard(v, v.accent)).join("")}</div>
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
-    ${composer(attached)}
+    ${composer(attached, { room: true })}
   </div>`;
 }
 
@@ -163,13 +197,39 @@ function direction(attached: string[]): string {
  * be computed honestly is not shown — the same rule the clean-up chips follow
  * — so a library with no threads yet simply does not mention threads.
  */
-function summary(c: RoomData["counts"]): string {
+function summaryLine(c: RoomData["counts"]): string {
   const bits = [
     `${c.sources} video${c.sources === 1 ? "" : "s"} read`,
     `${c.moments} moment${c.moments === 1 ? "" : "s"}`,
   ];
   if (c.threads) bits.push(`${c.threads} thread${c.threads === 1 ? "" : "s"}`);
-  return `<div data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${esc(bits.join(" · "))}</div>`;
+  return bits.join(" · ");
+}
+
+/**
+ * WHAT'S IN YOUR ARCHIVE — a paragraph, not a count.
+ *
+ * The prototype writes it: "Three vlogs, one question — whether to leave the
+ * city for the house. You circle it for two and a half hours across five
+ * threads and answer it once, on Sunday at 44:02." That is a READING of the
+ * library, and it is the first thing in the centre column.
+ *
+ * We cannot write that yet — it needs a pass over every transcript, and
+ * inventing a sentence that sounds like one would be the product claiming to
+ * have read something it has not. So the card says what IS true: what is in
+ * there, counted, and the threads it found. The card exists at the right size
+ * in the right place, and gets its paragraph when something can honestly
+ * produce one.
+ */
+function archiveCard(d: RoomData): string {
+  if (!d.counts.sources) return "";
+  const threads = d.threadNames.slice(0, 4);
+  return `<div style="padding:13px 15px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div data-content style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">WHAT'S IN YOUR ARCHIVE</div>
+    <div data-content style="margin-top:7px;font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">${esc(
+      summaryLine(d.counts) + (threads.length ? ` — ${threads.join(", ")}` : "")
+    )}</div>
+  </div>`;
 }
 
 const TABS: Array<[RoomTab, string]> = [
@@ -198,18 +258,29 @@ function tabs(active: RoomTab, counts: RoomData["counts"], projects: number): st
  * Footage page uses, because it is the same fact and a second wording for it
  * would be a second thing to keep true.
  */
-function searchBar(q: string, unavailable: boolean): string {
-  return `<form method="get" action="/room" style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
+function searchBar(q: string, unavailable: boolean, mode: "meaning" | "exact"): string {
+  return `<form method="get" action="/" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <input type="hidden" name="tab" value="highlights"/>
     <!-- Classless for the same reason the verb cards are: it is a real form
          that submits itself, so there is nothing for the client to wire, and
          a class would claim otherwise. -->
     <input type="search" name="q" value="${esc(q)}" autocomplete="off"
-      placeholder="Search everything you have shot"
-      style="width:100%;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);color:${C.ink};font-family:inherit;font-size:${SIZE.body}"/>
+      placeholder="Search every transcript by meaning — “money”, “Mum”, “where I decide”"
+      style="flex:1 1 240px;min-width:min(200px,100%);padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);color:${C.ink};font-family:inherit;font-size:${SIZE.body}"/>
+    <!--
+      BY MEANING OR EXACT WORDS, which the prototype offers and I had left
+      out — the whole point of the two retrievers is that a person can ask
+      for either. The mode parameter is read by the server, so the gate's
+      rule about linked queries covers it. NO BACKTICKS IN HERE: this is
+      inside a template literal and quoting a name with them ends it.
+    -->
+    <span style="flex:none;display:flex;gap:2px;align-items:center">
+      <button type="submit" name="mode" value="meaning" style="font-size:${SIZE.meta};font-weight:600;padding:7px 11px;border-radius:${RADIUS.button};border:none;cursor:pointer;font-family:inherit;background:${mode === "exact" ? "transparent" : C.raised};color:${mode === "exact" ? C.ink32 : C.ink}">By meaning</button>
+      <button type="submit" name="mode" value="exact" style="font-size:${SIZE.meta};font-weight:600;padding:7px 11px;border-radius:${RADIUS.button};border:none;cursor:pointer;font-family:inherit;background:${mode === "exact" ? C.raised : "transparent"};color:${mode === "exact" ? C.ink : C.ink32}">Exact words</button>
+    </span>
     ${
       unavailable
-        ? `<div data-content style="padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
+        ? `<div data-content style="flex:1 1 100%;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
         : ""
     }
   </form>`;
@@ -255,6 +326,15 @@ function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string
    * enough that nothing looked wrong, which is exactly why it survived.
    */
   const on = attached.includes(s.id);
+  /*
+   * HOW DEEPLY IT WAS READ, which the prototype shows as READ · WORDS +
+   * SCREEN. Ours is words only — there is no visual pass, no shot detection
+   * and no OCR — so it says WORDS, because claiming SCREEN would be claiming
+   * a reading that never happened. The badge gets its second half when the
+   * visual tier exists.
+   */
+  const depth = s.transcript_state === "ready" ? "READ · WORDS" : "";
+  const mins = s.duration_s ? `${Math.floor(s.duration_s / 60)}:${String(Math.round(s.duration_s % 60)).padStart(2, "0")}` : "";
   return `<span style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface}">
     <a href="/sources/${esc(s.id)}" style="display:flex;gap:12px;align-items:center;flex:1;min-width:0;text-decoration:none;color:inherit">
       <span style="flex:none;width:72px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:${C.canvas};display:block">${
@@ -264,10 +344,17 @@ function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string
       }</span>
       <span style="flex:1;min-width:0">
         <span data-content style="display:block;font-size:${SIZE.body};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</span>
-        <span data-content style="display:block;margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(read)}${s.clips ? ` · ${s.clips} moment${s.clips === 1 ? "" : "s"}` : ""}</span>
+        <span data-content style="display:block;margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(
+        [mins, read, s.clips ? `${s.clips} moment${s.clips === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
+      )}</span>
       </span>
     </a>
-    <a href="${esc(attachHref(tab, attached, s.id))}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${on ? accentBg(ACCENT.gold) : C.pill};color:${on ? ACCENT.gold : C.ink70};text-decoration:none;white-space:nowrap">${on ? "Attached" : "Attach"}</a>
+    ${
+      depth
+        ? `<span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.05em;padding:3px 7px;border-radius:3px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};white-space:nowrap">${depth}</span>`
+        : ""
+    }
+    <a href="${esc(attachHref(tab, attached, s.id))}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${on ? accentBg(ACCENT.gold) : C.pill};color:${on ? ACCENT.gold : C.ink70};text-decoration:none;white-space:nowrap">${on ? "Attached" : "Attach all"}</a>
   </span>`;
 }
 
@@ -309,10 +396,23 @@ function footage(d: RoomData): string {
       : empty("Nothing made yet.");
   }
 
-  return `<div style="flex:1 1 420px;min-width:min(320px,100%)">
-    ${summary(d.counts)}
-    ${searchBar(d.q, d.meaningUnavailable)}
-    <div style="margin-top:18px">${tabs(d.tab, d.counts, d.projects.length)}</div>
+  /*
+   * THE ORDER IS THE PROTOTYPE'S, and it was wrong in three ways.
+   *
+   * Videos · Highlights · Projects sit at the TOP with the attach
+   * instruction beside them and + Add footage on the right — they are how you
+   * choose what to look at, so they come before the thing they choose. The
+   * archive card is next, then search, then the list. I had the counts
+   * floating, search above the tabs, and no card at all.
+   */
+  return `<div style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+      ${tabs(d.tab, d.counts, d.projects.length)}
+      <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.meta};color:${C.ink32}">Click a moment to attach it, then say what to make — or pick a type on the left.</span>
+      <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};text-decoration:none;white-space:nowrap">+ Add footage</a>
+    </div>
+    ${archiveCard(d)}
+    ${searchBar(d.q, d.meaningUnavailable, d.mode)}
     ${body}
   </div>`;
 }
@@ -327,8 +427,9 @@ export function renderRoom(d: RoomData): string {
    * account rather than either half, and because an upload in progress is the
    * thing a person is most likely to have come back to check.
    */
-  return `${d.working.length ? workingRow(d.working) : ""}
-  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:${d.working.length ? "20px" : "0"}">
+  return `${titleRow(d)}
+  ${d.working.length ? workingRow(d.working) : ""}
+  <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:20px">
     ${direction(d.attached)}
     ${footage(d)}
   </div>`;

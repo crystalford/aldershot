@@ -757,6 +757,10 @@ const roomHandler = async (c: Ctx) => {
    * a video that is not there.
    */
   const attachParam = (c.req.query("attach") || "").split(",").filter(Boolean);
+  /* Which retriever the person asked for. Both still run and fuse — this
+     says which one they chose to see first, and whether to say the index is
+     off. "exact" means they asked for the words, so the notice is not news. */
+  const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
 
   const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
     listSources(c.env.DB, user.id, "newest"),
@@ -832,7 +836,9 @@ const roomHandler = async (c: Ctx) => {
         tab,
         attached,
         q,
-        meaningUnavailable,
+        mode,
+        meaningUnavailable: mode === "exact" ? false : meaningUnavailable,
+        threadNames: threads.map((t) => t.name),
         working,
         sources: sources.map((s) => ({
           id: s.id,

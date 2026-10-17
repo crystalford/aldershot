@@ -92,7 +92,7 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
  * unwired, which is exactly the kind of failure the wiring check exists for
  * and would not catch, because the ids would still all be present somewhere.
  */
-export function composer(attached: string[] = []): string {
+export function composer(attached: string[] = [], opts: { room?: boolean } = {}): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
@@ -115,7 +115,14 @@ export function composer(attached: string[] = []): string {
     <div id="dropHint" hidden style="position:absolute;inset:0;border-radius:${RADIUS.composer};box-shadow:inset 0 0 0 2px ${ACCENT.gold};background:rgba(217,179,106,0.07);pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:2">
       <span style="font-size:${SIZE.body};font-weight:600;color:${ACCENT.gold}">Drop it here</span>
     </div>
-    <textarea name="brief" id="brief" rows="2" placeholder="Say what you want out of it — or drop a video in first" style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.wordmark};padding:14px 14px 10px;resize:none;line-height:1.5;font-family:${FONT.ui}"></textarea>
+    <!--
+      THE ROOM'S COMPOSER SAYS SOMETHING DIFFERENT, because in the room there
+      is footage on the right to attach and here there was not. Rendering the
+      prototype beside the build is what showed it: mine still read "Say what
+      you want out of it — or drop a video in first" and ended in "Begin →",
+      which is the retired design's wording for a page that no longer exists.
+    -->
+    <textarea name="brief" id="brief" rows="2" placeholder="${opts.room ? "Attach footage on the right, or say what you want" : "Say what you want out of it — or drop a video in first"}" style="width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;color:${C.ink};font-size:${SIZE.wordmark};padding:14px 14px 10px;resize:none;line-height:1.5;font-family:${FONT.ui}"></textarea>
     <div id="attached" hidden style="display:flex;align-items:center;gap:10px;margin:0 8px 4px 14px;padding:7px 9px;border-radius:${RADIUS.input};background:#111114">
       <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)"></div>
       <span id="attachedName" style="flex:1;min-width:0;font-size:${SIZE.secondary};color:rgba(236,236,241,0.8);font-family:${FONT.mono};overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -128,8 +135,14 @@ export function composer(attached: string[] = []): string {
         <span>Video</span>
         <input type="file" accept="video/*" multiple id="filePick" style="display:none"/>
       </label>
-      <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${chips}</div>
-      <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Begin →</button>
+      <!--
+        No chips in the room. One Take's composer is the text, the dial and
+        the mic — the chips belong to the project state, where they are
+        "Lose the house thread" and "Keep it under three minutes" rather than
+        generic openers. Kept on the retired Home, which still has them.
+      -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${opts.room ? "" : chips}</div>
+      <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${opts.room ? "Run it" : "Begin →"}</button>
     </div>
   </form>`;
 }
