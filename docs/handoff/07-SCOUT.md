@@ -1,6 +1,6 @@
 # 07 · Scout, missions, ghosts
 
-The archive answers "what do I have?" Scout answers "what would make this video better?" — the proof a claim needs, the other side, the original a clip came from, the context a viewer is missing. Finding footage outside is how he does it, not what he's for. It is the open-world step in the pictures source order and a state of the room — not a new surface. Full research: `labs/SCOUT.md`, `labs/SOURCES.md`, `labs/DOSSIER.md`. Labs screen: `labs/Scout.dc.html`.
+The archive answers "what do I have?" Scout answers "what would make this video better?" — the proof a claim needs, the other side, the original a clip came from, the context a viewer is missing. Finding footage outside is how he does it, not what he's for. It is the open-world step in the pictures source order and a state of the room — not a new surface. **To build it, read `18-SCOUT-BUILD-SPEC.md`.** Research: `labs/SCOUT.md`, `labs/SOURCES.md`, `labs/DOSSIER.md`. Labs screen and fixtures: `labs/Scout.dc.html`, `labs/scout-sample.js`.
 
 ## Scout is a choice per project, not a trigger
 

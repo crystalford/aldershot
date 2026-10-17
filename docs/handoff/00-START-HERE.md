@@ -29,6 +29,7 @@ Aldershot is a hands-off video editor for people who make videos out of footage 
 | 15 | `15-DESIGN-LANGUAGE.md` | The visual system the prototype uses; build UI to it |
 | 16 | `16-STATE-OF-PLAY.md` | Where the repo is against the prototype and this spec; what to keep, replace, build; the first five PRs |
 | 17 | `17-STORAGE-AND-NEOLOG.md` | The read vs the video; every video transcribed and searchable; reading broadly across many videos; where footage can live; importing the Neolog archive (R2 + its existing word table) |
+| 18 | `18-SCOUT-BUILD-SPEC.md` | **Scout, buildable**: architecture, tables, every step with its schema and rule, the verifier, the stopping math, adapters and quotas, match-back, phases with acceptance tests |
 | — | `PR-1-HYGIENE.md` | The first pull request for the repo, file by file |
 | — | `PR-1-HYGIENE.md` | The first pull request, step by step: retire the old design, bring in the current prototype and this package, repoint the fidelity scripts, declare the dead-letter queue |
 | — | `CLAUDE.md` | The short manual for Claude Code — copy to the code repo root |

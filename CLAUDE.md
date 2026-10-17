@@ -12,6 +12,12 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
 - `docs/handoff/11-BUILD-ORDER.md` — what to build now and how it's accepted
 - `docs/handoff/14-GLOSSARY.md` — the words to use
 - `design/one-take/Aldershot One Take.dc.html` is the behavioural spec; `design/one-take/footage.js` is the reference rule engine. Port it, don't reinvent it.
+- Before touching Scout: `docs/handoff/18-SCOUT-BUILD-SPEC.md` (the build
+  spec), then `docs/labs/SCOUT.md`, `SOURCES.md`, `DOSSIER.md` for the
+  evidence. Doc 07 is the product summary only — reading it and building from
+  it is the mistake this line exists to prevent.
+- `docs/research/raw/` is the original research, unedited. The handoff wins
+  where they disagree; the raw is there for when the handoff is silent.
 - `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
 
 ## When the documents disagree

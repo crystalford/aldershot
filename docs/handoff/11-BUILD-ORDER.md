@@ -44,7 +44,7 @@ The checklist with fixes; typed pictures → automatic labels; the cue sheet, di
 
 - **Accept:** an export with a generated segment carries the label and the cue-sheet entry without user action; an export never has a silent ghost (the render asks per ghost); a must-keep pair is never split by any length target; loudness measures within ±1 LU of target on three test mixes; the dispute file lists every external clip with fraction used.
 
-## Phase 7 — Scout v0 and v1
+## Phase 7 — Scout v0 and v1 (spec: `18-SCOUT-BUILD-SPEC.md`)
 
 v0: behaviour-first decomposition, four families, metadata triage, deep links, the board, the toggle and default, External moments in the archive, ghosts in the cut, missions from the cut, attribution written. v1: map–reduce transcript scan over open sources and user captures, deterministic verification, knee + coverage stopping, gap list, diligence log, match-back by words.
 
