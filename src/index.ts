@@ -63,6 +63,9 @@ import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
+import { loadRules } from "./rule-store.ts";
+import { effectLine, toFootageSet } from "./rules.ts";
+import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
@@ -73,7 +76,7 @@ import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
-import { assembleFromLibrary } from "./assemble.ts";
+import { assembleFromLibrary, CANDIDATE_POOL } from "./assemble.ts";
 import { claimPassUndo, passLog } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
 
@@ -1245,6 +1248,26 @@ app.get("/p/:id/:stagePath", async (c) => {
         cameFrom: cameFrom(c.req.header("referer")),
         job,
         passes,
+        /*
+         * THE RULES THAT PRODUCED THIS CUT, with what each is doing now.
+         *
+         * Empty for an edit that began with a video — those are the staged
+         * editor's and have no rule set. An assembled cut has one, stored at
+         * assembly, and its effect is recomputed here rather than stored:
+         * an effect is a fact about the CURRENT footage, and a stored one goes
+         * stale the moment a moment is struck.
+         */
+        rules: await (async () => {
+          const stored = await loadRules(c.env.DB, project.id);
+          if (!stored.length) return [];
+          const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
+          const set = toFootageSet(pool, momentTags);
+          return stored.map((r) => ({
+            text: r.text ?? r.kind,
+            on: r.on,
+            effect: effectLine(stored, r, { set }),
+          }));
+        })(),
       }) +
         exportPanel(project.id, user.plan) +
         exportsStrip({ projectId: project.id, renders }),

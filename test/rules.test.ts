@@ -25,6 +25,7 @@ import {
   applyRule,
   ruleEffect,
   describe,
+  effectLine,
   fmt,
   toFootageSet,
   wordDur,
@@ -317,4 +318,71 @@ test("the cut describes itself in terms somebody can check", () => {
     describe(compute(SEED, { set }), SEED, " of 8:00 — that is everything that matched"),
     /· 5:59 of 8:00 — that is everything that matched · one thread at a time/,
   );
+});
+
+test("an order rule's effect says what changed, not what it is called", () => {
+  /*
+   * The line a rule shows is the explanation layer — "without it the product
+   * is a black box with toggles". An order rule changes no MEMBERSHIP, so a
+   * diff reports zero for the one rule that decides what you watch first, and
+   * the first version of this duly printed "nothing here touches it" on it.
+   *
+   * Restating its own sentence is no better: "Run it one thread at a time"
+   * answered by "one thread at a time" tells nobody anything. So it reports
+   * what the cut now opens on, which is its visible consequence.
+   */
+  /*
+   * A SET WHERE THE THREADS INTERLEAVE, which the reference's own sample does
+   * not — and that is worth knowing. In the sample each source carries its own
+   * threads in time order, so "one thread at a time" produces the SAME
+   * sequence as "as it happened" and no honest effect line can tell them
+   * apart there. Two earlier versions of this test were measuring that
+   * coincidence: one reported what the cut opens on (the same moment under all
+   * three orders, because the strongest line is also the earliest kept one),
+   * and one reported a positional diff of zero.
+   */
+  const woven = {
+    STRANDS: ["why", "cost"],
+    CLIPS: [
+      { id: "w1", src: "A", ts: "0:30", dur: 20, tags: ["core"], strand: "why", text: "I don't like who I am here" },
+      { id: "w2", src: "A", ts: "1:30", dur: 20, tags: ["core"], strand: "cost", text: "rent halves and I lose everyone" },
+      { id: "w3", src: "A", ts: "2:30", dur: 20, tags: ["core", "strong"], strand: "why", text: "every plan is a plan to be elsewhere" },
+    ] as Moment[],
+  };
+  const orderOf = (o: "time" | "strand" | "open") => {
+    const rs: Rule[] = [
+      { id: 1, kind: "keep", tag: "core", on: true },
+      { id: 2, kind: "order", order: o, on: true },
+    ];
+    return effectLine(rs, rs[1], { set: woven });
+  };
+
+  assert.equal(orderOf("strand"), "moves 2 of 3", "why, why, cost — against why, cost, why");
+  assert.ok(!/one thread/.test(orderOf("strand")), "not a restatement of the rule");
+  /* With the rule off compute() falls back to chronological, so asking for
+     chronological is asking for what you already have. */
+  assert.equal(orderOf("time"), "already in that order");
+  assert.notEqual(orderOf("strand"), orderOf("time"));
+  assert.equal(orderOf("open"), "moves 3 of 3", "the strongest line to the front moves everything");
+
+  /* And the sample's own order rule genuinely changes nothing about the
+     sequence — only the gaps, which the gap rule is credited for. */
+  const sampleOrder = effectLine(SEED, SEED[2], { set });
+  assert.equal(sampleOrder, "already in that order");
+});
+
+test("every other rule's effect comes from the diff", () => {
+  assert.equal(effectLine(SEED, SEED[0], { set }), "brings in 8", "the keep rule is why there is a cut");
+  assert.equal(
+    effectLine(SEED, SEED[1], { set }),
+    "nothing here touches it — it watches for it",
+    "nothing core is chat in this set, and saying so is the honest answer",
+  );
+  assert.equal(effectLine(SEED, SEED[3], { set }), "adds 48s to camera", "the gap rule adds seconds, not moments");
+
+  const capped = applyRule(SEED, { id: 9, kind: "cap", secs: 180, on: true });
+  assert.match(effectLine(capped, capped.find((r) => r.kind === "cap")!, { set }), /^takes \d+ off the cut$/);
+
+  const off = SEED.map((r) => (r.id === 1 ? { ...r, on: false } : r));
+  assert.equal(effectLine(off, off[0], { set }), "off — footage as shot");
 });

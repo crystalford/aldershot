@@ -85,6 +85,13 @@ export interface CutData {
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /** Every instruction given to the model on this cut, and what came of it. */
   passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
+  /**
+   * The rules that produced this cut, when it was made from rules at all.
+   *
+   * Empty for every edit that began with a video, because those are still the
+   * staged editor's and have no rule set. An assembled cut has one.
+   */
+  rules: Array<{ text: string; on: boolean; effect: string }>;
 }
 
 /**
@@ -485,6 +492,38 @@ function passLogPanel(passes: CutData["passes"]): string {
 }
 
 /**
+ * THE RULES THAT MADE THIS CUT, and what each one is doing right now.
+ *
+ * "Every rule shows what it does right now … This is the explanation layer;
+ * without it the product is a black box with toggles" — 04-RULE-ENGINE.md.
+ * Until this existed an assembled cut arrived as a list of moments from
+ * several videos with no account of why those and not others, which is the
+ * exact review gap this product is meant to be better at than everyone else.
+ *
+ * Read-only for now: it says what the rules did. Switching one off re-produces
+ * the cut, and that needs the recompute route Phase 2 finishes with — showing
+ * a toggle that does nothing would be worse than showing none, and the
+ * conventions check fails a permanently disabled control for that reason.
+ */
+function rulesPanel(rules: CutData["rules"]): string {
+  if (!rules.length) return "";
+
+  const rows = rules
+    .map(
+      (r) => `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span data-content style="flex:1 1 160px;min-width:min(150px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,${r.on ? "0.8" : "0.38"});line-height:1.5">${esc(r.text)}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};color:${r.on ? ACCENT.gold : C.ink32}">${esc(r.effect)}</span>
+      </div>`,
+    )
+    .join("");
+
+  return `<div style="margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,0.05)">
+    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">THE RULES</div>
+    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows}</div>
+  </div>`;
+}
+
+/**
  * FIND, ON THE DOCUMENT WHERE IT BELONGS.
  *
  * This was merged into the assistant yesterday, on the argument that find and
@@ -606,6 +645,10 @@ function assistant(d: CutData, player: string): string {
 
   return `<div class="asst" data-project="${esc(d.projectId)}">
     <div class="asst-top">${player}</div>
+    <!-- What produced this cut, when rules did. Above the conversation
+         because it is the standing answer to "why these moments"; the
+         conversation below it is the history of asking. -->
+    ${rulesPanel(d.rules)}
 
     <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}

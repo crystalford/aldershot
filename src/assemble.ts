@@ -30,6 +30,7 @@ import { listMoments, searchMeaning, type Moment } from "./library.ts";
 import { applyRule, compute, describe, toFootageSet, type Rule } from "./rules.ts";
 import { contentWords, momentTags, NOISE } from "./moment-tags.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
+import { saveRules } from "./rule-store.ts";
 import { createProject, putBeats } from "./projects.ts";
 import { recordPass } from "./passes.ts";
 import { titleFromBrief } from "./projects.ts";
@@ -390,7 +391,18 @@ export async function assembleFromLibrary(
     { id: "r-order", kind: "order", order: "strand", on: true, text: "Run it one thread at a time." },
   ];
   asked.rules.forEach((r, i) => {
-    rules = applyRule(rules, { ...r, id: `r-said-${i}` });
+    /*
+     * SAYING WHAT THE DEFAULT ALREADY DOES ADDS NOTHING.
+     *
+     * "Take out the hellos" parses to a drop on `housekeeping`, and the seed
+     * set already has one — so folding it in blind put the same rule in the
+     * pane twice, in the user's words and ours, both reporting the same
+     * effect. applyRule is right not to dedupe (a second KEEP on a different
+     * tag is a real second rule), so the check belongs here: same kind, same
+     * tag, already on, nothing to add.
+     */
+    const same = rules.some((x) => x.on && x.kind === r.kind && x.tag && x.tag === r.tag);
+    if (!same) rules = applyRule(rules, { ...r, id: `r-said-${i}` });
   });
 
   /*
@@ -450,6 +462,17 @@ export async function assembleFromLibrary(
   }));
 
   await putBeats(env.DB, project.id, beats);
+
+  /*
+   * AND THE RULES, which are the actual record.
+   *
+   * Beats are the outcome; this is the input that produced them. Without it an
+   * assembled cut arrived with no account of why those moments and not others,
+   * and nothing could be switched off because nothing had been written down —
+   * invariant 1 says a cut is re-produced from rules, and until this line it
+   * could not be re-produced at all.
+   */
+  await saveRules(env.DB, project.id, rules);
 
   /*
    * IT SAYS WHAT IT DID.

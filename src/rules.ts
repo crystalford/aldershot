@@ -516,3 +516,55 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
     (gaps ? ` · ${gaps} to-camera gap${gaps === 1 ? "" : "s"}` : "")
   );
 }
+
+/**
+ * WHAT ONE RULE IS DOING RIGHT NOW, in the words the pane shows.
+ *
+ * 04-RULE-ENGINE.md gives the shapes: "8 of 14 moments · 2 to-camera gaps",
+ * "takes 3 slow openers off the shortlist", "nothing here touches it — it
+ * watches for it", "off — footage as shot".
+ *
+ * Here rather than in the route because it is the explanation layer and it has
+ * to be testable: a line that says a rule did nothing when it decided what you
+ * watch first is worse than no line, and that is exactly what the first
+ * version did to every order rule.
+ *
+ * AN ORDER RULE CHANGES NO MEMBERSHIP, so a membership diff reports zero for
+ * the one rule that decides the shape of the thing. It is reported by what the
+ * cut now OPENS on, which is its visible consequence and is not a restatement
+ * of its own sentence — "Run it one thread at a time" answered by "one thread
+ * at a time" tells nobody anything.
+ */
+export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof compute>[1]): string {
+  if (!rule.on) return "off — footage as shot";
+
+  if (rule.kind === "order") {
+    /*
+     * HOW MANY MOMENTS IT MOVES, against the order with the rule switched off
+     * — which is chronological, because that is what compute() falls back to.
+     *
+     * The first version reported what the cut OPENS on. True, and in the
+     * reference's own sample it is the same moment under all three orders:
+     * the strongest line there is also the earliest kept one. An effect line
+     * that reads identically whichever order is chosen is a constant wearing
+     * a measurement's clothes, which is the thing this layer exists not to be.
+     */
+    const withIt = compute(rules, opts).rows.filter((r) => r.kind === "clip").map((r) => r.key);
+    const without = compute(
+      rules.map((r) => (r.id === rule.id ? { ...r, on: false } : r)),
+      opts,
+    )
+      .rows.filter((r) => r.kind === "clip")
+      .map((r) => r.key);
+    if (!withIt.length) return "nothing to order yet";
+    const moved = withIt.filter((k, i) => without[i] !== k).length;
+    return moved ? `moves ${moved} of ${withIt.length}` : "already in that order";
+  }
+
+  const e = ruleEffect(rules, rule, opts);
+  if (e.removed) return `takes ${e.removed} off the cut`;
+  if (e.added) return `brings in ${e.added}`;
+  /* A gap rule adds seconds without adding moments. */
+  if (e.secs) return `adds ${Math.round(e.secs)}s to camera`;
+  return "nothing here touches it — it watches for it";
+}

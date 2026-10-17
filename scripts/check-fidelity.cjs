@@ -26,8 +26,25 @@ const ROOT = path.resolve(__dirname, '..');
  * against the app prototype alone reported both of those as inventions.
  */
 const APP_PROTO = fs.readFileSync(path.join(ROOT, 'design/Aldershot.dc.html'), 'utf8');
+/*
+ * THE NEW PROTOTYPE, AS A SECOND ACCEPTED SOURCE — which is how this check
+ * gets repointed without red-lining the build.
+ *
+ * One Take is the design authority (see the README), but the shipped surfaces
+ * are still the retired design's, so swapping this file for that one fails
+ * almost every rendered string at once. Accepting EITHER is the migration:
+ * a surface that has not moved keeps passing against the prototype it was
+ * built from, anything written for One Take passes against One Take, and copy
+ * that exists in neither still fails — which is the only thing this check is
+ * actually for.
+ *
+ * It gets stricter as surfaces move, not looser: when a surface is rebuilt,
+ * its strings stop matching the retired file and start matching this one.
+ * Drop the retired file from PROTO once nothing needs it.
+ */
+const ONE_TAKE_PROTO = fs.readFileSync(path.join(ROOT, 'design/one-take/Aldershot One Take.dc.html'), 'utf8');
 const LANDING_PROTO = fs.readFileSync(path.join(ROOT, 'design/Landing.dc.html'), 'utf8');
-const PROTO = APP_PROTO + '\n' + LANDING_PROTO;
+const PROTO = APP_PROTO + '\n' + LANDING_PROTO + '\n' + ONE_TAKE_PROTO;
 const TOKENS = fs.readFileSync(path.join(ROOT, 'src/ui/tokens.ts'), 'utf8');
 
 let findings = 0;

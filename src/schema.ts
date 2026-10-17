@@ -96,6 +96,40 @@ const STATEMENTS: string[] = [
      UNIQUE(project_id, idx)
    )`,
 
+  /*
+   * THE RULES THAT MADE THE CUT, which is the only thing a cut actually is.
+   *
+   * Invariant 1: "Rules are the source of truth; a cut is re-produced from
+   * rules + moments, never stored as an outcome." The beats table stores the
+   * outcome, and until this existed that was ALL there was — so an assembled
+   * cut arrived with no account of why those moments and not others, and
+   * nothing could be switched off because nothing had been written down.
+   *
+   * `on` rather than a delete, because nothing in this product is deleted:
+   * a rule you disagree with switches off and the cut re-produces without it.
+   *
+   * Nullable everywhere below `kind` on purpose — a keep rule has a tag and
+   * no seconds, a cap has seconds and no tag, an order has neither. One table
+   * because they are one list in one pane, in one order, and splitting them
+   * by shape would make reading that list a union of five queries.
+   */
+  `CREATE TABLE IF NOT EXISTS rules (
+     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES v2_projects(id),
+     idx INTEGER NOT NULL,
+     kind TEXT NOT NULL,
+     on_ INTEGER NOT NULL DEFAULT 1,
+     text TEXT,
+     tag TEXT,
+     clip_ids TEXT,
+     ord TEXT,
+     secs INTEGER,
+     hand INTEGER NOT NULL DEFAULT 0,
+     wins INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL,
+     UNIQUE(project_id, idx)
+   )`,
+  `CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx)`,
+
   `CREATE TABLE IF NOT EXISTS renders (
      id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
      kind TEXT NOT NULL,
