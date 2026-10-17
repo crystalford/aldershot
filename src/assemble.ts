@@ -306,7 +306,7 @@ export function targetFromBrief(brief: string): { ms: number; said: boolean } {
   return { ms: DEFAULT_TARGET_MS, said: false };
 }
 
-const contentWords = (s: string): string[] => [
+export const contentWords = (s: string): string[] => [
   ...new Set(
     s.toLowerCase().split(/[^a-z0-9']+/).filter((t) => t.length > 2 && !NOISE.has(t)),
   ),
