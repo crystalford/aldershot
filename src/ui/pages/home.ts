@@ -92,13 +92,26 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
  * unwired, which is exactly the kind of failure the wiring check exists for
  * and would not catch, because the ids would still all be present somewhere.
  */
-export function composer(): string {
+export function composer(attached: string[] = []): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
   ).join("");
 
-  return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
+  /*
+   * ATTACHED FOOTAGE RIDES WITH THE SENTENCE.
+   *
+   * The room holds the selection in the URL so it survives a page load; the
+   * composer carries it into the request as hidden fields, so "tighten this"
+   * with two videos attached means those two and nothing else. Hidden rather
+   * than client state for the same reason the URL holds it: one copy of the
+   * truth, and the server reads exactly what the page showed.
+   */
+  const carry = attached
+    .map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`)
+    .join("");
+
+  return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">${carry}
     <div id="dropHint" hidden style="position:absolute;inset:0;border-radius:${RADIUS.composer};box-shadow:inset 0 0 0 2px ${ACCENT.gold};background:rgba(217,179,106,0.07);pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:2">
       <span style="font-size:${SIZE.body};font-weight:600;color:${ACCENT.gold}">Drop it here</span>
     </div>

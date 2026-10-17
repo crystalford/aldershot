@@ -349,9 +349,9 @@ export function clock(ms: number): string {
  */
 export async function recomputeFromRules(
   env: Env,
-  opts: { userId: string; projectId: string; rules: Rule[] },
+  opts: { userId: string; projectId: string; rules: Rule[]; scope?: string[] | null },
 ): Promise<{ kept: number; secs: number; moments: Moment[] } | null> {
-  const pool = await listMoments(env.DB, opts.userId, CANDIDATE_POOL);
+  const pool = inScope(await listMoments(env.DB, opts.userId, CANDIDATE_POOL), opts.scope);
   if (!pool.length) return null;
 
   const set = toFootageSet(pool, momentTags);
@@ -364,6 +364,23 @@ export async function recomputeFromRules(
 
   await putBeats(env.DB, opts.projectId, beatsFor(moments));
   return { kept: moments.length, secs: cut.secs, moments };
+}
+
+/**
+ * The moments that belong to this cut's attached footage.
+ *
+ * A null scope is the whole library, which is what "three minutes on whatever
+ * I have" means and what every project made before scope existed has. A list
+ * is what somebody pointed at — and once they have pointed, filling the cut
+ * with anything else is the product choosing footage they did not choose.
+ *
+ * Applied to the POOL rather than inside the engine, so the engine keeps one
+ * notion of a footage set and the rules never have to know where it came from.
+ */
+export function inScope<T extends { source_id: string }>(moments: T[], scope?: string[] | null): T[] {
+  if (!scope?.length) return moments;
+  const want = new Set(scope);
+  return moments.filter((m) => want.has(m.source_id));
 }
 
 /** The clip beats for a set of moments, in the order given. */
@@ -396,14 +413,19 @@ function beatsFor(moments: Moment[]) {
  */
 export async function assembleFromLibrary(
   env: Env,
-  opts: { userId: string; brief: string },
+  opts: { userId: string; brief: string; scope?: string[] | null },
 ): Promise<
   { projectId: string; used: number; how: string; runtimeMs: number; targetMs: number } | { error: string }
 > {
-  const { moments: pool, how } = await findMaterial(env, opts.userId, opts.brief);
+  const found = await findMaterial(env, opts.userId, opts.brief);
+  const how = found.how;
+  /* Attached footage only, when they attached some. */
+  const pool = inScope(found.moments, opts.scope);
   if (!pool.length) {
     return {
-      error: "Nothing in your library matches that yet — read a few more videos in, or say it differently.",
+      error: opts.scope?.length
+        ? "Nothing in what you attached matches that — try another video, or say it differently."
+        : "Nothing in your library matches that yet — read a few more videos in, or say it differently.",
     };
   }
 
@@ -498,6 +520,7 @@ export async function assembleFromLibrary(
     /* No video of its own. The one thing that makes this different. */
     source_id: null,
     brief: opts.brief,
+    scope: opts.scope,
   });
 
   /* The engine's own total, not the clips' — it includes the to-camera gaps

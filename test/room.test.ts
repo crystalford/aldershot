@@ -14,6 +14,7 @@ import { renderRoom, type RoomData } from "../src/ui/pages/room.ts";
 
 const base: RoomData = {
   tab: "videos",
+  attached: [],
   q: "",
   meaningUnavailable: false,
   working: [],

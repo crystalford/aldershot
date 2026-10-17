@@ -281,6 +281,23 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    */
   { table: "v2_clips", column: "embedded_at", ddl: "ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER" },
 
+  /*
+   * WHAT THIS PROJECT WAS ATTACHED TO, as a JSON array of source ids.
+   *
+   * A cut assembled from the library drew on ALL of it, which is right for
+   * "three minutes on whatever I have" and wrong for "tighten this" — the
+   * moment somebody points at two videos, the rules have to apply to those
+   * two and nothing else, or the cut quietly fills up with footage they did
+   * not choose.
+   *
+   * On the project rather than a join table because it is one short list that
+   * is always read whole, written once at assembly, and meaningless without
+   * the project. source_id stays what it is — a cut that belongs to ONE video
+   * — and this is the many-video answer beside it. Null means the whole
+   * library, which is what every project made before this column existed did.
+   */
+  { table: "v2_projects", column: "scope", ddl: "ALTER TABLE v2_projects ADD COLUMN scope TEXT" },
+
   // Script mode's transcript cuts, as JSON ranges. On the project because
   // Script edits the whole source transcript, not one block.
   { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },

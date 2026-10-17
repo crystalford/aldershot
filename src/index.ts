@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -77,7 +77,7 @@ import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
-import { assembleFromLibrary, CANDIDATE_POOL, recomputeFromRules } from "./assemble.ts";
+import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
@@ -742,6 +742,17 @@ const roomHandler = async (c: Ctx) => {
   const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
   const q = (c.req.query("q") || "").trim();
 
+  /*
+   * WHAT IS ATTACHED, from the URL.
+   *
+   * Server-rendered, so the selection has to survive a page load and the URL
+   * is the only place that cannot get out of step with what is on screen.
+   * Filtered against the user's own sources on render as well as on submit:
+   * a stale id in a bookmarked link should quietly drop out rather than show
+   * a video that is not there.
+   */
+  const attachParam = (c.req.query("attach") || "").split(",").filter(Boolean);
+
   const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
     listSources(c.env.DB, user.id, "newest"),
     listProjects(c.env.DB, user.id),
@@ -806,11 +817,15 @@ const roomHandler = async (c: Ctx) => {
     moments = await listMoments(c.env.DB, user.id, 60);
   }
 
+  const mine = new Set(sources.map((s) => s.id));
+  const attached = attachParam.filter((id) => mine.has(id));
+
   return c.html(
     page(
       { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
       renderRoom({
         tab,
+        attached,
         q,
         meaningUnavailable,
         working,
@@ -1432,7 +1447,11 @@ app.get("/p/:id/:stagePath", async (c) => {
           const stored = await loadRules(c.env.DB, project.id);
           if (!stored.length) return { rules: [], moments: [] };
 
-          const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
+          /* Attached footage only. Without this the Footage tab lists every
+             moment in the library against a cut that can only ever draw on
+             two videos, and every one of them reads "out · no rule keeps it"
+             — which is true and useless. */
+          const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
           const set = toFootageSet(pool, momentTags);
           const judged = compute(stored, { set }).st;
 
@@ -1565,7 +1584,7 @@ app.post("/api/passes/:passId/undo", async (c) => {
     } catch {
       return c.json({ error: "that one can't be taken back" }, 422);
     }
-    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored });
+    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored, scope: scopeOf(project) });
     if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
     await saveRules(c.env.DB, project.id, restored);
     return c.json({ ok: true, kept: out.kept, secs: out.secs });
@@ -2165,7 +2184,7 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
   if (rule.on === on) return c.json({ ok: true, unchanged: true });
 
   const next = rules.map((r) => (String(r.id) === ruleId ? { ...r, on } : r));
-  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
   if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
 
   await saveRules(c.env.DB, project.id, next);
@@ -2228,7 +2247,7 @@ app.post("/api/projects/:id/moments/:momentId", async (c) => {
     });
   }
 
-  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
   if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
   await saveRules(c.env.DB, project.id, next);
 
@@ -2817,7 +2836,7 @@ app.post("/api/projects/:id/passes", async (c) => {
         if (!same) next = applyRule(next, { ...r, id: ruleKey(r) });
       }
 
-      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
       if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
       await saveRules(c.env.DB, project.id, next);
 
@@ -3738,7 +3757,7 @@ app.get("/api/sources/:id", async (c) => {
 app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ sourceId: string; brief: string; upgrade: boolean }>(c);
+  const b = await body<{ sourceId: string; sourceIds?: unknown[]; brief: string; upgrade: boolean }>(c);
 
   /*
    * A BRIEF WITH NO VIDEO MEANS "OUT OF EVERYTHING I HAVE".
@@ -3756,7 +3775,25 @@ app.post("/api/begin", async (c) => {
     const brief = (b.brief || "").trim();
     if (!brief) return c.json({ error: "pick a video, or say what you want" }, 400);
 
-    const made = await assembleFromLibrary(c.env, { userId: user.id, brief });
+    /*
+     * ATTACHED FOOTAGE, WHEN THEY ATTACHED SOME.
+     *
+     * `sourceId` is one video and takes the single-source path. This is the
+     * many-video answer: say what you want with two videos attached and the
+     * rules apply to those two, which is what "tighten this" means when you
+     * have pointed at something. Ids are checked against the user's own
+     * sources rather than trusted, because a scope is a filter and a filter
+     * taking arbitrary strings is a way to ask about somebody else's library.
+     */
+    const asked = Array.isArray(b.sourceIds) ? b.sourceIds.filter((x) => typeof x === "string") : [];
+    let scope: string[] | null = null;
+    if (asked.length) {
+      const mine = new Set((await listSources(c.env.DB, user.id, "newest")).map((x) => x.id));
+      scope = asked.filter((id) => mine.has(id));
+      if (!scope.length) return c.json({ error: "those videos aren't here any more" }, 422);
+    }
+
+    const made = await assembleFromLibrary(c.env, { userId: user.id, brief, scope });
     if ("error" in made) return c.json({ error: made.error }, 422);
     return c.json({
       intent: "assemble",

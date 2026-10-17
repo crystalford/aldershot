@@ -28,6 +28,8 @@ export type RoomTab = "videos" | "highlights" | "projects";
 
 export interface RoomData {
   tab: RoomTab;
+  /** The sources attached so far, by id. A cut started now is scoped to them. */
+  attached: string[];
   /** What is being read or rendered right now. Empty when nothing is. */
   working: WorkingJob[];
   /** What was searched for. */
@@ -144,13 +146,13 @@ function verbCard(v: { tag: string; name: string; what: string; say: string }, a
  * your own words, and splitting them put the menu and the way to order from
  * it on opposite halves of the screen.
  */
-function direction(): string {
+function direction(attached: string[]): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
     ${label("MAKE")}
     <div style="display:flex;flex-direction:column;gap:5px">${VERBS.map((v) => verbCard(v, v.accent)).join("")}</div>
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
-    ${composer()}
+    ${composer(attached)}
   </div>`;
 }
 
@@ -216,7 +218,23 @@ function searchBar(q: string, unavailable: boolean): string {
 const empty = (text: string) =>
   `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">${esc(text)}</div>`;
 
-function videoRow(s: RoomData["sources"][number]): string {
+/**
+ * ATTACHING IS A LINK, not a checkbox.
+ *
+ * The room is server-rendered and the selection has to survive a page load,
+ * so it lives in the URL: ?attach=a,b. No client state to lose, no second
+ * copy of the truth, and the gate can see all of it — its new rule about
+ * links already demands that `attach` be a query the server reads.
+ *
+ * Toggling, because attaching the same video twice is a thing people do and
+ * the second press should take it off rather than add it again.
+ */
+function attachHref(tab: RoomTab, attached: string[], id: string): string {
+  const next = attached.includes(id) ? attached.filter((x) => x !== id) : [...attached, id];
+  return `/?tab=${tab}` + (next.length ? `&attach=${next.map(encodeURIComponent).join(",")}` : "");
+}
+
+function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string[]): string {
   /* The four real states (src/sources.ts), not invented ones — an earlier
      version of this checked for "done" and "error", which the column never
      holds, so every video read as "reading" for ever. */
@@ -225,17 +243,32 @@ function videoRow(s: RoomData["sources"][number]): string {
     : s.transcript_state === "failed" ? "couldn't read it"
     : s.transcript_state === "running" ? "reading"
     : "queued";
-  return `<a href="/sources/${esc(s.id)}" style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};text-decoration:none;color:inherit">
-    <span style="flex:none;width:72px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:${C.canvas};display:block">${
-      s.poster_r2_key
-        ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover"/>`
-        : ""
-    }</span>
-    <span style="flex:1;min-width:0">
-      <span data-content style="display:block;font-size:${SIZE.body};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</span>
-      <span data-content style="display:block;margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(read)}${s.clips ? ` · ${s.clips} moment${s.clips === 1 ? "" : "s"}` : ""}</span>
-    </span>
-  </button>`;
+  /*
+   * TWO GESTURES, TWO CONTROLS. The row opens the transcript; the button
+   * attaches. One control doing both could only ever do the wrong one half
+   * the time. A span wraps them, because a browser will not nest a link in a
+   * link.
+   *
+   * This function also closed with </button> while opening with <a>, from the
+   * commit that turned the verb cards into buttons — that edit replaced every
+   * matching close tag in the file rather than its own. Browsers are lenient
+   * enough that nothing looked wrong, which is exactly why it survived.
+   */
+  const on = attached.includes(s.id);
+  return `<span style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface}">
+    <a href="/sources/${esc(s.id)}" style="display:flex;gap:12px;align-items:center;flex:1;min-width:0;text-decoration:none;color:inherit">
+      <span style="flex:none;width:72px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:${C.canvas};display:block">${
+        s.poster_r2_key
+          ? `<img loading="lazy" src="/media/${esc(s.poster_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover"/>`
+          : ""
+      }</span>
+      <span style="flex:1;min-width:0">
+        <span data-content style="display:block;font-size:${SIZE.body};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</span>
+        <span data-content style="display:block;margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(read)}${s.clips ? ` · ${s.clips} moment${s.clips === 1 ? "" : "s"}` : ""}</span>
+      </span>
+    </a>
+    <a href="${esc(attachHref(tab, attached, s.id))}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${on ? accentBg(ACCENT.gold) : C.pill};color:${on ? ACCENT.gold : C.ink70};text-decoration:none;white-space:nowrap">${on ? "Attached" : "Attach"}</a>
+  </span>`;
 }
 
 function momentCard(m: RoomData["moments"][number]): string {
@@ -264,7 +297,7 @@ function footage(d: RoomData): string {
   let body: string;
   if (d.tab === "videos") {
     body = d.sources.length
-      ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.sources.map(videoRow).join("")}</div>`
+      ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.sources.map((v) => videoRow(v, d.tab, d.attached)).join("")}</div>`
       : empty("Nothing here yet — upload a video and it starts transcribing.");
   } else if (d.tab === "highlights") {
     body = d.moments.length
@@ -296,7 +329,7 @@ export function renderRoom(d: RoomData): string {
    */
   return `${d.working.length ? workingRow(d.working) : ""}
   <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:${d.working.length ? "20px" : "0"}">
-    ${direction()}
+    ${direction(d.attached)}
     ${footage(d)}
   </div>`;
 }
