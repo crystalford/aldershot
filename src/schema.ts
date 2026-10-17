@@ -358,6 +358,50 @@ const STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS uploads_by_user ON uploads(user_id, created_at)`,
 
   /*
+   * ONE ROW PER ITEM OF WORK, which this product did not have.
+   *
+   * labs/OPERATIONS.md's build order puts this first: "One state row per item
+   * — footage file, segment, generated shot, render chunk — with status,
+   * attempt, last_error_class, provider, cost_usd, idempotency_key,
+   * deadline_at ... A job is complete only when every item is terminal and
+   * failed_terminal is zero. Nothing can disappear."
+   *
+   * A job here has always been ONE row with a percentage on it, so "300
+   * processed, 200 didn't" had nowhere to be recorded: the job said 60%, then
+   * said ready, and the two hundred were gone. That is invariant 7's silent
+   * partial failure, and it is the most expensive kind of bug this product
+   * can have because the output looks finished.
+   *
+   * `idempotency_key` is a CONTENT ADDRESS, not an id — hash(inputs +
+   * directive + model + params), the same hash that keys the render cache, so
+   * a replay or a duplicate delivery collapses into one stored result. It is
+   * UNIQUE for that reason: two rows with one key is the cache miss that
+   * costs twice, and a key that collides across different work is the cache
+   * hit that answers wrongly.
+   *
+   * `cost_usd` accumulates across attempts, because per-job cost is the most
+   * important number in the business and a retry that cost money and then
+   * succeeded cost both.
+   */
+  `CREATE TABLE IF NOT EXISTS job_items (
+     id TEXT PRIMARY KEY,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     kind TEXT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'pending',
+     attempt INTEGER NOT NULL DEFAULT 0,
+     last_error_class TEXT,
+     provider TEXT,
+     cost_usd REAL NOT NULL DEFAULT 0,
+     idempotency_key TEXT NOT NULL UNIQUE,
+     deadline_at INTEGER,
+     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS job_items_by_job ON job_items(job_id, status)`,
+  /* The reconciler's own query: everything owed, oldest deadline first. A scan
+     of every item ever written would get slower every day the product runs. */
+  `CREATE INDEX IF NOT EXISTS job_items_owed ON job_items(status, deadline_at)`,
+
+  /*
    * SCOUT: a per-project research run, and what it found.
    *
    * Spec 18 section 2. One thing in it is deliberately NOT as written:
