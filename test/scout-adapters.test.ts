@@ -460,10 +460,13 @@ test("the D1 quota store counts a day, against the real table", async () => {
    */
   const { DatabaseSync } = await import("node:sqlite");
   const { readFileSync } = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
   const { fakeD1 } = await import("./helpers/fake-d1.ts");
   const { d1QuotaStore } = await import("../src/scout-adapters.ts");
 
-  const sql = readFileSync(new URL("../migrations/schema.sql", import.meta.url), "utf8");
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const sql = readFileSync(path.join(here, "../migrations/schema.sql"), "utf8");
   const ddl = sql
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split(";")
