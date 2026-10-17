@@ -168,3 +168,151 @@ table with provenance `yours-doc`"*, so the generalisation is half-written.
 
 This costs nothing to decide, it is most of what the thousand-clip case needs,
 and it does not wait for Pass 4.
+
+---
+
+# Part two — composition: how the sources build one video
+
+Added after the owner's second question, which was the better one: *how does
+the system suggest a full video essay, and build it from five of your clips,
+ten of Scout's, and voice-over over B-roll — over many passes, like an
+accumulation?*
+
+## What is already answered, so the pass does not redo it
+
+**The block level is specified and prototyped.** `04-RULE-ENGINE.md` already
+says the model directs "which moments back which point, the order, **each
+beat's visual job**, where the turn lands — as a typed directive with bounded
+settings", and the production solver includes "an integer solver for B-roll
+assignment". `labs/Essay to video.dc.html` carries that as a **director
+layer**: a sound role per beat (Voice over · Exhibit · Document · Card) and a
+**source per beat (shot new · archive · scout · generated)**.
+
+So *"five from the archive, ten from Scout, voice-over over B-roll"* is already
+the data model. Roles and provenance per block exist, by hand, in a labs board.
+What has no mechanism is everything **upstream and around** it.
+
+## The object that does not exist: an angle
+
+The word appears in this repo exactly three places, all in `docs/design/`,
+which is marked **superseded** — the retired "cinematic media company" vision
+with its Feed/Radar ideation surface. So *angles* were not argued away when the
+product changed shape. They fell out, and the owner has reinvented them from
+the other end.
+
+Today's flow is a one-way funnel: a claim, then beats, then footage per beat,
+then a cut. There is no representation of **a video that could be made** — and
+therefore no way to have several, compare them, or rank them.
+
+### Q5 · Can a corpus propose angles a person recognises as good?
+
+- Against the honest baseline, which is strong: the user says what they want in
+  a sentence, which is the whole premise of the front door. A slate of five
+  proposed angles has to beat *that*, not beat nothing.
+- Is there evidence that choosing between framings produces better work, or
+  only slower work? Editorial and newsroom practice on pitch slates, if the
+  literature exists; decision research on choice sets if it does not.
+- What does an angle have to carry to be judgeable in thirty seconds? A claim,
+  what already backs it, what is missing, and what it would cost — see Q7.
+- Invariant 3 bites here hardest. Ranked angles must not become scored angles,
+  and "87% confident" about an argument is worse than useless.
+
+## The instinct that is right: a loop, not a funnel
+
+The owner's word was *accumulation*, and it is the correct diagnosis. **A
+verified Scout find can make a better angle visible than any that existed when
+the plan was written** — and nothing in the architecture can act on that. Scout
+fills a plan's gaps; it cannot change the plan's mind.
+
+### Q6 · What is known about research-then-write loops that revise the thesis?
+
+- Agentic research loops are well covered for *answering a fixed question*.
+  This is the other thing: the question itself is provisional, and round three's
+  evidence should be able to overturn round one's claim.
+- When does it stop improving? Scout's stopping rule is the precedent and may
+  transfer directly — the knee of distinct-finds against queries issued, with
+  coverage, bounded by budget. Does the same curve describe *angle* quality?
+- **The expensive question: when the thesis changes, what happens to the work
+  already done?** Invariant 1 covers the cut — rules are the source of truth,
+  so a cut re-produces. It does not cover a *script*. Two hundred written lines
+  are not re-produced by anything, and a thesis change mid-way either throws
+  them out or quietly leaves a video arguing the old claim in the new order.
+  This is the sharpest unanswered question in the whole brief.
+- A corollary worth testing: is the right design to **write last, always** —
+  `PICTURES.md` already says "narration written last over secured pictures" —
+  and if so, the loop runs on beats and evidence only, and the script is a
+  terminal step that is never revised, only regenerated. That is a cheap answer
+  if it holds.
+
+## The constraint nobody has priced: mixed provenance
+
+Five own clips and ten Scout clips are not fifteen clips. Own footage cuts
+immediately. **A Scout moment is a ghost until a mission completes** — the user
+has to go and get it. So an angle leaning on Scout is slower, needs the user's
+hands, and may never complete at all.
+
+### Q7 · How should an angle's cost and buildability be shown?
+
+- Nothing currently ranks a plan by what it would *take*. An angle that is
+  ninety per cent your own archive and one that is ninety per cent ghosts are
+  presented identically and are weeks apart.
+- The honest unit is not money. It is: how many missions, how much of it is
+  already playable, how much is a link you cannot cut, how much needs
+  transcribing.
+- **This half is a design decision rather than a research question, and I would
+  make it now:** an angle shows what it would take beside what it would say, or
+  the slate is a menu with no prices.
+
+## The one writing job the research has refused
+
+`SCRIPT-AND-TIMING.md` is the timing master and says so; its writing half is a
+short list of rules and its voice half is explicitly tabled. `PICTURES.md`
+settles the order — narration last, over secured pictures. Nobody has written
+down how the words get made.
+
+### Q8 · Writing to a picture that is already chosen, and to a duration
+
+- This is the reverse of every captioning and description benchmark, which
+  generate words *about* an image. Here the picture, its job, and roughly its
+  length are fixed first, and the words have to fit.
+- Duration-constrained generation: what actually works? Our own measured
+  constraint is in hand — use the user's words per minute from their footage,
+  never a synthetic voice's pace (the one controlled comparison: ~153 wpm human
+  against ~185 synthetic).
+- `PICTURES.md`'s rules are the hard part: propositional redundancy by default,
+  lexical redundancy banned, counterpoint budgeted, and the fit-anywhere check.
+  Can a model write to those, or does it need the fit-anywhere check as a
+  rejecting gate the way decompose needed its stoplist?
+- And the register finding from `SCRIPT-AND-TIMING.md`: one line is one breath
+  group, four to seven words, one new idea each. That is a tight generation
+  target and a testable one.
+
+## Choosing the next cases properly
+
+The owner is right that DSP is the case to start with — dense clips, abundant
+external material, an obvious Pattern spine. He is also right to want others.
+The useful move is not *more examples* but **axes**, so case two is unlike case
+one in ways that teach something. `labs/Footage sets.dc.html` already used this
+method: "four footage sets chosen to be unlike each other".
+
+| Axis | DSP sits at |
+|---|---|
+| Library density | a thousand clips of one subject |
+| Who the subject is | a third party |
+| Where the evidence lives | own archive **and** heavy Scout |
+| Spine (`FORMATS.md`) | Pattern |
+| Legal exposure | high — a named living person's conduct |
+| Does a thesis exist first? | no — footage-first |
+
+So case two should be the opposite corner on every axis: **thin library,
+first-person subject, own archive only, Argument spine, low exposure,
+brief-first.** Something like *"a video essay about why I left my job"* — three
+vlogs and a folder of documents. Between those two the product is bracketed,
+and a third case can then be chosen to break whichever axis turned out to
+matter most.
+
+What DSP will **not** teach, and so must not be generalised from: the
+thin-library case where Scout is the only supply; a multi-subject argument,
+where "the entity" stops being one person and the Dossier's per-entity
+summaries stop fitting; and the case where the user is the subject, which
+removes the legal problem and replaces it with a taste problem.

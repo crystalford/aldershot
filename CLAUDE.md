@@ -19,10 +19,14 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
 - `docs/research/raw/` is the original research, unedited. The handoff wins
   where they disagree; the raw is there for when the handoff is silent.
 - `docs/research/PASS-4-BRIEF.md` — what the research still does not answer.
-  Chiefly: `FORMATS.md` specifies the Pattern spine ("variation escalates; one
-  closing instance reframes") and nothing computes it, so a library of a
-  thousand clips about one subject has no mechanism for choosing eight of them
-  in an order.
+  Two halves. **Selection:** `FORMATS.md` specifies the Pattern spine
+  ("variation escalates; one closing instance reframes") and nothing computes
+  it, so a library of a thousand clips about one subject has no mechanism for
+  choosing eight of them in an order. **Composition:** the block level is
+  specified (`04-RULE-ENGINE.md`'s visual job per beat, the director layer in
+  `labs/Essay to video.dc.html`) and there is no object for *a video that could
+  be made* — so nothing ranks angles, nothing lets a Scout find change the
+  plan's mind, and nothing prices an angle that leans on ghosts.
 - `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
 
 ## When the documents disagree
