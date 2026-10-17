@@ -18,7 +18,7 @@
  * like quirks.
  */
 
-import { contentWords } from "./assemble.ts";
+import { contentWords } from "./moment-tags.ts";
 
 export type RuleKind = "keep" | "drop" | "order" | "gap" | "cap" | "len" | "count" | "hook";
 export type Order = "time" | "strand" | "open";
@@ -436,4 +436,83 @@ export function ruleEffect(
     removed: [...inThen].filter((id) => !inNow.has(id)).length,
     secs: withIt.secs - without.secs,
   };
+}
+
+/**
+ * A REAL LIBRARY, AS A FOOTAGE SET.
+ *
+ * The engine was ported against the reference's fourteen hand-tagged sample
+ * clips, which proves the precedence and nothing else: an engine that only
+ * ever runs on a fixture is the "built, and nothing can reach it" failure this
+ * repo has had three times. Phase 2's acceptance is the port "over the real
+ * document", and this is the join.
+ *
+ * Everything the engine needs, a real moment already has or can derive:
+ *
+ *   src      the source it came from, so chronological order is per video
+ *   ts       m:ss, from start_ms
+ *   dur      seconds, from the span
+ *   text     the quote — the words that were actually said
+ *   strand   the thread it was clustered into, which IS the sample's strand
+ *   tags     derived deterministically; see src/moment-tags.ts
+ *
+ * `STRANDS` is ordered by first appearance rather than alphabetically, because
+ * the engine runs threads in the set's order and an alphabetical cut would
+ * open on whichever thread happened to start with an early letter.
+ */
+export function toFootageSet(
+  moments: Array<{
+    id: string;
+    source_id: string;
+    start_ms: number;
+    end_ms: number;
+    quote: string;
+    thread_name?: string | null;
+    heat?: number | null;
+  }>,
+  tagsFor: (m: { quote: string; heat?: number | null }) => string[],
+): FootageSet {
+  const CLIPS: Moment[] = moments.map((m) => ({
+    id: m.id,
+    src: m.source_id,
+    ts: fmt(Math.round(m.start_ms / 1000)),
+    dur: Math.max(1, Math.round((m.end_ms - m.start_ms) / 1000)),
+    tags: tagsFor(m),
+    strand: m.thread_name ?? undefined,
+    text: m.quote,
+  }));
+
+  /* First appearance, not sorted: the engine runs threads in this order. */
+  const STRANDS: string[] = [];
+  for (const c of CLIPS) if (c.strand && !STRANDS.includes(c.strand)) STRANDS.push(c.strand);
+
+  return { CLIPS, STRANDS };
+}
+
+/**
+ * What the rules did, in a sentence somebody reads.
+ *
+ * The pass line used to report a count and a runtime. With an engine behind it
+ * there is something better to say: which rules took part, and what the cut
+ * actually came out at. "8 of 24 moments · 5:59 · one thread at a time" is a
+ * cut you can check; "8 moments" is a number you have to trust.
+ */
+export function describe(out: Computed, rules: Rule[], note = ""): string {
+  const total = out.st.length;
+  const kept = out.st.filter((m) => m.in).length;
+  const gaps = out.rows.filter((r) => r.voice && !r.isInsert).length;
+  /* The same rule compute() uses — the FIRST enabled order rule — or this
+     line reports an order the cut was not built in. */
+  const order = rules.find((r) => r.on && r.kind === "order")?.order ?? out.ord;
+  const orderName =
+    order === "strand" ? "one thread at a time"
+    : order === "open" ? "sharpest line first"
+    : "as it happened";
+
+  /* `note` goes immediately after the runtime, because that is what it
+     explains. Appended at the end it read "one thread at a time of 2:00". */
+  return (
+    `${kept} of ${total} moment${total === 1 ? "" : "s"} · ${fmt(out.secs)}${note} · ${orderName}` +
+    (gaps ? ` · ${gaps} to-camera gap${gaps === 1 ? "" : "s"}` : "")
+  );
 }

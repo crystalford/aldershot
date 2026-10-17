@@ -1,5 +1,10 @@
 /**
- * Choosing an assembly to a RUNTIME.
+ * Reading a runtime out of a sentence, and fusing two retrievers.
+ *
+ * This file used to test selectForBudget as well. That function is gone — the
+ * rule engine chooses now and its logic became the cap rule's drop order, so
+ * the behaviours it pinned are pinned in test/rules.test.ts instead. What is
+ * left is what still has no other home.
  *
  * Until now the only constraint was "the first 24 by retrieval rank", so
  * nothing in this product knew how long an assembled cut was — twenty-four
@@ -15,7 +20,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   targetFromBrief,
-  selectForBudget,
   runtimeMs,
   clock,
   DEFAULT_TARGET_MS,
@@ -59,90 +63,11 @@ test("a number in the prose is not a runtime", () => {
   assert.equal(targetFromBrief("the bits about food").ms, DEFAULT_TARGET_MS);
 });
 
-test("it never goes over the runtime it was given", () => {
-  const pool = [
-    at(0, 40, "the first four weeks are about showing up not strength"),
-    at(60_000, 40, "nobody tells you the camera gear is the cheap part"),
-    at(120_000, 40, "my dad drove four hours and never said he was proud"),
-  ];
-  const picked = selectForBudget(pool, "", 90_000);
-  assert.ok(runtimeMs(picked) <= 90_000, `${runtimeMs(picked)}ms over budget`);
-  assert.equal(picked.length, 2, "two fit, the third does not");
-});
 
-test("a tight telling beats a rambling one that covers the same ground", () => {
-  /*
-   * THE CENTRAL THING A COUNT CAP CANNOT DO.
-   *
-   * Both of these say the same thing in the same words. Ranked by relevance
-   * they are equal and the first wins; priced per second, the twenty-five
-   * second one wins and buys sixty-five seconds of other material with the
-   * difference. That is the whole argument for a budget over a count.
-   */
-  const rambling = at(0, 80, "the first four weeks are about showing up and not about strength");
-  const tight = at(200_000, 25, "the first four weeks are about showing up and not about strength");
-  const picked = selectForBudget([rambling, tight], "", 100_000);
-  assert.equal(picked.length, 1, "they say the same thing — one of them is enough");
-  assert.equal(picked[0], tight);
-});
 
-test("it stops when it has nothing new to add rather than filling the time", () => {
-  /*
-   * Six moments all making the same point used to fill a cut, because all six
-   * matched the brief. An assembly that has run out of material should end.
-   */
-  const same = "the first four weeks are about showing up not strength";
-  const pool = [at(0, 20, same), at(60_000, 20, same), at(120_000, 20, same)];
-  const picked = selectForBudget(pool, "", 10 * 60_000);
-  assert.equal(picked.length, 1);
-  assert.ok(runtimeMs(picked) < 10 * 60_000, "it did not pad to the budget");
-});
 
-test("the brief's own words are worth more than any others", () => {
-  /* Coverage with nothing weighting it picks whatever has the most unusual
-     vocabulary, which is not the same as answering the question. */
-  const offTopic = at(0, 30, "turpentine varnish linseed gesso canvas stretcher bars easel");
-  const onTopic = at(60_000, 30, "the filter cost forty pounds and the water tasted identical");
-  const picked = selectForBudget([offTopic, onTopic], "the bit about the water filter", 30_000);
-  assert.equal(picked.length, 1);
-  assert.equal(picked[0], onTopic, "the one that answers the brief, despite fewer new words");
-});
 
-test("what comes back is in the order the library ranked, not the order it was picked", () => {
-  /*
-   * Greedy picks densest-first, which is a selection order and a terrible
-   * watching order. Ordering an assembly properly is its own problem; until
-   * that exists the honest starting order is retrieval's.
-   */
-  const pool = [
-    /* Ranked first by the library, and the WORST value per second — so greedy
-       reaches it last and the two orders genuinely disagree. */
-    at(0, 60, "alpha beta"),
-    at(60_000, 10, "gamma delta epsilon zeta eta theta"),
-    at(120_000, 10, "iota kappa lambda sigma omega chi"),
-  ];
-  const picked = selectForBudget(pool, "", 90_000);
-  assert.deepEqual(
-    picked.map((m) => m.start_ms),
-    [0, 60_000, 120_000],
-    "ascending retrieval rank, though greedy visited them 1, 2, 0",
-  );
-});
 
-test("overlapping moments do not both get in, and the count guard still holds", () => {
-  /* Two clips covering the same forty seconds of the same video are both real
-     rows, and an assembly containing both says the same thing twice. */
-  const overlapping = [
-    at(0, 40, "the first four weeks are about showing up"),
-    at(20_000, 40, "weeks are about showing up not strength really"),
-  ];
-  assert.equal(selectForBudget(overlapping, "", 10 * 60_000).length, 1);
-
-  /* A generous budget full of five-second moments is a hundred and forty
-     blocks, and an editor with a hundred and forty blocks is unusable. */
-  const many = Array.from({ length: 50 }, (_, i) => at(i * 10_000, 5, `word${i} thing${i} other${i}`));
-  assert.equal(selectForBudget(many, "", 10 * 60_000, 6).length, 6);
-});
 
 test("a brief whose words appear nowhere still gets material", async () => {
   /*

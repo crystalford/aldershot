@@ -27,25 +27,28 @@
 
 import type { Env } from "./env.ts";
 import { listMoments, searchMeaning, type Moment } from "./library.ts";
+import { applyRule, compute, describe, toFootageSet, type Rule } from "./rules.ts";
+import { contentWords, momentTags, NOISE } from "./moment-tags.ts";
+import { honestReply, parseRules } from "./rule-parse.ts";
 import { createProject, putBeats } from "./projects.ts";
 import { recordPass } from "./passes.ts";
 import { titleFromBrief } from "./projects.ts";
 import { ulid } from "./id.ts";
 
-/**
- * A COUNT CEILING, NOT THE THING THAT DECIDES.
+/*
+ * ASSEMBLE_MAX IS GONE, and the fidelity gate is what noticed.
  *
- * This used to be the only constraint on an assembly: take the first 24 by
- * retrieval rank and stop. Nothing in the product knew how LONG the result
- * was, which is the one number a person asking for "three minutes on this"
- * actually cares about — twenty-four moments at a minute each is a twenty-four
- * minute video, and it arrived with no warning that it was one.
+ * It was a count ceiling — take the first 24 and stop — then a guard against
+ * an editor holding a hundred and forty blocks once the budget replaced it.
+ * With the rule engine deciding, there is nothing left for it to guard: the
+ * engine has no count step, the reference has none either, and adding one
+ * would be a second departure from the specification to solve a problem that
+ * is already solved.
  *
- * The budget below decides now. This stays as a guard: a generous budget full
- * of five-second moments is a hundred and forty blocks, and an editor with a
- * hundred and forty blocks in it is unusable however well-chosen they are.
+ * CANDIDATE_POOL is the real ceiling. The engine never sees more moments than
+ * retrieval handed it, so sixty is the most blocks any assembly can produce,
+ * and it is enforced at the only place that can enforce it honestly.
  */
-export const ASSEMBLE_MAX = 60;
 
 /**
  * How much of the library to look at before choosing. Larger than the output,
@@ -220,14 +223,6 @@ export function dedupe<T extends { source_id: string; start_ms: number; end_ms: 
   return taken;
 }
 
-/* Words that appear in every sentence and mean nothing about the footage. */
-const NOISE = new Set(
-  ("a an and are as at be but by for from how i in is it its me my of on or " +
-   "our so that the their them then there these they this to too was we were " +
-   "what when where which who why will with you your about into over just " +
-   "some any all thing things bit bits part parts video clip clips make made").split(" "),
-);
-
 /**
  * The moments that actually say what the brief is about, best first.
  *
@@ -306,106 +301,21 @@ export function targetFromBrief(brief: string): { ms: number; said: boolean } {
   return { ms: DEFAULT_TARGET_MS, said: false };
 }
 
-export const contentWords = (s: string): string[] => [
-  ...new Set(
-    s.toLowerCase().split(/[^a-z0-9']+/).filter((t) => t.length > 2 && !NOISE.has(t)),
-  ),
-];
 
-/**
- * FILL THE TIME WITH AS MUCH DIFFERENT MATERIAL AS IT HOLDS.
+/*
+ * WHAT USED TO BE HERE.
  *
- * The old selection was "retrieval order, drop overlaps, stop at 24". That is
- * relevance with no notion of repetition and no notion of length, so a
- * rambling eighty-second telling beat a tight twenty-five-second one that said
- * the same thing, and six moments all making the same point filled the cut
- * because all six matched the brief.
+ * selectForBudget: greedy budgeted-submodular selection, coverage over content
+ * words, cost-scaled by duration. It worked and it was measured, and it is
+ * gone, because the rule engine landed and a cut is what the RULES produce
+ * (invariant 1). A selector here would have been a second answer to the same
+ * question, drifting from the first the moment either was tuned.
  *
- * This is the cheapest honest version of what the research calls budgeted
- * submodular coverage: pick whatever adds the most NEW material per second of
- * runtime, then do it again, until nothing left fits. Greedy on gain-per-cost
- * is the standard algorithm for it, and the cost being seconds is the whole
- * point — a duration budget is a knapsack, and this is the knapsack greedy.
- *
- * COVERAGE IS COUNTED IN WORDS, AND THAT IS A PLACEHOLDER. The right ground
- * set is atomic claims, clustered across the library, so that two tellings of
- * one point compete and two points sharing vocabulary do not. Claims need a
- * model pass per moment and an evaluation to show they beat this, and we have
- * neither yet. Words are what we can count today for nothing, and they are
- * already strictly better than not counting: the gain function is the only
- * thing that has to change when claims exist.
- *
- * RELEVANCE BREAKS TIES, it does not score. The input arrives best-first from
- * retrieval, and mixing a rank into a word count means inventing an exchange
- * rate between two scales that have none. Order decides between equals, which
- * is all it can honestly do.
+ * The logic is not lost: it is capDropOrder in src/rules.ts, deciding which
+ * moments the cap rule drops first. That is a better home for it than this
+ * was — attributable to a rule the user can see and switch off, rather than an
+ * optimisation happening somewhere they cannot reach.
  */
-export function selectForBudget<
-  T extends { quote: string; start_ms: number; end_ms: number; source_id: string },
->(moments: T[], brief: string, budgetMs: number, maxCount = ASSEMBLE_MAX): T[] {
-  const pool = dedupe(moments);
-  const asked = new Set(contentWords(brief));
-  const covered = new Set<string>();
-  const chosen: T[] = [];
-  const taken = new Set<number>();
-  let used = 0;
-
-  while (chosen.length < maxCount) {
-    let best = -1;
-    let bestRate = 0;
-
-    for (let i = 0; i < pool.length; i++) {
-      if (taken.has(i)) continue;
-      const m = pool[i];
-      const dur = Math.max(1, m.end_ms - m.start_ms);
-      if (used + dur > budgetMs) continue;
-
-      /* What this moment says that nothing chosen has said yet, with the
-         brief's own words counting for more because they are the question. */
-      let gain = 0;
-      for (const w of contentWords(m.quote)) {
-        if (covered.has(w)) continue;
-        gain += asked.has(w) ? 3 : 1;
-      }
-      if (gain <= 0) continue;
-
-      /* Per SECOND. A tight telling beats a rambling one that covers the
-         same ground, which is the behaviour the old count cap could not have. */
-      const rate = gain / (dur / 1000);
-      if (rate > bestRate) {
-        bestRate = rate;
-        best = i;
-      }
-    }
-
-    /*
-     * NOTHING LEFT THAT BOTH FITS AND ADDS ANYTHING.
-     *
-     * Stopping here rather than padding to the ceiling is the diversity
-     * reward doing its job: an assembly that has run out of new material
-     * should end, not repeat itself to reach a number.
-     */
-    if (best < 0) break;
-
-    const m = pool[best];
-    taken.add(best);
-    chosen.push(m);
-    used += Math.max(1, m.end_ms - m.start_ms);
-    for (const w of contentWords(m.quote)) covered.add(w);
-  }
-
-  /*
-   * Back into the order retrieval gave them.
-   *
-   * Greedy picks densest-first, which is a selection order and a terrible
-   * watching order. Ordering an assembly properly is its own problem — an
-   * outline over sections, then precedence inside them — and until that exists
-   * the honest starting order is the one the library ranked, not the one this
-   * loop happened to visit.
-   */
-  const rank = new Map(pool.map((m, i) => [m, i]));
-  return chosen.sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0));
-}
 
 /** The runtime of a set of moments, which is what a person asked about. */
 export function runtimeMs(moments: Array<{ start_ms: number; end_ms: number }>): number {
@@ -445,19 +355,75 @@ export async function assembleFromLibrary(
   }
 
   /*
-   * CHOSEN TO A RUNTIME, not to a count. See selectForBudget.
+   * THE RULES DECIDE, NOT THIS FUNCTION.
    *
-   * The duration comes out of the brief when the brief says one, because
-   * there is nowhere else for it to come from: the product has no duration
-   * control, and reading the sentence somebody typed beats inventing one.
+   * Selection used to be greedy coverage-per-second here. That logic is not
+   * gone — it is the cap rule's drop order now (src/rules.ts) — but the thing
+   * that chooses is the engine, because invariant 1 says a cut is what a rule
+   * set produces and is never stored as an outcome. A selector living in the
+   * assembly path is a second answer to the same question, and the two would
+   * drift the first time either was tuned.
+   *
+   * Three rules to start, from the reference's own seed set: keep what the
+   * person is working out, lose the hellos and mic checks, run it one thread
+   * at a time. Then whatever the brief itself asked for on top — a length, an
+   * order, something to lose. They are rules, so every one of them is visible
+   * and switch-off-able the moment the pane exists to show them.
+   */
+  const set = toFootageSet(pool, momentTags);
+  const asked = parseRules(opts.brief);
+
+  /*
+   * FOLDED IN WITH applyRule, NOT APPENDED — and the difference is a bug I
+   * shipped for one commit by concatenating instead.
+   *
+   * compute() takes the FIRST order rule it finds. Append the user's and the
+   * seed's "one thread at a time" still wins, so "the start drags" parsed
+   * correctly, produced the right rule, and changed nothing — the worst
+   * possible outcome for a product whose promise is that you can see what the
+   * rules did. applyRule is what the editor uses and it exists precisely
+   * because orders and caps are single-valued: a second one REPLACES.
+   */
+  let rules: Rule[] = [
+    { id: "r-core", kind: "keep", tag: "core", on: true, text: "Keep the parts where you're working something out." },
+    { id: "r-chat", kind: "drop", tag: "housekeeping", on: true, text: "Take out the hellos and the mic checks." },
+    { id: "r-order", kind: "order", order: "strand", on: true, text: "Run it one thread at a time." },
+  ];
+  asked.rules.forEach((r, i) => {
+    rules = applyRule(rules, { ...r, id: `r-said-${i}` });
+  });
+
+  /*
+   * A LENGTH NOBODY ASKED FOR IS STILL A CEILING, not a target.
+   *
+   * The generous default stays — an assembly nobody gave a length to should
+   * over-deliver material and let the user cut, which is what the staged
+   * reduction research argues — but it arrives as a cap RULE rather than as a
+   * number buried in a selector, so it shows up in the pane with everything
+   * else and can be switched off like everything else.
    */
   const target = targetFromBrief(opts.brief);
-  const moments = selectForBudget(pool, opts.brief, target.ms);
-  if (!moments.length) {
+  if (!rules.some((r) => r.kind === "cap")) {
+    rules = applyRule(rules, {
+      id: "r-cap",
+      kind: "cap",
+      secs: Math.round(target.ms / 1000),
+      on: true,
+      text: `Keep it under ${Math.round(target.ms / 60_000)} minutes.`,
+    });
+  }
+
+  const cut = compute(rules, { set });
+  const chosen = cut.rows.filter((r) => r.kind === "clip" && r.moment).map((r) => r.moment!);
+  if (!chosen.length) {
     return {
-      error: "Everything that matched is longer than the cut you asked for — try a longer one.",
+      error: "Nothing in there survived the rules — it may all be hellos and hedging. Try saying it differently.",
     };
   }
+
+  /* Back to the library rows, in the order the engine put them. */
+  const byId = new Map(pool.map((m) => [m.id, m]));
+  const moments = chosen.map((c) => byId.get(String(c.id))).filter((m): m is Moment => !!m);
 
   const project = await createProject(env.DB, {
     user_id: opts.userId,
@@ -468,7 +434,9 @@ export async function assembleFromLibrary(
     brief: opts.brief,
   });
 
-  const runtime = runtimeMs(moments);
+  /* The engine's own total, not the clips' — it includes the to-camera gaps
+     the gap rule put in, which are real seconds of the finished cut. */
+  const runtime = cut.secs * 1000;
   const beats = moments.map((m) => ({
     id: ulid(),
     kind: "clip" as const,
@@ -525,9 +493,12 @@ export async function assembleFromLibrary(
     sourceId: null,
     instruction: opts.brief,
     result:
-      `${moments.length} moment${moments.length === 1 ? "" : "s"} from ` +
-      `${from} video${from === 1 ? "" : "s"} · ${clock(runtime)}` + why +
-      (how === "meaning" ? "" : how === "words" ? " · matched on words" : " · your most recent"),
+      describe(cut, rules, why) +
+      ` · from ${from} video${from === 1 ? "" : "s"}` +
+      (how === "meaning" ? "" : how === "words" ? " · matched on words" : " · your most recent") +
+      /* A sentence that carried no rule says so, rather than appearing to
+         have been understood. 04-RULE-ENGINE.md: never a silent no-op. */
+      (honestReply(asked.unparsed) ? ` — ${honestReply(asked.unparsed)}` : ""),
     firstChange: `b:${beats[0].id}`,
   }).catch(() => {
     /* The edit exists and is usable; a missing opening line is not worth

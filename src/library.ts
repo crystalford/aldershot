@@ -26,6 +26,8 @@ export interface Moment {
   source_key: string;
   short_key: string | null;
   thread_name: string | null;
+  /** 0, 1 or 2 from the scorer. Internal: it decides tags, never pixels. */
+  heat: number | null;
   /* Always 1 in this list — the query filters on it — but carried so the card
      can render its own state and put it back after an undo. */
   kept: number;
@@ -34,6 +36,16 @@ export interface Moment {
 const SELECT_MOMENTS = `
   SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.used_count, c.frame_r2_key,
          c.source_id, c.kept,
+         /* heat is how densely interesting the scorer found the stretch, and
+            it is read here for ONE reason: the rule engine's cap must never
+            drop a "strong" moment, and heat is the only signal we have about
+            which those are (src/moment-tags.ts). It is never shown — invariant
+            3, reasons not scores — and score is deliberately still not
+            selected, because nothing needs it outside the readout.
+            NO BACKTICKS IN HERE. This is inside a template literal, and the
+            first version of this comment quoted the column names with them,
+            which ended the literal and took the whole module with it. */
+         c.heat,
          s.title AS source_title,
          /* The footage this came from, so a clip can PLAY. A moment is a range
             of a video, and a video element given #t=start,end plays exactly

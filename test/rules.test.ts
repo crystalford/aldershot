@@ -20,7 +20,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compute, applyRule, ruleEffect, fmt, wordDur, type Rule, type Moment } from "../src/rules.ts";
+import {
+  compute,
+  applyRule,
+  ruleEffect,
+  describe,
+  fmt,
+  toFootageSet,
+  wordDur,
+  type Rule,
+  type Moment,
+} from "../src/rules.ts";
 
 /* design/one-take/footage.js — STRANDS and CLIPS, verbatim. */
 const STRANDS = ["why leave", "what it costs", "the house", "what I'd miss", "landing it"];
@@ -244,4 +254,67 @@ test("an order rule replaces rather than stacking; other rules append", () => {
   });
   assert.equal(caps.filter((r) => r.kind === "cap").length, 1, "a second cap replaces the first");
   assert.equal(applyRule(SEED, { id: 9, kind: "keep", tag: "hedge", on: true }).length, 5, "keeps append");
+});
+
+test("a real library becomes a footage set the engine can run", () => {
+  /*
+   * PHASE 2'S ACTUAL ACCEPTANCE: the port runs "over the real document", not
+   * over a fixture. An engine that only ever sees its own sample is the
+   * "built, and nothing can reach it" failure this repo has had three times —
+   * find-good, essay.ts, /poster.
+   *
+   * Threads are the sample's strands, and the ORDER of them matters: the
+   * engine runs threads in the set's order, so sorting them alphabetically
+   * would make a cut open on whichever topic happened to start with an early
+   * letter.
+   */
+  const library = [
+    /* "why leave" appears first and sorts LAST, so first-appearance and
+       alphabetical genuinely disagree. The first version of this fixture had
+       them agree, which meant the assertion below passed either way. */
+    { id: "c1", source_id: "srcB", start_ms: 125_000, end_ms: 165_000, quote: "I don't like who I am here, not the city, me in it", thread_name: "why leave", heat: 2 },
+    { id: "c2", source_id: "srcA", start_ms: 0, end_ms: 38_000, quote: "okay is this— yeah it's recording, where was I", thread_name: null, heat: 0 },
+    { id: "c3", source_id: "srcA", start_ms: 400_000, end_ms: 444_000, quote: "the house has a room that gets sun until four", thread_name: "the house", heat: 1 },
+  ];
+  const built = toFootageSet(library, (m) => (m.quote.includes("recording") ? ["housekeeping"] : ["core"]));
+
+  assert.deepEqual(built.STRANDS, ["why leave", "the house"], "first appearance, not alphabetical");
+  assert.equal(built.CLIPS[0].ts, "2:05", "m:ss from start_ms");
+  assert.equal(built.CLIPS[0].dur, 40, "seconds from the span");
+  assert.deepEqual(built.CLIPS[0].tags, ["core"], "tags come from the function, not the row");
+  assert.equal(built.CLIPS[1].src, "srcA", "the source, so chronological order is per video");
+  assert.equal(built.CLIPS[1].strand, undefined, "an unthreaded moment has no strand, not an empty one");
+
+  const out = compute(
+    [
+      { id: 1, kind: "keep", tag: "core", on: true },
+      { id: 2, kind: "drop", tag: "housekeeping", on: true },
+      { id: 3, kind: "order", order: "strand", on: true },
+    ],
+    { set: built },
+  );
+  assert.deepEqual(out.st.filter((m) => m.in).map((m) => m.id), ["c1", "c3"]);
+  assert.equal(out.secs, 40 + 44, "the real durations, not the sample's");
+  assert.deepEqual(
+    out.rows.filter((r) => r.kind === "clip").map((r) => r.moment!.strand),
+    ["why leave", "the house"],
+    "and the cut runs the threads in the set's order",
+  );
+});
+
+test("the cut describes itself in terms somebody can check", () => {
+  /* "8 of 14 moments · 5:59 · one thread at a time · 4 to-camera gaps" is a
+     cut you can verify. "8 moments" is a number you have to trust. */
+  const line = describe(compute(SEED, { set }), SEED);
+  assert.match(line, /^8 of 14 moments · 5:59 · one thread at a time · 4 to-camera gaps$/);
+
+  const timeRules = SEED.map((r) => (r.kind === "order" ? { ...r, order: "time" as const } : r));
+  assert.match(describe(compute(timeRules, { set }), timeRules), /as it happened$/, "no gaps, so none claimed");
+
+  /* A note belongs with the runtime it explains. Appended at the end it read
+     "one thread at a time of 2:00", which is not a sentence. */
+  assert.match(
+    describe(compute(SEED, { set }), SEED, " of 8:00 — that is everything that matched"),
+    /· 5:59 of 8:00 — that is everything that matched · one thread at a time/,
+  );
 });
