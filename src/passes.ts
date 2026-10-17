@@ -56,10 +56,15 @@ export async function recordPass(
     result: string;
     /*
      * The cut as it stood BEFORE this pass, so the turn can offer a way back.
-     * Same {cuts, order} shape POST /restore takes. Optional: a clips-only
-     * pass changes no cut and has nothing to undo.
+     * Optional: a clips-only pass changes no cut and has nothing to undo.
+     *
+     * TWO SHAPES, because there are two kinds of cut. A transcript edit's
+     * state is {cuts, order} — the same shape POST /restore takes. An
+     * assembled cut's state is its RULE SET: the beats are a consequence,
+     * re-produced from the rules every time (invariant 1), so restoring beats
+     * would leave the rules claiming to have made a cut they did not.
      */
-    undo?: { cuts: string | null; order: string | null } | null;
+    undo?: { cuts: string | null; order: string | null; rules?: string | null } | null;
     /** The block this pass was first about, for "Show me". */
     firstChange?: string | null;
     model?: string;
@@ -129,7 +134,7 @@ export async function claimPassUndo(
   db: D1Database,
   passId: string,
   projectId: string,
-): Promise<{ cuts: string | null; order: string | null } | null> {
+): Promise<{ cuts: string | null; order: string | null; rules?: string | null } | null> {
   const row = await db
     .prepare(`SELECT undo FROM passes WHERE id=? AND project_id=? AND undone_at IS NULL`)
     .bind(passId, projectId)

@@ -64,7 +64,8 @@ import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
-import { effectLine, fmt as fmtSecs, toFootageSet } from "./rules.ts";
+import { honestReply, parseRules } from "./rule-parse.ts";
+import { applyRule, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { readSource, requeueTransientReads } from "./ingest.ts";
@@ -1344,6 +1345,28 @@ app.post("/api/passes/:passId/undo", async (c) => {
   const snap = await claimPassUndo(c.env.DB, c.req.param("passId"), project.id);
   if (!snap) return c.json({ error: "that one has already been taken back" }, 409);
 
+  /*
+   * A RULES-BACKED CUT GOES BACK BY ITS RULES.
+   *
+   * Restoring {cuts, order} on an assembled project would put the beats back
+   * and leave the rules table describing a cut that no longer exists — the
+   * pane would explain one thing and the document would be another. So the
+   * rule set is restored and the cut re-produced from it, which is the same
+   * path every other change to it takes.
+   */
+  if (snap.rules) {
+    let restored: Rule[];
+    try {
+      restored = JSON.parse(snap.rules) as Rule[];
+    } catch {
+      return c.json({ error: "that one can't be taken back" }, 422);
+    }
+    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored });
+    if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, restored);
+    return c.json({ ok: true, kept: out.kept, secs: out.secs });
+  }
+
   /* Re-serialised rather than trusted, the same as /restore: this writes
      straight into the columns the render is built from. */
   await c.env.DB
@@ -2502,11 +2525,57 @@ app.post("/api/projects/:id/passes", async (c) => {
    * plain words, rather than returning "not found" about a project that is
    * plainly right there.
    */
-  if (!project.source_id && !wantsArrange(instruction)) {
-    return c.json(
-      { error: "This cut is assembled from your library, so there is no transcript to read yet — but I can put it in a different order." },
-      422,
-    );
+  /*
+   * ON AN ASSEMBLED CUT, A SENTENCE IS A RULE.
+   *
+   * This used to refuse everything but a reorder: "there is no transcript to
+   * read yet — but I can put it in a different order." That was true when a
+   * selecting pass meant reading a transcript, and a pulled block carries
+   * none. It stopped being true when the rule engine landed. Selection on an
+   * assembled cut is not a reading problem at all — the moments are already
+   * chosen and tagged, and "lose the hedging", "keep it under 90 seconds",
+   * "the start drags" are all rules the engine can apply with no model call
+   * and no transcript.
+   *
+   * Deterministic, synchronous, and no job: there is nothing to wait for.
+   * That is the point of rules rather than passes — the cut is re-produced
+   * from them, and re-producing it is arithmetic.
+   */
+  if (!project.source_id) {
+    const asked = parseRules(instruction);
+    if (asked.rules.length) {
+      const before = await loadRules(c.env.DB, project.id);
+      let next = before;
+      for (const r of asked.rules) {
+        /* Saying what a rule already on the board does adds nothing. */
+        const same = next.some((x) => x.on && x.kind === r.kind && x.tag && x.tag === r.tag);
+        if (!same) next = applyRule(next, { ...r, id: ruleKey(r) });
+      }
+
+      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+      if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+      await saveRules(c.env.DB, project.id, next);
+
+      await recordPass(c.env.DB, {
+        projectId: project.id,
+        sourceId: null,
+        instruction,
+        result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+        /* The RULE SET as it stood, not the cuts — on a rules-backed project
+           the rules are the state and the beats are the consequence. */
+        undo: { cuts: null, order: null, rules: JSON.stringify(before) },
+        firstChange: null,
+      }).catch(() => {});
+
+      return c.json({ ok: true, kept: out.kept, secs: out.secs });
+    }
+
+    /*
+     * Nothing in it was a rule. Say what would be, rather than the old line
+     * about transcripts — which named the wrong reason and offered the one
+     * thing that is now only a special case of the right one.
+     */
+    return c.json({ error: honestReply([instruction]) }, 422);
   }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
