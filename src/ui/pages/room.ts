@@ -55,68 +55,80 @@ export interface RoomData {
   counts: { sources: number; moments: number; threads: number };
 }
 
-const VERBS: Array<{ tag: string; accent: keyof typeof ACCENT; name: string; what: string; href: string }> = [
+/**
+ * WHAT PRESSING A CARD PUTS IN THE BOX.
+ *
+ * The cards shipped as links to /?make=cut, which the server does not read —
+ * six controls that looked like they started something and reloaded the page
+ * unchanged. The conventions check missed it because they were links rather
+ * than controls, which is a hole in the check as much as a bug in the cards.
+ *
+ * Each one now writes the sentence a person would have typed and leaves the
+ * cursor in it. That is honestly what they do: One Take's cards start a
+ * project outright, and starting one still needs the footage or the link that
+ * only the next sentence can name. Filling the box is the true half of that,
+ * and it is one mechanism with no special cases rather than four flows where
+ * two would have to apologise.
+ */
+const VERBS: Array<{ tag: string; accent: keyof typeof ACCENT; name: string; what: string; say: string }> = [
   {
     tag: "CUT",
     accent: "green",
     name: "Cut — tighten a recording",
     what: "your footage · the rules do the cutting",
-    href: "/?make=cut",
+    say: "tighten this",
   },
   {
     tag: "SHORTS",
     accent: "cyan",
     name: "Shorts — clips that stand alone",
     what: "Strong · Worth a look · Long shot, with reasons",
-    href: "/?make=shorts",
+    say: "find the bits that stand alone",
   },
   {
     tag: "ESSAY",
     accent: "violet",
     name: "Essay — a video that argues something",
     what: "a thesis, your footage, or both · the plan first",
-    href: "/?make=essay",
+    say: "a video about ",
   },
   {
     tag: "REACT",
     accent: "red",
     name: "React — answer someone else's video",
     what: "a link, a file, or Scout finds it",
-    href: "/?make=react",
+    say: "react to ",
   },
 ];
 
-const GROW: Array<{ tag: string; name: string; what: string; href: string }> = [
+const GROW: Array<{ tag: string; name: string; what: string; say: string }> = [
   {
     tag: "STORY",
     name: "Story — what happened, in order",
     what: "organised by time · the day on screen at each change",
-    href: "/?make=story",
+    say: "what happened, in order",
   },
   {
     tag: "SUPERCUT",
     name: "Supercut — every time",
     what: "a phrase · every moment that matches, nothing else",
-    href: "/?make=supercut",
+    say: "every time I mention ",
   },
 ];
 
 const label = (text: string) =>
   `<div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">${text}</div>`;
 
-function verbCard(v: { tag: string; name: string; what: string; href: string }, accent?: keyof typeof ACCENT): string {
+function verbCard(v: { tag: string; name: string; what: string; say: string }, accent?: keyof typeof ACCENT): string {
   const bg = accent ? accentBg(ACCENT[accent]) : "rgba(236,236,241,0.08)";
   const fg = accent ? ACCENT[accent] : "rgba(236,236,241,0.7)";
-  /* A plain link, deliberately classless: it navigates, so there is nothing
-     for the client to wire, and a class on it would claim otherwise — which
-     is exactly what the wiring check caught. */
-  return `<a href="${esc(v.href)}" style="display:flex;gap:10px;align-items:center;padding:9px 11px;border-radius:8px;background:${accent ? "#141418" : "#121216"};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);text-decoration:none;color:inherit">
+  return `<button class="make-card" type="button" data-make="${esc(v.say)}" style="display:flex;gap:10px;align-items:center;padding:9px 11px;border-radius:8px;background:${accent ? "#141418" : "#121216"};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);border:none;cursor:pointer;width:100%;text-align:left;font-family:inherit;color:inherit">
     <span style="flex:none;width:66px;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${bg};color:${fg};text-align:center;white-space:nowrap">${esc(v.tag)}</span>
     <span style="flex:1;min-width:0">
       <span data-content style="display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.name)}</span>
       <span data-content style="display:block;margin-top:1px;font-size:11px;color:${C.ink45};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.what)}</span>
     </span>
-  </a>`;
+  </button>`;
 }
 
 /**
@@ -223,7 +235,7 @@ function videoRow(s: RoomData["sources"][number]): string {
       <span data-content style="display:block;font-size:${SIZE.body};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</span>
       <span data-content style="display:block;margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(read)}${s.clips ? ` · ${s.clips} moment${s.clips === 1 ? "" : "s"}` : ""}</span>
     </span>
-  </a>`;
+  </button>`;
 }
 
 function momentCard(m: RoomData["moments"][number]): string {

@@ -3560,6 +3560,26 @@ function readDuration(file) {
   });
 }
 
+/* ── The room: the MAKE cards ──────────────────────────────────────────
+   Each card writes the sentence you would have typed and leaves the cursor
+   at the end of it. They shipped once as links to a query the server never
+   read — six controls that looked like they started something and reloaded
+   the page unchanged — which is why they are buttons now and why the fidelity
+   gate grew a rule about hrefs nobody reads. */
+document.querySelectorAll(".make-card").forEach((card) => {
+  card.addEventListener("click", () => {
+    const brief = $("#brief");
+    if (!brief) return;
+    brief.value = card.getAttribute("data-make") || "";
+    brief.focus();
+    /* At the END, because half of these are openings to finish — "a video
+       about ", "every time I mention " — and dropping the cursor at the
+       start would put the typing in front of the sentence. */
+    brief.setSelectionRange(brief.value.length, brief.value.length);
+    brief.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+});
+
 /* ── The rules pane: switch one off ───────────────────────────────────
    Invariant 1: a cut is re-produced from rules. So this does not patch the
    document it disagrees with — it tells the server the rule's new state and

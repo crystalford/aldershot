@@ -1119,6 +1119,34 @@ function checkReachable() {
     if (written && !read) problems.push('table ' + table + ' — written, and nothing ever reads it back');
   }
 
+  /*
+   * A LINK TO A QUERY NOBODY READS IS A DEAD CONTROL.
+   *
+   * Six MAKE cards shipped as <a href="/?make=cut">. The server never reads
+   * `make`, so pressing one reloaded the page unchanged — and every other
+   * check passed it: the strings were real, the colours were tokens, and
+   * `wiring` only looks at classes the client binds, which a plain link has
+   * no business having. A control that looks like it does something and does
+   * nothing is the exact failure this file exists for, and it walked straight
+   * through.
+   *
+   * So: every query parameter a page LINKS to must be one the server asks
+   * for. Cheap, total, and it cannot be satisfied by anything but wiring the
+   * parameter up or taking the link out.
+   */
+  const asked = new Set([...all.matchAll(/\.query\(\s*["'`](\w+)["'`]/g)].map((m) => m[1]));
+  const linked = new Map();
+  for (const m of pages.matchAll(/href="[^"]*\?([^"]+)"/g)) {
+    for (const pair of m[1].split('&')) {
+      const key = pair.split('=')[0].replace(/^\$\{[^}]*\}/, '').trim();
+      /* Skip an interpolated key — it is computed and cannot be read here. */
+      if (/^\w+$/.test(key) && !asked.has(key)) linked.set(key, m[0].slice(0, 60));
+    }
+  }
+  for (const [key, where] of linked) {
+    problems.push('link ?' + key + '= — nothing on the server reads it (' + where + '…)');
+  }
+
   if (problems.length) {
     fail(
       'reachable',
@@ -1126,7 +1154,7 @@ function checkReachable() {
       problems.join('\n'),
     );
   } else {
-    pass('reachable', 'every API route is asked for, and every table written is read back');
+    pass('reachable', 'every API route is asked for, every table written is read back, every linked query is read');
   }
 }
 
