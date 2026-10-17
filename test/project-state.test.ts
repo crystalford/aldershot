@@ -158,3 +158,28 @@ test("the route computes the pane and the tab from one call", () => {
   assert.equal((upto.match(/compute\(/g) ?? []).length, 1, "one compute, feeding both");
   assert.match(upto, /stored\.filter\(\(r\) => !r\.hand\)/, "and the same hand split the pane uses");
 });
+
+test("every moment row is pressable, because every row's note promises it", () => {
+  /*
+   * "out · rule 02 · click to keep" shipped on a plain div with no handler —
+   * a sentence on screen telling somebody to do something that did nothing,
+   * and the second of those in two commits. Disagreeing with a rule is the
+   * POINT of naming the rule, so the row is the control.
+   *
+   * The gate now checks this on the rendered page too; this holds the shape
+   * here, where a failure names the function rather than a URL.
+   */
+  const html = renderCut({
+    ...base,
+    view: "footage",
+    rules: RULES,
+    moments: [
+      { id: "m1", quote: "kept", source_title: "T", in: true, note: "in · rule 01" },
+      { id: "m2", quote: "dropped", source_title: "T", in: false, note: "out · rule 02 · click to keep" },
+    ],
+  });
+  const rows = [...html.matchAll(/<(\w+)[^>]*class="moment-hand"/g)].map((m) => m[1]);
+  assert.deepEqual(rows, ["button", "button"], "both rows, both pressable");
+  assert.match(html, /data-moment="m2" data-in="0"/, "and each carries which way it would go");
+  assert.match(html, /data-moment="m1" data-in="1"/);
+});

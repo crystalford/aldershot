@@ -355,6 +355,46 @@ async function checkStrings() {
     return;
   }
 
+  /*
+   * TEXT THAT PROMISES A CLICK MUST BE ON SOMETHING CLICKABLE.
+   *
+   * "out · rule 02 · click to keep" shipped on a plain div — a sentence on
+   * screen telling somebody to do something that did nothing. The second of
+   * these in two commits, after six MAKE cards linking to a query nobody
+   * read, and neither was caught: the strings were the prototype's own, the
+   * colours were tokens, and nothing anywhere asked whether a promise was
+   * kept.
+   *
+   * Checked on the RENDERED page rather than in the source, which is the
+   * mistake the first version of this rule made: it scanned src/ui and the
+   * promise is assembled in index.ts, so it found nothing and passed the very
+   * bug it was written for. What matters is what reaches the browser.
+   *
+   * A promise is kept when the text sits inside a button or a link. That is
+   * deliberately narrow — those are the two things a person can press — and
+   * it cannot be satisfied by rewording, because the words come from the
+   * prototype and the strings check holds them there.
+   */
+  const promises = [];
+  const scanPromises = async (list) => {
+  for (const route of list) {
+    let html = '';
+    try {
+      html = await (await fetch(BASE + route)).text();
+    } catch {
+      continue;
+    }
+    for (const m of html.matchAll(/click to \w+/g)) {
+      const before = html.slice(0, m.index);
+      const openBtn = Math.max(before.lastIndexOf('<button'), before.lastIndexOf('<a '));
+      const closeBtn = Math.max(before.lastIndexOf('</button>'), before.lastIndexOf('</a>'));
+      if (openBtn < 0 || closeBtn > openBtn) {
+        promises.push(route + ': "' + m[0] + '" — promised on something nothing can press');
+      }
+    }
+  }
+  };
+
   const normalise = (s) => s.replace(/\s+/g, ' ').replace(/[\u2019']/g, "'").trim();
   const proto = normalise(PROTO.replace(/<[^>]+>/g, ' '));
   const protoRaw = normalise(PROTO);
@@ -851,8 +891,18 @@ async function checkStrings() {
       // One editor, one URL. The four stage paths are aliases of it, so
       // crawling all four checked the same HTML four times.
       routes.push('/p/' + projects[0].id + '/cut');
+      /*
+       * And the Footage tab, which is NOT an alias — it renders a different
+       * centre column, with the most consequential copy in the editor on it:
+       * every moment's verdict and the rule that reached it. It was outside
+       * the crawl entirely, which is how "click to keep" shipped on a plain
+       * div and no check saw the promise at all.
+       */
+      routes.push('/p/' + projects[0].id + '/footage');
     }
   } catch {}
+
+  await scanPromises(routes);
 
   for (const route of routes) {
     const html = await (await fetch(BASE + route)).text();
@@ -958,12 +1008,14 @@ async function checkStrings() {
   }
 
   if (suspect.length) {
-    fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.join('\n'));
+    fail('strings', 'Rendered text not found in the prototype. Either a paraphrase (fix it) or new behaviour (flag it and get sign-off).', suspect.concat(promises).join('\n'));
+  } else if (promises.length) {
+    fail('strings', 'A promise on screen that nothing can keep. Make it pressable or stop saying it.', promises.join('\n'));
   } else {
     const used = [...SIGNED_OFF.keys()].filter((k) => seen.has(k));
     pass(
       'strings',
-      `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype` +
+      `${seen.size} rendered strings across ${routes.length} surfaces, all verbatim from the prototype, every promised click pressable` +
         (used.length ? ` (+${used.length} signed off: ${used.map((u) => JSON.stringify(u)).join(', ')})` : ''),
     );
   }

@@ -2183,6 +2183,67 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
   return c.json({ ok: true, kept: out.kept, secs: out.secs });
 });
 
+/**
+ * KEEP THIS ONE, OR CUT IT, WHATEVER THE RULES SAY.
+ *
+ * The Footage tab says "out · rule 02 · click to keep" on every moment a rule
+ * dropped. Disagreeing with a rule is the point of showing which rule did it,
+ * and the engine already has the mechanism: a hand rule overrides everything
+ * above it (step 6). So this writes one and re-produces the cut.
+ *
+ * PRESSING IT AGAIN TAKES THE HAND BACK, rather than writing the opposite
+ * hand rule. Those are different things and only one of them is reversible:
+ * "I disagree with the rules here" should be undoable to "whatever the rules
+ * say", and a second hand rule in the other direction would leave the moment
+ * pinned by hand for ever with no way back to the rule's own answer.
+ */
+app.post("/api/projects/:id/moments/:momentId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const momentId = c.req.param("momentId");
+  const b = await body<{ keep: boolean }>(c);
+  const keep = Boolean(b.keep);
+
+  const rules = await loadRules(c.env.DB, project.id);
+  if (!rules.length) return c.json({ error: "this cut was not made from rules" }, 422);
+
+  const key = ruleKey({ kind: keep ? "keep" : "drop", cid: momentId, hand: true, on: true });
+  const already = rules.find((r) => String(r.id) === key && r.on);
+
+  /* Any hand rule on this moment goes, whichever direction it pointed —
+     leaving the other one on would have two hands fighting over one moment. */
+  const other = ruleKey({ kind: keep ? "drop" : "keep", cid: momentId, hand: true, on: true });
+  const next = rules.filter((r) => String(r.id) !== key && String(r.id) !== other);
+  if (!already) {
+    next.push({
+      id: key,
+      kind: keep ? "keep" : "drop",
+      cid: momentId,
+      hand: true,
+      on: true,
+      text: keep ? "Kept by hand." : "Cut by hand.",
+    });
+  }
+
+  const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+  await saveRules(c.env.DB, project.id, next);
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: already ? "Back to what the rules say" : keep ? "Kept by hand" : "Cut by hand",
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    undo: { cuts: null, order: null, rules: JSON.stringify(rules) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs, byHand: !already });
+});
+
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);

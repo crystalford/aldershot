@@ -3560,6 +3560,44 @@ function readDuration(file) {
   });
 }
 
+/* ── The footage tab: keep or cut a moment by hand ────────────────────
+   Every row's note promises this — "out · rule 02 · click to keep" — and it
+   shipped once on a div with no handler, which is a sentence on screen
+   telling somebody to do something that does nothing. A hand decision
+   overrides every rule above it, so the whole cut is re-produced and the page
+   reloads: membership AND order may have changed, and a partial DOM update
+   would be a second answer to what the cut is. */
+document.querySelectorAll(".moment-hand").forEach((row) => {
+  row.addEventListener("click", async () => {
+    if (row.disabled) return;
+    const project = row.closest("[data-project]");
+    if (!project) return;
+    /* An "out" row keeps; an "in" row cuts. Pressing the same one twice takes
+       the hand back rather than pinning it the other way. */
+    const keep = row.getAttribute("data-in") !== "1";
+    row.disabled = true;
+    row.style.opacity = ".4";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + row.getAttribute("data-moment"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ keep }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        row.disabled = false;
+        row.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      row.disabled = false;
+      row.style.opacity = "";
+    }
+  });
+});
+
 /* ── The room: the MAKE cards ──────────────────────────────────────────
    Each card writes the sentence you would have typed and leaves the cursor
    at the end of it. They shipped once as links to a query the server never

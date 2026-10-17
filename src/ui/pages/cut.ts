@@ -817,12 +817,25 @@ function momentsThroughRules(d: CutData): string {
   if (!d.moments.length) {
     return `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
   }
+  /*
+   * EVERY ROW IS A BUTTON, because every row's note promises a click.
+   *
+   * "out · rule 02 · click to keep" shipped on a div with no handler — a
+   * sentence on screen telling somebody to do something that does nothing.
+   * The same failure as the MAKE cards one commit earlier, and the gate did
+   * not catch this one either, so it grew a rule about promised clicks too.
+   *
+   * Disagreeing with a rule is the point of this tab: a hand decision
+   * overrides every rule above it (step 6 of the engine), so keeping a moment
+   * the cap dropped is one press, and the cut is re-produced around it.
+   */
   return `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.moments
     .map(
-      (m) => `<div data-moment="${esc(m.id)}" style="display:flex;gap:12px;align-items:baseline;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};opacity:${m.in ? "1" : ".62"}">
+      (m) => `<button class="moment-hand" type="button" data-moment="${esc(m.id)}" data-in="${m.in ? 1 : 0}"
+        style="display:flex;gap:12px;align-items:baseline;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};opacity:${m.in ? "1" : ".62"};width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit">
         <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70}">${esc(m.quote.slice(0, 120))}</span>
         <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${m.in ? ACCENT.green : C.ink45}">${esc(m.note)}</span>
-      </div>`,
+      </button>`,
     )
     .join("")}</div>`;
 }
