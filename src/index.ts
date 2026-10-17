@@ -25,7 +25,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -51,6 +51,8 @@ const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { placeReactions } from "./reactions.ts";
 import { draftOutline, type EssayBeat } from "./essay.ts";
+import { draftPlan, findForBeats } from "./plan.ts";
+import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
@@ -79,6 +81,7 @@ import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
+import { renderPlan } from "./ui/pages/plan.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
@@ -2349,6 +2352,190 @@ app.post("/api/projects/:id/attach", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, kept: out.kept, secs: out.secs });
+});
+
+/** The plan on screen: the claim, the beats, and where the flow got to. */
+app.get("/plan/:id", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.notFound();
+
+  return c.html(
+    page(
+      { title: `${plan.topic} — Aldershot`, view: "essay", screenLabel: "The plan", email: user.email },
+      renderPlan({
+        id: plan.id,
+        topic: plan.topic,
+        claim: plan.claim,
+        state: plan.state,
+        projectId: plan.projectId,
+        beats: plan.beats.map((b) => ({
+          id: b.id,
+          role: b.role,
+          name: b.name,
+          need: b.need,
+          kept: b.kept,
+          found: b.found.length,
+          /* The same sentence findForBeats gives, recomputed rather than
+             stored: it is a fact about what this product can do, not about
+             this plan, and storing it would freeze today's answer into a row
+             that outlives it. */
+          gap: b.role === "outside" ? "a voice that isn't yours — nothing here can find that yet" : null,
+        })),
+      }),
+    ),
+  );
+});
+
+/**
+ * START A PLAN. The claim and the beats, and then it stops.
+ *
+ * Nothing is searched and nothing is cut: this is the cheap, reversible half,
+ * and the flow holds here until the beats are answered. 11-BUILD-ORDER's
+ * acceptance says it stops exactly once, and this is the once.
+ */
+app.post("/api/plans", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ topic: string }>(c);
+  const topic = (b.topic || "").trim();
+  if (!topic) return c.json({ error: "what is it about?" }, 400);
+
+  const draft = await draftPlan(c.env, topic);
+  if (!draft.beats.length) {
+    return c.json({ error: "Couldn't find an argument in that — try saying what it should argue." }, 422);
+  }
+
+  const planId = await createPlan(c.env.DB, {
+    userId: user.id,
+    topic,
+    claim: draft.claim,
+    beats: draft.beats,
+  });
+  return c.json({ planId, claim: draft.claim, beats: draft.beats.length });
+});
+
+/** Keep or cut one beat — the answer to the stop, beat by beat. */
+app.post("/api/plans/:id/beats/:beatId", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const beatId = c.req.param("beatId");
+  if (!plan.beats.some((x) => x.id === beatId)) return c.json({ error: "no such beat" }, 404);
+
+  const b = await body<{ kept: boolean }>(c);
+  await setBeatKept(c.env.DB, plan.id, beatId, Boolean(b.kept));
+  return c.json({ ok: true });
+});
+
+/**
+ * PAST THE STOP: find footage for every kept beat.
+ *
+ * The expensive half, and it does not run until the beats have been answered
+ * — which is the point of the stop. Each beat's `need` goes through the same
+ * retrieval the room's search box uses, so the plan and the library can never
+ * disagree about what is in it.
+ */
+app.post("/api/plans/:id/find", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const kept = plan.beats.filter((x) => x.kept);
+  if (!kept.length) return c.json({ error: "every beat is cut — keep at least one" }, 422);
+
+  const found = await findForBeats(kept, async (need) => {
+    const out = await findMaterial(c.env, user.id, need, 6);
+    /* "Your most recent" is findMaterial answering a brief that matched
+       nothing. A beat's need is a search, not a brief, so that fallback is
+       the same lie here as it is in the room's search box: nothing found. */
+    return out.how === "recent" ? [] : out.moments.map((m) => m.id);
+  });
+
+  await setFound(c.env.DB, plan.id, new Map(found.map((f) => [f.beatId, f.clipIds])));
+  return c.json({
+    ok: true,
+    beats: found.map((f) => ({ beatId: f.beatId, found: f.clipIds.length, thin: f.thin, gap: f.gap })),
+  });
+});
+
+/**
+ * CUT IT. The plan becomes a project.
+ *
+ * 11-BUILD-ORDER's acceptance: "Cut it saves a project the Editor restores
+ * with the plan's order as rule 03". The plan's order is a RULE rather than
+ * baked into the beats, so it can be switched off like any other — which is
+ * invariant 1 holding even for an order somebody spent a planning flow
+ * arriving at.
+ */
+app.post("/api/plans/:id/cut", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+  if (plan.state === "beats") return c.json({ error: "find the footage first" }, 422);
+  if (plan.projectId) return c.json({ ok: true, projectId: plan.projectId, already: true });
+
+  const clipIds = plan.beats.filter((b) => b.kept).flatMap((b) => b.found);
+  if (!clipIds.length) return c.json({ error: "nothing was found for any beat" }, 422);
+
+  const pool = await listMoments(c.env.DB, user.id, CANDIDATE_POOL);
+  const wanted = new Set(clipIds);
+  const moments = pool.filter((m) => wanted.has(m.id));
+  if (!moments.length) return c.json({ error: "that footage is no longer here" }, 422);
+
+  const project = await createProject(c.env.DB, {
+    user_id: user.id,
+    title: titleFromBrief(plan.topic, "An essay"),
+    kind: "essay",
+    source_id: null,
+    brief: plan.claim || plan.topic,
+    /* Scoped to whatever the beats actually found, so the cut draws on the
+       footage the plan was built from and not the whole library. */
+    scope: [...new Set(moments.map((m) => m.source_id))],
+  });
+
+  /*
+   * THE PLAN'S ORDER, AS A RULE. Beat order is not chronological and not by
+   * thread — it is the argument — so it arrives as a `cids` keep rule listing
+   * the moments in the order the beats put them, and an order rule saying to
+   * run them as given.
+   */
+  const ordered = clipIds.filter((id) => moments.some((m) => m.id === id));
+  const rules: Rule[] = [
+    {
+      id: "r-keep-plan",
+      kind: "keep",
+      cids: ordered,
+      on: true,
+      text: "Keep what the plan found.",
+    },
+    { id: "r-order", kind: "order", order: "time", on: true, text: "Run it as the plan has it." },
+  ];
+
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: [...new Set(moments.map((m) => m.source_id))],
+  });
+  if (!out) return c.json({ error: "that footage is no longer here" }, 422);
+  await saveRules(c.env.DB, project.id, rules);
+  await setPlanProject(c.env.DB, plan.id, project.id);
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: plan.claim || plan.topic,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)} · from the plan`,
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, projectId: project.id, href: `/p/${project.id}/cut`, kept: out.kept });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

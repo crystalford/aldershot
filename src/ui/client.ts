@@ -3560,6 +3560,63 @@ function readDuration(file) {
   });
 }
 
+/* ── The plan: keep or cut a beat, then the two steps past the stop ───
+   The flow stops exactly once, here, and nothing downstream runs until the
+   beats are answered — which is why Find the footage and Cut it are separate
+   presses rather than one that does both. */
+const planPost = async (url, btn, go) => {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.style.opacity = ".5";
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      window.toast(out.error || "That didn't work.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+      return;
+    }
+    go(out);
+  } catch {
+    window.toast("That didn't work.");
+    btn.disabled = false;
+    btn.style.opacity = "";
+  }
+};
+
+document.querySelectorAll(".beat-keep").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const plan = btn.closest("[data-plan]");
+    if (!plan) return;
+    const next = btn.getAttribute("data-kept") !== "1";
+    try {
+      await fetch("/api/plans/" + plan.getAttribute("data-plan") + "/beats/" + btn.getAttribute("data-beat"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kept: next }),
+      });
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+    }
+  });
+});
+
+document.querySelectorAll(".plan-find").forEach((btn) => {
+  btn.addEventListener("click", () =>
+    planPost("/api/plans/" + btn.getAttribute("data-plan") + "/find", btn, () => location.reload()),
+  );
+});
+
+document.querySelectorAll(".plan-cut").forEach((btn) => {
+  btn.addEventListener("click", () =>
+    planPost("/api/plans/" + btn.getAttribute("data-plan") + "/cut", btn, (out) => {
+      location.href = out.href || "/";
+    }),
+  );
+});
+
 /* ── The footage tab: add a video to this cut ─────────────────────────
    The same gesture as attaching before the project existed. Its moments are
    judged by the rules already on the board the moment it lands, so the whole

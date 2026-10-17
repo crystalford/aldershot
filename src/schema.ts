@@ -146,6 +146,52 @@ const STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx)`,
 
+  /*
+   * A PLAN, BEFORE THERE IS A PROJECT.
+   *
+   * "Cut it turns the plan into the project" — so the plan has to exist
+   * first, and survive the one stop where the user answers which beats to
+   * keep. A project at that point would be a project with no cut in it.
+   *
+   * `state` is where the flow got to, because the stop is the whole design:
+   * the pipeline runs sized → claim → beats, STOPS, then found → plan → cut.
+   * Storing the step means a reload during the stop comes back to the stop
+   * rather than starting again or silently carrying on.
+   */
+  `CREATE TABLE IF NOT EXISTS plans (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+     topic TEXT NOT NULL,
+     claim TEXT,
+     state TEXT NOT NULL DEFAULT 'beats',
+     project_id TEXT REFERENCES v2_projects(id),
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS plans_by_user ON plans(user_id, created_at)`,
+
+  /*
+   * One beat of a plan.
+   *
+   * `need` is what the beat wants in the user's terms — "the trade priced in
+   * rent, then the admission that the price is embarrassing" — and it is a
+   * RETRIEVAL QUERY, not prose for a person. That is the whole shape of this
+   * pipeline: the model says what each beat needs, and search decides which
+   * footage meets it. The model never names a clip, so it cannot name one
+   * that does not exist.
+   *
+   * `found` is the clip ids retrieval returned, as JSON. Written after the
+   * stop, empty before it.
+   */
+  `CREATE TABLE IF NOT EXISTS plan_beats (
+     id TEXT PRIMARY KEY, plan_id TEXT NOT NULL REFERENCES plans(id),
+     idx INTEGER NOT NULL,
+     role TEXT NOT NULL,
+     name TEXT NOT NULL,
+     need TEXT NOT NULL,
+     kept INTEGER NOT NULL DEFAULT 1,
+     found TEXT,
+     UNIQUE(plan_id, idx)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS renders (
      id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
      kind TEXT NOT NULL,
