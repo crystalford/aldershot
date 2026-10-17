@@ -8,6 +8,9 @@
  *   node scripts/shoot.js app  /  /projects        → /tmp/shot-app-*.png
  *   node scripts/shoot.js proto Home Footage       → /tmp/shot-proto-*.png
  *
+ * `proto` shoots design/one-take/ — the current design. Set ALDERSHOT_PROTO to
+ * shoot a different one.
+ *
  * Two sandbox workarounds, both needed for the comparison to be honest:
  *  - The prototype loads React/ReactDOM/Babel from unpkg at runtime; we serve
  *    them from a local cache instead so it boots without network.
@@ -17,6 +20,7 @@
  * Run scripts/fetch-fixtures.sh once to populate both caches.
  */
 const { chromium } = require('playwright');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,7 +28,21 @@ const CACHE = process.env.FIXTURE_DIR
   || '/tmp/claude-0/-home-user-aldershot/0bebe197-45d2-5def-a9b7-d7e7d2e7e6b2/scratchpad';
 const FONTS = path.join(CACHE, 'fonts');
 const CDN = path.join(CACHE, 'cdn-cache');
-const PROTO = path.resolve(__dirname, '../design/Aldershot.dc.html');
+/*
+ * ONE TAKE, NOT THE RETIRED MONOLITH.
+ *
+ * This pointed at design/Aldershot.dc.html — the design One Take replaced —
+ * which means that for as long as One Take has been the authority, the one
+ * check this file calls "the check that matters most" has been comparing the
+ * build against the wrong product. I then spent a night building the room
+ * from the handoff documents and never ran it, which is the failure its own
+ * header describes, repeated with the tool sitting right here.
+ *
+ * ALDERSHOT_PROTO overrides it, so the retired one is still shootable for
+ * any surface that has not moved yet.
+ */
+const PROTO = process.env.ALDERSHOT_PROTO
+  || path.resolve(__dirname, '../design/one-take/Aldershot One Take.dc.html');
 const WIDTH = Number(process.env.WIDTH || 1280);
 const HEIGHT = Number(process.env.HEIGHT || 900);
 
@@ -78,6 +96,7 @@ async function withRoutes(page) {
   await withRoutes(page);
 
   const errors = [];
+  const servers = [];
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
@@ -98,8 +117,35 @@ async function withRoutes(page) {
       console.log('app', r);
     }
   } else {
-    await page.goto('file://' + PROTO, { waitUntil: 'load', timeout: 30000 });
-    await page.waitForTimeout(2500);
+    /*
+     * SERVED OVER HTTP, NOT file://.
+     *
+     * One Take imports footage.js as an ES module, and a module import from
+     * a file:// page is a cross-origin request that Chromium refuses. The
+     * symptom is not an error — the shell renders and the content never
+     * arrives, so the screenshot is a believable empty room. The retired
+     * prototype had no module imports and worked from file://, which is why
+     * this only broke when the pointer moved.
+     */
+    const dir = path.dirname(PROTO);
+    const srv = http.createServer((req, res) => {
+      const rel = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
+      const file = path.join(dir, rel || path.basename(PROTO));
+      if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+      const type = file.endsWith('.js') ? 'application/javascript'
+        : file.endsWith('.png') ? 'image/png'
+        : file.endsWith('.html') ? 'text/html' : 'application/octet-stream';
+      res.writeHead(200, { 'content-type': type });
+      fs.createReadStream(file).pipe(res);
+    });
+    servers.push(srv);
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${srv.address().port}/`;
+
+    await page.goto(base + encodeURIComponent(path.basename(PROTO)), { waitUntil: 'load', timeout: 30000 });
+    /* It fetches and renders after load; 2.5s was enough for the retired
+       prototype and is not for this one. */
+    await page.waitForTimeout(6000);
     for (const label of targets) {
       // Surfaces are reached by clicking their nav item, exactly as a user would.
       if (label !== 'Home') {
@@ -114,5 +160,6 @@ async function withRoutes(page) {
 
   console.log('ERRORS:', errors.length ? JSON.stringify(errors) : 'none');
   await browser.close();
+  for (const s of servers) s.close();
   process.exit(errors.length ? 1 : 0);
 })();
