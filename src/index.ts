@@ -1445,7 +1445,7 @@ app.get("/p/:id/:stagePath", async (c) => {
            * points at the wrong line. Computing twice would let them.
            */
           const stored = await loadRules(c.env.DB, project.id);
-          if (!stored.length) return { rules: [], moments: [] };
+          if (!stored.length) return { rules: [], moments: [], addable: [] };
 
           /* Attached footage only. Without this the Footage tab lists every
              moment in the library against a cut that can only ever draw on
@@ -1466,7 +1466,20 @@ app.get("/p/:id/:stagePath", async (c) => {
             Boolean(stored.find((r) => String(r.id) === String(id))?.hand);
           const titles = new Map(pool.map((m) => [m.id, m.source_title]));
 
+          /*
+           * The videos this cut is NOT drawing on. Only when it has a scope:
+           * a cut without one already draws on everything, so there is
+           * nothing to add and a control offering to would do nothing.
+           */
+          const scope = scopeOf(project);
+          const addable = scope
+            ? (await listSources(c.env.DB, user.id, "newest"))
+                .filter((x) => !scope.includes(x.id))
+                .map((x) => ({ id: x.id, title: x.title }))
+            : [];
+
           return {
+            addable,
             rules: stored.map((r) => ({
               id: String(r.id),
               text: r.text ?? r.kind,
@@ -1579,14 +1592,28 @@ app.post("/api/passes/:passId/undo", async (c) => {
    */
   if (snap.rules) {
     let restored: Rule[];
+    let scope: string[] | null;
     try {
       restored = JSON.parse(snap.rules) as Rule[];
+      /*
+       * A pass that did not touch the scope leaves it absent, and the
+       * project's own stands. A pass that DID — attaching a video — carries
+       * what it was, and that is what goes back. Restoring only the rules
+       * would undo an "Added that video" pass and leave the video added.
+       */
+      scope = snap.scope == null ? scopeOf(project) : (JSON.parse(snap.scope) as string[] | null);
     } catch {
       return c.json({ error: "that one can't be taken back" }, 422);
     }
-    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored, scope: scopeOf(project) });
+    const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: restored, scope });
     if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
     await saveRules(c.env.DB, project.id, restored);
+    if (snap.scope != null) {
+      await c.env.DB
+        .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
+        .bind(scope?.length ? JSON.stringify(scope) : null, Date.now(), project.id, user.id)
+        .run();
+    }
     return c.json({ ok: true, kept: out.kept, secs: out.secs });
   }
 
@@ -2261,6 +2288,67 @@ app.post("/api/projects/:id/moments/:momentId", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, kept: out.kept, secs: out.secs, byHand: !already });
+});
+
+/**
+ * ADD A VIDEO TO AN OPEN CUT.
+ *
+ * Attaching happens before a project exists; this is the same gesture after
+ * it does. The source joins the scope and the cut is re-produced — so its
+ * moments are judged by the rules already on the board rather than appearing
+ * in the cut unexamined, which is what "its moments join left out until a
+ * rule or your hand keeps them" means once there are rules.
+ *
+ * A cut with NO scope already draws on the whole library, so there is nothing
+ * to add to it and this says so rather than pretending to act.
+ */
+app.post("/api/projects/:id/attach", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const scope = scopeOf(project);
+  if (!scope) return c.json({ error: "this cut already draws on everything you have" }, 422);
+
+  const b = await body<{ sourceId: string }>(c);
+  const sourceId = (b.sourceId || "").trim();
+  /* Checked against the user's own sources, for the same reason the scope is
+     on the way in: it is a filter, and a filter taking arbitrary strings is a
+     way to ask about somebody else's library. */
+  const src = sourceId ? await getSource(c.env.DB, sourceId, user.id) : null;
+  if (!src) return c.json({ error: "that video isn't here" }, 404);
+  if (scope.includes(src.id)) return c.json({ ok: true, unchanged: true });
+
+  const next = [...scope, src.id];
+  const rules = await loadRules(c.env.DB, project.id);
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: next,
+  });
+  if (!out) return c.json({ error: "there is nothing in that video to cut from" }, 422);
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(JSON.stringify(next), Date.now(), project.id, user.id)
+    .run();
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: `Added ${src.title}`,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    /* BOTH, because the scope is what this pass changed and the rules are
+       what re-produces the cut from it. Restoring only the rules would undo
+       an "Added that video" pass and leave the video added — which is what
+       the first version of this did, and driving it is how that was found. */
+    undo: { cuts: null, order: null, rules: JSON.stringify(rules), scope: JSON.stringify(scope) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, kept: out.kept, secs: out.secs });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

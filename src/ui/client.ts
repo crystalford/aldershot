@@ -3560,6 +3560,39 @@ function readDuration(file) {
   });
 }
 
+/* ── The footage tab: add a video to this cut ─────────────────────────
+   The same gesture as attaching before the project existed. Its moments are
+   judged by the rules already on the board the moment it lands, so the whole
+   cut is re-produced and the page reloads. */
+document.querySelectorAll(".add-source").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + project.getAttribute("data-project") + "/attach", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: btn.getAttribute("data-source") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 /* ── The footage tab: keep or cut a moment by hand ────────────────────
    Every row's note promises this — "out · rule 02 · click to keep" — and it
    shipped once on a div with no handler, which is a sentence on screen

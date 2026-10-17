@@ -106,6 +106,14 @@ export interface CutData {
    * with a rule is the point.
    */
   moments: Array<{ id: string; quote: string; source_title: string; in: boolean; note: string }>;
+  /**
+   * Videos this cut is NOT drawing on, and could.
+   *
+   * Empty when the cut has no scope — it already draws on everything, so
+   * there is nothing to add and offering to would be a control that cannot
+   * do anything.
+   */
+  addable: Array<{ id: string; title: string }>;
   /** Every instruction given to the model on this cut, and what came of it. */
   passes: Array<{ id: string; n: number; instruction: string; result: string; undoable: boolean; first_change: string | null }>;
   /**
@@ -813,6 +821,27 @@ export function renderBlockSlice(
  * at the wrong line. Green for in, because the colour carries the verdict for
  * anyone scanning rather than reading.
  */
+/**
+ * ADD A VIDEO TO THIS CUT.
+ *
+ * The same gesture as attaching before a project exists, after it does. Its
+ * moments are judged by the rules already on the board the moment it lands —
+ * which is what "they join left out until a rule or your hand keeps them"
+ * means once there are rules to do the keeping.
+ */
+function addToCut(d: CutData): string {
+  if (!d.addable.length) return "";
+  return `<div style="margin-top:14px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">not in this cut</span>
+    ${d.addable
+      .map(
+        (s) => `<button class="add-source" type="button" data-source="${esc(s.id)}"
+          style="font-size:${SIZE.meta};padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit;max-width:min(220px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span data-content>${esc(s.title)}</span></button>`,
+      )
+      .join("")}
+  </div>`;
+}
+
 function momentsThroughRules(d: CutData): string {
   if (!d.moments.length) {
     return `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
@@ -1043,7 +1072,7 @@ export function renderCut(d: CutData): string {
     <div class="editor-doc">
       ${
         d.view === "footage"
-          ? momentsThroughRules(d)
+          ? addToCut(d) + momentsThroughRules(d)
           : `${findBar(d.projectId)}
       <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
         ${list.join("")}

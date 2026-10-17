@@ -120,6 +120,72 @@ test("every recompute is scoped, or a cut changes when you touch a rule", () => 
   const calls = [...src.matchAll(/recomputeFromRules\(c\.env, \{[^}]*\}/g)].map((x) => x[0]);
   assert.ok(calls.length >= 3, `expected several recomputes, found ${calls.length}`);
   for (const call of calls) {
-    assert.match(call, /scope: scopeOf\(project\)/, `unscoped recompute: ${call.slice(0, 80)}`);
+    /* Scoped — by whichever expression; the undo route restores a snapshot's
+       scope rather than the project's current one, and demanding one exact
+       form made this fail on the correct code. */
+    assert.match(call, /\bscope\b/, `unscoped recompute: ${call.slice(0, 80)}`);
   }
+});
+
+test("adding to an open cut, and taking it back, restores the scope", () => {
+  /*
+   * THE BUG THIS TEST EXISTS FOR, found by driving it.
+   *
+   * The attach pass's undo snapshot carried the rules and not the scope — and
+   * the rules are UNCHANGED by attaching, so undoing it restored nothing at
+   * all. The cut stayed widened, the video stayed added, and the pass line
+   * said it had been taken back.
+   *
+   * Read from the source because it is a property of what is stored, and the
+   * storing is the half that was wrong.
+   */
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  /*
+   * Anchored on the pass this route records, rather than sliced. Two earlier
+   * windows were wrong: cutting at the first `return c.json` stopped before
+   * the snapshot (the route has four early returns in front of it), and
+   * cutting at the next `app.` matched the route's OWN declaration.
+   */
+  assert.match(
+    src,
+    /instruction: `Added[\s\S]{0,900}?undo: \{[^}]*rules: JSON\.stringify\(rules\)[^}]*scope: JSON\.stringify\(scope\)/,
+    "the snapshot has to carry both the rules and the scope",
+  );
+
+  /*
+   * And the undo has to put it back, not merely parse it.
+   *
+   * Anchored, not sliced. THREE windows in this file were wrong before this
+   * one: a slice to the first `return c.json` stops inside the catch, and a
+   * slice to the next `app.` matches the route's own declaration. Reading
+   * source in a test is fine; guessing where a route ends is not.
+   */
+  assert.match(
+    src,
+    /A pass that did not touch the scope[\s\S]{0,1200}UPDATE v2_projects SET scope=\?/,
+    "the undo writes the scope back",
+  );
+  assert.match(
+    src,
+    /scope\?\.length \? JSON\.stringify\(scope\) : null/,
+    "and an emptied scope becomes null, which is what the whole library means",
+  );
+});
+
+test("a cut with no scope is not offered more footage", () => {
+  /*
+   * It already draws on everything, so "add this video" could not do
+   * anything — and a control that cannot act is the thing the conventions
+   * check exists to stop.
+   */
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  const block = src.slice(src.indexOf("The videos this cut is NOT drawing on"));
+  assert.match(block.slice(0, 500), /const scope = scopeOf\(project\);\s*\n\s*const addable = scope/);
+
+  const route = src.slice(src.indexOf("ADD A VIDEO TO AN OPEN CUT"));
+  assert.match(
+    route.slice(0, 1400),
+    /if \(!scope\) return c\.json\(\{ error: "this cut already draws on everything you have" \}, 422\)/,
+    "and the route says so rather than pretending to act",
+  );
 });

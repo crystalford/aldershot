@@ -49,6 +49,15 @@ const base: CutData = {
   passes: [],
   rules: [],
   moments: [],
+  addable: [],
+  /*
+   * The cast is why `addable` going missing was a runtime crash rather than a
+   * typecheck failure: `as unknown as CutData` turns off the one thing that
+   * would have caught it. It is here because CutData carries a dozen fields
+   * this file does not exercise, and the alternative is a fixture that has to
+   * grow with every field the editor gains — but it means a new REQUIRED
+   * field lands as three broken tests instead of a red squiggle.
+   */
 } as unknown as CutData;
 
 const RULES = [
