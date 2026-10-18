@@ -26,9 +26,10 @@
  */
 
 import type { Env } from "./env.ts";
-import { listMoments, searchMeaning, type Moment } from "./library.ts";
+import { listMoments, searchAny, searchMeaning, type Moment } from "./library.ts";
+import { bm25, tokens } from "./bm25.ts";
 import { applyRule, compute, describe, ruleKey, toFootageSet, type Rule } from "./rules.ts";
-import { contentWords, momentTags, NOISE } from "./moment-tags.ts";
+import { contentWords, momentTags } from "./moment-tags.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
 import { saveRules } from "./rule-store.ts";
 import { createProject, putBeats } from "./projects.ts";
@@ -137,17 +138,26 @@ export async function findMaterial(
    * library holding exactly that, it returned nothing, because no single
    * moment contains all four words including "the" and "about".
    *
-   * So the words retriever ranks instead of filtering: how many of the brief's
-   * content words a moment actually says. Deterministic, over our own
-   * transcripts.
+   * So the words retriever ranks instead of filtering. It is BM25 now, over
+   * every moment in the library that says any of the brief's content words —
+   * see src/bm25.ts for what counting distinct hits got wrong, and
+   * searchAny for the hole it sat in: the old ranker only ever saw the two
+   * hundred most recent moments, so on a library of thousands the words half
+   * of hybrid retrieval was blind to everything older.
    */
-  /* Genuinely in parallel: the embedding call and the row read are the two
-     waits, and neither needs the other's answer. */
-  const [meant, recent] = await Promise.all([
+  const terms = tokens(q);
+  /* Genuinely in parallel: the embedding call and the row reads are the
+     waits, and none needs another's answer. `recent` is still read because
+     it is the fallback when nothing matches at all. */
+  const [meant, candidates, recent] = await Promise.all([
     searchMeaning(env, userId, q, limit),
+    searchAny(env.DB, userId, terms),
     listMoments(env.DB, userId, 200),
   ]);
-  const ranked = rankByWords(recent, q);
+  /* The title comes along, as it always did: a moment in a video called
+     "Tuesday — the kitchen one" is about kitchens even when the words are
+     not in the quote. */
+  const ranked = bm25(candidates, q, (m) => `${m.quote} ${m.source_title ?? ""}`).map((r) => r.item);
 
   /*
    * TWO PEER RETRIEVERS, FUSED BY RANK — not one with the other as a fallback.
@@ -230,29 +240,20 @@ export function dedupe<T extends { source_id: string; start_ms: number; end_ms: 
  * Exported because the ranking is the whole retrieval story when there is no
  * meaning index, and a rule this load-bearing should be testable on its own.
  */
-export function rankByWords<T extends { quote: string; source_title?: string }>(
-  moments: T[],
-  brief: string,
-): T[] {
-  const terms = [
-    ...new Set(
-      brief
-        .toLowerCase()
-        .split(/[^a-z0-9']+/)
-        .filter((t) => t.length > 2 && !NOISE.has(t)),
-    ),
-  ];
-  if (!terms.length) return [];
-
-  return moments
-    .map((m) => {
-      const hay = (m.quote + " " + (m.source_title ?? "")).toLowerCase();
-      return { m, hits: terms.filter((t) => hay.includes(t)).length };
-    })
-    .filter((r) => r.hits > 0)
-    .sort((a, b) => b.hits - a.hits)
-    .map((r) => r.m);
-}
+/*
+ * rankByWords IS GONE, and what replaced it is src/bm25.ts.
+ *
+ * It counted how many of the brief's distinct terms appeared somewhere in a
+ * moment: no idea which words were rare, no account of how long the moment
+ * was, and `hay.includes(term)` — so "rent" matched "different", "parent"
+ * and "current". The last of those is wrong results rather than wrong
+ * order, and src/scout-expand.ts already carried a comment about the same
+ * trap because it was found there first.
+ *
+ * Deleted rather than kept beside the new one: two rankers is two answers
+ * to "what does this brief match", and the fidelity gate would have called
+ * the unused one out anyway.
+ */
 
 /* Written-out numbers people actually say to a video editor. */
 const SPOKEN: Record<string, number> = {
