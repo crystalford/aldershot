@@ -1511,6 +1511,9 @@ app.get("/p/:id/:stagePath", async (c) => {
   const view: CutView =
     stage === "footage" || c.req.query("view") === "footage" ? "footage"
     : stage === "script" || c.req.query("view") === "script" ? "script"
+    /* `shorts` was already in EDITOR_PATHS and rendered the blocks view —
+       a tab the product answered and did not have. It has one now. */
+    : stage === "shorts" || c.req.query("view") === "shorts" ? "shorts"
     : "blocks";
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);

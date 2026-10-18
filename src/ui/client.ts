@@ -3565,6 +3565,43 @@ function readDuration(file) {
    confirmation and no save step: the answer IS the tap, and changing it is
    another tap. No reload either — reloading after every judgement would
    re-run retrieval and lose the reading position partway down a list. */
+/* ── Keep a line as a short ──────────────────────────────────────────
+   The Shorts tab grades every line and withholds none, so this is pressable
+   on a Long shot too — the grade said what to expect and the person read it.
+   It saves the line as a moment; rendering it is a separate press, because
+   nothing renders until you say so. */
+document.querySelectorAll(".short-line").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/shorts-from-line", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ segIdx: Number(btn.getAttribute("data-seg")) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(body.error || "That didn't save.");
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        return;
+      }
+      /* made:false is saveClips refusing an overlap, which means the moment
+         is already in the library — not a failure, and saying "saved" would
+         be the second kind of lie. (No backticks in this file: one ends the
+         String.raw body and takes the whole client with it.) */
+      btn.textContent = body.made ? "Kept" : "Already kept";
+      window.toast(body.made ? "Kept it — it's in your Highlights." : "That one is already in your Highlights.");
+    } catch {
+      window.toast("That didn't save.");
+      btn.disabled = false;
+      btn.style.opacity = "1";
+    }
+  });
+});
+
 /* ── Ask the judge ───────────────────────────────────────────────────
    A job, so this starts it and leaves; the bell and the page's own reload
    are where it is watched, the same as every other long thing here. */

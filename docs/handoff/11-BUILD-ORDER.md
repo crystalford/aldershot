@@ -112,6 +112,23 @@ Shorts mode with Strong / Worth a look / Long shot and reasons, the fragment sel
 
 - **Accept:** no short ends mid-sentence or carries an unresolved referent; a pasted brief ("hooks in 2s, 20–40s, no politics, we need 8") compiles to four visible rules with a shortlist diff; a generated image can never be placed on an EVIDENCE or CLAIM block (test the refusal); a recorded take aligns to the script within one frame; a chart with a non-zero baseline fails the lint.
 
+**The self-sufficiency test has landed**, and with it the fourth tab.
+`src/shorts.ts` grades every line in a cut Strong · Worth a look · Long shot
+with the fact that caused the grade — it stops mid-sentence, it opens on
+"he" and nothing in it says who. Both of the acceptance's named failures are
+hard; starting part-way through and length are soft, because a viewer joins
+a thought in progress all the time and length is a format question rather
+than a sense one.
+
+**It is not a model call.** The grading turned out to BE the
+self-sufficiency test, which is a measurement — the house rule — and that
+makes the reason exact rather than an opinion. Nothing is withheld: a Long
+shot is listed and pressable, because the grade says what to expect and a
+person who disagrees presses it anyway.
+
+The Shorts tab also wires `/api/projects/:id/shorts-from-line`, which the
+gate had carried as unreachable-and-known since it was written.
+
 ## Phase 6 — Before you post and export
 
 The checklist with fixes; typed pictures → automatic labels; the cue sheet, dispute file, provenance manifest and receipts page; sidecar captions ≤17 cps; loudness normalisation; must-keep rules as solver constraints.

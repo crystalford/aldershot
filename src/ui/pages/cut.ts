@@ -25,6 +25,7 @@ import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
+import { GRADE_NAME, grade, type Grade } from "../../shorts.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -43,18 +44,22 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 /*
  * THE CENTRE'S TABS. One Take names four — Footage · Blocks · Words · Shorts.
  *
- * Three are here. SHORTS is not, and that is the honest answer rather than a
- * gap: its tab lists candidates graded Strong / Worth a look / Long shot with
- * a reason for each, and the three-way judge that produces those gradings is
- * Phase 4. A fourth tab holding a list the product cannot grade would be a
- * promise in a tab bar, which is the thing the conventions check exists to
- * stop. It goes in when the judge does.
+ * All four now. Shorts waited because its tab lists candidates graded
+ * Strong / Worth a look / Long shot with a reason for each, and a tab
+ * holding a list the product could not grade would be a promise in a tab
+ * bar — the thing the conventions check exists to stop.
+ *
+ * WHAT GRADES THEM IS NOT A MODEL. The grading turned out to be the
+ * self-sufficiency test itself (src/shorts.ts): a line that stops
+ * mid-sentence or opens on a word pointing off-screen is a Long shot, and
+ * the reason is the fact rather than an opinion about it. Deterministic,
+ * which is the house rule, and it makes the reason exact.
  *
  * `script` keeps its name in the URL — /p/:id/script is an existing link —
  * and reads as WORDS in the bar, which is what the prototype calls it and
  * what it always meant.
  */
-export type CutView = "footage" | "blocks" | "script";
+export type CutView = "footage" | "blocks" | "script" | "shorts";
 
 export interface CutData {
   projectId: string;
@@ -425,6 +430,74 @@ function blockRow(
  * a chip that pretends otherwise is the failure this whole session has been
  * about — they are absent rather than dead.
  */
+/**
+ * SHORTS: which lines would stand on their own, and why not.
+ *
+ * Phase 5's acceptance is "no short ends mid-sentence or carries an
+ * unresolved referent", and that is this list: every line in the cut,
+ * graded by src/shorts.ts, with the fact that caused the grade beside it.
+ *
+ * NOTHING IS WITHHELD. A Long shot is listed and pressable — the grade says
+ * what to expect and the reason says why, and a person who disagrees
+ * presses it anyway. Filtering would quietly lose a line somebody wanted,
+ * and the conventions check exists because a control that cannot be pressed
+ * is worse than one that warns.
+ *
+ * STRONG FIRST, then the order they are said in. Two Strong lines are not
+ * ranked against each other: nothing here can tell which of two
+ * self-sufficient sentences makes the better short, and a number pretending
+ * otherwise is what invariant 3 forbids.
+ */
+const GRADE_ACCENT: Record<Grade, keyof typeof ACCENT> = {
+  strong: "green",
+  worth: "gold",
+  long: "red",
+};
+
+function shortsList(d: CutData): string {
+  const lines = d.blocks.filter((b) => b.origin === "footage" && !b.struck && b.text.trim());
+  if (!lines.length) {
+    return `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing to cut a short from yet — this cut has no lines in it.</div>`;
+  }
+
+  const ORDER: Record<Grade, number> = { strong: 0, worth: 1, long: 2 };
+  const graded = lines
+    .map((b, i) => ({ b, i, g: grade({ text: b.text, durationMs: b.end_ms - b.start_ms }) }))
+    .sort((x, y) => ORDER[x.g.grade] - ORDER[y.g.grade] || x.i - y.i);
+
+  const rows = graded
+    .map(({ b, g }) => {
+      const accent = ACCENT[GRADE_ACCENT[g.grade]];
+      /* The segment index is in the block id — "s:12" — and it is what
+         /shorts-from-line takes. A block that is not a segment cannot
+         become a short from a line, so it carries no index and no button. */
+      const seg = b.id.startsWith("s:") ? b.id.slice(2) : "";
+      return `<div style="display:flex;gap:12px;align-items:baseline;padding:11px 13px;border-radius:${RADIUS.card};background:${C.surface}">
+        <span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${accentBg(accent)};color:${accent};white-space:nowrap">${esc(GRADE_NAME[g.grade].toUpperCase())}</span>
+        <span style="flex:1 1 220px;min-width:min(200px,100%)">
+          <span data-content style="display:block;font-size:${SIZE.body};line-height:1.5">${esc(b.text)}</span>
+          <span data-content style="display:block;margin-top:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(g.reason)}</span>
+        </span>
+        ${
+          seg
+            ? `<button class="short-line" type="button" data-project="${esc(d.projectId)}" data-seg="${esc(seg)}"
+                style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Keep it</button>`
+            : ""
+        }
+      </div>`;
+    })
+    .join("");
+
+  const strong = graded.filter((x) => x.g.grade === "strong").length;
+  return `<div>
+    <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
+      <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Shorts</span>
+      <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${strong} of ${graded.length} lines stand on their own</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+  </div>`;
+}
+
 function seam(projectId: string, at: number, view: CutView = "blocks"): string {
   const opt = (kind: string, label: string) =>
     `<button class="blk-insert" data-project="${esc(projectId)}" data-at="${at}" data-kind="${kind}"
@@ -924,6 +997,7 @@ export function renderCut(d: CutData): string {
       <a href="/p/${esc(d.projectId)}/footage"${d.view === "footage" ? ' aria-current="page"' : ""}>Footage</a>
       <a href="/p/${esc(d.projectId)}/cut"${(d.view ?? "blocks") === "blocks" ? ' aria-current="page"' : ""}>Blocks</a>
       <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Words</a>
+      <a href="/p/${esc(d.projectId)}/shorts"${d.view === "shorts" ? ' aria-current="page"' : ""}>Shorts</a>
     </div>
   </div>`;
 
@@ -1097,7 +1171,9 @@ export function renderCut(d: CutData): string {
     -->
     <div class="editor-doc">
       ${
-        d.view === "footage"
+        d.view === "shorts"
+          ? shortsList(d)
+          : d.view === "footage"
           ? addToCut(d) + momentsThroughRules(d)
           : `${
               /*

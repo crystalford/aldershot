@@ -135,20 +135,79 @@ test("a moment's rule number is the pane's rule number", () => {
   assert.match(pane, /02[\s\S]{0,160}Take out the hellos/);
 });
 
-test("the centre has three tabs, and Shorts is deliberately not one", () => {
+test("the centre has the four tabs One Take names", () => {
   /*
-   * One Take names four. The fourth lists candidates graded Strong / Worth a
-   * look / Long shot with a reason, and the three-way judge that produces
-   * those gradings is Phase 4. A tab holding a list the product cannot grade
-   * is a promise in a tab bar.
+   * Shorts was deliberately absent while the product could not grade its
+   * list — "a tab holding a list the product cannot grade is a promise in a
+   * tab bar". It can now, and the thing that grades it is not a model: the
+   * self-sufficiency test in src/shorts.ts is the grade and the reason.
    */
   const html = renderCut({ ...base, rules: RULES });
-  const bar = html.slice(html.indexOf('class="view-swap"'), html.indexOf('class="view-swap"') + 420);
+  const bar = html.slice(html.indexOf('class="view-swap"'), html.indexOf('class="view-swap"') + 560);
   assert.match(bar, />Footage</);
   assert.match(bar, />Blocks</);
   assert.match(bar, />Words</, "the prototype's name for the script view");
-  assert.ok(!/>Shorts</.test(bar));
+  assert.match(bar, />Shorts</);
   assert.ok(!/>Script</.test(bar), "renamed, because Words is what it always meant");
+});
+
+test("the route answers the Shorts tab with the Shorts view", () => {
+  /*
+   * `shorts` was already in EDITOR_PATHS and rendered the BLOCKS view — a
+   * tab the product answered and did not have. Read off the source rather
+   * than driven, which proves the mapping exists and not that it renders;
+   * the renderer is the test below, and the two together are the link.
+   */
+  const src = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  assert.match(
+    src,
+    /stage === "shorts" \|\| c\.req\.query\("view"\) === "shorts" \? "shorts"/,
+    "/p/:id/shorts has to reach the Shorts view",
+  );
+  assert.match(src, /EDITOR_PATHS = new Set\(\[[^\]]*"shorts"/);
+});
+
+test("the Shorts tab grades every line and withholds none", () => {
+  /*
+   * A Long shot is listed and pressable: the grade says what to expect and
+   * the reason says why, and a person who disagrees presses it anyway.
+   * Filtering would quietly lose a line somebody wanted.
+   */
+  const block = (id: string, text: string, ms: number) => ({
+    id,
+    origin: "footage" as const,
+    start_ms: 0,
+    end_ms: ms,
+    text,
+    words: [],
+    struck: false,
+    score: null,
+    why: null,
+    mediaKey: null,
+    previewKey: null,
+    voiceKey: null,
+    posterKey: null,
+  });
+  const html = renderCut({
+    ...base,
+    view: "shorts" as const,
+    blocks: [
+      block("s:0", "The house has a room that gets sun until four.", 20_000),
+      block("s:1", "and then the rent halves and I lose everyone I would", 20_000),
+    ],
+  });
+
+  assert.match(html, /STRONG/);
+  assert.match(html, /LONG SHOT/);
+  assert.match(html, /it stands on its own/);
+  assert.match(html, /stops mid-sentence/, "the reason is the fact, not an opinion about it");
+  /* Both pressable, and both carrying the segment index /shorts-from-line
+     takes. */
+  assert.match(html, /class="short-line"[^>]*data-seg="0"/);
+  assert.match(html, /class="short-line"[^>]*data-seg="1"/);
+  /* Strong first, and no number anywhere near a line. */
+  assert.ok(html.indexOf("STRONG") < html.indexOf("LONG SHOT"));
+  assert.equal(html.match(/1 of 2 lines stand on their own/)?.length, 1);
 });
 
 test("the footage tab replaces the document rather than sitting beside it", () => {
