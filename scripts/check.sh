@@ -57,3 +57,7 @@ echo "  what it looks like: npm run check:frame    (see scripts/check-frame.cjs)
 # learn to skip. It is the only check that asks whether the words are
 # actually WHERE the product says they are, and the band is one frame.
 echo "  where the words are: npm run check:align  (see scripts/check-align.cjs)"
+# The interchange file, read back by the library every NLE's importer is
+# built on. Needs Python and a wheel, so it is a pointer rather than a stage.
+# It is the only thing that can tell real OTIO from JSON that looks like it.
+echo "  does it open:        npm run check:otio   (see scripts/check-otio.cjs)"

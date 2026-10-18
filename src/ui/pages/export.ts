@@ -60,6 +60,17 @@ export function exportPanel(projectId: string, plan: string): string {
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
       <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
     </div>
+    <!--
+      THE WAY OUT, beside the way to a finished file.
+      A timeline is not a render: it needs no job and no waiting, because the
+      edit already is data. It sits here rather than behind its own control
+      because this is the panel a person opens when they are thinking about
+      where this video goes next.
+    -->
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
+    </div>
   </form>`;
 }
 

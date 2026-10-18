@@ -861,6 +861,19 @@ async function checkStrings() {
         "essay outlining is a stage it does not cover. Written in the same " +
         "voice as the ones it does.",
     ],
+    [
+      "Take it elsewhere &nearr;",
+      "The OTIO export, in the export panel. The prototype has no interchange " +
+        "file at all — it is doc 09's escape hatch and Phase 1's last " +
+        "acceptance item, so there was no wording to follow. Says what the " +
+        "link does from the person's side rather than naming a format: " +
+        "somebody who wants this wants to take the edit somewhere, and the " +
+        "line beneath it says what they get. 'Export' was taken, by the " +
+        "button six pixels above it that makes a video.\n\n" +
+        "The entity rather than the character, because this check reads the " +
+        "markup and does not decode one. Said here so the next person to " +
+        "paste a signed-off string does not spend an evening on it.",
+    ],
   ]);
 
   const SHORT = 24;

@@ -85,7 +85,8 @@ import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
-import { shouldAlign } from "./align-source.ts";
+import { shouldAlign, timingForProject } from "./align-source.ts";
+import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { isVerdict, type Verdict } from "./eval-set.ts";
@@ -2887,6 +2888,56 @@ app.post("/api/plans/:id/cut", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, projectId: project.id, href: `/p/${project.id}/cut`, kept: out.kept });
+});
+
+/**
+ * THIS CUT, AS A TIMELINE SOMEBODY ELSE'S EDITOR CAN OPEN.
+ *
+ * Doc 09's escape hatch and Phase 1's last acceptance item. It is a GET that
+ * downloads, because that is what an escape hatch should be: no job, no
+ * queue, no waiting — the edit is already data, and this is the data.
+ *
+ * Built from `edlForProject`, which is the SAME function the render uses. A
+ * second path to "what is in this cut" would be a second answer, and the
+ * whole claim of an interchange file is that it is the film you were just
+ * watching.
+ */
+app.get("/api/projects/:id/timeline.otio", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const built = await edlForProject(c.env, project, user.id);
+  if (!built || !built.edl.cuts.length) {
+    return c.json({ error: "there is nothing in this cut to export yet" }, 422);
+  }
+
+  /*
+   * WHAT EACH CLIP'S FILE IS CALLED, so an editor can relink it.
+   *
+   * The timeline points at filenames rather than at our storage — every URL
+   * this product could write is presigned and expires, and an .otio that
+   * relinks to nothing next week is worse than one that asks to be pointed
+   * at a folder. So the names have to come from somewhere, and the somewhere
+   * is the user's own sources.
+   */
+  const sources = await listSources(c.env.DB, user.id, "newest");
+  const media = new Map(
+    sources.map((s) => [
+      s.r2_key,
+      { name: s.filename || `${s.title}.mp4`, durationMs: s.duration_s ? s.duration_s * 1000 : null },
+    ]),
+  );
+
+  const timing = await timingForProject(c.env, project.id);
+  const body = otioJson(built.edl, { name: project.title, media, timing: timing.source });
+  return new Response(body, {
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="${(project.title || "timeline").replace(/[^\w.\- ]/g, "_")}.otio"`,
+    },
+  });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

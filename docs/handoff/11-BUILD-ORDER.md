@@ -23,6 +23,16 @@ a torch install, so it is acceptance rather than a gate; its header says how to
 run it. What is still owed is the same check over thirty minutes of the owner's
 own footage on a real deploy, which no sandbox can stand in for.
 
+**OTIO has landed** too: `GET /api/projects/:id/timeline.otio`, built from the
+same `edlForProject` the render uses, linked from the export panel as "Take it
+elsewhere". Milliseconds are the time base rather than an assumed frame rate —
+nothing in this product has ever measured one, and an NLE conforms on import.
+Every clip carries `metadata.aldershot` with its source, its words and where
+its timings came from, so a cut finished in somebody else's editor still knows
+what it is made of. `npm run check:otio` round-trips it through
+OpenTimelineIO, which is the closest a machine with no NLE can get to "opens
+in Resolve"; opening it in Resolve itself is still owed.
+
 ## Phase 2 — the rule engine and the Editor
 
 Port `footage.js compute()` and `applyRule()` over the real document; the Editor with Cut mode: rules with effects, Blocks and Words zooms, hand rules, struck words, inserts, undo/history, project save/restore, the Read (observable only).

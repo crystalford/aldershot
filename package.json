@@ -14,6 +14,7 @@
     "check:editor": "node scripts/check-editor.cjs",
     "check:frame": "node scripts/check-frame.cjs",
     "check:align": "node scripts/check-align.cjs",
+    "check:otio": "node scripts/check-otio.cjs",
     "eval": "node --experimental-strip-types scripts/eval-retrieval.ts",
     "labels": "node --experimental-strip-types scripts/read-labels.ts",
     "schema": "node scripts/schema-doc.cjs"
