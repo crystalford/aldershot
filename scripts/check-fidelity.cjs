@@ -1453,10 +1453,40 @@ function checkSchema() {
     }
   }
 
+  /*
+   * EVERY QUEUE NAMED IN wrangler.jsonc IS PROVISIONED BY THE DEPLOY.
+   *
+   * `wrangler deploy` fails outright on a queue that does not exist —
+   * "Queue \"aldershot-jobs-dlq\" does not exist" — so adding a consumer to
+   * that file is a deploy-breaking change unless the workflow creates it
+   * first. That is exactly what happened the day the dead-letter queue
+   * landed: the gate was green, the tests passed, and the next deploy died.
+   *
+   * D1 was already created-if-missing in deploy.yml and queues were not, so
+   * nothing connected the two files. This is the connection.
+   */
+  /* COMMENTS STRIPPED FIRST. The comment explaining this rule names the
+     dead-letter queue, so the rule was satisfied by its own explanation — a
+     break that removed the queue from the provisioning list went uncaught. */
+  const deploy = fs
+    .readFileSync(path.join(ROOT, '.github/workflows/deploy.yml'), 'utf8')
+    .replace(/^\s*#.*$/gm, '');
+  const named = new Set();
+  const wrangler = fs.readFileSync(path.join(ROOT, 'wrangler.jsonc'), 'utf8');
+  for (const m of wrangler.matchAll(/"(?:queue|dead_letter_queue)"\s*:\s*"([^"]+)"/g)) named.add(m[1]);
+  for (const q of named) {
+    if (!deploy.includes(q)) {
+      bad.push(
+        q + ' — named in wrangler.jsonc and never created by .github/workflows/deploy.yml, ' +
+          'so the next deploy fails on it',
+      );
+    }
+  }
+
   if (bad.length) {
     fail('schema', 'The schema that runs and the schema a person reads have come apart. `npm run schema`.', bad.join('\n'));
   } else {
-    pass('schema', live.size + ' tables and indexes mirrored in migrations/schema.sql; every queue consumer has a dead-letter queue');
+    pass('schema', live.size + ' tables and indexes mirrored in migrations/schema.sql; every queue has a dead-letter queue and a deploy that creates it');
   }
 }
 
