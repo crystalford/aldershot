@@ -68,6 +68,8 @@ import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
 import { compileBrief, shortlistDiff } from "./brief.ts";
+import { UNSURE, classify } from "./classify.ts";
+import { allowed, type Move, type Source as PictureSource } from "./pictures.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3236,6 +3238,46 @@ app.post("/api/projects/:id/beats", async (c) => {
      end — `at` is only sent when a specific seam was clicked. */
   const existing = await getBeats(c.env.DB, project.id);
   const at = b.at == null ? existing.length : Number(b.at);
+
+  /*
+   * INVARIANT 8, AT THE ONE PLACE IT CAN BITE TODAY.
+   *
+   * "Generated is never photoreal and never over a claim or its proof."
+   * `generated` and `stock` are two of the five kinds this route accepts,
+   * so this is where a picture that is not the user's own footage actually
+   * enters a cut — and the line it lands against decides whether it may.
+   *
+   * CLASSIFIED HERE RATHER THAN STORED, because the answer is needed
+   * exactly once, at the moment of the insert, and a stored move goes
+   * stale the moment somebody edits the line it was about. The whole cut
+   * goes into the call because a move is a statement about a line IN
+   * CONTEXT — a turn is only a turn against what came before it.
+   *
+   * AND IT REFUSES WHEN IT DOES NOT KNOW. An unanswered line is `claim`
+   * (src/classify.ts), which wants the speaker's own footage and nothing
+   * else — so a failed or skipped classification costs a generated card,
+   * never a generated card over somebody's proof. That is the direction
+   * the invariant demands.
+   */
+  if (kind === "generated" || kind === "stock") {
+    const source: PictureSource = kind === "generated" ? "generated" : "world";
+    const lines = (await blocksForProject(c.env.DB, project, user.id)).blocks
+      .filter((x) => x.text.trim())
+      .map((x) => ({ id: x.id, text: x.text }));
+    /* The line it lands against: the one at the seam, or the last one when
+       it is going on the end. */
+    const against = lines[Math.min(at, lines.length - 1)];
+    if (against) {
+      let move: Move = UNSURE;
+      try {
+        move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+      } catch {
+        /* Unknown, which is `claim`, which refuses. */
+      }
+      const no = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" });
+      if (no.reason) return c.json({ error: no.reason }, 422);
+    }
+  }
 
   const beats = await insertBeat(c.env.DB, project.id, at, {
     kind,

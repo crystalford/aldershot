@@ -141,10 +141,14 @@ tested function rather than an intention: a generated picture cannot carry
 evidence or a claim, is never photoreal, and "nothing to show" is a result.
 The chart lints are hard fails, provenance among them.
 
-What it has no caller for is the classifier that says which move a line is,
-which is the one part needing a model and will arrive behind its own
-contract — the same order `src/align.ts` was built in, and for the same
-reason.
+**The classifier has landed** (`src/classify.ts`), and with it the refusal
+has somewhere to bite: `generated` and `stock` are two of the five kinds the
+beat insert accepts, so that route is where a picture which is not your own
+footage enters a cut, and the line it lands against decides whether it may.
+Housekeeping never reaches the model — that is a regex this product has had
+since the first scoring pass. An unanswered line is `claim`, the most
+restrictive move, so a failed classification costs a generated card rather
+than letting one over somebody's proof.
 
 **A recorded take is aligned to its line** now (`src/take.ts`,
 `src/take-run.ts`). The timing half is the aligner — about 20 ms, half a
@@ -156,8 +160,8 @@ score is the only honest signal that happened. A take is never rejected;
 the editor says what it turned out to be, and only when that is not what
 was written.
 
-Still owed in Phase 5: the move classifier, the picture supply (documents,
-generated layers), and the sound rules.
+Still owed in Phase 5: the picture supply (documents, generated layers) and
+the sound rules.
 
 ## Phase 6 — Before you post and export
 
