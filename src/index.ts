@@ -18,6 +18,9 @@ import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } fro
 import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
 import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
 import { page, type ShortsCtx, type View } from "./ui/shell.ts";
+import { renderBoard } from "./ui/pages/board.ts";
+import { boardFor } from "./scout-board-data.ts";
+import { createRun, diligence } from "./scout-store.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
@@ -1277,6 +1280,85 @@ app.post("/api/sources/:id/retry", async (c) => {
     type: "transcribe", jobId: job.id, userId: user.id, sourceId: src.id, plan: user.plan,
   });
   return c.redirect(`/sources/${src.id}`, 303);
+});
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * SCOUT, AS THREE ROUTES.
+ *
+ * Doc 18 section 1 draws them: POST a run, GET a run, GET the board. The
+ * modules behind them have been built and tested for a week and none of them
+ * has been reachable by a person, which is the difference between a library
+ * and a feature.
+ *
+ * THE RUN IS A JOB, not a request. Minutes of frontier calls and adapter
+ * fetches do not belong inside a POST — see src/scout-job.ts for why one
+ * phase per message rather than one run per invocation.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+app.post("/api/projects/:id/scout/runs", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ brief?: string; subject?: string }>(c);
+  const brief = (b.brief ?? project.brief ?? "").trim();
+  if (!brief) return c.json({ error: "Scout needs a sentence about what the video argues." }, 400);
+  /* The subject is who it is about, which the crowd and seed families hang
+     off. Without one those two families produce queries about nobody. */
+  const subject = (b.subject ?? "").trim() || brief.split(/\s+/).slice(0, 4).join(" ");
+
+  const runId = await createRun(c.env.DB, { projectId: project.id, trigger: "plan", brief });
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "scout", ref_id: runId });
+  await dispatch(c.env, c.executionCtx, {
+    type: "scout",
+    jobId: job.id,
+    userId: user.id,
+    runId,
+    projectId: project.id,
+    subject,
+    brief,
+  });
+
+  /*
+   * A FORM POST LANDS ON THE BOARD, not on JSON. The control in the cut's
+   * direction column is a plain form — the client is one String.raw template
+   * and a stray backtick breaks the product — so the response has to be a
+   * page. An XHR caller asks for JSON and gets it.
+   */
+  if ((c.req.header("accept") ?? "").includes("application/json")) {
+    return c.json({ runId, jobId: job.id });
+  }
+  return c.redirect(`/api/projects/${project.id}/scout/board`, 303);
+});
+
+app.get("/api/projects/:id/scout/runs/:rid", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const run = await c.env.DB.prepare("SELECT * FROM scout_runs WHERE id = ? AND project_id = ?")
+    .bind(c.req.param("rid"), project.id)
+    .first<Record<string, unknown>>();
+  if (!run) return c.json({ error: "not found" }, 404);
+
+  /*
+   * THE DILIGENCE LOG RIDES ALONG. What was tried is not a separate screen
+   * somebody has to think to open — the thing that makes a gap mean "we
+   * looked" rather than "there is nothing" travels with the run.
+   */
+  return c.json({ run, diligence: await diligence(c.env.DB, String(run.id)) });
+});
+
+app.get("/api/projects/:id/scout/board", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const data = await boardFor(c.env.DB, project.id);
+  return c.html(page({ title: "Scout", view: "room", screenLabel: "Scout", email: user.email }, renderBoard(data)));
 });
 
 /*

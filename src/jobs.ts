@@ -42,6 +42,7 @@ export const STAGES: Record<string, string> = {
   proxy: "making an editing copy",
   shorts: "burning captions",
   tts: "speaking it",
+  scout: "looking outside",
 };
 
 export async function createJob(

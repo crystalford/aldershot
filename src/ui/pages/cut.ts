@@ -560,6 +560,36 @@ function passLogPanel(passes: CutData["passes"]): string {
  * that is off stays in the list saying "off — footage as shot" rather than
  * vanishing and leaving the cut unexplained.
  */
+/**
+ * BRING SCOUT IN.
+ *
+ * The one control that turns a project into a run, and a plain form rather
+ * than anything in client.ts — a POST that redirects is the whole
+ * interaction, and the client is one String.raw template where a stray
+ * backtick breaks the product.
+ *
+ * THE COPY IS THE PROMISE AND THE LIMIT IN ONE SENTENCE. "Finds clips that
+ * aren't yours yet — links, never downloads" is invariant 9 said to a person,
+ * and it belongs on the button rather than in a help page: this is the moment
+ * somebody decides whether to let the product go outside.
+ */
+function scoutPanel(projectId: string): string {
+  return (
+    `<section style="margin-top:12px;padding:12px;border-radius:${RADIUS.card};background:${C.surface}">` +
+    `<div style="font:600 ${SIZE.secondary} ${FONT.ui};color:${C.ink}">Look outside this project</div>` +
+    `<div style="font:400 ${SIZE.meta} ${FONT.ui};color:${C.ink45};margin-top:3px">` +
+    `Scout finds clips that aren&rsquo;t yours yet &mdash; links, never downloads. ` +
+    `He turns the brief into things a viewer could point to on camera, and searches for each and for its opposite.</div>` +
+    `<div style="display:flex;gap:8px;margin-top:10px">` +
+    `<form method="post" action="/api/projects/${esc(projectId)}/scout/runs" style="margin:0">` +
+    `<button type="submit" style="padding:6px 12px;border:0;border-radius:${RADIUS.button};background:${C.ink};` +
+    `color:${C.canvas};font:600 ${SIZE.meta} ${FONT.ui};cursor:pointer">Send Scout</button></form>` +
+    `<a href="/api/projects/${esc(projectId)}/scout/board" style="padding:6px 12px;border-radius:${RADIUS.button};` +
+    `background:${C.pill};color:${C.ink70};font:600 ${SIZE.meta} ${FONT.ui};text-decoration:none">The board</a>` +
+    `</div></section>`
+  );
+}
+
 function rulesPanel(rules: CutData["rules"]): string {
   if (!rules.length) return "";
 
@@ -728,7 +758,7 @@ function assistant(d: CutData, player: string): string {
          "why these moments"; the conversation below is the history of asking,
          and the composer under that is where the next one goes. The player
          used to sit here and is now its own column. -->
-    <div class="asst-top">${player}${rulesPanel(d.rules)}</div>
+    <div class="asst-top">${player}${rulesPanel(d.rules)}${scoutPanel(d.projectId)}</div>
 
     <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}

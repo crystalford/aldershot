@@ -34,6 +34,7 @@ import { runShortRender } from "./short-render.ts";
 import { runRender } from "./render-job.ts";
 import { runScore } from "./begin.ts";
 import { runReactions, runOutline } from "./pass-jobs.ts";
+import { hasMoreToDo, runScoutPhase } from "./scout-job.ts";
 
 /**
  * HOW MANY DELIVERIES A MESSAGE GETS, and it must equal `max_retries` on the
@@ -120,7 +121,25 @@ export type JobMessage =
    */
   | { type: "proxy"; jobId: string; userId: string; sourceId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
-  | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string };
+  | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
+  /*
+   * ONE PHASE OF A SCOUT RUN, and the message carries the run's id rather
+   * than its state. A run is minutes of frontier calls, adapter fetches and
+   * transcript scans; done in one invocation it would hit a worker's lifetime
+   * and die halfway with the row on "running" and no error. One phase is
+   * seconds, and a phase that dies is one message redelivered.
+   */
+  | {
+      type: "scout";
+      jobId: string;
+      userId: string;
+      runId: string;
+      projectId: string;
+      subject: string;
+      brief: string;
+      queriesPending?: unknown[];
+      snowballed?: boolean;
+    };
 
 /**
  * Performs one job. The single place any long operation actually runs, whether
@@ -203,6 +222,32 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
            is a failure of the copy and not of the video. The sweep retries. */
         return void (await failJob(env.DB, msg.jobId, "Couldn't make an editing copy. It plays from the original."));
       }
+      return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "scout": {
+      /*
+       * Re-dispatches ITSELF rather than looping. Each delivery does one
+       * phase; the planner reads rows to decide the next, so a run that dies
+       * resumes by asking the same question again.
+       */
+      const next = await runScoutPhase(env, {
+        runId: msg.runId,
+        projectId: msg.projectId,
+        userId: msg.userId,
+        subject: msg.subject,
+        brief: msg.brief,
+        queriesPending: (msg.queriesPending ?? []) as never,
+        snowballed: msg.snowballed,
+      });
+      if (hasMoreToDo(next)) {
+        await dispatch(env, { waitUntil: () => {} }, {
+          ...msg,
+          queriesPending: next.queriesPending as unknown[],
+          snowballed: next.snowballed,
+        });
+        return;
+      }
+      /* Nothing more to do: the run's own row already says why. */
       return void (await finishJob(env.DB, msg.jobId));
     }
     case "reactions":

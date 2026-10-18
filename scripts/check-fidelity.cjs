@@ -1150,18 +1150,95 @@ function checkReachable() {
     .join('\n');
   const problems = [];
 
-  /* 1. An API route nothing can reach. The client builds most paths by
-        concatenation, so a route is matched on its distinctive literal
-        segments rather than on the whole pattern. */
+  /*
+   * 1. AN API ROUTE NOTHING CAN REACH.
+   *
+   * THE HAYSTACK DOES NOT INCLUDE src/index.ts, which is where the routes are
+   * DECLARED. `server` is everything under src/ outside ui/, index.ts among
+   * it, so until this line every route matched its own `app.get("…")` and the
+   * rule had never once fired. The MAKE cards it is credited with catching
+   * were caught by the query-parameter rule below, which is a different
+   * check. Three Scout routes were added with nothing calling any of them and
+   * it passed.
+   *
+   * WHAT THIS RULE CANNOT SEE. The haystack is file TEXT, so a path literal
+   * sitting in a function nobody calls satisfies it — delete a button's call
+   * site but leave the function that renders it, and the route still reads as
+   * reachable. That is the `wired` rule's shape of problem, and `wired` only
+   * sees exports. Said out loud rather than implied away, because a check
+   * that is believed to guarantee more than it does is how this one went a
+   * year without firing.
+   *
+   * MATCHED ON THE LAST LITERAL SEGMENT, not the whole path, because the
+   * client builds these by concatenation — `"/api/" + kind + "/" + id +
+   * "/restore"` — so no pattern over the whole route can match a real call.
+   * The tail is weak on its own and strong enough once the declarations are
+   * out of the haystack, which is what this rule was always supposed to be.
+   */
   const ROUTE = /app\.(?:get|post|put|delete)\("(\/api\/[^"]+)"/g;
+  /*
+   * Called by something that is not this codebase: an uptime check, a
+   * platform probe, a browser's own <img src>. Each is listed rather than
+   * pattern-matched, because an exemption that can be earned by accident is
+   * the hole this rule just spent a week having.
+   */
+  const CALLED_FROM_OUTSIDE = new Set([
+    '/api/health',
+    '/api/sources/:id/poster',
+  ]);
+  /*
+   * Reached by a caller that builds the LAST segment, so the tail never
+   * appears as a literal: `fetch("/api/billing/" + mode)`. Each carries the
+   * literal that must be present, so the exemption still checks something —
+   * delete the caller and `/api/billing/` goes with it and the rule fires.
+   */
+  const BUILT_BY_CONCATENATION = {
+    '/api/billing/portal': '/api/billing/',
+    '/api/billing/checkout': '/api/billing/',
+  };
+  /*
+   * ROUTES THAT SHIPPED WITH NO CALLER, found on 18 Oct 2026 the moment this
+   * rule was fixed and could fire for the first time. Both are from flows the
+   * plan flow replaced. They are listed rather than silently exempted so they
+   * stay visible on every run, and the rule still fails for anything NEW —
+   * which is the whole point of writing them down instead of widening the
+   * check. Wire them or take them out; a list like this earns its keep only
+   * by getting shorter.
+   */
+  const KNOWN_DEAD = ['/api/projects/:id/outline', '/api/projects/:id/shorts-from-line'];
+  const callers = server
+    .split('\n')
+    .filter((line) => !/app\.(?:get|post|put|delete)\("\/api\//.test(line))
+    .join('\n');
+  const haystack = client + '\n' + pages + '\n' + callers;
+
+  const deadStill = [];
   for (const m of index.matchAll(ROUTE)) {
     const route = m[1];
-    /* The pieces between parameters — "/api/projects", "/blocks", "/short". */
+    if (CALLED_FROM_OUTSIDE.has(route)) continue;
+
+    const literal = BUILT_BY_CONCATENATION[route];
+    if (literal) {
+      if (!haystack.includes(literal)) {
+        problems.push('route ' + route + ' — its caller built "' + literal + '" and that is gone now');
+      }
+      continue;
+    }
+
     const parts = route.split('/').filter((seg) => seg && !seg.startsWith(':') && seg !== '*' && seg !== 'api');
     if (!parts.length) continue;
     const tail = parts[parts.length - 1];
-    const seen = client.includes('/' + tail) || pages.includes('/' + tail) || server.includes('/' + tail);
-    if (!seen) problems.push('route ' + route + ' — nothing anywhere asks for it');
+    if (haystack.includes('/' + tail)) continue;
+
+    if (KNOWN_DEAD.includes(route)) {
+      deadStill.push(route);
+      continue;
+    }
+    problems.push('route ' + route + ' — nothing anywhere asks for it');
+  }
+  /* Named on every run, so the list cannot quietly become furniture. */
+  if (deadStill.length) {
+    console.log('  … ' + deadStill.length + ' route(s) still unreachable and known: ' + deadStill.join(', '));
   }
 
   /* 2. A table written and never read. This is the passes log exactly: every

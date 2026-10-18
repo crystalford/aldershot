@@ -132,4 +132,7 @@ its claim — fix the test, not the breakage.
   never reach the guards in `consume`. Only `proxy`, `transcribe` and
   `short-render` throw straight out — those are the ones a test of that path
   has to use.
+- A fidelity rule whose haystack includes the file it is checking is a rule
+  that matches its own declarations. `reachable`'s route check did exactly
+  that and never fired once; `test/gate-reachable.test.ts` pins the fix.
 - YouTube: 100 `search.list` calls a day per project; store nothing audiovisual; refresh metadata every 30 days.
