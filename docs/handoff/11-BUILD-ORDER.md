@@ -33,6 +33,14 @@ what it is made of. `npm run check:otio` round-trips it through
 OpenTimelineIO, which is the closest a machine with no NLE can get to "opens
 in Resolve"; opening it in Resolve itself is still owed.
 
+**The cut lands on the pause**, not the phoneme, wherever the timings allow
+it: a run of surviving words takes up to 60 ms of the silence at each end,
+never more than half the real gap, and only when `frameAccurate()` says the
+timings can carry it. `runRange` in `src/cuts.ts` is the one definition, so
+the runtime in the footer and the rendered file cannot disagree about it.
+With recogniser timings nothing changes — the gap they report is fuzzier
+than the room this would make.
+
 ## Phase 2 — the rule engine and the Editor
 
 Port `footage.js compute()` and `applyRule()` over the real document; the Editor with Cut mode: rules with effects, Blocks and Words zooms, hand rules, struck words, inserts, undo/history, project save/restore, the Read (observable only).
