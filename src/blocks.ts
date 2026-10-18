@@ -96,6 +96,17 @@ export interface BeatLike {
   text: string | null;
   dur_ms: number | null;
   media_r2_key: string | null;
+  /**
+   * What a recorded take turned out to be, when one has been aligned.
+   *
+   * Null is "nobody has looked yet", which is not the same as a take that
+   * failed — see src/take.ts. The editor says so beside the beat, because
+   * the beat's TEXT is what the captions and the cue sheet will claim was
+   * said, and a take of a different sentence under it is the one failure a
+   * product built on receipts cannot have.
+   */
+  take_verdict?: string | null;
+  take_reason?: string | null;
   clip_id: string | null;
   /** Set when this beat is a clip pulled from a DIFFERENT video. */
   pulled?: PulledClip;
@@ -247,7 +258,14 @@ export function buildBlocks(opts: {
     words: [],
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
-    why: null,
+    /*
+     * `why` on a voice beat is WHAT THE TAKE TURNED OUT TO BE, and only
+     * when it is not what was written. The field is the editor's one-line
+     * explanation of a block, which is exactly the job — and saying "it
+     * reads the line" on every matching take would be a row of reassurance
+     * nobody reads.
+     */
+    why: b.take_verdict && b.take_verdict !== "matches" ? (b.take_reason ?? null) : null,
     /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
     previewKey: b.media_r2_key,

@@ -31,6 +31,7 @@ import {
   timingFor,
   timingOf,
   type AlignWindow,
+  type Aligned,
   type Timing,
   type WindowTiming,
 } from "./align.ts";
@@ -341,4 +342,55 @@ export async function timingForProject(env: Env, projectId: string): Promise<Tim
   return rows
     .map((r) => timingFor(r))
     .reduce((worst, t) => (t.toleranceMs > worst.toleranceMs ? t : worst));
+}
+
+/* ── One short clip, against the words it should contain ────────────────── */
+
+/**
+ * ALIGN A RECORDED TAKE TO ITS LINE.
+ *
+ * The same aligner, asked a smaller question: one file, one window, the
+ * words that were written. No window planning — a take is a sentence, well
+ * inside the thirty seconds a window holds — and no stitching, because
+ * there is nothing to stitch.
+ *
+ * The scores come back untouched. src/take.ts decides what they mean: a
+ * forced aligner cannot refuse, so it will place a script over a recording
+ * of something else and report times for every word, and the only honest
+ * signal that happened is how badly each one matched.
+ */
+export async function alignTake(
+  env: Env,
+  key: string,
+  words: string[],
+): Promise<Aligned[]> {
+  if (!words.length) return [];
+  const head = await env.MEDIA.head(key);
+  if (!head) throw new Error("that recording isn't here any more");
+
+  const url =
+    (await presignGet(env, key, 7200)) ??
+    (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${key}` : null);
+  if (!url) throw new Error("couldn't give the aligner a way to read the recording");
+
+  /*
+   * ONE WINDOW OVER THE WHOLE FILE. `endMs` is deliberately large rather
+   * than the duration the browser claimed: the container clamps a window
+   * to the audio it actually decoded, so asking for more than there is
+   * returns all of it, and asking for what a client said there was would
+   * trust the number this whole function exists to replace.
+   */
+  const [result] = await alignBatch(env, key, url, [
+    { startMs: 0, endMs: 10 * 60 * 1000, first: 0, last: words.length - 1, words },
+  ]);
+  if (!result?.ok || !result.timings) {
+    throw new Error(result?.error || "the aligner did not answer");
+  }
+
+  const out: Aligned[] = [];
+  result.timings.forEach((t, i) => {
+    if (!t) return;
+    out.push({ index: i, startMs: Math.round(t[0] * 1000), endMs: Math.round(t[1] * 1000), score: t[2] });
+  });
+  return out;
 }

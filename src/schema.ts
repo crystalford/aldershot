@@ -770,6 +770,26 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    */
   { table: "plan_beats", column: "backed", ddl: "ALTER TABLE plan_beats ADD COLUMN backed INTEGER" },
 
+  /*
+   * WHAT A RECORDED TAKE TURNED OUT TO BE.
+   *
+   * `dur_ms` came from an x-duration-ms header — a number the BROWSER sent
+   * about a file the server had not looked at — and a cut built on it is a
+   * cut whose length is whatever the client said. These are measured from
+   * the take's own word timings instead.
+   *
+   * `take_verdict` is whether it reads the line that was written. A forced
+   * aligner cannot refuse, so it will place a script over a recording of
+   * something else entirely; the score is the only honest signal that
+   * happened, and this is the verdict it produced. Null until a take has
+   * been aligned, which is not the same as a take that failed.
+   */
+  { table: "beats", column: "take_verdict", ddl: "ALTER TABLE beats ADD COLUMN take_verdict TEXT" },
+  { table: "beats", column: "take_reason", ddl: "ALTER TABLE beats ADD COLUMN take_reason TEXT" },
+  /* Word timings for the take, same shape as a segment's: seconds, because
+     that is what every other stored word list in this product uses. */
+  { table: "beats", column: "take_words", ddl: "ALTER TABLE beats ADD COLUMN take_words TEXT" },
+
   { table: "sources", column: "timing_source", ddl: "ALTER TABLE sources ADD COLUMN timing_source TEXT" },
   /* When it ran. Null while it has never been tried; a source whose
      alignment failed keeps a null here and a recogniser timing, which is the

@@ -3355,6 +3355,30 @@ app.post("/api/beats/:beatId/record", async (c) => {
   if (!mine) return c.json({ error: "not found" }, 404);
 
   await c.env.MEDIA.put(key, audio, { httpMetadata: { contentType: "audio/webm" } });
+
+  /*
+   * AND THEN FIND OUT WHAT IT ACTUALLY IS.
+   *
+   * The length above came from x-duration-ms — a number the BROWSER sent
+   * about a file the server had not looked at, and a cut built on it is a
+   * cut whose length is whatever the client said. Aligning the take to the
+   * line measures it, and says whether it reads that line at all: a forced
+   * aligner will happily place a script over a recording of something else
+   * and report times for every word.
+   *
+   * IN THE BACKGROUND, because the take is already stored and already
+   * usable. Making somebody wait for a container before their own
+   * recording appears would be paying for correctness with the one thing
+   * recording a line is supposed to be: quick.
+   */
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "take", ref_id: beatId });
+  await dispatch(c.env, c.executionCtx, {
+    type: "take",
+    jobId: job.id,
+    userId: user.id,
+    beatId,
+  }).catch(() => {});
+
   return c.json({ ok: true, key });
 });
 

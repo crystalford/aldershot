@@ -56,6 +56,17 @@ export interface Beat {
   dur_ms: number | null;
   media_r2_key: string | null;
   recorded_at: number | null;
+  /**
+   * What the recorded take turned out to be, once it has been aligned.
+   *
+   * Null is "nobody has looked yet", which is a different fact from a take
+   * that does not read its line — see src/take.ts. `SELECT *` carries them,
+   * so there is nothing to add to the query; they are declared here so a
+   * reader can see they exist.
+   */
+  take_verdict?: string | null;
+  take_reason?: string | null;
+  take_words?: string | null;
 }
 
 export interface Clip {

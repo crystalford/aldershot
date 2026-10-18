@@ -118,7 +118,8 @@ export function schema(db: DatabaseSync): void {
     CREATE TABLE v2_clip_threads (clip_id TEXT, thread_id TEXT, confidence REAL);
     CREATE TABLE beats (id TEXT PRIMARY KEY, project_id TEXT, idx INTEGER, kind TEXT,
       act TEXT, clip_id TEXT, text TEXT, struck TEXT, dur_ms INTEGER,
-      media_r2_key TEXT, recorded_at INTEGER);
+      media_r2_key TEXT, recorded_at INTEGER,
+      take_verdict TEXT, take_reason TEXT, take_words TEXT);
     CREATE TABLE renders (id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, kind TEXT,
       format TEXT, aspect TEXT, caption_style TEXT, clip_id TEXT, r2_key TEXT,
       stream_uid TEXT, duration_s INTEGER, bytes INTEGER, state TEXT, error TEXT,

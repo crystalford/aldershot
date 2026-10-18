@@ -144,8 +144,20 @@ The chart lints are hard fails, provenance among them.
 What it has no caller for is the classifier that says which move a line is,
 which is the one part needing a model and will arrive behind its own
 contract — the same order `src/align.ts` was built in, and for the same
-reason. Still owed in Phase 5: that classifier, the picture supply
-(documents, generated layers), voice beats, and the sound rules.
+reason.
+
+**A recorded take is aligned to its line** now (`src/take.ts`,
+`src/take-run.ts`). The timing half is the aligner — about 20 ms, half a
+frame — and it replaces `x-duration-ms`, a number the browser sent about a
+file the server had not looked at. The other half is whether it reads the
+line at all: a forced aligner cannot refuse, so it will place a script over
+a recording of something else and report times for every word, and the
+score is the only honest signal that happened. A take is never rejected;
+the editor says what it turned out to be, and only when that is not what
+was written.
+
+Still owed in Phase 5: the move classifier, the picture supply (documents,
+generated layers), and the sound rules.
 
 ## Phase 6 — Before you post and export
 

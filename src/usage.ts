@@ -85,6 +85,7 @@ export const RUNS_ON: Partial<Record<JobType, keyof typeof INSTANCE>> = {
      standard-2's single vCPU it runs at about a quarter of the speed for
      exactly the same number of CPU-seconds of billing. */
   align: "standard-4",
+  take: "standard-4",
 };
 
 export type Prices = typeof PRICES;
@@ -112,7 +113,10 @@ export type JobType =
      type because it is the one job in this product that costs money and
      produces nothing a user watches — it produces a number about the
      product itself. */
-  | "judge";
+  | "judge"
+  /* Aligning one recorded take. Container seconds on the machine with the
+     model, and a short file — the cheapest thing that machine does. */
+  | "take";
 
 export interface UsageInput {
   user_id: string;

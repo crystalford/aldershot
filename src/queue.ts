@@ -28,6 +28,7 @@ import type { Plan } from "./plans.ts";
 import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
 import { alignSource } from "./align-source.ts";
 import { runJudge } from "./judge-run.ts";
+import { runTake } from "./take-run.ts";
 import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
 import { getSource } from "./sources.ts";
@@ -140,6 +141,12 @@ export type JobMessage =
    * which is a thing to watch finish rather than a page to hold open.
    */
   | { type: "judge"; jobId: string; userId: string }
+  /*
+   * ALIGNING A RECORDED TAKE to the line it was meant to be. A job because
+   * it is a container call; the recording is already stored and already
+   * usable, so this only ever improves what is known about it.
+   */
+  | { type: "take"; jobId: string; userId: string; beatId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
   /*
@@ -322,6 +329,21 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         ));
       }
       return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "take": {
+      await startJob(env.DB, msg.jobId, "lining up the take");
+      const take = await runTake(env, msg.userId, msg.beatId);
+      /*
+       * A TAKE THAT DOES NOT READ THE LINE IS A FINISHED JOB, not a failed
+       * one. The recording is stored, usable, and now carries what it
+       * turned out to be — which is the result. Failing here would put a
+       * red line against a take the person may well want.
+       */
+      await finishJob(env.DB, msg.jobId);
+      if (take.verdict !== "matches") {
+        console.log(`[take] ${msg.beatId}: ${take.verdict} — ${take.reason}`);
+      }
+      return;
     }
     case "reactions":
       return await runReactions(env, msg);
