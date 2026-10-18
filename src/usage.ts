@@ -95,7 +95,11 @@ export type JobType =
   | "render"
   | "shorts"
   | "proxy"
-  | "tts";
+  | "tts"
+  /* One Scout run. Its own type because its cost line is unlike every other
+     one here: frontier calls and adapter quota rather than minutes of
+     footage, and per-job cost is the number the business runs on. */
+  | "scout";
 
 export interface UsageInput {
   user_id: string;

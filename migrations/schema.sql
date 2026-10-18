@@ -268,6 +268,24 @@ CREATE TABLE IF NOT EXISTS uploads (
 
 CREATE INDEX IF NOT EXISTS uploads_by_user ON uploads(user_id, created_at);
 
+CREATE TABLE IF NOT EXISTS job_items (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt INTEGER NOT NULL DEFAULT 0,
+    last_error_class TEXT,
+    provider TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    deadline_at INTEGER,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS job_items_by_job ON job_items(job_id, status);
+
+CREATE INDEX IF NOT EXISTS job_items_owed ON job_items(status, deadline_at);
+
 CREATE TABLE IF NOT EXISTS scout_runs (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES v2_projects(id),
     trigger TEXT NOT NULL,

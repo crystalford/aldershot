@@ -34,6 +34,7 @@ import { runShortRender } from "./short-render.ts";
 import { runRender } from "./render-job.ts";
 import { runScore } from "./begin.ts";
 import { runReactions, runOutline } from "./pass-jobs.ts";
+import { hasMoreToDo, runScoutPhase } from "./scout-job.ts";
 
 /**
  * HOW MANY DELIVERIES A MESSAGE GETS, and it must equal `max_retries` on the
@@ -41,17 +42,25 @@ import { runReactions, runOutline } from "./pass-jobs.ts";
  * if they drift, because drift in either direction is silent and bad.
  *
  * Set too HIGH here and the platform exhausts the message's retries before
- * this code ever reaches its last attempt — so the message is deleted (there
- * is no dead-letter queue), nothing marks the job failed, and the row sits on
- * "running" until reapStaleJobs gets to it twenty minutes to three hours
- * later. That is the silent partial failure the handoff's invariant 7 is
- * about, and it arrives by editing one number.
+ * this code ever reaches its last attempt — so the message leaves the queue
+ * without this code having closed the job out, and the row sits on "running"
+ * until reapStaleJobs gets to it twenty minutes to three hours later. That is
+ * the silent partial failure the handoff's invariant 7 is about, and it
+ * arrives by editing one number.
+ *
+ * There is a dead-letter queue now, which catches that and every other way a
+ * message can leave without being handled, so the hole is covered twice. The
+ * numbers must still agree: the DLQ is a backstop that reports a failure, and
+ * agreeing numbers are what let the normal path report it with a reason.
  *
  * Set too LOW and jobs are declared failed with retries still unspent, which
  * is the cheap direction to be wrong in but still wrong: these fail mostly
  * because something was busy, and the retry is the fix.
  */
 export const MAX_DELIVERIES = 3;
+
+/** The queue a message lands on when the platform has given up on it. */
+export const DEAD_LETTER_QUEUE = "aldershot-jobs-dlq";
 
 /** Whether this delivery is the last one, so the job must be closed out. */
 export const isLastDelivery = (attempts: number): boolean => attempts >= MAX_DELIVERIES;
@@ -112,7 +121,25 @@ export type JobMessage =
    */
   | { type: "proxy"; jobId: string; userId: string; sourceId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
-  | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string };
+  | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
+  /*
+   * ONE PHASE OF A SCOUT RUN, and the message carries the run's id rather
+   * than its state. A run is minutes of frontier calls, adapter fetches and
+   * transcript scans; done in one invocation it would hit a worker's lifetime
+   * and die halfway with the row on "running" and no error. One phase is
+   * seconds, and a phase that dies is one message redelivered.
+   */
+  | {
+      type: "scout";
+      jobId: string;
+      userId: string;
+      runId: string;
+      projectId: string;
+      subject: string;
+      brief: string;
+      queriesPending?: unknown[];
+      snowballed?: boolean;
+    };
 
 /**
  * Performs one job. The single place any long operation actually runs, whether
@@ -197,6 +224,32 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
       }
       return void (await finishJob(env.DB, msg.jobId));
     }
+    case "scout": {
+      /*
+       * Re-dispatches ITSELF rather than looping. Each delivery does one
+       * phase; the planner reads rows to decide the next, so a run that dies
+       * resumes by asking the same question again.
+       */
+      const next = await runScoutPhase(env, {
+        runId: msg.runId,
+        projectId: msg.projectId,
+        userId: msg.userId,
+        subject: msg.subject,
+        brief: msg.brief,
+        queriesPending: (msg.queriesPending ?? []) as never,
+        snowballed: msg.snowballed,
+      });
+      if (hasMoreToDo(next)) {
+        await dispatch(env, { waitUntil: () => {} }, {
+          ...msg,
+          queriesPending: next.queriesPending as unknown[],
+          snowballed: next.snowballed,
+        });
+        return;
+      }
+      /* Nothing more to do: the run's own row already says why. */
+      return void (await finishJob(env.DB, msg.jobId));
+    }
     case "reactions":
       return await runReactions(env, msg);
     case "outline":
@@ -233,6 +286,12 @@ export async function dispatch(
  * progress.
  */
 export async function consume(batch: MessageBatch<JobMessage>, env: Env): Promise<void> {
+  /* ONE DEFAULT EXPORT SERVES EVERY QUEUE, so the handler has to ask which
+     one it is on. Without this the dead-letter queue would be consumed by
+     runJob — which would re-run the work that already failed three times, and
+     a message the platform gave up on would quietly become a fourth attempt. */
+  if (batch.queue === DEAD_LETTER_QUEUE) return consumeDeadLetter(batch, env);
+
   for (const message of batch.messages) {
     try {
       await runJob(env, message.body);
@@ -253,6 +312,66 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env): Promis
       } else {
         message.retry({ delaySeconds: backoffSeconds(message.attempts) });
       }
+    }
+  }
+}
+
+/**
+ * THE DEAD-LETTER QUEUE: the last thing between a job and a lie.
+ *
+ * `labs/OPERATIONS.md`: "Queues delete on retry exhaustion unless a
+ * dead-letter queue exists — that is exactly how '300 processed, 200 didn't'
+ * happens. Every consumer gets a DLQ; the DLQ consumer writes
+ * `failed_terminal` and alerts."
+ *
+ * `consume` already closes a job out on its own last delivery, and while the
+ * two retry counts agree that covers the ordinary case. This covers the rest
+ * of them, and there are more than one: the worker is evicted mid-message,
+ * `failJob` itself throws so the ack is never reached, the platform's own
+ * count is changed in a file nobody thinks of as code, or a message is
+ * malformed enough that `runJob` cannot even find a job id.
+ *
+ * IT DOES THE SMALLEST POSSIBLE THING, on purpose. A dead-letter queue with
+ * its own dead-letter queue is turtles, so this consumer has to be the one
+ * that cannot fail: it reads one row and writes one row, with no model call,
+ * no R2, no container and no fetch. Where it still fails, `reapStaleJobs`
+ * remains the backstop it has always been — slower, and not silent.
+ *
+ * It does NOT retry the work. A message arrives here because the work failed
+ * three times; a fourth attempt would spend money to reach the same place and
+ * delay the honest answer by another four minutes.
+ */
+export async function consumeDeadLetter(batch: MessageBatch<JobMessage>, env: Env): Promise<void> {
+  for (const message of batch.messages) {
+    const jobId = message.body?.jobId;
+    if (!jobId) {
+      /* A message with no job id cannot be reported against anything. Acked
+         rather than retried, because it will be just as unidentifiable in
+         thirty seconds, and left in the log as the only trace it can have. */
+      console.error("dead-letter: a message with no job id", JSON.stringify(message.body ?? null));
+      message.ack();
+      continue;
+    }
+
+    try {
+      const [job] = await getJobs(env.DB, [jobId]);
+      /* A job that finished on a later delivery while an earlier one was
+         still in flight is not a failure. Overwriting "ready" with a failure
+         would turn a working job into a broken one on the strength of a
+         message the platform could not deliver. */
+      if (job && job.state !== "ready" && job.state !== "failed") {
+        await failJob(env.DB, jobId, "That didn't finish, and the retries ran out.");
+      }
+      /* Logged whether or not a row was written: invariant 7's "none failed
+         silently" is about the operator as much as the user, and
+         10-OPERATIONS-AND-PRICING.md pages on ANY dead-letter message. */
+      console.error(`dead-letter: job ${jobId} (${message.body.type}) exhausted its retries`);
+      message.ack();
+    } catch (err) {
+      /* The one write failed. Retried, because a busy database in a consumer
+         this small is the likeliest reason and the next delivery is cheap. */
+      console.error(`dead-letter: could not close out job ${jobId}`, err);
+      message.retry({ delaySeconds: backoffSeconds(message.attempts) });
     }
   }
 }

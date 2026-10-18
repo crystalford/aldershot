@@ -18,6 +18,15 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
   it is the mistake this line exists to prevent.
 - `docs/research/raw/` is the original research, unedited. The handoff wins
   where they disagree; the raw is there for when the handoff is silent.
+- `docs/research/PASS-4-BRIEF.md` — what the research still does not answer.
+  Two halves. **Selection:** `FORMATS.md` specifies the Pattern spine
+  ("variation escalates; one closing instance reframes") and nothing computes
+  it, so a library of a thousand clips about one subject has no mechanism for
+  choosing eight of them in an order. **Composition:** the block level is
+  specified (`04-RULE-ENGINE.md`'s visual job per beat, the director layer in
+  `labs/Essay to video.dc.html`) and there is no object for *a video that could
+  be made* — so nothing ranks angles, nothing lets a Scout find change the
+  plan's mind, and nothing prices an angle that leans on ghosts.
 - `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
 
 ## When the documents disagree
@@ -117,4 +126,13 @@ its claim — fix the test, not the breakage.
 - Running speech recognition on enhanced audio makes it worse; enhance only the final mix.
 - SDK retries × gateway retries × workflow retries multiply; SDK retries off.
 - Queues drop messages on retry exhaustion unless a dead-letter queue exists.
+  There is one now (`aldershot-jobs-dlq`), the gate fails if a consumer lacks
+  one, and a DLQ is exempt from the rule because a DLQ with a DLQ is turtles.
+- Most job handlers catch their own errors and write their own failure, so they
+  never reach the guards in `consume`. Only `proxy`, `transcribe` and
+  `short-render` throw straight out — those are the ones a test of that path
+  has to use.
+- A fidelity rule whose haystack includes the file it is checking is a rule
+  that matches its own declarations. `reachable`'s route check did exactly
+  that and never fired once; `test/gate-reachable.test.ts` pins the fix.
 - YouTube: 100 `search.list` calls a day per project; store nothing audiovisual; refresh metadata every 30 days.

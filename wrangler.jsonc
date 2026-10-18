@@ -203,7 +203,32 @@
   "queues": {
     "producers": [{ "binding": "JOBS", "queue": "aldershot-jobs" }],
     "consumers": [
-      { "queue": "aldershot-jobs", "max_batch_size": 1, "max_retries": 3, "max_concurrency": 6 }
+      /*
+       * A CONSUMER WITHOUT A DEAD-LETTER QUEUE DELETES WHAT IT CANNOT PROCESS.
+       *
+       * labs/OPERATIONS.md: "Queues delete on retry exhaustion unless a
+       * dead-letter queue exists — that is exactly how '300 processed, 200
+       * didn't' happens." src/queue.ts closes a job out on its own last
+       * delivery, which covers the ordinary case while the two retry counts
+       * agree; it does not cover a worker evicted mid-message, a failJob that
+       * itself throws, or this number being edited. The fidelity gate now
+       * fails if a consumer here has no dead_letter_queue.
+       */
+      {
+        "queue": "aldershot-jobs",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "max_concurrency": 6,
+        "dead_letter_queue": "aldershot-jobs-dlq"
+      },
+      /*
+       * The dead-letter consumer, and it has no DLQ of its own on purpose: a
+       * dead-letter queue with a dead-letter queue is turtles. It reads one
+       * row and writes one row — no model call, no R2, no container, no fetch
+       * — so that it is the consumer which cannot fail, and reapStaleJobs
+       * stays the backstop for anywhere it still does.
+       */
+      { "queue": "aldershot-jobs-dlq", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 1 }
     ]
   }
 
