@@ -11,7 +11,7 @@
  * export is testable without a container, an encoder, or a video file.
  */
 
-import { playableRanges, type Cut, type Segmentish, wordStartMs, wordEndMs } from "./cuts.ts";
+import { type Cut, wordStartMs, wordEndMs } from "./cuts.ts";
 import { blockRanges, type Block } from "./blocks.ts";
 import type { Timing } from "./align.ts";
 

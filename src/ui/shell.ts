@@ -604,7 +604,7 @@ export interface PageOpts {
  * only one measure.
  */
 export function page(opts: PageOpts, body: string): string {
-  const { title, view, shortsCtx = "nav", screenLabel, email } = opts;
+  const { title, view, shortsCtx = "nav", screenLabel } = opts;
   const column = view === "room" ? LAYOUT.room : LAYOUT.width;
   return `<!doctype html>
 <html lang="en">

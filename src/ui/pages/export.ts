@@ -14,7 +14,7 @@
  * validates against and the two cannot drift apart.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { CAPTION_STYLES, FORMATS, RENDER_ASPECTS } from "../../render-job.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";

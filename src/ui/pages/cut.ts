@@ -510,41 +510,13 @@ export function buildSummary(
  * and what the video would actually lose, because a count you cannot trust is
  * worse than no count.
  */
-/**
- * What you have asked the model, and what it said back.
- *
- * The `passes` table has carried this since the first pass ever ran — its own
- * comment reads "every LLM instruction the user gave, and what it did. Shown
- * as the Passes log" — and nothing in the codebase read it. So an instruction
- * that matched nothing was indistinguishable from one that worked: the page
- * reloaded, a bar filled, it finished, and that was all you ever learned.
- *
- * runScore already writes the honest sentence, "no matches — try different
- * words", so the only thing this had to do was show it. Green when the pass
- * found something, gold when it did not — the same two colours the rest of
- * the editor uses for "done" and "still wants you".
+/*
+ * passLogPanel IS GONE. It rendered the passes table as a panel, and `turn`
+ * below does the same job better in the conversation column — what you
+ * asked, what it said back, and the way to undo it — so the panel had been
+ * sitting here uncalled since the four surfaces became one room. Two
+ * renderers of one table is two answers to "what have I asked for".
  */
-function passLogPanel(passes: CutData["passes"]): string {
-  if (!passes.length) return "";
-
-  const rows = passes
-    .map((p) => {
-      /* The result sentence says which it was. Nothing here re-judges the
-         pass; it colours what the job already recorded. */
-      const empty = /^no matches/.test(p.result);
-      return `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-        <span data-content style="flex:none;width:14px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${p.n}</span>
-        <span data-content style="flex:1 1 160px;min-width:min(150px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.8);line-height:1.5">${esc(p.instruction)}</span>
-        <span data-content style="flex:none;font-size:${SIZE.meta};color:${empty ? ACCENT.gold : ACCENT.green}">${esc(p.result)}</span>
-      </div>`;
-    })
-    .join("");
-
-  return `<div style="margin-top:14px;padding-top:13px;border-top:1px solid rgba(255,255,255,0.05)">
-    <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">What you've asked for so far</div>
-    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows}</div>
-  </div>`;
-}
 
 /**
  * THE RULES THAT MADE THIS CUT, and what each one is doing right now.

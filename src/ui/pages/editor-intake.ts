@@ -21,7 +21,6 @@
 import { C, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
-import { touched } from "./projects.ts";
 import { itemMenu } from "../item-menu.ts";
 
 export interface IntakeSource {

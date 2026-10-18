@@ -29,7 +29,7 @@ import type { Env } from "./env.ts";
 import { listMoments, searchAny, searchMeaning, type Moment } from "./library.ts";
 import { bm25, tokens } from "./bm25.ts";
 import { applyRule, compute, describe, ruleKey, toFootageSet, type Rule } from "./rules.ts";
-import { contentWords, momentTags } from "./moment-tags.ts";
+import { momentTags } from "./moment-tags.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
 import { saveRules } from "./rule-store.ts";
 import { createProject, putBeats } from "./projects.ts";

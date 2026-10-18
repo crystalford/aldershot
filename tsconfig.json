@@ -11,6 +11,20 @@
       "node"
     ],
     "strict": true,
+    /*
+      AN IMPORT NOTHING USES IS A LIE ABOUT WHAT THIS FILE DEPENDS ON.
+
+      The fidelity gate's `wired` rule proves every EXPORT is referenced and
+      says nothing about the other direction, so thirty-eight dead imports
+      and locals had accumulated with nothing able to see them. Three of
+      them were a `getBeats` round trip per request whose result was thrown
+      away; one was a whole UI panel, superseded and still compiled.
+
+      On, so they cannot come back. It costs nothing: an unused parameter is
+      exempted by the underscore convention, and `npm run check` typechecks
+      first, so this fails the gate rather than a reviewer's attention.
+    */
+    "noUnusedLocals": true,
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,

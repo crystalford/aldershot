@@ -22,17 +22,16 @@ import { renderBoard } from "./ui/pages/board.ts";
 import { boardFor } from "./scout-board-data.ts";
 import { createRun, diligence } from "./scout-store.ts";
 import { renderHome } from "./ui/pages/home.ts";
-import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
+import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
-import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
+import { moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
 import { buildSummary, renderBlockSlice, renderCut, type CutView } from "./ui/pages/cut.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
@@ -52,12 +51,10 @@ const ACCENT_GREEN = ACCENT.green;
 const ACCENT_VIOLET = ACCENT.violet;
 const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
-import { placeReactions } from "./reactions.ts";
-import { draftOutline, type EssayBeat } from "./essay.ts";
 import { draftPlan, findForBeats } from "./plan.ts";
 import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
-import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
-import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
+import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -73,15 +70,14 @@ import { honestReply, parseRules } from "./rule-parse.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
-import { readSource, requeueTransientReads } from "./ingest.ts";
+import { requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
+import { activeJobs, createJob, getJobs, latestJobFor, recentlyFinished, reapStaleJobs } from "./jobs.ts";
 import { transcribeOnce } from "./transcribe.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
-import { begin, runScore } from "./begin.ts";
-import { wantsArrange } from "./arrange.ts";
+import { begin } from "./begin.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
@@ -92,7 +88,6 @@ import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { LEGACY_LABELLER, isVerdict, labellerName, setProgress, type Verdict } from "./eval-set.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
-import { intentLabel, readIntent } from "./intent.ts";
 
 export { AudioContainer, RenderContainer } from "./render.ts";
 
@@ -1862,10 +1857,10 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
   if (!b.block) return c.json({ error: "which block?" }, 400);
   const dir = (b.dir ?? 1) < 0 ? -1 : 1;
 
-  const [segments, beats] = await Promise.all([
-    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
-    getBeats(c.env.DB, project.id),
-  ]);
+  /* The beats were read here too and thrown away — three handlers each paid
+     a round trip for a list nothing looked at. blocksForProject is what reads
+     them now, and it reads them itself. */
+  const segments = project.source_id ? await getSegments(c.env.DB, project.source_id) : [];
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
   const before = { cuts: project.cuts ?? null, order: project.block_order ?? null };
@@ -1931,10 +1926,7 @@ app.get("/api/projects/:id/blocks", async (c) => {
   /* Only for its poster. A library edit has no own source and each block
      carries its own frame, so null here is a working state. */
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
-  const [segments, beats] = await Promise.all([
-    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
-    getBeats(c.env.DB, project.id),
-  ]);
+  const segments = project.source_id ? await getSegments(c.env.DB, project.source_id) : [];
   const cuts = parseCuts(project.cuts);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
@@ -2047,11 +2039,7 @@ app.post("/api/projects/:id/blocks/short", async (c) => {
   const source = await getSource(c.env.DB, project.source_id, user.id);
   if (!source) return c.json({ error: "not found" }, 404);
 
-  const [segments, beats] = await Promise.all([
-    getSegments(c.env.DB, source.id),
-    getBeats(c.env.DB, project.id),
-  ]);
-  const cuts = parseCuts(project.cuts);
+  const segments = await getSegments(c.env.DB, source.id);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const block = blocks.find((x) => x.id === b.block);
@@ -4022,7 +4010,6 @@ app.get("/landing", async (c) => {
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const pro = user.plan !== "free";
 
   const now = new Date();
   const since = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);

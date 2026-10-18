@@ -111,7 +111,7 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
     });
 
     await advance(env.DB, job.id, 80, "writing down what it heard");
-    const count = await saveSegments(env.DB, src.id, result.segments);
+    await saveSegments(env.DB, src.id, result.segments);
 
     /*
      * THE EXTRACTED AUDIO IS RUBBISH NOW. Throw it away.

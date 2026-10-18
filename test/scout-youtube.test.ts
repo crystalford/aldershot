@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { QuotaLedger, runSearches, type AdapterName, type Quota, type QuotaStore } from "../src/scout-adapters.ts";
+import { QuotaLedger, runSearches, type AdapterName, type QuotaStore } from "../src/scout-adapters.ts";
 import {
   CHANNEL_ID,
   FEED,

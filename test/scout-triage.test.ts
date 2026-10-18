@@ -46,7 +46,6 @@ const src = (over: Partial<SourceCandidate> = {}): SourceCandidate => ({
 
 const BEHAVIOUR = "Berates live chat during streams; addresses chat as an adversary";
 const subject = { id: "B1", role: "subject" as const, behaviour: BEHAVIOUR };
-const counter = { id: "C1", role: "counter" as const, behaviour: "Reads out his own chat rules on stream" };
 const crowd = (over: Partial<CrowdSignals> = {}): CrowdSignals => ({
   commentTimestamps: 0,
   clipsPointingIn: 0,
