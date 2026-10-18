@@ -273,7 +273,41 @@ export async function dispatch(
     await env.JOBS.send(msg);
     return;
   }
-  ctx.waitUntil(runJob(env, msg));
+  /*
+   * THE FALLBACK HAD NO CATCH, and that is the one failure mode this whole
+   * file exists to prevent.
+   *
+   * On the queue path a throw is caught by `consume`, retried, and closed out
+   * honestly on the last delivery — and the dead-letter queue is behind that.
+   * On the waitUntil path there was nothing: the promise rejected, the
+   * runtime swallowed it, and the job row said "queued" for ever with no
+   * error anywhere and nothing in the log.
+   *
+   * Found by running a Scout job for the first time. The POST returned 200,
+   * the row said queued, no beats were written, and the wrangler log had not
+   * one line about it — which is invariant 7's silent partial failure
+   * arriving through the path every local developer uses, and the path
+   * production uses until the queue is provisioned.
+   *
+   * No retry here on purpose: waitUntil has no redelivery to retry WITH, so
+   * the honest thing is one attempt and a recorded failure.
+   */
+  ctx.waitUntil(
+    runJob(env, msg).catch(async (err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`job ${msg.jobId} (${msg.type}) failed outside the queue:`, err);
+      try {
+        const [job] = await getJobs(env.DB, [msg.jobId]);
+        if (job && job.state !== "ready" && job.state !== "failed") {
+          await failJob(env.DB, msg.jobId, `That didn't finish: ${reason}`);
+        }
+      } catch (writeErr) {
+        /* The database is the last thing left. reapStaleJobs is the backstop
+           it has always been — slower, and not silent. */
+        console.error(`job ${msg.jobId}: could not record the failure`, writeErr);
+      }
+    }),
+  );
 }
 
 /**
