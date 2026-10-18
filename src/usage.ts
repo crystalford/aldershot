@@ -107,7 +107,12 @@ export type JobType =
   /* Forced alignment over one source. Container minutes on a machine
      carrying a 1.26 GB model, charged — like the proxy — whether it worked
      or not, because the time was spent either way. */
-  | "align";
+  | "align"
+  /* The judge over the eval set. Tokens rather than minutes, and its own
+     type because it is the one job in this product that costs money and
+     produces nothing a user watches — it produces a number about the
+     product itself. */
+  | "judge";
 
 export interface UsageInput {
   user_id: string;

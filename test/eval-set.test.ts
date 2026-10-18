@@ -30,6 +30,7 @@ const base: EvalData = {
   labeller: "ann",
   labellers: ["ann"],
   doubleJudged: 0,
+  machine: null,
   foundNothing: false,
 };
 

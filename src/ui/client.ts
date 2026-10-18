@@ -3565,6 +3565,35 @@ function readDuration(file) {
    confirmation and no save step: the answer IS the tap, and changing it is
    another tap. No reload either — reloading after every judgement would
    re-run retrieval and lose the reading position partway down a list. */
+/* ── Ask the judge ───────────────────────────────────────────────────
+   A job, so this starts it and leaves; the bell and the page's own reload
+   are where it is watched, the same as every other long thing here. */
+{
+  const ask = document.getElementById("ask-judge");
+  if (ask) {
+    ask.addEventListener("click", async () => {
+      if (ask.disabled) return;
+      ask.disabled = true;
+      ask.style.opacity = ".5";
+      try {
+        const res = await fetch("/api/eval/judge", { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          window.toast(body.error || "The judge could not be asked.");
+          ask.disabled = false;
+          ask.style.opacity = "1";
+          return;
+        }
+        window.toast("Judging " + body.claims + " claim" + (body.claims === 1 ? "" : "s") + " — reload when it finishes.");
+      } catch {
+        window.toast("The judge could not be asked.");
+        ask.disabled = false;
+        ask.style.opacity = "1";
+      }
+    });
+  }
+}
+
 document.querySelectorAll(".eval-say").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const row = btn.parentElement;

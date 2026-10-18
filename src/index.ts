@@ -82,6 +82,7 @@ import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
 import { shouldAlign, timingForProject } from "./align-source.ts";
+import { JUDGE_VERSION } from "./judge.ts";
 import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
@@ -2645,6 +2646,42 @@ app.get("/eval", async (c) => {
     (every.results ?? []).map((r) => ({ claimId: r.claim_id, clipId: r.clip_id, labeller: r.labeller })),
   );
 
+  /*
+   * HOW OFTEN THE JUDGE AGREED WITH A PERSON, as two counts.
+   *
+   * Counted here rather than per row, and never handed to the page per
+   * moment: a verdict beside something you are about to answer is an
+   * anchor, and the agreement between a person and a judge they were shown
+   * measures the anchor.
+   *
+   * "Agreed with a person" means it matched ANY labeller's answer for that
+   * pair, which is the generous reading and the honest one while the set
+   * has disagreements in it — holding the judge to a verdict two people
+   * could not settle would be scoring it on a question with no answer.
+   */
+  const { results: machineRows } = await c.env.DB
+    .prepare(
+      `SELECT m.claim_id, m.clip_id, m.verdict FROM eval_machine m
+         JOIN eval_claims c ON c.id = m.claim_id
+        WHERE c.user_id = ? AND m.version = ?`,
+    )
+    .bind(user.id, JUDGE_VERSION)
+    .all<{ claim_id: string; clip_id: string; verdict: string }>();
+
+  const humanSaid = new Map<string, Set<string>>();
+  for (const r of every.results ?? []) {
+    const key = `${r.claim_id}\u0000${r.clip_id}`;
+    humanSaid.set(key, (humanSaid.get(key) ?? new Set()).add(r.verdict));
+  }
+  const machine = (machineRows ?? []).length
+    ? {
+        judged: (machineRows ?? []).length,
+        agreed: (machineRows ?? []).filter((m) =>
+          humanSaid.get(`${m.claim_id}\u0000${m.clip_id}`)?.has(m.verdict),
+        ).length,
+      }
+    : null;
+
   let claim: { id: string; text: string } | null = null;
   let candidates: EvalData["candidates"] = [];
   let foundNothing = false;
@@ -2703,6 +2740,7 @@ app.get("/eval", async (c) => {
         labeller: by,
         labellers: progress.labellers,
         doubleJudged: progress.doubleJudged,
+        machine,
         foundNothing,
       }),
     ),
@@ -2729,11 +2767,45 @@ app.get("/eval", async (c) => {
  * their own words, so this hands it to them and does not decide where it
  * goes; committing it is a choice the person makes.
  */
+/**
+ * ASK THE JUDGE ABOUT EVERYTHING THAT HAS BEEN LABELLED.
+ *
+ * One model call per claim, over exactly the pairs a person has answered —
+ * see src/judge-run.ts for why it is the human judgements rather than
+ * today's retrieval that sets the question list.
+ *
+ * A JOB, because the set is meant to reach two hundred judgements and that
+ * is minutes of calls. The page shows it running like any other work in
+ * this product.
+ */
+app.post("/api/eval/judge", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const judged = await c.env.DB
+    .prepare(
+      `SELECT COUNT(*) AS n FROM eval_claims c
+        WHERE c.user_id = ?
+          AND (EXISTS (SELECT 1 FROM eval_judgements j WHERE j.claim_id = c.id)
+            OR EXISTS (SELECT 1 FROM eval_labels l WHERE l.claim_id = c.id))`,
+    )
+    .bind(user.id)
+    .first<{ n: number }>();
+  /* Refused rather than queued: a job that can only report "nothing to do"
+     is a thing somebody has to watch finish to learn what they could have
+     been told immediately. */
+  if (!judged?.n) return c.json({ error: "nothing has been labelled yet" }, 422);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "judge", ref_id: null });
+  await dispatch(c.env, c.executionCtx, { type: "judge", jobId: job.id, userId: user.id });
+  return c.json({ ok: true, jobId: job.id, claims: judged.n });
+});
+
 app.get("/api/eval/export", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
 
-  const [claims, judgements] = await Promise.all([
+  const [claims, judgements, machine] = await Promise.all([
     c.env.DB
       .prepare("SELECT id, text, created_at FROM eval_claims WHERE user_id=? ORDER BY created_at")
       .bind(user.id)
@@ -2758,7 +2830,31 @@ app.get("/api/eval/export", async (c) => {
         end_word: number | null;
         source_title: string | null;
       }>(),
+    /* What the judge said, so the file carries both answers and
+       `npm run eval:set` can compute the judge's two figures without a
+       database, a model or a network. */
+    c.env.DB
+      .prepare(
+        `SELECT m.claim_id, m.clip_id, m.version, m.model, m.verdict, m.raw, m.downgraded, m.line, m.why
+           FROM eval_machine m JOIN eval_claims c ON c.id = m.claim_id
+          WHERE c.user_id = ?`,
+      )
+      .bind(user.id)
+      .all<{
+        claim_id: string;
+        clip_id: string;
+        version: string;
+        model: string;
+        verdict: string;
+        raw: string;
+        downgraded: number;
+        line: string | null;
+        why: string | null;
+      }>(),
   ]);
+
+  const saidBy = new Map<string, (typeof machine.results)[number]>();
+  for (const m of machine.results ?? []) saidBy.set(`${m.claim_id}\u0000${m.clip_id}`, m);
 
   const byClaim = new Map<string, typeof judgements.results>();
   for (const j of judgements.results ?? []) {
@@ -2772,6 +2868,25 @@ app.get("/api/eval/export", async (c) => {
       claimId: cl.id,
       claim: cl.text,
       at: cl.created_at,
+      /*
+       * WHAT THE JUDGE SAID, once per claim rather than once per labeller:
+       * it answered the pair, not the person, and repeating it under each
+       * labeller would make a set with two labellers look like two
+       * judgements from the model.
+       */
+      machine: [...new Set((byClaim.get(cl.id) ?? []).map((j) => j.clip_id))]
+        .map((clipId) => saidBy.get(`${cl.id}\u0000${clipId}`))
+        .filter((m) => m)
+        .map((m) => ({
+          clipId: m!.clip_id,
+          verdict: m!.verdict,
+          raw: m!.raw,
+          downgraded: Boolean(m!.downgraded),
+          line: m!.line,
+          why: m!.why,
+          version: m!.version,
+          model: m!.model,
+        })),
       judgements: (byClaim.get(cl.id) ?? []).map((j) => ({
         clipId: j.clip_id,
         labeller: j.labeller,

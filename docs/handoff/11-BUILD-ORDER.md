@@ -74,6 +74,24 @@ The no-project state (the front door, Footage with Videos · Highlights · Proje
 
 Hybrid retrieval (BM25 ∥ dense → RRF → rerank) and the three-way judge with a calibrated threshold; search in the conversation; coverage per beat in the plan flow.
 
+**BM25 and the judge have landed.** `src/bm25.ts` is the words retriever —
+IDF, saturation, length normalisation, and word boundaries rather than
+substrings — over `searchAny`, which reaches the whole library rather than
+the two hundred most recent moments the old ranker could see. `src/judge.ts`
+answers backs / related / unrelated and cannot write the receipt: it is sent
+numbered sentences and returns a NUMBER, and the line is rebuilt from our own
+text.
+
+**The threshold is structural, not numeric.** A `backs` that cannot point at
+a sentence is downgraded to `related` — the model asserted support and could
+not show it, which is the near-miss it was asked to separate. A numeric
+threshold belongs with the set that could calibrate it, and guessing one
+against nothing is the thing this codebase refuses to do elsewhere.
+
+Still owed here: the reranker, search in the conversation, coverage per beat
+— and the acceptance itself, which is numbers over a Phase 0 set that does
+not exist yet. `npm run eval:set` prints all four the moment it does.
+
 - **Accept:** on the Phase 0 set, recall@5 and false-support rate meet the targets you set from the first run and never regress in CI; "nothing here backs this" is returned on the known-none claims at the calibrated threshold; every result shows the backing line; the thread chips come from parent labels; a model swap is blocked if it fails the gate.
 
 ## Phase 5 — Shorts, pictures and voice

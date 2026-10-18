@@ -184,6 +184,33 @@ CREATE TABLE IF NOT EXISTS eval_judgements (
 
 CREATE INDEX IF NOT EXISTS eval_judgements_by_claim ON eval_judgements(claim_id, labeller);
 
+CREATE TABLE IF NOT EXISTS eval_machine (
+    claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+    clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+    version TEXT NOT NULL,
+    model TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    /* What it said before the structural rule downgraded it, and whether
+       that happened — the two together are how you see a judge that
+       asserts support it cannot point at. */
+    raw TEXT NOT NULL,
+    downgraded INTEGER NOT NULL DEFAULT 0,
+    /* Whether the model said anything about this moment at all. An
+       unanswered one is recorded as unrelated so a short answer cannot
+       shrink the set, and that is an inference rather than a verdict.
+       NO BACKTICKS IN HERE: these statements are template literals, and
+       one around a word ends the string and takes the table with it. */
+    answered INTEGER NOT NULL DEFAULT 1,
+    /* Rebuilt from our own text on our side of the call, never written by
+       the model. See src/judge.ts. */
+    line TEXT,
+    why TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (claim_id, clip_id, version)
+  );
+
+CREATE INDEX IF NOT EXISTS eval_machine_by_claim ON eval_machine(claim_id, version);
+
 CREATE TABLE IF NOT EXISTS renders (
     id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
     kind TEXT NOT NULL,

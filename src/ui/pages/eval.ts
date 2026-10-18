@@ -54,6 +54,16 @@ export interface EvalData {
   labellers: string[];
   /** Moments more than one of them has judged — what agreement is computed of. */
   doubleJudged: number;
+  /**
+   * WHAT THE JUDGE HAS BEEN ASKED, as two counts and never as a verdict
+   * beside a moment you are about to answer.
+   *
+   * The whole value of this set is that it was made by somebody deciding
+   * for themselves. A machine's answer on the row would be an anchor, and
+   * the agreement between a person and a judge they were shown is a
+   * measurement of the judge's influence rather than of the judge.
+   */
+  machine: { judged: number; agreed: number } | null;
   /** True when the claim found nothing, which is itself a judgement. */
   foundNothing: boolean;
 }
@@ -118,7 +128,31 @@ function who(d: EvalData): string {
         ? `${d.doubleJudged} of ${ENOUGH_DOUBLE_JUDGED} judged twice · also ${esc(others.join(", "))}`
         : `${d.doubleJudged} of ${ENOUGH_DOUBLE_JUDGED} judged twice · nobody else yet`
     }</span>
-  </form>`;
+  </form>
+  ${machine(d)}`;
+}
+
+/**
+ * ASK THE JUDGE, and what it came back with — two numbers, after the fact.
+ *
+ * It is here rather than beside each moment because this page is somebody
+ * deciding for themselves: a verdict on the row would anchor the next
+ * answer, and then the agreement between person and judge measures the
+ * anchor. The summary is safe because it says how often they agreed
+ * overall and never about which one.
+ *
+ * The press is for when the labelling is done, which is why it says what it
+ * costs in plain terms — one model call per claim — rather than appearing
+ * as a free button on a page somebody is halfway through.
+ */
+function machine(d: EvalData): string {
+  const said = d.machine
+    ? `${d.machine.agreed} of ${d.machine.judged} the same as a person`
+    : "not asked yet";
+  return `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button id="ask-judge" type="button" ${d.labels ? "" : "disabled "}style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${d.labels ? C.ink70 : C.ink32};border:none;cursor:${d.labels ? "pointer" : "default"};font-family:inherit">Ask the judge</button>
+    <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(said)} · one model call per claim, and it never appears beside a moment you are answering</span>
+  </div>`;
 }
 
 export function renderEval(d: EvalData): string {

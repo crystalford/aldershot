@@ -27,6 +27,7 @@ import type { Env } from "./env.ts";
 import type { Plan } from "./plans.ts";
 import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
 import { alignSource } from "./align-source.ts";
+import { runJudge } from "./judge-run.ts";
 import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
 import { getSource } from "./sources.ts";
@@ -131,6 +132,14 @@ export type JobMessage =
    * and answered by rows that a second attach may have changed since.
    */
   | { type: "align"; jobId: string; userId: string; sourceId: string }
+  /*
+   * THE JUDGE, over the whole eval set at once.
+   *
+   * A job rather than a request because it is one model call per claim and
+   * the set is meant to reach two hundred judgements — minutes of calls,
+   * which is a thing to watch finish rather than a page to hold open.
+   */
+  | { type: "judge"; jobId: string; userId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
   /*
@@ -281,6 +290,35 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
           env.DB,
           msg.jobId,
           "Couldn't line up the words. The cut still works, on the recogniser's own timings.",
+        ));
+      }
+      return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "judge": {
+      await startJob(env.DB, msg.jobId, "reading the claims");
+      const out = await runJudge(env, msg.userId, {
+        onProgress: (done, total) =>
+          void advance(env.DB, msg.jobId, Math.round((done / total) * 100), "judging"),
+      });
+      await meter(env.DB, {
+        user_id: msg.userId,
+        job_id: msg.jobId,
+        job_type: "judge",
+        tokens_in: out.tokensIn,
+        tokens_out: out.tokensOut,
+        /* Empty when it looked and found nothing to answer about, which is
+           a different fact from a run that failed. The model it used is in
+           every row it wrote (eval_machine.model), where it belongs — a
+           usage row is about cost. */
+        outcome: out.judged ? "found" : "empty",
+      });
+      /* Nothing judged is a failure, not a quiet success: the set is there
+         and nobody has an answer about it. */
+      if (!out.judged) {
+        return void (await failJob(
+          env.DB,
+          msg.jobId,
+          out.claims ? "The judge answered nothing." : "Nothing has been labelled yet.",
         ));
       }
       return void (await finishJob(env.DB, msg.jobId));

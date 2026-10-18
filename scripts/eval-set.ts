@@ -24,7 +24,15 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { agreement, backingOf as backingFrom, recallAt, type RankedClaim } from "../src/eval-metrics.ts";
+import {
+  agreement,
+  backingOf as backingFrom,
+  falseSupportRate,
+  perLabel,
+  recallAt,
+  type Prediction,
+  type RankedClaim,
+} from "../src/eval-metrics.ts";
 
 /** This claim's backing moments. See backingOf: only what everyone who
     looked called `backs`. */
@@ -49,10 +57,19 @@ interface Judgement {
   quote?: string;
   span?: [number, number] | null;
 }
+interface Machine {
+  clipId: string;
+  verdict: Verdict;
+  raw: Verdict;
+  downgraded: boolean;
+  version: string;
+}
 interface Claim {
   claimId: string;
   claim: string;
   judgements: Judgement[];
+  /** What the judge said, when it has been asked. */
+  machine?: Machine[];
 }
 
 function load(path: string): Claim[] {
@@ -175,10 +192,74 @@ async function main() {
 
   /* ── The judge ──────────────────────────────────────────────────────── */
 
-  console.log(`\nTHE JUDGE — precision/recall per label, false-support rate`);
-  console.log("  —  waiting on the judge itself, which is Phase 4.");
-  console.log("     src/eval-metrics.ts has both, tested against worked examples;");
-  console.log("     this prints them the day something answers backs/related/unrelated.");
+  console.log(`\nTHE JUDGE`);
+  const predictions: Prediction[] = [];
+  let downgraded = 0;
+  let disputed = 0;
+  /* Machine answers SEEN, as against scored. The two differ and the
+     difference is the whole of the message below. */
+  let asked = 0;
+  let versions = new Set<string>();
+  for (const c of claims) {
+    const human = new Map<string, Verdict[]>();
+    for (const j of c.judgements) human.set(j.clipId, [...(human.get(j.clipId) ?? []), j.verdict]);
+
+    for (const m of c.machine ?? []) {
+      const said = human.get(m.clipId);
+      if (!said?.length) continue;
+      asked += 1;
+      if (m.version) versions.add(m.version);
+      /*
+       * A PAIR THE PEOPLE DISAGREED ABOUT IS NOT SCORED EITHER WAY.
+       *
+       * The first version held the judge to whichever answer it happened to
+       * match, which sounds generous and is the opposite: a near-miss that
+       * one labeller called support is PRECISELY the dangerous case, and a
+       * rule that lets the judge off exactly there blinds the false-support
+       * rate to the cases it exists for. Counted and reported, the same way
+       * `backingOf` refuses to call a disputed moment truth.
+       */
+      /* Counted before the dispute check: a downgrade is a fact about the
+         judge, not about whether this pair could be scored. */
+      if (m.downgraded) downgraded += 1;
+      if (new Set(said).size > 1) {
+        disputed += 1;
+        continue;
+      }
+      predictions.push({ claimId: c.claimId, clipId: m.clipId, said: m.verdict, truth: said[0] });
+    }
+  }
+
+  if (!predictions.length && !asked) {
+    console.log("  —  not asked yet. Label at /eval, then press Ask the judge.");
+  } else if (!predictions.length) {
+    /*
+     * ASKED, AND NOTHING COULD BE SCORED — which is a different fact from
+     * not having been asked, and the first version of this said the wrong
+     * one. Found by running it over a live export whose single judged pair
+     * was disputed: the judge had answered and the report said it had not.
+     */
+    console.log(`  ${asked} answered, and none could be scored.`);
+    if (disputed) console.log(`  ${disputed} pair(s) left out — the labellers disagreed, so there is no answer to score against`);
+  } else {
+    console.log(`  ${predictions.length} judged, version ${[...versions].join(", ") || "unknown"}`);
+    const per = perLabel(predictions, VERDICTS);
+    for (const label of VERDICTS) {
+      const s = per[label];
+      console.log(
+        `  ${label.padEnd(10)} precision ${pct(s.precision)}  recall ${pct(s.recall)}` +
+          `  (said ${s.said}, people said ${s.support})`,
+      );
+    }
+    const fs = falseSupportRate(predictions);
+    console.log(`  false support: ${fs.wrong} of ${fs.said} it called backs — ${pct(fs.rate)}`);
+    /* Not an error rate: it is the structural abstention in src/judge.ts
+       doing its job. A judge that needs it constantly is one to replace. */
+    console.log(`  ${downgraded} time(s) it claimed support and could not point at a sentence`);
+    if (disputed) {
+      console.log(`  ${disputed} pair(s) left out — the labellers disagreed, so there is no answer to score against`);
+    }
+  }
   console.log();
 }
 
