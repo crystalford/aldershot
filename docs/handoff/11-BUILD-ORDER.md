@@ -14,6 +14,15 @@ Ingest → proxy → transcript (raw audio, VAD) → forced alignment → the do
 
 - **Accept:** a 30-minute file produces word timings within one frame on a 20-line spot check; moments never straddle a breakpoint; a word-span cut renders with the audio cut on the pause, not the phoneme; the OTIO opens in Resolve with the cuts intact; hours are charged exactly once and never again.
 
+**Forced alignment has landed** (decision 43): torchaudio's MMS_FA in the render
+container, over ~30-second overlapping windows planned in `src/align.ts`,
+started when a source is attached. `npm run check:align` is the spot check in
+runnable form — nine words of a known clip, a band of one frame, plus the
+window-offset and mix-to-mono cases that a single window cannot test. It needs
+a torch install, so it is acceptance rather than a gate; its header says how to
+run it. What is still owed is the same check over thirty minutes of the owner's
+own footage on a real deploy, which no sandbox can stand in for.
+
 ## Phase 2 — the rule engine and the Editor
 
 Port `footage.js compute()` and `applyRule()` over the real document; the Editor with Cut mode: rules with effects, Blocks and Words zooms, hand rules, struck words, inserts, undo/history, project save/restore, the Read (observable only).

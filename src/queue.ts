@@ -26,6 +26,7 @@
 import type { Env } from "./env.ts";
 import type { Plan } from "./plans.ts";
 import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
+import { alignSource } from "./align-source.ts";
 import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
 import { getSource } from "./sources.ts";
@@ -120,6 +121,16 @@ export type JobMessage =
    * behind it. See src/proxy.ts.
    */
   | { type: "proxy"; jobId: string; userId: string; sourceId: string }
+  /*
+   * LINING UP THE WORDS, once per source.
+   *
+   * It runs on attach rather than on cut (see src/align-source.ts for why it
+   * is not where doc 17 puts it), which means it is started by a link press
+   * and must be cheap to ask for twice. `needsAlignment` is the guard and it
+   * is checked again HERE, because the question is answered at dispatch time
+   * and answered by rows that a second attach may have changed since.
+   */
+  | { type: "align"; jobId: string; userId: string; sourceId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
   /*
@@ -248,6 +259,30 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         return;
       }
       /* Nothing more to do: the run's own row already says why. */
+      return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "align": {
+      const src = await getSource(env.DB, msg.sourceId, msg.userId);
+      if (!src) return void (await failJob(env.DB, msg.jobId, "That video is no longer here."));
+      await startJob(env.DB, msg.jobId, "lining up the words");
+      const out = await alignSource(env, msg.sourceId, (label, pct) =>
+        void advance(env.DB, msg.jobId, pct, label),
+      );
+      /*
+       * A RUN THAT PLACED NOTHING IS A FAILURE, and says so.
+       *
+       * alignSource already refuses to write `forced` in that case, so the
+       * timings are still honest either way. This is the other half: a job
+       * that finished green over a source that is no better than it was is
+       * exactly the silent partial failure invariant 7 calls a P1.
+       */
+      if (!out.aligned) {
+        return void (await failJob(
+          env.DB,
+          msg.jobId,
+          "Couldn't line up the words. The cut still works, on the recogniser's own timings.",
+        ));
+      }
       return void (await finishJob(env.DB, msg.jobId));
     }
     case "reactions":

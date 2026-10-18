@@ -86,13 +86,23 @@ export const frameAccurate = (t: Timing): boolean => t.toleranceMs <= FRAME_MS;
 /**
  * What a source's timings currently are.
  *
- * Everything is `recogniser` until forced alignment exists — there is no
- * column for it yet and inventing one that is always the same value would be
- * a schema change that records nothing. It takes a source so the signature
- * does not change on the day there IS a column, which is the whole point of
- * putting the contract in before the implementation.
+ * It took a source and ignored it for several commits — "there is no column
+ * for it yet and inventing one that is always the same value would be a
+ * schema change that records nothing" — on the understanding that the
+ * signature would not have to change on the day there was one. This is that
+ * day, and it did not.
+ *
+ * NULL IS `recogniser`, and is not backfilled. Every row written before the
+ * column existed really does carry recogniser timings, and a migration that
+ * wrote `forced` over them would be a claim that an alignment ran.
+ *
+ * A VALUE NOBODY RECOGNISES IS ALSO `recogniser`, which is the cautious
+ * direction: an unknown string read as `forced` would let a cut land on a
+ * frame using timings nothing has checked.
  */
-export function timingFor(_source: { id: string }): Timing {
+export function timingFor(source: { timing_source?: string | null }): Timing {
+  const s = source.timing_source;
+  if (s === "forced" || s === "caption") return timingOf(s);
   return timingOf("recogniser");
 }
 
@@ -191,3 +201,177 @@ export function spanFor(
  * the transcript is already in hand at scoring time — and reading waits for
  * something that needs it.
  */
+
+/* ── Windows: how a ten-hour file is aligned at all ─────────────────────── */
+
+/**
+ * THE WINDOW, AND WHY THERE HAS TO BE ONE.
+ *
+ * A forced aligner runs an acoustic model over the audio and then searches
+ * for the best path through it that produces the given words. The search is
+ * cheap; the model is not. An hour of 16 kHz audio is 57.6 million samples,
+ * and the convolutional stack in front of the model holds activations for
+ * all of them at once — tens of gigabytes for a file this product calls
+ * ordinary. So the audio is aligned in pieces.
+ *
+ * Thirty seconds, because it is comfortably inside any machine we would rent
+ * and comfortably longer than the pauses alignment uses to find its edges.
+ */
+export const WINDOW_MS = 30_000;
+
+/**
+ * Audio either side of the window's own words.
+ *
+ * The recogniser is wrong by about 110 ms, so a word's true start can sit
+ * before the start it was given. Without a pad the first word of a window
+ * begins mid-utterance and the aligner has nowhere to put its onset.
+ *
+ * THE PAD IS ALSO THE PROBLEM. Forced alignment consumes ALL of the audio it
+ * is given — the path has to account for every frame — so silence or speech
+ * outside the words gets absorbed by the word at that end. That is why
+ * windows overlap and why the stitch below prefers interior readings.
+ */
+export const PAD_MS = 300;
+
+/** How many words two neighbouring windows share. */
+export const OVERLAP_WORDS = 3;
+
+export interface AlignWindow {
+  /** Audio to cut, in source milliseconds. Includes the pad. */
+  startMs: number;
+  endMs: number;
+  /** The words it covers, by source word index. Inclusive. */
+  first: number;
+  last: number;
+  /** Their text, in order, which is what the aligner is given. */
+  words: string[];
+}
+
+/**
+ * Cut a source's words into overlapping windows of about thirty seconds.
+ *
+ * Boundaries are at WORDS, never at a clock: a window that ended mid-word
+ * would hand the aligner half an utterance and ask it to find a whole one.
+ */
+export function planAlignWindows(
+  words: IndexedWord[],
+  opts: { windowMs?: number; padMs?: number; overlap?: number } = {},
+): AlignWindow[] {
+  const windowMs = opts.windowMs ?? WINDOW_MS;
+  const padMs = opts.padMs ?? PAD_MS;
+  const overlap = opts.overlap ?? OVERLAP_WORDS;
+  if (!words.length) return [];
+
+  const out: AlignWindow[] = [];
+  let i = 0;
+  while (i < words.length) {
+    let j = i;
+    /* At least one word per window even when that word is somehow longer
+       than the whole window — a recogniser timing can be nonsense, and a
+       loop that refused to advance on one would never finish. */
+    while (j + 1 < words.length && words[j + 1].endMs - words[i].startMs <= windowMs) j += 1;
+
+    out.push({
+      startMs: Math.max(0, words[i].startMs - padMs),
+      endMs: words[j].endMs + padMs,
+      first: words[i].index,
+      last: words[j].index,
+      words: words.slice(i, j + 1).map((w) => w.text),
+    });
+
+    if (j + 1 >= words.length) break;
+    /*
+     * BACK UP BY THE OVERLAP, but never past the start of this window: on a
+     * window of one or two words that would step backwards and plan the same
+     * window again, for ever. Found by planning a source whose recogniser
+     * gave one word a forty-second duration.
+     */
+    i = Math.max(i + 1, j + 1 - overlap);
+  }
+  return out;
+}
+
+/** What the aligner says about one word: seconds within its window, and how sure. */
+export type WindowTiming = [startS: number, endS: number, score: number] | null;
+
+export interface Aligned {
+  index: number;
+  startMs: number;
+  endMs: number;
+  /** 0 to 1, from the model. Internal: invariant 3 — it never reaches a user. */
+  score: number;
+}
+
+/**
+ * ONE TIMING PER WORD, FROM THE WINDOW THAT HEARD IT BEST.
+ *
+ * A word in the overlap has two readings, and they are not equally good: the
+ * one nearer a window's edge was competing with the pad for its audio, and
+ * at the very edge it absorbed it. So the reading furthest from an edge
+ * wins, and the model's own score settles a tie.
+ *
+ * A word the aligner could not place — a number, an emoji, a script the
+ * model has no letters for — is simply absent from the result. The caller
+ * keeps the recogniser's timing for it, which is worse and is honest.
+ */
+export function stitchAlignment(
+  windows: AlignWindow[],
+  results: Array<{ ok: boolean; timings?: WindowTiming[] }>,
+): Aligned[] {
+  const best = new Map<number, { a: Aligned; edge: number }>();
+
+  windows.forEach((w, wi) => {
+    const r = results[wi];
+    if (!r?.ok || !r.timings) return;
+    const n = w.last - w.first + 1;
+    for (let k = 0; k < n; k += 1) {
+      const t = r.timings[k];
+      if (!t) continue;
+      const index = w.first + k;
+      const edge = Math.min(k, n - 1 - k);
+      const cand: Aligned = {
+        index,
+        startMs: Math.round(w.startMs + t[0] * 1000),
+        endMs: Math.round(w.startMs + t[1] * 1000),
+        score: t[2],
+      };
+      const held = best.get(index);
+      if (!held || edge > held.edge || (edge === held.edge && cand.score > held.a.score)) {
+        best.set(index, { a: cand, edge });
+      }
+    }
+  });
+
+  return [...best.values()].map((v) => v.a).sort((a, b) => a.index - b.index);
+}
+
+/**
+ * The aligned timings, made monotonic, and a count of what had to be moved.
+ *
+ * Two readings from two windows can disagree by a few milliseconds, and at a
+ * seam that can put a word's start before the previous word's start. Nothing
+ * downstream survives that: `spanFor` walks words in order and `playableRanges`
+ * builds a render from them, so one word out of order is a cut that plays
+ * backwards.
+ *
+ * The repair is a clamp, and the COUNT is the point of returning it: a source
+ * that needed one is fine, and a source that needed four hundred has a window
+ * size or a transcript problem that a silent clamp would hide for ever.
+ */
+export function monotonic(aligned: Aligned[]): { words: Aligned[]; repaired: number } {
+  const words = aligned.map((a) => ({ ...a }));
+  let repaired = 0;
+  let floor = 0;
+  for (const w of words) {
+    if (w.startMs < floor) {
+      w.startMs = floor;
+      repaired += 1;
+    }
+    if (w.endMs < w.startMs) {
+      w.endMs = w.startMs;
+      repaired += 1;
+    }
+    floor = w.startMs;
+  }
+  return { words, repaired };
+}

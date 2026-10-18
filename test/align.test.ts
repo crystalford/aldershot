@@ -36,7 +36,21 @@ test("a recogniser timing is not frame accurate, and says so", () => {
   assert.equal(frameAccurate(timingOf("forced")), true);
   assert.ok(TOLERANCE_MS.recogniser > FRAME_MS * 2, "a recogniser timing spans more than two frames");
   assert.ok(TOLERANCE_MS.forced <= FRAME_MS);
-  assert.equal(timingFor({ id: "src1" }).source, "recogniser", "and everything is, until the aligner lands");
+  /*
+   * THE COLUMN IS READ NOW, and null still means recogniser: every row
+   * written before the column existed really does carry recogniser timings,
+   * and nothing backfilled them.
+   */
+  assert.equal(timingFor({ timing_source: null }).source, "recogniser");
+  assert.equal(timingFor({}).source, "recogniser", "a row read without the column is not a promise");
+  assert.equal(timingFor({ timing_source: "forced" }).source, "forced");
+  assert.equal(timingFor({ timing_source: "caption" }).source, "caption");
+  /* A value nobody recognises is recogniser, which is the cautious
+     direction: read as `forced` it would let a cut land on a frame using
+     timings nothing has checked. */
+  assert.equal(timingFor({ timing_source: "aligned-ish" }).source, "recogniser");
+  assert.equal(frameAccurate(timingFor({ timing_source: "forced" })), true);
+  assert.equal(frameAccurate(timingFor({ timing_source: "nonsense" })), false);
 });
 
 test("words are numbered across segments, in segment order", () => {

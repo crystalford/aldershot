@@ -52,3 +52,8 @@ echo "  the export itself:  npm run check:render   (see scripts/check-render.cjs
 # plan or the DOM, which is how a 9:16 short shipped with the picture filling a
 # third of the frame and the rest black.
 echo "  what it looks like: npm run check:frame    (see scripts/check-frame.cjs)"
+# Forced alignment: a 1.26 GB model and a torch install, which is why this is
+# acceptance rather than a gate — a gate that cannot run is a gate people
+# learn to skip. It is the only check that asks whether the words are
+# actually WHERE the product says they are, and the band is one frame.
+echo "  where the words are: npm run check:align  (see scripts/check-align.cjs)"

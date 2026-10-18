@@ -81,6 +81,10 @@ export const RUNS_ON: Partial<Record<JobType, keyof typeof INSTANCE>> = {
   render: "standard-4",
   shorts: "standard-4",
   proxy: "standard-4",
+  /* Torch wants the cores: a forward pass is the whole cost here, and on
+     standard-2's single vCPU it runs at about a quarter of the speed for
+     exactly the same number of CPU-seconds of billing. */
+  align: "standard-4",
 };
 
 export type Prices = typeof PRICES;
@@ -99,7 +103,11 @@ export type JobType =
   /* One Scout run. Its own type because its cost line is unlike every other
      one here: frontier calls and adapter quota rather than minutes of
      footage, and per-job cost is the number the business runs on. */
-  | "scout";
+  | "scout"
+  /* Forced alignment over one source. Container minutes on a machine
+     carrying a 1.26 GB model, charged — like the proxy — whether it worked
+     or not, because the time was spent either way. */
+  | "align";
 
 export interface UsageInput {
   user_id: string;

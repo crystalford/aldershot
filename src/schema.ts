@@ -672,6 +672,24 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: "v2_clips", column: "end_word", ddl: "ALTER TABLE v2_clips ADD COLUMN end_word INTEGER" },
 
   /*
+   * WHERE THIS SOURCE'S WORD TIMINGS CAME FROM.
+   *
+   * src/align.ts said, for several commits, that "everything is `recogniser`
+   * until forced alignment exists — there is no column for it yet and
+   * inventing one that is always the same value would be a schema change
+   * that records nothing". Forced alignment exists now, so the column does.
+   *
+   * Null reads as `recogniser`, which is what every row written before this
+   * actually is. It is not backfilled: a value written by a migration would
+   * be a claim that the alignment ran, and it did not.
+   */
+  { table: "sources", column: "timing_source", ddl: "ALTER TABLE sources ADD COLUMN timing_source TEXT" },
+  /* When it ran. Null while it has never been tried; a source whose
+     alignment failed keeps a null here and a recogniser timing, which is the
+     state the retry looks for. */
+  { table: "sources", column: "aligned_at", ddl: "ALTER TABLE sources ADD COLUMN aligned_at INTEGER" },
+
+  /*
    * When this clip was written into the meaning index, or null if it never
    * was. A backfill reads this to know what is left to do, so the work is
    * resumable and a library of thousands does not restart from the top every

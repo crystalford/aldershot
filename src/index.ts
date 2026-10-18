@@ -85,6 +85,7 @@ import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
+import { shouldAlign } from "./align-source.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { isVerdict, type Verdict } from "./eval-set.ts";
@@ -2552,6 +2553,28 @@ app.post("/api/projects/:id/attach", async (c) => {
     .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
     .bind(JSON.stringify(next), Date.now(), project.id, user.id)
     .run();
+
+  /*
+   * ATTACHING IS THE SIGNAL THAT THIS FOOTAGE WILL BE CUT.
+   *
+   * So it is where forced alignment starts — not at the cut, where doc 17
+   * puts it and where a person who has just pressed a button would wait ten
+   * minutes for word timings they never asked about. In the background, and
+   * idempotent: the same video attached to four projects is aligned once.
+   *
+   * It does not block the attach and cannot fail it. A cut on recogniser
+   * timings is a cut; a cut that would not happen because a background job
+   * could not be queued is not.
+   */
+  if (await shouldAlign(c.env, src.id)) {
+    const job = await createJob(c.env.DB, { user_id: user.id, type: "align", ref_id: src.id });
+    await dispatch(c.env, c.executionCtx, {
+      type: "align",
+      jobId: job.id,
+      userId: user.id,
+      sourceId: src.id,
+    }).catch(() => {});
+  }
 
   await recordPass(c.env.DB, {
     projectId: project.id,

@@ -1,6 +1,7 @@
 // ffmpeg helper, running inside the Cloudflare Container. Two jobs, both
 // driven by the Worker:
 //
+//   POST /align          { url, windows } -> { results }  (forced alignment; see align.mjs)
 //   POST /extract-full   { url }       -> audio/mpeg (the whole track, 32kbps mono 16kHz)
 //   POST /proxy          { url }       -> video/mp4  (480p editing copy, + x-width/x-height)
 //   POST /render         { plan }      -> { id }     (starts a cut, per the EDL)
@@ -27,6 +28,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
+import { alignHandler } from "./align.mjs";
 
 /**
  * Captions, burned in.
@@ -829,6 +831,13 @@ function readJson(req) {
   });
 }
 
+/** The other half of jsonError: a body that is not an error. */
+function json(res, code, obj) {
+  if (res.headersSent) { res.destroy(); return; }
+  res.writeHead(code, { "content-type": "application/json" });
+  res.end(JSON.stringify(obj));
+}
+
 function jsonError(res, code, obj) {
   if (obj && !String(obj.error || "").trim()) obj = { ...obj, error: "the encoder failed without saying why" };
   if (res.headersSent) { res.destroy(); return; }
@@ -927,6 +936,13 @@ createServer(async (req, res) => {
   // /render takes a plan rather than a single url, so the url check only
   // applies to the endpoints that do take one.
   if (path === "/render") return render(body, res);
+
+  /*
+   * /align takes a url AND windows, so it sits above the url-only check for
+   * the same reason /render does: it answers "no windows to align" itself,
+   * which is a more useful 400 than "missing url".
+   */
+  if (path === "/align") return alignHandler(body, res, json, jsonError);
 
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);

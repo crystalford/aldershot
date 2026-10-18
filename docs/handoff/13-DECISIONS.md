@@ -66,6 +66,10 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 39. **BYOK covers direction and reading; never falls back to our bill without opt-in.** *Blame attribution is a copy rule.*
 40. **Models are rented parts.** Contracts, an eval router, content-addressed invalidation. *Price per capability falls ~50× a year.*
 
+43. **Forced alignment runs in the render container, on torchaudio's MMS_FA, over ~30-second windows.** *A container because the Worker cannot hold a model or a file; MMS_FA because it is an aligner rather than an ASR model repurposed, and the product will not stay English; windows because a wav2vec2 forward pass over an hour of audio does not fit in any machine we would rent. Measured in the sandbox: a 20.1 ms frame step — the ≈20 ms the handoff claims — and agreement with `WAV2VEC2_ASR_BASE_960H` inside one frame on the same clip.*
+
+**The counter-argument**, since it is a real one: MMS_FA is 1.26 GB against the English model's 378 MB, which is 900 MB of image, of CI, and of cold start for a product whose owner's footage is in English. The answer is that the capability contract in `src/align.ts` makes this a model swap rather than a rewrite, so the cheap model is one line away the day cold starts matter — and the expensive one is the one that does not have to be revisited when somebody uploads a podcast in Portuguese.
+
 ## Position
 
 41. **"The edit you can interrogate."** Not "AI that edits your video." *Others already say that; receipts are the opening — frontier models ground an answer with correct evidence 1% of the time.*
