@@ -89,7 +89,7 @@ import { shouldAlign, timingForProject } from "./align-source.ts";
 import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
-import { isVerdict, type Verdict } from "./eval-set.ts";
+import { LEGACY_LABELLER, isVerdict, labellerName, setProgress, type Verdict } from "./eval-set.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
 import { intentLabel, readIntent } from "./intent.ts";
@@ -2605,27 +2605,57 @@ app.post("/api/projects/:id/attach", async (c) => {
  * ones that teach a threshold to answer "nothing here backs this", and a set
  * without them teaches the opposite.
  */
+/*
+ * EVERY JUDGEMENT IN THIS USER'S SET, FROM BOTH TABLES.
+ *
+ * eval_judgements carries the labeller; eval_labels predates it and cannot
+ * (its key is claim and clip alone — see src/schema.ts). Rows that have no
+ * successor are read under LEGACY_LABELLER rather than attributed to
+ * whoever is labelling now, because an agreement figure between a person
+ * and their own unnamed earlier answers would be reported as agreement
+ * between two people.
+ */
+const EVERY_JUDGEMENT = `
+  SELECT j.claim_id AS claim_id, j.clip_id AS clip_id, j.labeller AS labeller, j.verdict AS verdict
+    FROM eval_judgements j JOIN eval_claims c ON c.id = j.claim_id
+   WHERE c.user_id = ?
+  UNION ALL
+  SELECT l.claim_id, l.clip_id, '${LEGACY_LABELLER}', l.verdict
+    FROM eval_labels l JOIN eval_claims c ON c.id = l.claim_id
+   WHERE c.user_id = ?
+     AND NOT EXISTS (SELECT 1 FROM eval_judgements j
+                      WHERE j.claim_id = l.claim_id AND j.clip_id = l.clip_id)`;
+
 app.get("/eval", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const text = (c.req.query("claim") || "").trim();
+  /* Who is answering. A name rather than an account: a claim belongs to the
+     user who wrote it, so two labellers is two people at one keyboard. */
+  const by = labellerName(c.req.query("by"), user.email.split("@")[0] || "me");
 
-  const [claims, counted] = await Promise.all([
+  const [claims, every] = await Promise.all([
     c.env.DB
       .prepare(
-        `SELECT c.id, c.text, (SELECT COUNT(*) FROM eval_labels l WHERE l.claim_id = c.id) AS judged
+        `SELECT c.id, c.text,
+                (SELECT COUNT(DISTINCT l.clip_id) FROM eval_labels l WHERE l.claim_id = c.id)
+              + (SELECT COUNT(DISTINCT j.clip_id) FROM eval_judgements j
+                   WHERE j.claim_id = c.id
+                     AND NOT EXISTS (SELECT 1 FROM eval_labels l2
+                                      WHERE l2.claim_id = j.claim_id AND l2.clip_id = j.clip_id)) AS judged
            FROM eval_claims c WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 40`,
       )
       .bind(user.id)
       .all<{ id: string; text: string; judged: number }>(),
     c.env.DB
-      .prepare(
-        `SELECT COUNT(*) AS n FROM eval_labels l
-           JOIN eval_claims c ON c.id = l.claim_id WHERE c.user_id=?`,
-      )
-      .bind(user.id)
-      .first<{ n: number }>(),
+      .prepare(EVERY_JUDGEMENT)
+      .bind(user.id, user.id)
+      .all<{ claim_id: string; clip_id: string; labeller: string; verdict: string }>(),
   ]);
+
+  const progress = setProgress(
+    (every.results ?? []).map((r) => ({ claimId: r.claim_id, clipId: r.clip_id, labeller: r.labeller })),
+  );
 
   let claim: { id: string; text: string } | null = null;
   let candidates: EvalData["candidates"] = [];
@@ -2651,17 +2681,26 @@ app.get("/eval", async (c) => {
     const moments = found.how === "recent" ? [] : found.moments;
     foundNothing = moments.length === 0;
 
-    const { results: said } = await c.env.DB
-      .prepare(`SELECT clip_id, verdict FROM eval_labels WHERE claim_id=?`)
-      .bind(claim.id)
-      .all<{ clip_id: string; verdict: string }>();
-    const byClip = new Map((said ?? []).map((r) => [r.clip_id, r.verdict]));
+    /* THIS labeller's answers, not everyone's: the page is somebody making
+       up their own mind, and showing them what the other person said is the
+       one thing that would make the agreement figure meaningless. */
+    const open = claim;
+    const mine = (every.results ?? []).filter((r) => r.claim_id === open.id && r.labeller === by);
+    const byClip = new Map(mine.map((r) => [r.clip_id, r.verdict]));
+    /* How many OTHERS have answered each one, which is honest to show and
+       does not say what they answered. */
+    const others = new Map<string, number>();
+    for (const r of every.results ?? []) {
+      if (r.claim_id !== open.id || r.labeller === by) continue;
+      others.set(r.clip_id, (others.get(r.clip_id) ?? 0) + 1);
+    }
 
     candidates = moments.map((m) => ({
       id: m.id,
       quote: m.quote,
       sourceTitle: m.source_title,
       verdict: isVerdict(byClip.get(m.id)) ? (byClip.get(m.id) as Verdict) : null,
+      alsoJudged: others.get(m.id) ?? 0,
     }));
   }
 
@@ -2672,7 +2711,10 @@ app.get("/eval", async (c) => {
         claim,
         candidates,
         claims: claims.results ?? [],
-        labels: counted?.n ?? 0,
+        labels: progress.judgements,
+        labeller: by,
+        labellers: progress.labellers,
+        doubleJudged: progress.doubleJudged,
         foundNothing,
       }),
     ),
@@ -2681,10 +2723,93 @@ app.get("/eval", async (c) => {
 
 /** One judgement. Replaces any earlier answer — changing your mind is a
     correction, not a second opinion. */
+/**
+ * THE SET, AS A FILE.
+ *
+ * Phase 0's acceptance says "the set EXISTS IN THE REPO with a runner" — not
+ * in a database on one machine. A set that lives only in D1 cannot be
+ * reviewed in a diff, cannot be checked out beside the code it is measuring,
+ * and cannot be re-run against a model six months from now to see whether a
+ * number moved.
+ *
+ * JSONL, one claim per line: appendable, diffable, and readable without
+ * this product. Every judgement carries the quote and the word span beside
+ * the id, because an id is only meaningful next to the database it came
+ * from and the whole point of a file is to outlive one.
+ *
+ * WHAT COMES OUT IS SOMEBODY'S TRANSCRIPT. It is their own footage and
+ * their own words, so this hands it to them and does not decide where it
+ * goes; committing it is a choice the person makes.
+ */
+app.get("/api/eval/export", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const [claims, judgements] = await Promise.all([
+    c.env.DB
+      .prepare("SELECT id, text, created_at FROM eval_claims WHERE user_id=? ORDER BY created_at")
+      .bind(user.id)
+      .all<{ id: string; text: string; created_at: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT j.claim_id, j.clip_id, j.labeller, j.verdict,
+                cl.quote AS quote, cl.start_word AS start_word, cl.end_word AS end_word,
+                s.title AS source_title
+           FROM (${EVERY_JUDGEMENT}) j
+           LEFT JOIN v2_clips cl ON cl.id = j.clip_id
+           LEFT JOIN sources s ON s.id = cl.source_id`,
+      )
+      .bind(user.id, user.id)
+      .all<{
+        claim_id: string;
+        clip_id: string;
+        labeller: string;
+        verdict: string;
+        quote: string | null;
+        start_word: number | null;
+        end_word: number | null;
+        source_title: string | null;
+      }>(),
+  ]);
+
+  const byClaim = new Map<string, typeof judgements.results>();
+  for (const j of judgements.results ?? []) {
+    const list = byClaim.get(j.claim_id) ?? [];
+    list.push(j);
+    byClaim.set(j.claim_id, list);
+  }
+
+  const lines = (claims.results ?? []).map((cl) =>
+    JSON.stringify({
+      claimId: cl.id,
+      claim: cl.text,
+      at: cl.created_at,
+      judgements: (byClaim.get(cl.id) ?? []).map((j) => ({
+        clipId: j.clip_id,
+        labeller: j.labeller,
+        verdict: j.verdict,
+        quote: j.quote ?? "",
+        sourceTitle: j.source_title ?? "",
+        /* The backing utterance as a WORD SPAN, which is what Phase 0 asks
+           for and what survives a re-alignment — milliseconds do not. Null
+           on a moment scored before spans were written. */
+        span: j.start_word === null || j.end_word === null ? null : [j.start_word, j.end_word],
+      })),
+    }),
+  );
+
+  return new Response(lines.join("\n") + (lines.length ? "\n" : ""), {
+    headers: {
+      "content-type": "application/x-ndjson",
+      "content-disposition": 'attachment; filename="eval-set.jsonl"',
+    },
+  });
+});
+
 app.post("/api/eval/:claimId/:clipId", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ verdict: string }>(c);
+  const b = await body<{ verdict: string; by?: string }>(c);
   if (!isVerdict(b.verdict)) return c.json({ error: "no such answer" }, 400);
 
   /* Ownership is checked on the CLAIM, which carries the user — a label row
@@ -2695,12 +2820,18 @@ app.post("/api/eval/:claimId/:clipId", async (c) => {
     .first<{ id: string }>();
   if (!owns) return c.json({ error: "not found" }, 404);
 
+  /* The labeller rides on the body because the page knows who is answering
+     and the row's key needs it. Same cleaning as the page does, so "ann" and
+     "ann " cannot become two labellers who agree perfectly. */
+  const by = labellerName(b.by, user.email.split("@")[0] || "me");
+
   await c.env.DB
     .prepare(
-      `INSERT INTO eval_labels (claim_id,clip_id,verdict,created_at) VALUES (?,?,?,?)
-         ON CONFLICT(claim_id,clip_id) DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
+      `INSERT INTO eval_judgements (claim_id,clip_id,labeller,verdict,created_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(claim_id,clip_id,labeller)
+         DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
     )
-    .bind(c.req.param("claimId"), c.req.param("clipId"), b.verdict, Date.now())
+    .bind(c.req.param("claimId"), c.req.param("clipId"), by, b.verdict, Date.now())
     .run();
 
   return c.json({ ok: true });

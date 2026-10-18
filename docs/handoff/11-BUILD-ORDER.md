@@ -8,6 +8,23 @@ Phases are gated. A phase is done when its tests pass, not when its features exi
 - 50 directive tasks (brief + archive → expected plan shape) and 30 critic pairs (cut A vs cut B with a human preference).
 - **Accept:** the set exists in the repo with a runner that reports recall@5, judge precision/recall per label, false-support rate, and labeller agreement.
 
+**The runner exists**: `npm run eval:set` over `eval/set.jsonl`, exported from
+`/api/eval/export` after labelling at `/eval`. It reports the set's shape, its
+negatives, and labeller agreement (raw and Cohen's kappa) offline; `--live`
+adds recall@5 through the same `findMaterial` the labels were collected from.
+The judge's two figures are written and tested in `src/eval-metrics.ts` and
+reported as *waiting* rather than as zero, because the three-way judge is
+Phase 4 and does not exist yet.
+
+A blocker was found and fixed on the way: `eval_labels` is keyed
+`(claim_id, clip_id)`, so a second labeller silently overwrote the first and
+the agreement figure this acceptance names could never have been computed.
+`eval_judgements` adds the labeller to the key, and the page asks who is
+answering. **What is still owed is the set itself** — ~200 claims over ~10
+hours, two labellers — which is somebody's own footage judged by somebody who
+watched it, and nothing in this repo can invent it. `eval/example.jsonl` is
+three invented claims that exist only so the runner can be exercised.
+
 ## Phase 1 — the spine
 
 Ingest → proxy → transcript (raw audio, VAD) → forced alignment → the document (word table, parents, children, labels) → text cuts → render → OTIO export.

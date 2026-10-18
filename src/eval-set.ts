@@ -78,3 +78,63 @@ export function scoreClaim(judgements: Judgement[]): {
  * judgements each is not a set, and five claims with forty each is.
  */
 export const ENOUGH_LABELS = 200;
+
+/* ── Who made the judgement ─────────────────────────────────────────────── */
+
+/**
+ * The name on rows written before labellers existed.
+ *
+ * Shown rather than hidden, and never attributed to whoever is labelling
+ * now: an agreement figure computed between a person and their own earlier
+ * unnamed answers would be an agreement with themselves, reported as
+ * agreement between two people.
+ */
+export const LEGACY_LABELLER = "(unnamed)";
+
+/** As many labellers as the set has, in the order they first appear. */
+export function labellersIn(rows: Array<{ labeller: string }>): string[] {
+  const seen: string[] = [];
+  for (const r of rows) if (!seen.includes(r.labeller)) seen.push(r.labeller);
+  return seen;
+}
+
+/**
+ * A labeller's name, cleaned up.
+ *
+ * It arrives off a query parameter and ends up as a primary key, so it is
+ * trimmed, bounded and never empty — two rows for "ann" and "ann " would be
+ * two labellers who agree with each other perfectly and are one person.
+ */
+export function labellerName(raw: string | null | undefined, fallback: string): string {
+  const clean = (raw ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+  return clean || fallback;
+}
+
+/**
+ * How far along the set is against what Phase 0 asks for.
+ *
+ * Two numbers, because the acceptance names two different things: enough
+ * judgements to tune a threshold against, and enough of them judged TWICE
+ * for an agreement figure to mean anything. A set of four hundred labels
+ * from one person still cannot answer "do two people agree".
+ */
+export const ENOUGH_DOUBLE_JUDGED = 40;
+
+export function setProgress(rows: Array<{ claimId: string; clipId: string; labeller: string }>): {
+  judgements: number;
+  labellers: string[];
+  doubleJudged: number;
+} {
+  const by = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const key = `${r.claimId}\u0000${r.clipId}`;
+    const set = by.get(key) ?? new Set<string>();
+    set.add(r.labeller);
+    by.set(key, set);
+  }
+  return {
+    judgements: rows.length,
+    labellers: labellersIn(rows),
+    doubleJudged: [...by.values()].filter((s) => s.size > 1).length,
+  };
+}

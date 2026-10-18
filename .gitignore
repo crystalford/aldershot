@@ -48,3 +48,9 @@ next-env.d.ts
 
 # Eval sets: notes about named living people, gathered per-owner.
 eval/scout/
+
+# The real eval set is somebody's own transcript. Export it with
+# /api/eval/export when you want it; whether it belongs in a repository is
+# the person's decision rather than this file's. eval/example.jsonl is
+# committed, is invented, and is not the set.
+eval/set.jsonl

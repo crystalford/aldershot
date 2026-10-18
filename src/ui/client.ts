@@ -3572,7 +3572,18 @@ document.querySelectorAll(".eval-say").forEach((btn) => {
     try {
       const res = await fetch(
         "/api/eval/" + btn.getAttribute("data-claim") + "/" + btn.getAttribute("data-clip"),
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdict }) },
+        /* WHO IS ANSWERING rides with the answer. It is read off the form
+           on the page rather than held in a variable, so switching labeller
+           and then tapping without reloading cannot file the answer under
+           the person who was here before. */
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            verdict,
+            by: (document.querySelector('input[name="by"]') || {}).value || "",
+          }),
+        },
       );
       if (!res.ok) { window.toast("That didn't save."); return; }
       /* The chosen one lights; the other two go quiet. Done here rather than

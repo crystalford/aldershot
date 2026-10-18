@@ -237,6 +237,38 @@ const STATEMENTS: string[] = [
      PRIMARY KEY (claim_id, clip_id)
    )`,
 
+  /*
+   * THE SAME JUDGEMENT, BUT WITH WHO MADE IT — and that is a new table
+   * rather than a column, because of the line above it.
+   *
+   * `PRIMARY KEY (claim_id, clip_id)` means one verdict per moment per
+   * claim, replaced on a second answer. That was right when a second answer
+   * could only be the same person changing their mind, and it is exactly
+   * wrong for Phase 0, which asks for "two labellers, agreement recorded":
+   * the second labeller silently overwrote the first, and the agreement
+   * figure could never be computed because the disagreements were gone.
+   *
+   * A primary key cannot be altered, and `CREATE TABLE IF NOT EXISTS` over
+   * an existing table does nothing at all — so the fix is a table whose key
+   * includes the labeller. The old one stays where it is: nothing in this
+   * product is deleted, and the eval page reads both, naming the rows that
+   * predate labellers rather than pretending they belong to somebody.
+   *
+   * THE LABELLER IS A NAME, NOT AN ACCOUNT. A claim belongs to the user who
+   * wrote it and only they can reach it, so two labellers means two people
+   * at one keyboard taking turns — or the same person twice, blind, weeks
+   * apart, which measures the same thing and is just as useful.
+   */
+  `CREATE TABLE IF NOT EXISTS eval_judgements (
+     claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+     clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+     labeller TEXT NOT NULL,
+     verdict TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (claim_id, clip_id, labeller)
+   )`,
+  `CREATE INDEX IF NOT EXISTS eval_judgements_by_claim ON eval_judgements(claim_id, labeller)`,
+
   `CREATE TABLE IF NOT EXISTS renders (
      id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
      kind TEXT NOT NULL,

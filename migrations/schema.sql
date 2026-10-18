@@ -173,6 +173,17 @@ CREATE TABLE IF NOT EXISTS eval_labels (
     PRIMARY KEY (claim_id, clip_id)
   );
 
+CREATE TABLE IF NOT EXISTS eval_judgements (
+    claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+    clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+    labeller TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (claim_id, clip_id, labeller)
+  );
+
+CREATE INDEX IF NOT EXISTS eval_judgements_by_claim ON eval_judgements(claim_id, labeller);
+
 CREATE TABLE IF NOT EXISTS renders (
     id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
     kind TEXT NOT NULL,

@@ -18,7 +18,14 @@
 
 import { ACCENT, C, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
-import { ENOUGH_LABELS, VERDICT_NAME, VERDICTS, scoreClaim, type Verdict } from "../../eval-set.ts";
+import {
+  ENOUGH_DOUBLE_JUDGED,
+  ENOUGH_LABELS,
+  VERDICT_NAME,
+  VERDICTS,
+  scoreClaim,
+  type Verdict,
+} from "../../eval-set.ts";
 
 export interface EvalData {
   /** The claim being judged, if one is open. */
@@ -29,11 +36,24 @@ export interface EvalData {
     quote: string;
     sourceTitle: string;
     verdict: Verdict | null;
+    /*
+     * HOW MANY OTHER PEOPLE HAVE ANSWERED THIS ONE, and never what they
+     * said. The count is useful — it is how you find the moments that still
+     * need a second opinion — and the answer is the one thing that would
+     * make the agreement figure meaningless, because nobody can unsee it.
+     */
+    alsoJudged: number;
   }>;
   /** Claims written so far, newest first. */
   claims: Array<{ id: string; text: string; judged: number }>;
   /** How many judgements exist in total. */
   labels: number;
+  /** Who is answering right now. */
+  labeller: string;
+  /** Everyone who has answered anything in this set, in order of appearance. */
+  labellers: string[];
+  /** Moments more than one of them has judged — what agreement is computed of. */
+  doubleJudged: number;
   /** True when the claim found nothing, which is itself a judgement. */
   foundNothing: boolean;
 }
@@ -47,7 +67,16 @@ const VERDICT_ACCENT: Record<Verdict, keyof typeof ACCENT> = {
 function candidate(c: EvalData["candidates"][number], claimId: string): string {
   return `<div style="padding:12px 13px;border-radius:${RADIUS.card};background:${C.surface};display:flex;flex-direction:column;gap:10px">
     <span data-content style="font-size:${SIZE.body};line-height:1.55;color:${C.ink70}">${esc(c.quote)}</span>
-    <span data-content style="font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${esc(c.sourceTitle)}</span>
+    <span style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      <span data-content style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${esc(c.sourceTitle)}</span>
+      ${
+        /* Only the COUNT. What they said is the one thing that would make
+           the agreement figure meaningless, because nobody can unsee it. */
+        c.alsoJudged
+          ? `<span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${c.alsoJudged} other answer${c.alsoJudged === 1 ? "" : "s"}</span>`
+          : ""
+      }
+    </span>
     <span style="display:flex;gap:7px;flex-wrap:wrap">${VERDICTS.map((v) => {
       const on = c.verdict === v;
       const accent = ACCENT[VERDICT_ACCENT[v]];
@@ -62,6 +91,36 @@ function candidate(c: EvalData["candidates"][number], claimId: string): string {
   </div>`;
 }
 
+/**
+ * WHO IS ANSWERING, and how far off a second opinion is.
+ *
+ * Phase 0 asks for "two labellers, agreement recorded", and until this row
+ * existed the second person's answers overwrote the first's — so the one
+ * number the acceptance names could never be computed. A name, not an
+ * account: a claim belongs to whoever wrote it, so two labellers is two
+ * people taking turns at one keyboard, or the same person twice, blind,
+ * weeks apart, which measures the same thing.
+ *
+ * The second count is the binding one. Four hundred judgements from one
+ * person still cannot answer "do two people agree", so it is shown beside
+ * the total rather than folded into it.
+ */
+function who(d: EvalData): string {
+  const others = d.labellers.filter((n) => n !== d.labeller);
+  return `<form method="GET" action="/eval" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="claim" value="${esc(d.claim?.text ?? "")}"/>
+    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45}">Answering as</span>
+    <input type="text" name="by" value="${esc(d.labeller)}" autocomplete="off" maxlength="40"
+      style="flex:0 1 160px;min-width:110px;padding:6px 10px;border-radius:${RADIUS.button};background:${C.surface};border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);color:${C.ink};font-family:${FONT.mono};font-size:${SIZE.meta}"/>
+    <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Switch</button>
+    <span data-content style="flex:1 1 160px;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${
+      others.length
+        ? `${d.doubleJudged} of ${ENOUGH_DOUBLE_JUDGED} judged twice · also ${esc(others.join(", "))}`
+        : `${d.doubleJudged} of ${ENOUGH_DOUBLE_JUDGED} judged twice · nobody else yet`
+    }</span>
+  </form>`;
+}
+
 export function renderEval(d: EvalData): string {
   const pct = Math.min(100, Math.round((100 * d.labels) / ENOUGH_LABELS));
 
@@ -71,6 +130,7 @@ export function renderEval(d: EvalData): string {
     <span style="flex:1 1 160px;min-width:min(140px,100%);height:4px;border-radius:2px;background:${C.pill};overflow:hidden;display:block"><span style="display:block;width:${pct}%;height:100%;background:${ACCENT.gold}"></span></span>
     <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${d.labels} of ${ENOUGH_LABELS}</span>
   </div>
+  ${who(d)}
 
   <form method="GET" action="/eval" style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
     <input type="text" name="claim" value="${esc(d.claim?.text ?? "")}" autocomplete="off"

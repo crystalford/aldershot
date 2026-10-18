@@ -17,6 +17,7 @@
     "check:otio": "node scripts/check-otio.cjs",
     "eval": "node --experimental-strip-types scripts/eval-retrieval.ts",
     "labels": "node --experimental-strip-types scripts/read-labels.ts",
+    "eval:set": "node --experimental-strip-types scripts/eval-set.ts",
     "schema": "node scripts/schema-doc.cjs"
   },
   "dependencies": {
