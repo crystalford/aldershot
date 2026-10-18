@@ -129,6 +129,24 @@ person who disagrees presses it anyway.
 The Shorts tab also wires `/api/projects/:id/shorts-from-line`, which the
 gate had carried as unreachable-and-known since it was written.
 
+**The brief compiler has landed** too: `src/brief.ts` turns a pasted brief
+into rules, and the shortlist diff is the rules pane's own effect lines
+rather than a second view. `len`, `count` and `hook` had been declared and
+inert since the port — all three run now.
+
+**The picture framework and the chart lints are built, and have no supply
+yet.** `src/pictures.ts` is doc 08's table — the move's visual job, its
+source order, and what it may never have — with invariant 8's refusal as a
+tested function rather than an intention: a generated picture cannot carry
+evidence or a claim, is never photoreal, and "nothing to show" is a result.
+The chart lints are hard fails, provenance among them.
+
+What it has no caller for is the classifier that says which move a line is,
+which is the one part needing a model and will arrive behind its own
+contract — the same order `src/align.ts` was built in, and for the same
+reason. Still owed in Phase 5: that classifier, the picture supply
+(documents, generated layers), voice beats, and the sound rules.
+
 ## Phase 6 — Before you post and export
 
 The checklist with fixes; typed pictures → automatic labels; the cue sheet, dispute file, provenance manifest and receipts page; sidecar captions ≤17 cps; loudness normalisation; must-keep rules as solver constraints.

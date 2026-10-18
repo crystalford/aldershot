@@ -1,0 +1,413 @@
+/**
+ * WHAT GOES ON SCREEN, AND WHY — the picture framework.
+ *
+ * Doc 08 opens on the problem: "Every script-to-video tool matches nouns:
+ * 'the court ruled' gets a stock gavel. That is an integrity problem, not a
+ * style one — a related but non-probative picture makes a claim more likely
+ * to be judged true."
+ *
+ * So the picture answers "why am I seeing this", never "what noun did the
+ * sentence contain". The line's MOVE decides the job, the source order and
+ * what is forbidden; this file is that table and the refusals it implies.
+ *
+ * INVARIANT 8, which is the part with teeth: "own footage → user's documents
+ * → open world → generated. Generated is never photoreal and never over a
+ * claim or its proof." Phase 5's acceptance asks for the refusal to be
+ * TESTED, not merely intended, which is why every rule here is a function
+ * returning a reason rather than a policy written in a comment.
+ *
+ * DETERMINISTIC. Choosing between candidates is arithmetic over their
+ * provenance and what has already been shown; the only thing a model is
+ * needed for is reading a line to say which move it is, and that sits
+ * behind its own contract (`Classify`) rather than inside this.
+ *
+ * AND NO NUMBER REACHES A PERSON. The weights below order candidates and
+ * never leave this file — invariant 3. What a person reads is the reason.
+ */
+
+/* ── The moves ──────────────────────────────────────────────────────────── */
+
+export const MOVES = [
+  "claim",
+  "evidence",
+  "turn",
+  "context",
+  "example",
+  "abstraction",
+  "joke",
+  "transition",
+  "conclusion",
+] as const;
+export type Move = (typeof MOVES)[number];
+
+/*
+ * A GUARD FOR A MOVE OFF A MODEL IS NOT HERE, and was.
+ *
+ * Nothing produces moves yet: classifying a line is the one part of this
+ * framework that needs a model, and it will arrive behind its own
+ * contract. A validator with no caller is the thing src/align.ts deleted
+ * msForSpan for being — it goes in with the classifier, where the closed
+ * schema it guards will also be.
+ */
+
+/** Where a picture came from, best first. Doc 08's source order. */
+export const SOURCES = ["own", "documents", "world", "generated"] as const;
+export type Source = (typeof SOURCES)[number];
+
+/**
+ * How much a source is worth, as an ORDER rather than a score.
+ *
+ * Doc 08's own numbers — own 1.0, documents 0.8, licensed open world 0.5,
+ * generated 0.3 — kept as the gaps between them carry the intent: a
+ * document is nearly as good as your own footage, and a generated picture
+ * is a long way below both.
+ *
+ * INTERNAL. Invariant 3 is about what a person reads, and nothing here
+ * reaches one: `place` returns a reason.
+ */
+export const SOURCE_WEIGHT: Record<Source, number> = {
+  own: 1,
+  documents: 0.8,
+  world: 0.5,
+  generated: 0.3,
+};
+
+/**
+ * WHAT EACH MOVE WANTS, AND WHAT IT MAY NEVER HAVE.
+ *
+ * Straight out of doc 08's table. `wants` is the source order for that
+ * move — a source not in the list is not merely worse, it is wrong for the
+ * job — and `job` is the sentence a person reads when they ask why this
+ * picture is here.
+ */
+export interface MoveRule {
+  job: string;
+  wants: readonly Source[];
+  /** Said when a candidate is refused, in the move's own terms. */
+  refuses: string;
+}
+
+export const MOVE_RULES: Record<Move, MoveRule> = {
+  evidence: {
+    job: "the proof itself — the document with its line marked",
+    wants: ["own", "documents"],
+    refuses: "proof cannot be illustrated; it has to be the thing itself",
+  },
+  claim: {
+    job: "attribution — the speaker, a name super, the claim as type",
+    wants: ["own"],
+    refuses: "a claim is shown by who made it, not by a picture of the subject",
+  },
+  turn: {
+    job: "contrast — cut back, or reprise with new meaning",
+    wants: ["own"],
+    refuses: "a turn is two things of yours against each other",
+  },
+  context: {
+    job: "orientation — the place, the timeline",
+    wants: ["own", "world", "generated"],
+    refuses: "nothing here orients anybody",
+  },
+  example: {
+    job: "one specific instance",
+    wants: ["own", "documents", "generated"],
+    refuses: "an example has to be a real one",
+  },
+  abstraction: {
+    job: "a diagram or chart, from real numbers",
+    wants: ["documents", "generated"],
+    refuses: "a diagram is drawn from numbers, never found",
+  },
+  joke: {
+    job: "timing — a hold, a reaction, or nothing",
+    wants: ["own"],
+    refuses: "a joke lands on a face or on nothing",
+  },
+  transition: {
+    job: "a breath between two things",
+    wants: ["own"],
+    refuses: "a transition is yours or it is nothing",
+  },
+  conclusion: {
+    job: "where it lands — the speaker, usually",
+    wants: ["own"],
+    refuses: "the landing is said by whoever is saying it",
+  },
+};
+
+/* ── A candidate ────────────────────────────────────────────────────────── */
+
+/** What a picture IS, which sets its on-screen label and its cue-sheet row. */
+export type PictureKind = "evidence" | "illustration" | "synthetic";
+
+export const KIND_LABEL: Record<PictureKind, string> = {
+  evidence: "Evidence",
+  illustration: "Illustration",
+  synthetic: "Generated",
+};
+
+export interface Candidate {
+  id: string;
+  source: Source;
+  /** What it is, which the label and the cue sheet both read. */
+  kind: PictureKind;
+  /**
+   * A generated picture that looks like a photograph. Always refused —
+   * decision 26, and doc 08: "AI imagery lowers trust even when labelled."
+   */
+  photoreal?: boolean;
+  /** Whether the thing it shows is the thing being claimed, not merely near it. */
+  probative?: boolean;
+  /** What it is of, for the novelty penalty and for the reason line. */
+  subject?: string;
+}
+
+export interface Refusal {
+  /** Null when it is allowed. */
+  reason: string | null;
+}
+
+/**
+ * MAY THIS PICTURE GO ON THIS LINE?
+ *
+ * The refusal Phase 5 asks to be tested, and three more beside it. Each is
+ * stated separately so the reason a person reads is the reason that
+ * actually applied, rather than one sentence covering four cases.
+ */
+export function allowed(move: Move, c: Candidate): Refusal {
+  /*
+   * INVARIANT 8, THE HARD HALF: generated is never over a claim or its
+   * proof. Checked before the move's own source list, because the list is
+   * a preference and this is a prohibition — and because a reader looking
+   * for this rule should find it first.
+   */
+  if (c.source === "generated" && (move === "evidence" || move === "claim")) {
+    return {
+      reason: `a generated picture cannot carry ${move === "evidence" ? "evidence" : "a claim"} — ${MOVE_RULES[move].refuses}`,
+    };
+  }
+
+  /* And never photoreal, on any move. Decision 26. */
+  if (c.source === "generated" && c.photoreal) {
+    return { reason: "generated pictures are never photoreal here" };
+  }
+
+  /*
+   * EVIDENCE HAS TO BE PROBATIVE. The gavel problem in one line: a picture
+   * that is merely about the same subject makes a claim more likely to be
+   * believed without being any reason to believe it.
+   */
+  if (move === "evidence" && c.probative === false) {
+    return { reason: "it is about the subject rather than evidence of it" };
+  }
+
+  if (!MOVE_RULES[move].wants.includes(c.source)) {
+    return { reason: `${MOVE_RULES[move].refuses} — this is from ${c.source}` };
+  }
+
+  return { reason: null };
+}
+
+/* ── Choosing ───────────────────────────────────────────────────────────── */
+
+export interface Placed {
+  /** Null is a RESULT: hold on the speaker, or a plain card. */
+  picture: Candidate | null;
+  /** Why this one, or why nothing. The line a person reads. */
+  reason: string;
+  /** Everything refused, with the reason each was. For the receipt. */
+  refused: Array<{ id: string; reason: string }>;
+}
+
+/**
+ * HOW MUCH A REPRISE COSTS.
+ *
+ * Doc 08 asks for "a novelty penalty against what's already been shown
+ * (deliberate reprise allowed on a TURN)". Enough to lose to any unshown
+ * candidate of the same source, not enough to lose to one a whole tier
+ * below: showing the same document twice beats inventing a picture.
+ */
+export const SEEN_PENALTY = 0.15;
+
+/**
+ * WHAT GOES ON THIS LINE.
+ *
+ * Probative first, then the move's own source order, then novelty — doc
+ * 08's scoring, in that order, with the refusals applied before any of it
+ * so a forbidden candidate can never win on being interesting.
+ *
+ * "NOTHING TO SHOW" IS A RESULT, not a failure: for a claim or a joke the
+ * face is usually the strongest picture, and a product that always found
+ * something would be the stock-gavel problem with extra steps.
+ */
+export function place(
+  move: Move,
+  candidates: Candidate[],
+  seen: ReadonlySet<string> = new Set(),
+): Placed {
+  const refused: Array<{ id: string; reason: string }> = [];
+  const ok: Candidate[] = [];
+  for (const c of candidates) {
+    const r = allowed(move, c);
+    if (r.reason) refused.push({ id: c.id, reason: r.reason });
+    else ok.push(c);
+  }
+
+  if (!ok.length) {
+    return {
+      picture: null,
+      reason: candidates.length
+        ? "nothing here can carry this line — holding on the speaker"
+        : "nothing to show — holding on the speaker",
+      refused,
+    };
+  }
+
+  const score = (c: Candidate) => {
+    /* A reprise is deliberate on a TURN, which is the one move that means
+       "this, again, differently". */
+    const old = c.subject && seen.has(c.subject) && move !== "turn" ? SEEN_PENALTY : 0;
+    return SOURCE_WEIGHT[c.source] + (c.probative ? 0.1 : 0) - old;
+  };
+
+  /* Ties keep the caller's order, which is the order they were found in. */
+  const best = ok
+    .map((c, i) => ({ c, i, s: score(c) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)[0].c;
+
+  return { picture: best, reason: reasonFor(move, best, seen), refused };
+}
+
+/**
+ * WHY THIS PICTURE IS HERE, in a sentence.
+ *
+ * Doc 08's whole premise is that the picture answers that question, so the
+ * answer is produced beside the choice rather than reconstructed later by
+ * something that no longer knows what the alternatives were.
+ */
+export function reasonFor(move: Move, c: Candidate, seen: ReadonlySet<string> = new Set()): string {
+  const where =
+    c.source === "own"
+      ? "your own footage"
+      : c.source === "documents"
+        ? "your documents"
+        : c.source === "world"
+          ? "the open world"
+          : "generated, and labelled";
+  const again = c.subject && seen.has(c.subject) ? (move === "turn" ? ", again, against itself" : ", again") : "";
+  return `${MOVE_RULES[move].job} — from ${where}${again}`;
+}
+
+/* ── Graphics are code, never pixels ────────────────────────────────────── */
+
+/**
+ * THE CHART LINTS, as hard fails.
+ *
+ * Doc 08 lists them: "non-zero bar baseline, dual axes, area encodings of
+ * 1-D data, >7 colour categories, unlabelled units, any datum without
+ * provenance." Decision 27 is the same rule from the other end — "bars
+ * start at zero; truncated axes mislead even when explained".
+ *
+ * HARD, NOT ADVISORY. A warning on a chart that misleads is a chart that
+ * misleads with a note attached; every one of these blocks the render. The
+ * product's claim is that a picture answers "why am I seeing this", and a
+ * bar chart starting at 40 answers it wrongly before anybody reads a label.
+ *
+ * AND PROVENANCE IS ONE OF THEM. Doc 08's evidence-bound chart compiler
+ * blocks on "any datum without provenance", which is invariant 4 inside a
+ * chart: a number on screen with no receipt is exactly the claim the
+ * receipts exist to make impossible.
+ */
+export type ChartMark = "bar" | "line" | "point" | "area";
+
+export interface Datum {
+  value: number;
+  /** Where this number came from. Doc, page, cell — or nothing, which fails. */
+  provenance?: { doc: string; page?: number; cell?: string } | null;
+}
+
+export interface ChartSpec {
+  mark: ChartMark;
+  /** Where the value axis starts. */
+  baseline: number;
+  /** True when a second value axis is drawn. */
+  dualAxis?: boolean;
+  /** What the numbers are, in words. "£", "people", "%". */
+  units?: string | null;
+  /** One per colour in the key. */
+  categories?: string[];
+  data: Datum[];
+  /** True when the data has one dimension — a count per category. */
+  oneDimensional?: boolean;
+}
+
+/** How many colours a reader can hold at once. Doc 08's number. */
+export const MAX_CATEGORIES = 7;
+
+export interface Lint {
+  kind: "baseline" | "dual-axis" | "area-1d" | "colours" | "units" | "provenance";
+  /** What a person reads. Never "invalid spec". */
+  reason: string;
+}
+
+export function lintChart(spec: ChartSpec): Lint[] {
+  const out: Lint[] = [];
+
+  /*
+   * A BAR IS A LENGTH, and a length from a non-zero baseline is a lie
+   * about a ratio. Lines and points encode position rather than magnitude,
+   * so they may start anywhere — the lint is about the mark, not about
+   * axes in general.
+   */
+  if (spec.mark === "bar" && spec.baseline !== 0) {
+    out.push({
+      kind: "baseline",
+      reason: `bars start at zero — this one starts at ${spec.baseline}, which makes the differences look bigger than they are`,
+    });
+  }
+
+  if (spec.dualAxis) {
+    out.push({
+      kind: "dual-axis",
+      reason: "two value axes let any two lines be made to cross wherever you like",
+    });
+  }
+
+  /* Area encodes two dimensions. Using it for one squares the difference
+     a reader sees. */
+  if (spec.mark === "area" && spec.oneDimensional) {
+    out.push({
+      kind: "area-1d",
+      reason: "an area encodes two dimensions, so one number drawn as one looks squared",
+    });
+  }
+
+  if ((spec.categories?.length ?? 0) > MAX_CATEGORIES) {
+    out.push({
+      kind: "colours",
+      reason: `${spec.categories!.length} colours is more than anybody can hold — ${MAX_CATEGORIES} is the ceiling`,
+    });
+  }
+
+  if (!spec.units?.trim()) {
+    out.push({ kind: "units", reason: "the numbers have no unit, so they measure nothing" });
+  }
+
+  /*
+   * INVARIANT 4 INSIDE A CHART. A number on screen with no receipt is the
+   * claim the receipts exist to make impossible — and a chart is the
+   * easiest place in a video to put one.
+   */
+  const unsourced = spec.data.filter((d) => !d.provenance?.doc);
+  if (unsourced.length) {
+    out.push({
+      kind: "provenance",
+      reason: `${unsourced.length} of ${spec.data.length} numbers have no source — every one has to say where it came from`,
+    });
+  }
+
+  return out;
+}
+
+/** A chart renders only when nothing failed. */
+export const chartIsRenderable = (spec: ChartSpec): boolean => lintChart(spec).length === 0;
