@@ -67,6 +67,7 @@ import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
+import { compileBrief, shortlistDiff } from "./brief.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3714,6 +3715,100 @@ app.post("/api/projects/:id/shorts-from-line", async (c) => {
   // saveClips drops anything that overlaps a clip we already hold, so an empty
   // result means the moment is already in the library — not a failure.
   return c.json({ ok: true, made: saved.length > 0, clip: saved[0] ?? null });
+});
+
+/**
+ * A PASTED BRIEF BECOMES RULES.
+ *
+ * Phase 5's acceptance: "hooks in 2s, 20–40s, no politics, we need 8"
+ * compiles to four visible rules with a shortlist diff.
+ *
+ * THE DIFF IS THE RULES PANE, not a second thing built for this. Every rule
+ * there already carries `effectLine` — what it is doing right now, computed
+ * by diffing the cut with and without it — so a compiled brief is four rows
+ * that each say what they took off the shortlist, in the place a person
+ * already looks. A separate diff view would be a second answer to the same
+ * question.
+ *
+ * What the response adds is the one thing the pane cannot say: whether the
+ * number was reached. A shortlist of five when eight were asked for is the
+ * thing a person most needs to be told and the thing five rows do not say.
+ */
+app.post("/api/projects/:id/brief", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ brief: string }>(c);
+  const brief = (b.brief || "").trim();
+  if (!brief) return c.json({ error: "paste a brief first" }, 400);
+
+  const asked = compileBrief(brief);
+  /* Nothing in it was a rule. Say what would be, rather than applying
+     nothing and reporting success. */
+  if (!asked.rules.length) return c.json({ error: honestReply([brief]) }, 422);
+
+  const before = await loadRules(c.env.DB, project.id);
+  let next = before;
+
+  /*
+   * A BRIEF IS A FILTER, AND A FILTER NEEDS SOMETHING TO FILTER.
+   *
+   * The engine starts with nothing in and `keep` rules mark moments in, so
+   * a brief made only of length, count, subject and hook rules computes a
+   * shortlist of zero — correct arithmetic and a useless answer to
+   * somebody who just pasted four requirements.
+   *
+   * So a project with no keep rule gets one, and it is a RULE like any
+   * other: visible in the pane, switchable, and saying plainly that it was
+   * added rather than asked for. Found by pasting the acceptance's own
+   * brief at a real project and getting nought back.
+   */
+  const keeps = (rs: Rule[]) => rs.some((r) => r.on && r.kind === "keep" && !r.hand);
+  if (!keeps(before) && !asked.rules.some((r) => r.kind === "keep")) {
+    next = applyRule(next, {
+      kind: "keep",
+      tag: "core",
+      on: true,
+      text: "Start from everything you have.",
+      id: ruleKey({ kind: "keep", tag: "core", on: true }),
+    });
+  }
+
+  for (const r of asked.rules) next = applyRule(next, { ...r, id: ruleKey(r) });
+
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules: next,
+    scope: scopeOf(project),
+  });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+  await saveRules(c.env.DB, project.id, next);
+
+  /* The same set the recompute just ran over, so the diff describes the cut
+     that was saved rather than one computed from a different library. */
+  const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
+  const diff = shortlistDiff(next, { set: toFootageSet(pool, (m) => momentTags(m)) });
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: brief,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    undo: { cuts: null, order: null, rules: JSON.stringify(before) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({
+    ok: true,
+    rules: next.filter((r) => r.on).length,
+    kept: out.kept,
+    short: diff.short,
+    /* Per rule, for the reply — the pane shows the same thing in place. */
+    diff: diff.rules.map((r) => ({ text: r.rule.text ?? r.rule.kind, removed: r.removed, added: r.added })),
+  });
 });
 
 /** An extra instruction against what the pass already found. */

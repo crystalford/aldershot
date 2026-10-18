@@ -861,6 +861,34 @@ async function checkStrings() {
         "essay outlining is a stage it does not cover. Written in the same " +
         "voice as the ones it does.",
     ],
+    /*
+     * SCOUT'S CARD IN THE EDITOR. Four strings the prototype has no words
+     * for, because One Take draws Scout in the plan flow and not in the
+     * project state — "Scout is how the video gets better than your footage
+     * alone" is the Manual's line, and the Manual weights him more heavily
+     * than the prototype does.
+     *
+     * They have rendered since Scout was wired and this check never saw
+     * them: /editor shows the most recent project, and no project in the
+     * account it runs against had a source until one was seeded. Signed
+     * off rather than rewritten — the card says what Scout does in his own
+     * terms, and there is nothing to match it against.
+     */
+    [
+      "Look outside this project",
+      "The Scout card's heading in the editor. Says where he looks, which is " +
+        "the one thing that distinguishes him from the search box above.",
+    ],
+    [
+      /* The entities, not the characters: this check reads the markup and
+         does not decode one. Same trap as "Take it elsewhere &nearr;". */
+      "Scout finds clips that aren&rsquo;t yours yet &mdash; links, never downloads. He turns the brief into things a viewer could point to on camera, and searches for each and for its opposite.",
+      "What Scout is, in the two sentences that matter: invariant 9 (links, " +
+        "never downloads) and the behaviour-first decomposition doc 18 asks " +
+        "for. Both are promises a person can hold us to.",
+    ],
+    ["Send Scout", "The press. A verb and a name, like every other control here."],
+    ["The board", "Where his findings are. The prototype's own word for it."],
     [
       "Take it elsewhere &nearr;",
       "The OTIO export, in the export panel. The prototype has no interchange " +

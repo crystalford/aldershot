@@ -19,6 +19,7 @@
  */
 
 import { contentWords } from "./moment-tags.ts";
+import { opening, problems } from "./shorts.ts";
 
 export type RuleKind = "keep" | "drop" | "order" | "gap" | "cap" | "len" | "count" | "hook";
 export type Order = "time" | "strand" | "open";
@@ -33,13 +34,41 @@ export interface Rule {
   tag?: string;
   cid?: number | string;
   cids?: Array<number | string>;
+  /**
+   * OR A SUBJECT, BY THE WORDS THAT WERE SAID.
+   *
+   * "No politics" names a topic, and the tag vocabulary is four fixed
+   * values derived from how a moment is spoken rather than what it is
+   * about (src/moment-tags.ts) — so a topic can never be a tag. Resolving
+   * it to a list of ids at compile time would work today and would make the
+   * rules pane lie: it would read "no politics" and mean "not these nine",
+   * and footage read tomorrow would walk straight past it.
+   *
+   * Matched on whole words, so "rent" does not match "different" — the
+   * same trap src/bm25.ts and src/scout-expand.ts both carry a note about.
+   */
+  words?: string[];
   /** keep/cut by hand, which overrides every rule above it. */
   hand?: boolean;
   /** A keep rule that re-takes a moment a drop rule contested. */
   wins?: boolean;
   order?: Order;
-  /** The cap rule's ceiling, in seconds. */
+  /** The cap rule's ceiling, in seconds — and the hook rule's window. */
   secs?: number;
+  /**
+   * THE THREE THE BRIEF COMPILER NEEDS.
+   *
+   * `len`, `count` and `hook` have been in RuleKind and in applyRule since
+   * the port, and compute() did nothing with any of them — declared rules
+   * that could be added, switched on, and have no effect at all. A pasted
+   * brief compiles to four rules and two of them would have been decoration.
+   */
+  /** `len`: a moment shorter than this is not a short. Seconds. */
+  minSecs?: number;
+  /** `len`: nor is one longer than this. Seconds. */
+  maxSecs?: number;
+  /** `count`: how many to keep. */
+  n?: number;
 }
 
 export interface Moment {
@@ -153,6 +182,49 @@ export function wordDur(m: Moment, struck: Record<string, Record<number, boolean
  * Still charged to the cap rule, which is the part that matters: the rules
  * pane can say what it took and why, and it can be switched off.
  */
+/**
+ * Does this moment say any of these words — as words, not as substrings.
+ *
+ * "rent" must not match "different", which is the trap src/bm25.ts and
+ * src/scout-expand.ts both carry a note about because it was found in each
+ * of them separately.
+ */
+export function saysAny(text: string, words: string[]): boolean {
+  const said = new Set((text.toLowerCase().match(/[a-z0-9']+/g) ?? []));
+  return words.some((w) => said.has(w.toLowerCase()));
+}
+
+/**
+ * DOES THIS MOMENT'S OPENING LAND?
+ *
+ * What stops a clip hooking fast is what src/shorts.ts measures from the
+ * other end: an opening that carries on a thought nobody heard, or points
+ * at somebody nobody has seen. A viewer knows within a word.
+ *
+ * THE SECONDS ARE NOT USED AS A CLOCK, and that is the honest answer rather
+ * than a gap. The engine's moments carry a duration and the text and no
+ * per-word timings, so the only way to time the opening would be to
+ * estimate it from its share of the characters — and the first version did
+ * exactly that, which made a one-sentence moment fail a two-second hook
+ * because the sentence is the whole clip. An invented clock is the kind of
+ * number this codebase refuses everywhere else.
+ *
+ * The seconds stay on the rule because the person wrote them and the pane
+ * reads back what they wrote (invariant 10). What would make them real is
+ * per-word timings on the engine's moments, which forced alignment now
+ * produces (src/align-source.ts) and which `toFootageSet` does not yet
+ * carry across.
+ */
+export function hooksFast(m: Moment, durSecs: number): boolean {
+  const text = m.text.trim();
+  if (!text) return false;
+  /* The opening problems only — a clip that stops mid-sentence is a
+     different complaint, and `len` and the editor both have it covered. */
+  return !problems({ text: opening(text), durationMs: Math.round(durSecs * 1000) }).some(
+    (p) => p.kind === "starts-mid-sentence" || p.kind === "dangling-referent",
+  );
+}
+
 function capDropOrder(candidates: Judged[], others: Judged[]): Judged[] {
   const elsewhere = new Set<string>();
   for (const m of others) for (const w of contentWords(m.text)) elsewhere.add(w);
@@ -214,7 +286,8 @@ export function compute(
   const hit = (r: Rule, m: Judged) =>
     (!!r.tag && m.tags.includes(r.tag)) ||
     (r.cid !== undefined && m.id === r.cid) ||
-    (!!r.cids && r.cids.includes(m.id));
+    (!!r.cids && r.cids.includes(m.id)) ||
+    (!!r.words?.length && saysAny(m.text, r.words));
   const wdur = (m: Moment) => wordDur(m, struck);
 
   /* 1. Every moment in the set, nothing in yet. */
@@ -270,6 +343,71 @@ export function compute(
       m.in = false;
       m.dropId = cap.id;
       total -= wdur(m);
+    }
+  }
+
+  /*
+   * 5b. len: a short has a length, and a moment outside it is not one.
+   *
+   * Before the cap and before count, because both of those choose among
+   * what is left and a moment of the wrong length should never have been a
+   * candidate. Unlike cap, this protects nothing: a `strong` moment that
+   * runs four seconds is still four seconds.
+   */
+  const len = on.find((r) => r.kind === "len");
+  if (len && (typeof len.minSecs === "number" || typeof len.maxSecs === "number")) {
+    for (const m of st) {
+      if (!m.in) continue;
+      const d = wdur(m);
+      if ((typeof len.minSecs === "number" && d < len.minSecs) ||
+          (typeof len.maxSecs === "number" && d > len.maxSecs)) {
+        m.in = false;
+        m.dropId = len.id;
+      }
+    }
+  }
+
+  /*
+   * 5c. hook: it has to land in the first few seconds, or it is not a short.
+   *
+   * What stops a clip landing fast is what src/shorts.ts measures — a line
+   * that opens on a conjunction, or on a word pointing at something nobody
+   * watching has seen. See hooksFast for why the seconds on the rule are
+   * not used as a clock.
+   */
+  const hook = on.find((r) => r.kind === "hook");
+  if (hook) {
+    for (const m of st) {
+      if (!m.in) continue;
+      if (!hooksFast(m, wdur(m))) {
+        m.in = false;
+        m.dropId = hook.id;
+      }
+    }
+  }
+
+  /*
+   * 5d. count: the shortlist is this long.
+   *
+   * LAST of the four, because it chooses among whatever the others left —
+   * taking the first eight and then dropping three for length would hand
+   * back five when eight were asked for.
+   *
+   * It keeps the ones already in, in the set's own order, because the
+   * ordering rule has not run yet and will not reach a moment that is out.
+   * Choosing by any other measure would be a score about somebody's
+   * footage, which is what invariant 3 forbids.
+   */
+  const count = on.find((r) => r.kind === "count");
+  if (count && typeof count.n === "number" && count.n >= 0) {
+    let kept = 0;
+    for (const m of st) {
+      if (!m.in) continue;
+      kept += 1;
+      if (kept > count.n) {
+        m.in = false;
+        m.dropId = count.id;
+      }
     }
   }
 

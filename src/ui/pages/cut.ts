@@ -494,8 +494,30 @@ function shortsList(d: CutData): string {
       <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Shorts</span>
       <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${strong} of ${graded.length} lines stand on their own</span>
     </div>
+    ${briefBox(d.projectId)}
     <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
   </div>`;
+}
+
+/**
+ * PASTE THE BRIEF SOMEBODY SENT YOU.
+ *
+ * "hooks in 2s, 20–40s, no politics, we need 8" is a real message a real
+ * person receives, and the thing to do with it is paste it rather than
+ * translate it into four controls by hand.
+ *
+ * IT COMPILES TO RULES, and the rules land in the pane on the left where
+ * every other rule lives — each with the line saying what it is doing right
+ * now. That is the shortlist diff, and it is the pane's existing mechanism
+ * rather than a second view built for this one gesture.
+ */
+function briefBox(projectId: string): string {
+  return `<form id="brief-box" data-project="${esc(projectId)}" style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <input type="text" name="brief" autocomplete="off"
+      placeholder="Paste a brief — “hooks in 2s, 20–40s, no politics, we need 8”"
+      style="flex:1 1 260px;min-width:min(220px,100%);padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);color:${C.ink};font-family:inherit;font-size:${SIZE.secondary}"/>
+    <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Make it rules</button>
+  </form>`;
 }
 
 function seam(projectId: string, at: number, view: CutView = "blocks"): string {
@@ -803,9 +825,25 @@ function assistant(d: CutData, player: string): string {
          "why these moments"; the conversation below is the history of asking,
          and the composer under that is where the next one goes. The player
          used to sit here and is now its own column. -->
-    <div class="asst-top">${player}${rulesPanel(d.rules)}${scoutPanel(d.projectId)}</div>
+    <!-- The RULES scroll when there are many of them; the Scout card below
+         does not get clipped with them, so it is its own row rather than
+         the tail of a capped one. -->
+    <div class="asst-top">${player}${rulesPanel(d.rules)}</div>
+    <div class="asst-scout">${scoutPanel(d.projectId)}</div>
 
-    <div class="asst-talk" style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+    <!--
+      min-height is a FLOOR, not the zero a flex child usually wants.
+
+      It was 0 — the idiom that lets a flex child shrink so its own
+      overflow can scroll — and that is exactly what let the rules pane
+      above crush this to 125px on a project with six rules. Not room for
+      one exchange, let alone the two scripts/check-editor.cjs asks for.
+      The scrolling still works: overflow-y does that, and the floor only
+      stops the column giving this away. The rules pane scrolls instead,
+      which is the right one to scroll — it is a list, and this is a
+      conversation.
+    -->
+    <div class="asst-talk" style="flex:1;min-height:190px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}
     </div>
 

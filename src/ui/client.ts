@@ -3565,6 +3565,46 @@ function readDuration(file) {
    confirmation and no save step: the answer IS the tap, and changing it is
    another tap. No reload either — reloading after every judgement would
    re-run retrieval and lose the reading position partway down a list. */
+/* ── A pasted brief becomes rules ────────────────────────────────────
+   The rules land in the pane on the left, each with the line saying what it
+   is doing — that is the shortlist diff, in the place a person already
+   looks. The reply adds the one thing the pane cannot say: whether the
+   number asked for was reached. */
+{
+  const form = document.getElementById("brief-box");
+  if (form) {
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const input = form.querySelector('input[name="brief"]');
+      const brief = (input && input.value || "").trim();
+      if (!brief) return;
+      const btn = form.querySelector("button");
+      if (btn) { btn.disabled = true; btn.style.opacity = ".5"; }
+      try {
+        const res = await fetch("/api/projects/" + form.getAttribute("data-project") + "/brief", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brief }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          window.toast(body.error || "That didn't compile.");
+          if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
+          return;
+        }
+        window.toast(
+          body.rules + (body.rules === 1 ? " rule" : " rules") + " · " + body.kept + " kept" +
+            (body.short ? " — " + body.short + " short of what you asked for" : ""),
+        );
+        window.location.reload();
+      } catch {
+        window.toast("That didn't compile.");
+        if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
+      }
+    });
+  }
+}
+
 /* ── Keep a line as a short ──────────────────────────────────────────
    The Shorts tab grades every line and withholds none, so this is pressable
    on a Long shot too — the grade said what to expect and the person read it.

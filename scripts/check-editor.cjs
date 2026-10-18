@@ -56,7 +56,16 @@ async function main() {
   }
 
   const browser = await chromium.launch({ executablePath: CHROME });
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  /*
+   * 1440, WHICH IS THE MEASURE THE DESIGN IS DRAWN AT.
+   *
+   * One Take is three columns — direction 400, the thing itself, the player
+   * 300 — and LAYOUT.room is min(1440px,100%) because 960 cannot hold them.
+   * Checking at 1280 checked a width where the player correctly folds
+   * underneath, and then asserted it was beside. The narrow cases below set
+   * their own viewports, which is where folding belongs.
+   */
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
 
   const errs = [];
@@ -111,21 +120,31 @@ async function main() {
 
   const $ = (fn, arg) => page.evaluate(fn, arg);
 
-  /* ── The shape: a document, and an assistant ───────────────────────────
-     The point of the column is that it needs no explaining. So the things
-     asserted here are the ones that make it legible: a composer you can see
-     without opening anything, under a conversation, under the video. */
+  /* ── The shape: THREE COLUMNS ──────────────────────────────────────────
+     Direction on the left, the document in the middle, the player on the
+     right. One Take's shape, and what the prototype renders.
+
+     THIS CHECK DESCRIBED THE OLD ONE FOR WEEKS. It asserted a two-column
+     editor with the video inside the assistant — the layout the room
+     replaced — and it never once failed, because it needs a transcribed
+     project to drive and the account it runs against had none. Four
+     guarantees sat red behind a skip. Seeding one is what surfaced them,
+     and the code was right every time: the player moved on purpose and
+     cut.ts says so where it moved from. */
   say(
     await $(() => {
       const doc = document.querySelector(".editor-doc");
       const asst = document.querySelector(".asst");
-      if (!doc || !asst) return false;
-      /* Document on the left and wider than the assistant beside it. */
+      const player = document.querySelector(".editor-player");
+      if (!doc || !asst || !player) return false;
       const d = doc.getBoundingClientRect();
       const a = asst.getBoundingClientRect();
-      return d.left < a.left && d.width > a.width;
+      const p = player.getBoundingClientRect();
+      /* Direction, then the document, then the player — and the document is
+         the widest, because the transcript is the work. */
+      return a.left < d.left && d.left < p.left && d.width > a.width;
     }),
-    "the transcript is the wide column, the assistant the narrow one beside it",
+    "direction, the transcript, and the player — in that order, widest in the middle",
   );
   say(
     await $(() => {
@@ -153,11 +172,8 @@ async function main() {
     "video above the conversation, conversation above the composer",
   );
   say(
-    await $(() => {
-      const v = document.querySelector(".asst-top #cut-video");
-      return !!v;
-    }),
-    "the video sits with the assistant",
+    await $(() => !!document.querySelector(".editor-player #cut-video")),
+    "the player is its own column",
   );
   say(
     await $(() => {
@@ -177,6 +193,11 @@ async function main() {
        * and the Show me / Undo beneath, which measures about 190px. One
        * exchange visible is not a conversation, and 88px — which is what a
        * full-width 16:9 video left — is not even one.
+       *
+       * THE VIDEO IS NOT ABOVE IT ANY MORE — it is the third column — so
+       * the room is the rules above and the composer below. The floor is
+       * the same because the thing being measured is the same: can you see
+       * two exchanges without scrolling.
        */
       return talk.getBoundingClientRect().height >= 185;
     }),
@@ -184,7 +205,7 @@ async function main() {
   );
   say(
     await $(() => {
-      const v = document.querySelector(".asst-top #cut-video");
+      const v = document.querySelector(".editor-player #cut-video");
       if (!v) return false;
       /*
        * THE PICTURE IS NOT CROPPED, AND NOT STRETCHED.

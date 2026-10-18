@@ -257,7 +257,34 @@ p,div{text-wrap:pretty}
      header instead, and check-editor.cjs asserts the two never overlap. */
   position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
   display:flex;flex-direction:column;overflow:hidden}
-.asst-top{flex:none}
+/*
+ * THE RULES SCROLL; THE CONVERSATION DOES NOT GET CRUSHED.
+ *
+ * flex:none alone let the rules pane take whatever it needed, and the
+ * conversation under it took what was left — so a project with six rules
+ * left 125px for the conversation, which is not room for one exchange, let
+ * alone the two check-editor.cjs asks for. A rules list is unbounded by
+ * design: the whole point is that every change is a rule you can see.
+ *
+ * So the rules take at most half the column and scroll inside it. The
+ * conversation's own floor is inline on the element in src/ui/pages/cut.ts,
+ * next to the rest of its layout and next to the min-height:0 it replaced —
+ * one place, rather than a stylesheet rule an inline style silently beats.
+ *
+ * NO BACKTICKS IN THIS FILE'S COMMENTS: the stylesheet is a template
+ * literal and one ends it, taking the whole shell with it. The typechecker
+ * catches it in a second, which is the only reason it is a nuisance rather
+ * than a bug — client.ts has a gate rule for exactly this because that file
+ * is not typechecked at all.
+ *
+ * scrollbar-width:thin so the bar does not take a column this narrow
+ * cannot spare. The cap is on the RULES, not on what sits under them: the
+ * Scout card is a sibling of this, not a child, or capping the list would
+ * clip the card and draw the conversation over it — which is what the
+ * first version did, and it took a screenshot to see.
+ */
+.asst-top{flex:0 1 auto;max-height:50%;overflow-y:auto;min-height:0;scrollbar-width:thin}
+.asst-scout{flex:none}
 /*
  * THE PLAYER'S OWN COLUMN, in a project.
  *
@@ -273,7 +300,13 @@ p,div{text-wrap:pretty}
  * until the corner player exists.
  */
 .editor-player{flex:0 0 300px;max-width:min(320px,100%);position:sticky;top:88px}
-@media (max-width:1180px){.editor-player{position:static;flex:1 1 100%;max-width:100%;order:3}}
+/*
+ * 1320, NOT 1180. Three columns at 1280 left the transcript about 450px and
+ * it wrapped one word per line — the thing being read, made unreadable to
+ * keep a player beside it. The breakpoint is where all three actually fit:
+ * direction 400, player 300, and enough left for a line of speech.
+ */
+@media (max-width:1320px){.editor-player{position:static;flex:1 1 100%;max-width:100%;order:3}}
 /*
  * 16:9, BECAUSE THAT IS WHAT THE FOOTAGE IS.
  *
@@ -599,13 +632,25 @@ export interface PageOpts {
  * Wraps a surface's body in the shell. `body` is placed inside the column —
  * a page must never set its own width (LAYOUT law, 02-DESIGN-SYSTEM). Which
  * column is the SHELL's decision: 960 for everything built to the retired
- * design, LAYOUT.room for the One Take room, which is three columns and does
- * not fit in 960. The law is that a page does not choose, not that there is
- * only one measure.
+ * design, LAYOUT.room for the One Take surfaces, which are three columns and
+ * do not fit in 960. The law is that a page does not choose, not that there
+ * is only one measure.
+ *
+ * THE EDITOR IS ONE OF THEM, and was not. One Take is one room with two
+ * states, and the project state is the same three columns as the no-project
+ * one — direction, the thing itself, the player. It was being laid out at
+ * 960, which LAYOUT's own comment says cannot hold them, so the player
+ * wrapped underneath and the editor rendered as two columns with a video
+ * bar below the fold.
+ *
+ * Nothing noticed for weeks: scripts/check-editor.cjs is the only thing
+ * that measures those columns, it needs a transcribed project to drive, and
+ * the account it runs against had none. It skipped, and four guarantees sat
+ * red behind the skip.
  */
 export function page(opts: PageOpts, body: string): string {
   const { title, view, shortsCtx = "nav", screenLabel } = opts;
-  const column = view === "room" ? LAYOUT.room : LAYOUT.width;
+  const column = view === "room" || view === "cut" ? LAYOUT.room : LAYOUT.width;
   return `<!doctype html>
 <html lang="en">
 <head>

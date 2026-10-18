@@ -43,6 +43,13 @@ export const WHAT_PARSES = [
   "what to lose — “take out the hellos”, “lose the hedging”",
   "what to keep — “keep the hard lines”, “end on where you land it”",
   "how it feels — “the start drags”, “hard to follow”, “too long”",
+  /*
+   * THE SHORTS BRIEF'S OWN FOUR, added when src/brief.ts learned them.
+   * This list is what somebody is told when nothing parsed, so a shape the
+   * product understands and does not mention here is a shape nobody will
+   * ever type again.
+   */
+  "a shorts brief — “hooks in 2s”, “20–40s”, “no politics”, “we need 8”",
 ];
 
 /*
