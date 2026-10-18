@@ -18,6 +18,8 @@ export interface StoredBeat extends Beat {
   kept: boolean;
   /** Clip ids retrieval found for it. Empty until after the stop. */
   found: string[];
+  /** How many of them back it. Null when nobody checked — see src/plan.ts. */
+  backed: number | null;
 }
 
 export interface Plan {
@@ -45,6 +47,7 @@ interface BeatRow {
   need: string;
   kept: number;
   found: string | null;
+  backed: number | null;
 }
 
 export async function createPlan(
@@ -75,7 +78,7 @@ export async function getPlan(db: D1Database, planId: string, userId: string): P
   if (!row) return null;
 
   const { results } = await db
-    .prepare(`SELECT id, idx, role, name, need, kept, found FROM plan_beats WHERE plan_id=? ORDER BY idx`)
+    .prepare(`SELECT id, idx, role, name, need, kept, found, backed FROM plan_beats WHERE plan_id=? ORDER BY idx`)
     .bind(planId)
     .all<BeatRow>();
 
@@ -96,6 +99,8 @@ export async function getPlan(db: D1Database, planId: string, userId: string): P
       need: b.need,
       kept: !!b.kept,
       found: parseIds(b.found),
+      /* Null stays null: nobody checked is not nobody backed it. */
+      backed: b.backed === null || b.backed === undefined ? null : Number(b.backed),
     })),
   };
 }
@@ -122,10 +127,16 @@ export async function setBeatKept(db: D1Database, planId: string, beatId: string
 }
 
 /** What retrieval found for a beat, and the plan moving past the stop. */
-export async function setFound(db: D1Database, planId: string, found: Map<string, string[]>): Promise<void> {
+export async function setFound(
+  db: D1Database,
+  planId: string,
+  found: Map<string, { ids: string[]; backed: number | null }>,
+): Promise<void> {
   if (found.size) {
-    const stmt = db.prepare(`UPDATE plan_beats SET found=? WHERE id=? AND plan_id=?`);
-    await db.batch([...found].map(([beatId, ids]) => stmt.bind(JSON.stringify(ids), beatId, planId)));
+    const stmt = db.prepare(`UPDATE plan_beats SET found=?, backed=? WHERE id=? AND plan_id=?`);
+    await db.batch(
+      [...found].map(([beatId, f]) => stmt.bind(JSON.stringify(f.ids), f.backed, beatId, planId)),
+    );
   }
   await db.prepare(`UPDATE plans SET state='found' WHERE id=?`).bind(planId).run();
 }

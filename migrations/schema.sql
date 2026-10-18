@@ -481,6 +481,7 @@ CREATE INDEX IF NOT EXISTS scout_lexicon_by_entity ON scout_lexicon(user_id, ent
 -- Added after the fact (ADDED_COLUMNS; applied only where missing).
 ALTER TABLE v2_clips ADD COLUMN start_word INTEGER;
 ALTER TABLE v2_clips ADD COLUMN end_word INTEGER;
+ALTER TABLE plan_beats ADD COLUMN backed INTEGER;
 ALTER TABLE sources ADD COLUMN timing_source TEXT;
 ALTER TABLE sources ADD COLUMN aligned_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER;

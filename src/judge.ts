@@ -299,6 +299,38 @@ export function parseJudgements(
   );
 }
 
+/* ── Reranking ──────────────────────────────────────────────────────────── */
+
+/** Best first. The order a reranker exists to produce. */
+const RANK: Record<Verdict, number> = { backs: 0, related: 1, unrelated: 2 };
+
+/**
+ * THE JUDGE IS THE RERANKER.
+ *
+ * Phase 4 asks for "BM25 ∥ dense → RRF → rerank", and the obvious reading is
+ * a third model call with its own prompt and its own scores. It would be
+ * the same call as this one: read these candidates against this query and
+ * say which are about it. Two calls doing one job, and only one of them
+ * measurable — a reranker's scores have no ground truth, while a verdict
+ * has two hundred of somebody's own judgements to be checked against.
+ *
+ * So the rerank is the verdict, and the fused rank breaks the ties. A sort
+ * that reordered equal verdicts would throw away everything BM25 and the
+ * index worked out, which is most of what is known about a candidate the
+ * judge called `related`.
+ *
+ * A candidate nobody judged keeps its place among the `related` ones:
+ * unjudged is not unrelated, and demoting it would punish a moment for a
+ * call that did not happen.
+ */
+export function rerank<T extends { id: string }>(items: T[], judgements: Judgement[]): T[] {
+  const by = new Map(judgements.map((j) => [j.id, j.said]));
+  return items
+    .map((item, i) => ({ item, i, rank: RANK[by.get(item.id) ?? "related"] }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((x) => x.item);
+}
+
 /* ── The capability ─────────────────────────────────────────────────────── */
 
 export interface JudgeResult {

@@ -83,6 +83,7 @@ import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/roo
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
 import { shouldAlign, timingForProject } from "./align-source.ts";
 import { JUDGE_VERSION } from "./judge.ts";
+import { candidatesFor } from "./beat-find.ts";
 import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
@@ -2963,11 +2964,20 @@ app.get("/plan/:id", async (c) => {
           need: b.need,
           kept: b.kept,
           found: b.found.length,
+          backed: b.backed,
           /* The same sentence findForBeats gives, recomputed rather than
              stored: it is a fact about what this product can do, not about
              this plan, and storing it would freeze today's answer into a row
-             that outlives it. */
-          gap: b.role === "outside" ? "a voice that isn't yours — nothing here can find that yet" : null,
+             that outlives it.
+             The other gap — "nothing here says it" — IS about this plan and
+             is derived from the stored count, so it survives a reload the
+             way the thin mark does. */
+          gap:
+            b.role === "outside"
+              ? "a voice that isn't yours — nothing here can find that yet"
+              : b.backed === 0 && b.found.length
+                ? "nothing here says it — the moments are about it, not of it"
+                : null,
         })),
       }),
     ),
@@ -3034,18 +3044,25 @@ app.post("/api/plans/:id/find", async (c) => {
   const kept = plan.beats.filter((x) => x.kept);
   if (!kept.length) return c.json({ error: "every beat is cut — keep at least one" }, 422);
 
-  const found = await findForBeats(kept, async (need) => {
-    const out = await findMaterial(c.env, user.id, need, 6);
-    /* "Your most recent" is findMaterial answering a brief that matched
-       nothing. A beat's need is a search, not a brief, so that fallback is
-       the same lie here as it is in the room's search box: nothing found. */
-    return out.how === "recent" ? [] : out.moments.map((m) => m.id);
-  });
+  /* The compose — retrieval, the judge, the rerank — is src/beat-find.ts,
+     where the degradation can be tested: a judge that throws must cost the
+     ordering and the coverage, never the beat. */
+  const found = await findForBeats(kept, (need) => candidatesFor(c.env, user.id, need));
 
-  await setFound(c.env.DB, plan.id, new Map(found.map((f) => [f.beatId, f.clipIds])));
+  await setFound(
+    c.env.DB,
+    plan.id,
+    new Map(found.map((f) => [f.beatId, { ids: f.clipIds, backed: f.backed }])),
+  );
   return c.json({
     ok: true,
-    beats: found.map((f) => ({ beatId: f.beatId, found: f.clipIds.length, thin: f.thin, gap: f.gap })),
+    beats: found.map((f) => ({
+      beatId: f.beatId,
+      found: f.clipIds.length,
+      backed: f.backed,
+      thin: f.thin,
+      gap: f.gap,
+    })),
   });
 });
 

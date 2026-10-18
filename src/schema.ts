@@ -755,6 +755,21 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * actually is. It is not backfilled: a value written by a migration would
    * be a claim that the alignment ran, and it did not.
    */
+  /*
+   * HOW MANY OF A BEAT'S MOMENTS BACK IT, which is what thin means now.
+   *
+   * Null when nobody checked — the judge was not run, or its call failed —
+   * and then the count of results is all there is to go on. A zero written
+   * there would mark a beat as a hole because a model call did not answer,
+   * and send somebody to reshoot footage they already have.
+   *
+   * An added column rather than part of the CREATE, like every other
+   * column added after the fact: CREATE TABLE IF NOT EXISTS over an
+   * existing table does nothing at all, so a column written there reaches
+   * new databases only.
+   */
+  { table: "plan_beats", column: "backed", ddl: "ALTER TABLE plan_beats ADD COLUMN backed INTEGER" },
+
   { table: "sources", column: "timing_source", ddl: "ALTER TABLE sources ADD COLUMN timing_source TEXT" },
   /* When it ran. Null while it has never been tried; a source whose
      alignment failed keeps a null here and a recogniser timing, which is the

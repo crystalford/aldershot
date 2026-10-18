@@ -88,9 +88,21 @@ not show it, which is the near-miss it was asked to separate. A numeric
 threshold belongs with the set that could calibrate it, and guessing one
 against nothing is the thing this codebase refuses to do elsewhere.
 
-Still owed here: the reranker, search in the conversation, coverage per beat
-— and the acceptance itself, which is numbers over a Phase 0 set that does
-not exist yet. `npm run eval:set` prints all four the moment it does.
+**The rerank and coverage per beat are the same call.** Reading six
+candidates against a beat's need to say which back it IS the reranking, and
+its answer is the coverage — so there is no separate reranker, and there
+should not be: it would ask the same question twice and only one of the two
+answers could ever be checked against anything. `src/beat-find.ts` is the
+compose, and it degrades rather than failing: a judge that throws costs the
+ordering and the coverage, never the beat.
+
+"Thin" means little that BACKS a beat now, not few results. Retrieval returns
+six moments for any beat with words in it, so the old count measured whether
+the search box worked rather than whether the beat has an argument under it.
+
+Still owed here: search in the conversation — and the acceptance itself,
+which is numbers over a Phase 0 set that does not exist yet.
+`npm run eval:set` prints all four the moment it does.
 
 - **Accept:** on the Phase 0 set, recall@5 and false-support rate meet the targets you set from the first run and never regress in CI; "nothing here backs this" is returned on the known-none claims at the calibrated threshold; every result shows the backing line; the thread chips come from parent labels; a model swap is blocked if it fails the gate.
 

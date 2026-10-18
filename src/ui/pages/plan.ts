@@ -30,6 +30,12 @@ export interface PlanData {
     need: string;
     kept: boolean;
     found: number;
+    /**
+     * How many of them BACK it, which is what thin now means. Null when
+     * nobody checked — the judge was not run, or its call failed — and then
+     * the count of results is the only thing there is to go on.
+     */
+    backed: number | null;
     /** Why it is empty, when the reason is not "your library has nothing". */
     gap: string | null;
   }>;
@@ -51,7 +57,12 @@ function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string
    * duplicate was dead: breaking it changed no output at all, which is how it
    * was found.
    */
-  const thin = b.kept && b.found < 2;
+  /*
+   * THIN MEANS LITTLE THAT BACKS IT, not few results — src/plan.ts says
+   * why. When nobody checked, the count is all there is, which is what this
+   * did before the judge existed.
+   */
+  const thin = b.kept && (b.backed ?? b.found) < 2;
   return `<div style="display:flex;gap:12px;align-items:baseline;padding:11px 13px;border-radius:${RADIUS.card};background:${C.surface};opacity:${b.kept ? "1" : ".5"}">
     <span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${accentBg(accent)};color:${accent};white-space:nowrap">${esc(ROLE_NAME[b.role])}</span>
     <span style="flex:1 1 220px;min-width:min(200px,100%)">
@@ -62,7 +73,17 @@ function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string
           ? `<span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};color:${ACCENT.cyan};font-family:${FONT.mono}">${esc(b.gap)}</span>`
           : state === "beats"
             ? ""
-            : `<span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${thin ? ACCENT.red : C.ink45}">${b.found} moment${b.found === 1 ? "" : "s"}${thin ? " · thin" : ""}</span>`
+            : /*
+               * "3 of 6 back it" rather than "6 moments", because they are
+               * different facts and only one of them is about the argument.
+               * The unchecked case keeps the old sentence: claiming a
+               * coverage nobody measured would be worse than saying less.
+               */
+              `<span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${thin ? ACCENT.red : C.ink45}">${
+                b.backed === null
+                  ? `${b.found} moment${b.found === 1 ? "" : "s"}`
+                  : `${b.backed} of ${b.found} back it`
+              }${thin ? " · thin" : ""}</span>`
       }
     </span>
     <!-- data-BEAT, not data-plan. The container carries data-plan, so a
@@ -76,6 +97,18 @@ function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string
 export function renderPlan(d: PlanData): string {
   const kept = d.beats.filter((b) => b.kept).length;
   const found = d.beats.reduce((n, b) => n + b.found, 0);
+  /*
+   * THE SUMMARY FOLLOWS THE ROWS. If thin is about what backs a beat then
+   * the line a person reads first should be too — but only when every
+   * searched beat was actually checked. A total mixing checked and
+   * unchecked beats would be a coverage figure for a set nobody covered.
+   */
+  const searched = d.beats.filter((b) => b.kept && b.role !== "outside");
+  const allChecked = searched.length > 0 && searched.every((b) => b.backed !== null);
+  const backed = searched.reduce((n, b) => n + (b.backed ?? 0), 0);
+  const total = allChecked
+    ? `${backed} of ${found} back them`
+    : `${found} moment${found === 1 ? "" : "s"}`;
 
   return `<div data-plan="${esc(d.id)}" style="max-width:min(720px,100%)">
     <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.topic)}</div>
@@ -92,7 +125,7 @@ export function renderPlan(d: PlanData): string {
     <div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${d.beats.map((b) => beatRow(b, d.state)).join("")}</div>
 
     <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${kept} of ${d.beats.length} beats${d.state === "beats" ? "" : ` · ${found} moment${found === 1 ? "" : "s"}`}</span>
+      <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${kept} of ${d.beats.length} beats${d.state === "beats" ? "" : ` · ${total}`}</span>
       ${
         /*
          * ONE BUTTON AT A TIME, and it is the step the plan is actually on.

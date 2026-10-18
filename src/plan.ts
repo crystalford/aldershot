@@ -185,25 +185,47 @@ export function parsePlan(response: unknown): { claim: string; beats: Beat[] } {
  * search until something turns up: a beat with nothing behind it is a hole in
  * the argument, and the useful thing to do with a hole is show it.
  *
+ * AND "LITTLE" MEANS LITTLE THAT BACKS IT, NOT FEW RESULTS. Retrieval
+ * returns six moments for any beat with words in it; counting them measured
+ * whether the search box worked, not whether the beat has an argument under
+ * it. Six moments about the same evening, none of which say the thing, is
+ * exactly the hole this is for — and it read as a well-stocked beat. The
+ * judge (src/judge.ts) is what tells them apart.
+ *
+ * NOBODY CHECKED IS NOT NOTHING BACKS IT. When no verdict is known — the
+ * judge was not run, or the call failed — this falls back to counting
+ * results, which is what it always did. A beat marked thin because a model
+ * call failed would send somebody to reshoot footage they already have.
+ *
  * AN OUTSIDE BEAT IS A GAP, HONESTLY. "One voice that isn't yours" means
- * footage the user did not shoot, which is Scout's job, and Scout is not
- * built. Searching their own library for it would return their own voice and
- * label it somebody else's — so outside beats find nothing on purpose and say
- * why.
+ * footage the user did not shoot, which is Scout's job. Scout is built now
+ * and runs per PROJECT; a plan is not a project until Cut it, so there is
+ * nothing for a beat to hand off to yet and this still says so rather than
+ * searching the user's own library and labelling their voice somebody
+ * else's.
  */
 export const THIN_BELOW = 2;
+
+/** One candidate for a beat, with the judge's answer when there is one. */
+export interface Candidate {
+  id: string;
+  /** True when something said it backs the beat; null when nobody looked. */
+  backs: boolean | null;
+}
 
 export interface Found {
   beatId: string;
   clipIds: string[];
   thin: boolean;
+  /** How many of them back it. Null when nobody checked. */
+  backed: number | null;
   /** Why it is empty, when the reason is not "your library has nothing". */
   gap: string | null;
 }
 
 export async function findForBeats(
   beats: Array<{ id: string; role: Role; need: string }>,
-  search: (need: string) => Promise<string[]>,
+  search: (need: string) => Promise<Candidate[]>,
 ): Promise<Found[]> {
   const out: Found[] = [];
   for (const b of beats) {
@@ -212,12 +234,33 @@ export async function findForBeats(
         beatId: b.id,
         clipIds: [],
         thin: true,
+        backed: null,
         gap: "a voice that isn't yours — nothing here can find that yet",
       });
       continue;
     }
-    const clipIds = await search(b.need);
-    out.push({ beatId: b.id, clipIds, thin: clipIds.length < THIN_BELOW, gap: null });
+
+    const found = await search(b.need);
+    const clipIds = found.map((f) => f.id);
+    const checked = found.some((f) => f.backs !== null);
+    const backed = checked ? found.filter((f) => f.backs).length : null;
+
+    out.push({
+      beatId: b.id,
+      clipIds,
+      backed,
+      thin: (backed ?? clipIds.length) < THIN_BELOW,
+      /*
+       * FOUND SOMETHING, AND NONE OF IT SAYS THE THING. A different hole
+       * from an empty one, and the only one a person can act on without
+       * shooting anything: the words are wrong, not the footage.
+       */
+      /* `checked` already implies something was found — nothing can have
+         been checked otherwise — so there is no length guard here. One was,
+         and breaking it on purpose changed nothing, which is how it was
+         found to be saying the same thing twice. */
+      gap: checked && backed === 0 ? "nothing here says it — the moments are about it, not of it" : null,
+    });
   }
   return out;
 }

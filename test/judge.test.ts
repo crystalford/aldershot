@@ -16,6 +16,7 @@ import {
   LINE_CHARS,
   MAX_SENTENCES,
   parseJudgements,
+  rerank,
   sentences,
   shortIds,
   usableWhy,
@@ -230,4 +231,60 @@ test("the answer comes back in the order the moments were sent", () => {
     { moment: "m1", verdict: "backs", sentence: 1 },
   ]);
   assert.deepEqual(got.map((g) => g.id), ["01HZZZ1", "01HZZZ2"]);
+});
+
+/* ── The rerank ─────────────────────────────────────────────────────────── */
+
+const j = (id: string, said: "backs" | "related" | "unrelated") => ({
+  id,
+  said,
+  line: null,
+  why: null,
+  raw: said,
+  downgraded: false,
+  answered: true,
+  model: "m/test",
+  version: JUDGE_VERSION,
+});
+
+test("the verdict is the rerank: backs, then related, then unrelated", () => {
+  /*
+   * Phase 4's "→ rerank". A third model call with its own prompt would ask
+   * the same question this one already answers — and only one of the two
+   * answers can ever be checked against anything, because a reranker's
+   * scores have no ground truth and a verdict has somebody's own
+   * judgements.
+   */
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const got = rerank(items, [j("a", "unrelated"), j("b", "backs"), j("c", "related")]);
+  assert.deepEqual(got.map((g) => g.id), ["b", "c", "a"]);
+});
+
+test("equal verdicts keep the order retrieval put them in", () => {
+  /*
+   * Which is the fused rank — everything BM25 and the index worked out. A
+   * sort that reordered ties would throw that away, and it is most of what
+   * is known about a candidate the judge called `related`.
+   */
+  const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const got = rerank(items, [j("a", "related"), j("b", "related"), j("c", "related")]);
+  assert.deepEqual(got.map((g) => g.id), ["a", "b", "c"]);
+});
+
+test("a candidate nobody judged keeps its place among the related ones", () => {
+  /* Unjudged is not unrelated. Demoting it would punish a moment for a call
+     that did not happen. */
+  const items = [{ id: "a" }, { id: "unjudged" }, { id: "c" }];
+  const got = rerank(items, [j("a", "unrelated"), j("c", "backs")]);
+  assert.deepEqual(got.map((g) => g.id), ["c", "unjudged", "a"]);
+});
+
+test("nothing judged leaves the order exactly as it was", () => {
+  const items = [{ id: "a" }, { id: "b" }];
+  assert.deepEqual(rerank(items, []).map((g) => g.id), ["a", "b"]);
+});
+
+test("a verdict about something not in the list changes nothing", () => {
+  const items = [{ id: "a" }, { id: "b" }];
+  assert.deepEqual(rerank(items, [j("zz", "backs")]).map((g) => g.id), ["a", "b"]);
 });
