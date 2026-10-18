@@ -14,6 +14,7 @@
  */
 
 import type { BoardBeat, BoardData, BoardRow, AcqState, Route } from "./ui/pages/board.ts";
+import { ghostsFor } from "./scout-external.ts";
 
 interface LedgerJoin {
   id: string;
@@ -170,5 +171,15 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
     sourcesRead,
     sourcesLinkOnly,
     candidatesScanned,
+    /* Read per project rather than per run: a ghost belongs to the cut, and
+       a second Scout run over the same project does not drop the missions
+       the first one's finds opened. */
+    ghosts: (await ghostsFor(db, projectId)).map((g) => ({
+      ledgerId: g.ledgerId,
+      quote: g.quote,
+      inS: g.inS,
+      url: g.url,
+      state: g.state,
+    })),
   };
 }

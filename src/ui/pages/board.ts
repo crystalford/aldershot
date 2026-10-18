@@ -127,6 +127,17 @@ export interface BoardData {
   sourcesRead: number;
   sourcesLinkOnly: number;
   candidatesScanned: number;
+  /**
+   * THE GHOSTS THIS CUT IS CARRYING.
+   *
+   * An external moment attached in the room becomes a mission the moment the
+   * project exists, and until somebody grabs it the cut is built over a
+   * moment that is not footage. The board is where that is said, because the
+   * board is already the page about what is outside your footage.
+   *
+   * Empty for a cut with no ghosts, which is most of them.
+   */
+  ghosts?: Array<{ ledgerId: string; quote: string; inS: number; url: string | null; state: string }>;
 }
 
 /* ── The two meters ─────────────────────────────────────────────────────── */
@@ -404,6 +415,51 @@ function renderBeat(b: BoardBeat, d: BoardData, gap: Gap | undefined): string {
  * do, so it goes where a person looks first rather than after forty rows of
  * what was found.
  */
+/** mm:ss, because a deep link is only useful if you can see where it goes. */
+const atClock = (s: number): string => {
+  const t = Math.max(0, Math.floor(s));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
+
+/*
+ * WHAT IS IN THE CUT THAT IS NOT FOOTAGE.
+ *
+ * Above the beats, because it is the only part of this page that is about a
+ * cut that already exists rather than about the search — and because a
+ * person who has attached a find and run it wants to know what they now owe.
+ *
+ * Every row is a link to the source at the in-point and nothing else. That
+ * link IS the product here: invariant 9 means we do not fetch it, so the
+ * only move available is to hand a person the place and the time.
+ */
+function renderGhosts(d: BoardData): string {
+  const open = (d.ghosts ?? []).filter((g) => g.state !== "matched");
+  if (!open.length) return "";
+  const rows = open
+    .map(
+      (g) =>
+        `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid ${C.hairline}">` +
+        `<span style="flex:1;min-width:0;font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70}">${esc(g.quote.slice(0, 120))}</span>` +
+        (g.url
+          ? `<a href="${esc(g.url)}" target="_blank" rel="noopener noreferrer" style="flex:none;font:600 ${SIZE.meta} ${FONT.mono};color:${ACCENT.gold};text-decoration:none">open at ${esc(atClock(g.inS))} &nearr;</a>`
+          : `<span style="flex:none;font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink32}">no link</span>`) +
+        `</div>`,
+    )
+    .join("");
+  return (
+    `<div style="border:1px solid ${C.hairline};border-radius:${RADIUS.card};background:${C.surface};padding:14px;margin-bottom:14px">` +
+    `<div style="font:600 ${SIZE.body} ${FONT.ui};color:${C.ink}">${open.length} ghost${open.length === 1 ? "" : "s"} in this cut</div>` +
+    `<div style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink45};margin-top:2px">` +
+    `In the cut, not in your footage. Open one, record or grab it, and bring the file back — ` +
+    `it finds the scouted words inside what you bring and lines them up.</div>` +
+    rows +
+    `</div>`
+  );
+}
+
 export function renderBoard(d: BoardData): string {
   const gaps = gapsOf(d);
   const byBeat = new Map(gaps.map((g) => [g.beatId, g]));
@@ -448,5 +504,7 @@ export function renderBoard(d: BoardData): string {
     `${d.sourcesLinkOnly} link only · ${d.candidatesScanned} candidates scanned, ${d.verifiedMoments} verified</span>` +
     `<span>sources &nearr; &nbsp; the ledger &nearr;</span></div>`;
 
-  return header + renderGaps(gaps) + ordered.map((b) => renderBeat(b, d, byBeat.get(b.id))).join("") + footer;
+  return (
+    header + renderGaps(gaps) + renderGhosts(d) + ordered.map((b) => renderBeat(b, d, byBeat.get(b.id))).join("") + footer
+  );
 }

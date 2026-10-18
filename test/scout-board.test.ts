@@ -501,3 +501,45 @@ test("nothing a user typed is rendered unescaped", () => {
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /a &amp; b/);
 });
+
+/* ── The ghosts in this cut ─────────────────────────────────────────────── */
+
+const ghost = (over: Partial<NonNullable<BoardData["ghosts"]>[number]> = {}) => ({
+  ledgerId: "L1",
+  quote: "give me five dollars",
+  inS: 754,
+  url: "https://www.youtube.com/watch?v=v1&t=754s",
+  state: "scouted",
+  ...over,
+});
+
+test("the board says what this cut is carrying that is not footage", () => {
+  const html = renderBoard(board({ ghosts: [ghost()] }));
+  assert.match(html, /1 ghost in this cut/);
+  /* The link at the in-point IS the product here: invariant 9 means we do
+     not fetch it, so the only move available is the place and the time. */
+  assert.match(html, /open at 12:34/);
+  assert.match(html, /t=754s/);
+});
+
+test("a ghost that has been grabbed is not still owed", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ state: "matched" })] }));
+  assert.doesNotMatch(html, /ghost in this cut/, "match-back is what closes it");
+});
+
+test("a cut with no ghosts says nothing about ghosts", () => {
+  assert.doesNotMatch(renderBoard(board()), /ghost/);
+  assert.doesNotMatch(renderBoard(board({ ghosts: [] })), /ghost/);
+});
+
+test("a find with no link says so rather than offering a dead one", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ url: null })] }));
+  assert.match(html, /no link/);
+  assert.doesNotMatch(html, /open at/);
+});
+
+test("over an hour in, the clock keeps its hours", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ inS: 7_438 })] }));
+  /* 2:03:58 — a Twitch VOD timestamp, which 123:58 would be read as wrong. */
+  assert.match(html, /open at 2:03:58/);
+});

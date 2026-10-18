@@ -75,6 +75,8 @@ test("attaching toggles, and survives a page load in the URL", () => {
     attached: [],
   threadNames: [],
   mode: "meaning" as const,
+  who: "all" as const,
+  ext: [],
     q: "",
     meaningUnavailable: false,
     working: [],
@@ -84,7 +86,7 @@ test("attaching toggles, and survives a page load in the URL", () => {
     ],
     moments: [],
     projects: [],
-    counts: { sources: 2, moments: 9, threads: 0 },
+    counts: { sources: 2, moments: 9, threads: 0, external: 0 },
   };
 
   const none = renderRoom(base);

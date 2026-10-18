@@ -414,6 +414,8 @@ CREATE TABLE IF NOT EXISTS scout_missions (
 
 CREATE INDEX IF NOT EXISTS scout_missions_by_project ON scout_missions(project_id, state);
 
+CREATE UNIQUE INDEX IF NOT EXISTS scout_missions_one_per_cut ON scout_missions(project_id, ledger_id);
+
 CREATE TABLE IF NOT EXISTS scout_attributions (
     id TEXT PRIMARY KEY,
     ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),

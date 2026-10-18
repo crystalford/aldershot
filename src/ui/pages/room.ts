@@ -26,10 +26,28 @@ import { composer, workingRow, type WorkingJob } from "./home.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
+/** Whose footage the Highlights list is showing. The prototype's three. */
+export const WHO = ["mine", "external", "all"] as const;
+export type Who = (typeof WHO)[number];
+
+export type Provenance = "mine" | "external";
+/** Where an external moment is, which decides its badge and its colour. */
+export type Acq = "linked" | "mission" | "verified";
+
 export interface RoomData {
   tab: RoomTab;
   /** The sources attached so far, by id. A cut started now is scoped to them. */
   attached: string[];
+  /**
+   * The EXTERNAL moments attached so far, by ledger id.
+   *
+   * A separate list because a ghost is not a source. `attached` becomes
+   * `sourceIds` on the composer and is checked against the user's own
+   * sources; a ledger id in that list would be dropped by the check, and if
+   * it were not it would scope a cut to a video that is not here. These ride
+   * as `ledgerIds` instead, and /api/begin turns them into missions.
+   */
+  ext: string[];
   /** What is being read or rendered right now. Empty when nothing is. */
   working: WorkingJob[];
   /** What was searched for. */
@@ -47,16 +65,42 @@ export interface RoomData {
     duration_s: number | null;
     clips: number;
   }>;
+  /**
+   * WHOSE FOOTAGE IS SHOWN. Mine · External · All, from the prototype.
+   *
+   * It sits on Highlights alone, with the external count on its own chip,
+   * because that is where the prototype puts it: a moment found outside your
+   * footage is a MOMENT, in the same list as yours, and the filter is how you
+   * stop it being lost among six hundred of your own.
+   */
+  who: Who;
   moments: Array<{
     id: string;
     quote: string;
     frame_r2_key: string;
     source_title: string;
     thread_name: string | null;
+    /**
+     * Yours, or found outside it.
+     *
+     * The prototype's own field, and doc 18's: "An external moment is
+     * moment(provenance: external, acq: …), pointing at its ledger row. It
+     * uses the same table and engine as the user's own moments."
+     */
+    provenance?: Provenance;
+    /** Where it is: linked, out on a mission, or in hand. */
+    acq?: Acq;
+    /** Seconds into its source, for the timecode. Derived from word ids. */
+    at_s?: number;
+    /** How long it runs, for the chip in the corner of the frame. */
+    dur_s?: number;
+    /** The platform it was found on, which is the first thing the note says. */
+    host?: string | null;
+    attached?: boolean;
   }>;
   projects: Array<{ id: string; title: string; kind: string; updated_at: number }>;
   /** Totals for the summary line, counted rather than estimated. */
-  counts: { sources: number; moments: number; threads: number };
+  counts: { sources: number; moments: number; threads: number; external: number };
   /** What the threads are called, for the archive card. */
   threadNames: string[];
 }
@@ -179,14 +223,14 @@ function verbCard(v: { tag: string; name: string; what: string; say: string }, a
  * your own words, and splitting them put the menu and the way to order from
  * it on opposite halves of the screen.
  */
-function direction(attached: string[]): string {
+function direction(attached: string[], ghosts: string[]): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
     <div data-content style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">Pick what to make, or attach footage on the right and say it. Either way this becomes the project — its read, its rules, every change with Undo.</div>
     <div style="margin-top:6px">${label("MAKE")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${VERBS.map((v) => verbCard(v, v.accent)).join("")}</div>
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
-    ${composer(attached, { room: true })}
+    ${composer(attached, { room: true, ghosts })}
   </div>`;
 }
 
@@ -300,12 +344,49 @@ const empty = (text: string) =>
  * Toggling, because attaching the same video twice is a thing people do and
  * the second press should take it off rather than add it again.
  */
-function attachHref(tab: RoomTab, attached: string[], id: string): string {
-  const next = attached.includes(id) ? attached.filter((x) => x !== id) : [...attached, id];
-  return `/?tab=${tab}` + (next.length ? `&attach=${next.map(encodeURIComponent).join(",")}` : "");
+interface RoomState {
+  tab: RoomTab;
+  attached: string[];
+  ext: string[];
+  who: Who;
+  q: string;
+  mode: "meaning" | "exact";
 }
 
-function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string[]): string {
+/*
+ * EVERY LINK IN THE ROOM CARRIES THE WHOLE ROOM.
+ *
+ * `/?tab=highlights` alone drops the attach list, which is how attaching two
+ * videos and then switching to Mine threw the selection away. The state is
+ * small and it is all in the URL, so one builder writes every link and
+ * nothing can forget a field: a patch says what changed and the rest comes
+ * along. Defaults are left off so the plain `/` stays plain.
+ */
+function roomHref(st: RoomState, patch: Partial<RoomState> = {}): string {
+  const n = { ...st, ...patch };
+  const p: string[] = [`tab=${n.tab}`];
+  if (n.attached.length) p.push(`attach=${n.attached.map(encodeURIComponent).join(",")}`);
+  if (n.ext.length) p.push(`ext=${n.ext.map(encodeURIComponent).join(",")}`);
+  if (n.who !== "all") p.push(`who=${n.who}`);
+  if (n.q) p.push(`q=${encodeURIComponent(n.q)}`);
+  if (n.mode === "exact") p.push("mode=exact");
+  return `/?${p.join("&")}`;
+}
+
+/** On, off. Attaching the same thing twice should take it off again. */
+const toggle = (list: string[], id: string): string[] =>
+  list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+
+function attachHref(st: RoomState, id: string): string {
+  return roomHref(st, { attached: toggle(st.attached, id) });
+}
+
+/** The same toggle for a ghost, into the other list. */
+function extHref(st: RoomState, id: string): string {
+  return roomHref(st, { ext: toggle(st.ext, id) });
+}
+
+function videoRow(s: RoomData["sources"][number], st: RoomState): string {
   /* The four real states (src/sources.ts), not invented ones — an earlier
      version of this checked for "done" and "error", which the column never
      holds, so every video read as "reading" for ever. */
@@ -325,7 +406,7 @@ function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string
    * matching close tag in the file rather than its own. Browsers are lenient
    * enough that nothing looked wrong, which is exactly why it survived.
    */
-  const on = attached.includes(s.id);
+  const on = st.attached.includes(s.id);
   /*
    * HOW DEEPLY IT WAS READ, which the prototype shows as READ · WORDS +
    * SCREEN. Ours is words only — there is no visual pass, no shot detection
@@ -354,22 +435,146 @@ function videoRow(s: RoomData["sources"][number], tab: RoomTab, attached: string
         ? `<span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.05em;padding:3px 7px;border-radius:3px;background:${accentBg(ACCENT.green)};color:${ACCENT.green};white-space:nowrap">${depth}</span>`
         : ""
     }
-    <a href="${esc(attachHref(tab, attached, s.id))}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${on ? accentBg(ACCENT.gold) : C.pill};color:${on ? ACCENT.gold : C.ink70};text-decoration:none;white-space:nowrap">${on ? "Attached" : "Attach all"}</a>
+    <a href="${esc(attachHref(st, s.id))}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${on ? accentBg(ACCENT.gold) : C.pill};color:${on ? ACCENT.gold : C.ink70};text-decoration:none;white-space:nowrap">${on ? "Attached" : "Attach all"}</a>
   </span>`;
 }
 
-function momentCard(m: RoomData["moments"][number]): string {
-  return `<div data-moment="${esc(m.id)}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden">
-    <span style="aspect-ratio:16/9;background:${C.canvas};display:block">${
-      m.frame_r2_key
-        ? `<img loading="lazy" src="/media/${esc(m.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover"/>`
+/**
+ * MINE · EXTERNAL · ALL, on Highlights only.
+ *
+ * The external chip carries its own count, which is the prototype's and is
+ * the point of the control: the question a person has is "did Scout find
+ * anything", and a filter that made them click to find out would answer it
+ * one click too late.
+ *
+ * The title is the prototype's sentence, word for word. It is the only place
+ * invariant 9 is explained to a person at the moment it matters — "linked,
+ * never downloaded" beside the things that were linked.
+ */
+function whoFilter(st: RoomState, external: number): string {
+  const label = (w: Who) => (w === "mine" ? "Mine" : w === "external" ? `External · ${external}` : "All");
+  return (
+    `<div title="External: found outside your footage or added (a podcast) — linked, never downloaded. ` +
+    `They attach like anything else and ride into the cut as ghosts until you grab them." ` +
+    `style="flex:none;display:flex;gap:2px;padding:2px;border-radius:${RADIUS.button};background:${C.surface}">` +
+    WHO.map(
+      (w) =>
+        `<a href="${esc(roomHref(st, { tab: "highlights", who: w }))}" style="font-size:${SIZE.meta};` +
+        `font-weight:600;padding:4px 9px;border-radius:3px;` +
+        `background:${w === st.who ? C.active : "transparent"};` +
+        `color:${w === st.who ? C.ink : C.ink45};text-decoration:none;white-space:nowrap">${esc(label(w))}</a>`,
+    ).join("") +
+    `</div>`
+  );
+}
+
+/**
+ * The badge an external moment wears, which is where it is rather than what
+ * it is worth.
+ *
+ * `linked` and `mission` are both gold because both are something for the
+ * user to do; `verified` and `Attached` are green because both are in hand.
+ * The prototype's colours, and they carry the same meaning as the board's.
+ */
+function momentBadge(m: RoomData["moments"][number]): { text: string; bg: string } | null {
+  if (m.attached) return { text: "Attached", bg: ACCENT.green };
+  if (m.provenance !== "external") return null;
+  if (m.acq === "verified") return { text: "External · acquired", bg: ACCENT.green };
+  if (m.acq === "mission") return { text: "External · mission open", bg: ACCENT.gold };
+  return { text: "External · linked", bg: ACCENT.gold };
+}
+
+/*
+ * THE NOTE UNDER THE QUOTE, which is the prototype's line exactly:
+ *
+ *   note: (isExt ? (S.host || "outside") + " · " : "") + (m.strand || …)
+ *
+ * The platform comes FIRST for an external moment, before the thread, because
+ * the first thing a person needs to know about a moment that is not theirs is
+ * whose it is. "outside" when the host is not known, which is still true.
+ */
+function momentNote(m: RoomData["moments"][number]): string {
+  const strand = m.thread_name ?? m.source_title;
+  return m.provenance === "external" ? `${m.host || "outside"} · ${strand}` : strand;
+}
+
+/**
+ * A MOMENT CARD IS A LINK NOW.
+ *
+ * "Click a moment to attach it" has been on this page since the room was
+ * built, over a div that did nothing. An external moment toggles into `ext`
+ * and a moment of your own into `attach`, so one card does both and the only
+ * difference is which list it lands in.
+ */
+/**
+ * WHAT THE HIGHLIGHTS TAB COUNTS.
+ *
+ * This file says twice that a count which disagrees with its list is a bug
+ * this product has already had — and it had it a third time, because the tab
+ * read the user's own moments while the list showed three of Scout's finds
+ * beside them. A library with nothing of its own said 0 over three cards.
+ *
+ * It lives here rather than in the route because the rule belongs with the
+ * list it describes, and because a rule in a route handler is a rule nothing
+ * can test: removing it left every test in this repo green.
+ */
+export function momentsShown(who: Who, own: number, external: number): number {
+  if (who === "mine") return own;
+  if (who === "external") return external;
+  return own + external;
+}
+
+/** m:ss, or h:mm:ss past the hour — a Twitch VOD is hours long. */
+export function clock(s: number | undefined): string {
+  if (s === undefined || !Number.isFinite(s)) return "";
+  const t = Math.max(0, Math.round(s));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+function momentCard(m: RoomData["moments"][number], st: RoomState): string {
+  const isExt = m.provenance === "external";
+  const badge = momentBadge(m);
+  const ring = m.attached
+    ? `box-shadow:inset 0 0 0 1.5px ${ACCENT.green};`
+    : "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);";
+  /*
+   * A FRAMELESS CARD SAYS WHERE THE MOMENT IS INSTEAD.
+   *
+   * An external moment has no frame and must not: a still would be a thing
+   * fetched and stored, which is the line invariant 9 draws. Rendering the
+   * empty box was honest and looked broken — three black rectangles down a
+   * grid of your own footage. The host and the timecode go in its place,
+   * which is the one picture of an external moment we are entitled to.
+   */
+  const picture = m.frame_r2_key
+    ? `<img loading="lazy" src="/media/${esc(m.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover"/>`
+    : `<span data-content style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:${FONT.mono};color:${C.ink32}">` +
+      `<span style="font-size:${SIZE.secondary}">${esc(m.host || (isExt ? "outside" : m.source_title))}</span>` +
+      (m.at_s === undefined ? "" : `<span style="font-size:${SIZE.meta}">at ${esc(clock(m.at_s))}</span>`) +
+      `</span>`;
+  return `<a data-moment="${esc(m.id)}" href="${esc(isExt ? extHref(st, m.id) : attachHref(st, m.id))}" title="${m.attached ? "Detach" : "Attach"}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;${ring}text-decoration:none;color:inherit">
+    <span style="position:relative;aspect-ratio:16/9;background:${C.canvas};display:block">${picture}${
+      /* Top right, 10px, as the prototype has it. It was top LEFT in the
+         first version, where the prototype puts the source letter. */
+      badge
+        ? `<span data-content style="position:absolute;right:6px;top:6px;font-size:${SIZE.meta};font-weight:600;padding:2px 6px;border-radius:3px;background:${badge.bg};color:#101013">${esc(badge.text)}</span>`
         : ""
+    }${
+      m.dur_s === undefined
+        ? ""
+        : `<span data-content style="position:absolute;right:6px;bottom:6px;font-size:${SIZE.meta};font-family:${FONT.mono};padding:2px 5px;border-radius:3px;background:rgba(11,11,13,0.8);color:${C.ink70}">${esc(clock(m.dur_s))}</span>`
     }</span>
     <span style="padding:10px 11px;display:block">
       <span data-content style="display:block;font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70}">${esc(m.quote.slice(0, 110))}</span>
-      <span data-content style="display:block;margin-top:5px;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${esc(m.thread_name ?? m.source_title)}</span>
+      <span style="margin-top:5px;display:flex;align-items:center;gap:6px">
+        <span data-content style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(momentNote(m))}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${esc(clock(m.at_s))}</span>
+      </span>
     </span>
-  </div>`;
+  </a>`;
 }
 
 function projectRow(p: RoomData["projects"][number]): string {
@@ -381,15 +586,30 @@ function projectRow(p: RoomData["projects"][number]): string {
 
 /** The centre column: your footage. */
 function footage(d: RoomData): string {
+  const st: RoomState = { tab: d.tab, attached: d.attached, ext: d.ext, who: d.who, q: d.q, mode: d.mode };
   let body: string;
   if (d.tab === "videos") {
     body = d.sources.length
-      ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.sources.map((v) => videoRow(v, d.tab, d.attached)).join("")}</div>`
+      ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.sources.map((v) => videoRow(v, st)).join("")}</div>`
       : empty("Nothing here yet — upload a video and it starts transcribing.");
   } else if (d.tab === "highlights") {
     body = d.moments.length
-      ? `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
-      : empty(d.q ? "No footage yet" : "Nothing kept yet — add a clip back.");
+      ? `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));gap:14px">${d.moments.map((m) => momentCard(m, st)).join("")}</div>`
+      /*
+       * THE EMPTY LINE DEPENDS ON WHO IS BEING ASKED ABOUT.
+       *
+       * "Nothing kept yet — add a clip back" is about your own footage and is
+       * nonsense under External, where there is nothing to add back: Scout
+       * has either not run or found nothing. Saying the wrong one is how a
+       * person concludes a feature is broken.
+       */
+      : empty(
+          d.q
+            ? "No footage yet"
+            : d.who === "external"
+              ? "Nothing from outside yet — Scout finds and links; it never downloads."
+              : "Nothing kept yet — add a clip back.",
+        );
   } else {
     body = d.projects.length
       ? `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.projects.map(projectRow).join("")}</div>`
@@ -408,6 +628,7 @@ function footage(d: RoomData): string {
   return `<div style="flex:1 1 420px;min-width:min(320px,100%);display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
       ${tabs(d.tab, d.counts, d.projects.length)}
+      ${d.tab === "highlights" ? whoFilter(st, d.counts.external) : ""}
       <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.meta};color:${C.ink32}">Click a moment to attach it, then say what to make — or pick a type on the left.</span>
       <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};text-decoration:none;white-space:nowrap">+ Add footage</a>
     </div>
@@ -430,7 +651,7 @@ export function renderRoom(d: RoomData): string {
   return `${titleRow(d)}
   ${d.working.length ? workingRow(d.working) : ""}
   <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:20px">
-    ${direction(d.attached)}
+    ${direction(d.attached, d.ext)}
     ${footage(d)}
   </div>`;
 }

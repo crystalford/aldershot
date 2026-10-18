@@ -1380,11 +1380,16 @@ function checkSchema() {
   const nocomment = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ');
   const flat = (t) =>
     nocomment(t).replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim().toLowerCase();
-  const name = (t) => (t.match(/create (?:table|index) if not exists (\w+)/i) || [])[1];
+  /* `(?:UNIQUE )?` on both sides, because without it a unique index is
+     invisible to this check AND to scripts/schema-doc.cjs — blind in the
+     same place on both sides, so the two agreed about a statement neither
+     had seen. The first one in src/ is scout_missions_one_per_cut; it was
+     written, generated nothing, and the gate stayed green. */
+  const name = (t) => (t.match(/create (?:table|(?:unique )?index) if not exists (\w+)/i) || [])[1];
 
   const live = new Map();
   for (const f of walk(path.join(ROOT, 'src'))) {
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/`(CREATE (?:TABLE|(?:UNIQUE )?INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
       const n = name(m[1]);
       if (n) live.set(n, flat(m[1]));
     }

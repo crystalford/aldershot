@@ -83,7 +83,8 @@ import { wavDurationMs } from "./mp3.ts";
 import { begin, runScore } from "./begin.ts";
 import { wantsArrange } from "./arrange.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
-import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
+import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
+import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { isVerdict, type Verdict } from "./eval-set.ts";
@@ -749,6 +750,17 @@ const roomHandler = async (c: Ctx) => {
   const t = c.req.query("tab");
   const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
   const q = (c.req.query("q") || "").trim();
+  /*
+   * MINE · EXTERNAL · ALL.
+   *
+   * "all" is the default, as it is in the prototype — a person who has never
+   * run Scout should not have to find a filter to see their own footage, and
+   * a person who has should not have to go looking for what it found. An
+   * unknown value falls back to all rather than refusing: it is a view, and
+   * a bookmarked link with a typo in it should show the library.
+   */
+  const w = c.req.query("who");
+  const who: Who = w === "mine" ? "mine" : w === "external" ? "external" : "all";
 
   /*
    * WHAT IS ATTACHED, from the URL.
@@ -760,18 +772,22 @@ const roomHandler = async (c: Ctx) => {
    * a video that is not there.
    */
   const attachParam = (c.req.query("attach") || "").split(",").filter(Boolean);
+  /* The ghost list, kept apart from the source list for the reason RoomData
+     says: a ledger id is not a source id and must not be scoped against. */
+  const extParam = (c.req.query("ext") || "").split(",").filter(Boolean);
   /* Which retriever the person asked for. Both still run and fuse — this
      says which one they chose to see first, and whether to say the index is
      off. "exact" means they asked for the words, so the notice is not news. */
   const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
 
-  const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
+  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount] = await Promise.all([
     listSources(c.env.DB, user.id, "newest"),
     listProjects(c.env.DB, user.id),
     listThreads(c.env.DB, user.id),
     clipCountsBySource(c.env.DB, user.id),
     countMoments(c.env.DB, user.id),
     activeJobs(c.env.DB, user.id),
+    countExternal(c.env.DB, user.id),
   ]);
 
   /*
@@ -832,6 +848,74 @@ const roomHandler = async (c: Ctx) => {
   const mine = new Set(sources.map((s) => s.id));
   const attached = attachParam.filter((id) => mine.has(id));
 
+  /*
+   * ONE LIST, TWO PROVENANCES.
+   *
+   * Doc 18: an external moment "uses the same table and engine as the user's
+   * own moments". It does not literally share v2_clips — nothing was
+   * downloaded, so there is no clip — but it shares the LIST, and the filter
+   * is how a person stops it being lost among six hundred of their own.
+   *
+   * Only read when it could be shown. Under Mine the query is not run at
+   * all, which keeps the common case at the cost it was before this landed.
+   */
+  const externals =
+    who === "mine" || tab !== "highlights" ? [] : await externalMoments(c.env.DB, user.id, 60);
+  const extAttached = extParam.filter((id) => externals.some((e) => e.id === id));
+
+  /*
+   * A SEARCH FILTERS THE EXTERNAL ROWS TOO, on their words.
+   *
+   * findMaterial searches v2_clips, which these are not in, so a search with
+   * externals showing would otherwise have returned every find regardless of
+   * the query — the Highlights list claiming nine matches and showing forty.
+   * Matching the quote is the honest version of the same thing until the
+   * ledger is indexed.
+   */
+  const extTerms = q.toLowerCase().split(/\s+/).filter((x) => x.length > 1);
+  const extHits = extTerms.length
+    ? externals.filter((e) => {
+        const hay = `${e.quote} ${e.source_title}`.toLowerCase();
+        return extTerms.every((term) => hay.includes(term));
+      })
+    : externals;
+
+  const mineCards = moments.map((m) => ({
+    id: m.id,
+    quote: m.quote,
+    frame_r2_key: m.frame_r2_key,
+    source_title: m.source_title,
+    thread_name: m.thread_name,
+    provenance: "mine" as const,
+    at_s: m.start_ms / 1000,
+    dur_s: (m.end_ms - m.start_ms) / 1000,
+    attached: attached.includes(m.id),
+  }));
+  const extCards0 = extHits.map((e) => ({
+    id: e.id,
+    quote: e.quote,
+    frame_r2_key: e.frame_r2_key,
+    source_title: e.source_title,
+    thread_name: null,
+    provenance: "external" as const,
+    acq: e.acq,
+    host: e.host,
+    at_s: e.t_start_s,
+    attached: extAttached.includes(e.id),
+  }));
+  /*
+   * THE TAB'S COUNT IS THE LENGTH OF THE LIST UNDER IT.
+   *
+   * This file already says it twice: "a count that disagrees with its list is
+   * a bug this product has already had twice". It had it a third time — the
+   * Highlights tab read the user's own moments while the list showed three
+   * finds beside them, so a library with nothing of its own said 0 over
+   * three cards. The count is what is shown, and `who` decides what that is.
+   */
+  const shown =
+    who === "external" ? extCards0 : who === "mine" ? mineCards : [...mineCards, ...extCards0];
+  const shownCount = momentsShown(who, momentCount, externalCount);
+
   return c.html(
     page(
       { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
@@ -851,20 +935,21 @@ const roomHandler = async (c: Ctx) => {
           duration_s: s.duration_s,
           clips: clipsPer.get(s.id) ?? 0,
         })),
-        moments: moments.map((m) => ({
-          id: m.id,
-          quote: m.quote,
-          frame_r2_key: m.frame_r2_key,
-          source_title: m.source_title,
-          thread_name: m.thread_name,
-        })),
+        who,
+        ext: extAttached,
+        moments: shown,
         projects: projects.map((p) => ({
           id: p.id,
           title: p.title,
           kind: p.kind,
           updated_at: p.updated_at,
         })),
-        counts: { sources: sources.length, moments: momentCount, threads: threads.length },
+        counts: {
+          sources: sources.length,
+          moments: shownCount,
+          threads: threads.length,
+          external: externalCount,
+        },
       }),
     ),
   );
@@ -4275,7 +4360,25 @@ app.get("/api/sources/:id", async (c) => {
 app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ sourceId: string; sourceIds?: unknown[]; brief: string; upgrade: boolean }>(c);
+  const b = await body<{
+    sourceId: string;
+    sourceIds?: unknown[];
+    ledgerIds?: unknown[];
+    brief: string;
+    upgrade: boolean;
+  }>(c);
+
+  /*
+   * THE GHOSTS THAT WERE ATTACHED, checked before anything is made.
+   *
+   * Same check as `sourceIds` and for the same reason: an id off a form is a
+   * claim. minesOwn joins each one back through its run to a project of this
+   * user's, so an id from somebody else's library is simply not there.
+   */
+  const askedGhosts = Array.isArray(b.ledgerIds) ? b.ledgerIds.filter((x) => typeof x === "string") : [];
+  const ghosts = askedGhosts.length
+    ? [...(await minesOwn(c.env.DB, user.id, askedGhosts as string[]))]
+    : [];
 
   /*
    * A BRIEF WITH NO VIDEO MEANS "OUT OF EVERYTHING I HAVE".
@@ -4313,6 +4416,14 @@ app.post("/api/begin", async (c) => {
 
     const made = await assembleFromLibrary(c.env, { userId: user.id, brief, scope });
     if ("error" in made) return c.json({ error: made.error }, 422);
+    /*
+     * THE MISSIONS ARE OPENED AFTER THE PROJECT EXISTS, not before.
+     *
+     * A mission belongs to a cut. Writing one against a project that the
+     * assemble might refuse to make would leave a mission for a cut that
+     * does not exist, and invariant 6 means it would stay there.
+     */
+    if (ghosts.length) await openMissions(c.env.DB, made.projectId, ghosts);
     return c.json({
       intent: "assemble",
       projectId: made.projectId,
@@ -4337,6 +4448,12 @@ app.post("/api/begin", async (c) => {
     },
     c.executionCtx,
   );
+
+  /* A sentence about ONE video can still carry ghosts — attach a find, then
+     attach a video, then run it. begin() returns the project it made. */
+  if (ghosts.length && "projectId" in result && typeof result.projectId === "string") {
+    await openMissions(c.env.DB, result.projectId, ghosts);
+  }
 
   /* begin() dispatches its own work now — it is the only thing that knows
      which job the sentence asked for. Dispatching here as well ran every

@@ -596,6 +596,17 @@ const STATEMENTS: string[] = [
      created_at INTEGER NOT NULL, expires_at INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS scout_missions_by_project ON scout_missions(project_id, state)`,
+  /*
+   * ONE MISSION PER MOMENT PER CUT.
+   *
+   * A unique INDEX rather than a UNIQUE on the table, because the table may
+   * already exist where this runs and a constraint added to a CREATE TABLE
+   * IF NOT EXISTS silently does not arrive. The index is also what the
+   * upsert in scout-external.ts conflicts on: attaching the same external
+   * moment twice re-opens the mission rather than making a second one, which
+   * is what keeps the ghost count honest when /api/begin is pressed twice.
+   */
+  `CREATE UNIQUE INDEX IF NOT EXISTS scout_missions_one_per_cut ON scout_missions(project_id, ledger_id)`,
 
   /*
    * The credit line, and the chain back through a reupload to the original.

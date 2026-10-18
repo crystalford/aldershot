@@ -51,9 +51,13 @@ const statements = [];
 const seen = new Set();
 for (const f of walk(path.join(ROOT, 'src'))) {
   const src = fs.readFileSync(f, 'utf8');
-  for (const m of src.matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
+  /* UNIQUE is optional and was not, which is how the first unique index in
+     src/ never reached this file. A generator that quietly ignores a form of
+     the statement it exists to collect is worse than no generator: the
+     document it writes looks complete. */
+  for (const m of src.matchAll(/`(CREATE (?:TABLE|(?:UNIQUE )?INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
     const stmt = m[1];
-    const name = (stmt.match(/create (?:table|index) if not exists (\w+)/i) || [])[1];
+    const name = (stmt.match(/create (?:table|(?:unique )?index) if not exists (\w+)/i) || [])[1];
     if (!name || seen.has(name)) continue;
     seen.add(name);
     statements.push({ file: path.relative(ROOT, f), sql: stmt.replace(/\n   /g, '\n  ').trim() });

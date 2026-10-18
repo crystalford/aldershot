@@ -92,7 +92,10 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
  * unwired, which is exactly the kind of failure the wiring check exists for
  * and would not catch, because the ids would still all be present somewhere.
  */
-export function composer(attached: string[] = [], opts: { room?: boolean } = {}): string {
+export function composer(
+  attached: string[] = [],
+  opts: { room?: boolean; ghosts?: string[] } = {},
+): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
@@ -107,9 +110,22 @@ export function composer(attached: string[] = [], opts: { room?: boolean } = {})
    * than client state for the same reason the URL holds it: one copy of the
    * truth, and the server reads exactly what the page showed.
    */
-  const carry = attached
-    .map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`)
-    .join("");
+  const carry =
+    attached.map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`).join("") +
+    /*
+     * AND THE GHOSTS, in their own field.
+     *
+     * An attached external moment is a ledger id, not a source id. Putting
+     * it in `sourceIds` would have it silently dropped by the ownership
+     * check in /api/begin — the person attaches a find, presses Run it, and
+     * the cut comes back without it and without a word. `ledgerIds` is read
+     * separately and becomes a mission per moment: the ghost the prototype
+     * promises when it says they "ride into the cut as ghosts until you
+     * grab them".
+     */
+    (opts.ghosts ?? [])
+      .map((id) => `<input type="hidden" name="ledgerIds" value="${esc(id)}"/>`)
+      .join("");
 
   return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">${carry}
     <div id="dropHint" hidden style="position:absolute;inset:0;border-radius:${RADIUS.composer};box-shadow:inset 0 0 0 2px ${ACCENT.gold};background:rgba(217,179,106,0.07);pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:2">
