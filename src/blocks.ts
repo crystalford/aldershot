@@ -16,7 +16,8 @@
  * safe rather than destructive.
  */
 
-import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
+import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, runRange, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
+import { frameAccurate, timingOf, type Timing } from "./align.ts";
 
 export type BlockOrigin = "footage" | "voice" | "generated";
 
@@ -360,7 +361,13 @@ export function moveBlock(blocks: Block[], id: string, dir: -1 | 1): string[] {
  * A recording has no range in the source at all; it carries its own media, so
  * it is not answerable here. Callers handle it by origin.
  */
-export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number; end_ms: number }> {
+export function blockRanges(
+  block: Block,
+  cuts: Cut[],
+  /* What the word timings are worth. Recogniser by default — see
+     playableRanges, which this function must not disagree with. */
+  timing: Timing = timingOf("recogniser"),
+): Array<{ start_ms: number; end_ms: number }> {
   if (block.struck) return [];
   if (block.origin !== "footage") return [];
   if (!block.words.length) return [{ start_ms: block.start_ms, end_ms: block.end_ms }];
@@ -373,11 +380,15 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
      are built from these two functions and must not disagree. */
   const tightening = block.origin === "footage" && isTightened(cuts, Number(block.id.slice(2)));
 
+  const breathing = frameAccurate(timing);
   const out: Array<{ start_ms: number; end_ms: number }> = [];
   let run: { start_ms: number; end_ms: number } | null = null;
+  /* Where the run STARTED, because where a cut should land is a question
+     about the words either side of it, not about the run's milliseconds. */
+  let first = 0;
   for (let i = 0; i < block.words.length; i++) {
     if (wordStruck(cuts, block, i)) {
-      if (run) out.push(run);
+      if (run) out.push(runRange(block.words, first, i - 1, block, breathing));
       run = null;
       continue;
     }
@@ -385,17 +396,25 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
     const end = wordEndMs(block.words[i]);
 
     /* A long silence ends the run and a beat of it is kept — every word on
-       both sides stays. */
+       both sides stays. Its own end rule, not the breathing one: the beat is
+       silence left on purpose. */
     if (run && tightening && start - run.end_ms > PAUSE_OVER_MS) {
-      out.push({ start_ms: run.start_ms, end_ms: run.end_ms + PAUSE_BEAT_MS });
+      out.push({
+        start_ms: runRange(block.words, first, i - 1, block, breathing).start_ms,
+        end_ms: run.end_ms + PAUSE_BEAT_MS,
+      });
       run = { start_ms: start, end_ms: end };
+      first = i;
       continue;
     }
 
     if (run) run.end_ms = Math.max(run.end_ms, end);
-    else run = { start_ms: start, end_ms: end };
+    else {
+      run = { start_ms: start, end_ms: end };
+      first = i;
+    }
   }
-  if (run) out.push(run);
+  if (run) out.push(runRange(block.words, first, block.words.length - 1, block, breathing));
   return out;
 }
 

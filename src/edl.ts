@@ -13,6 +13,7 @@
 
 import { playableRanges, type Cut, type Segmentish, wordStartMs, wordEndMs } from "./cuts.ts";
 import { blockRanges, type Block } from "./blocks.ts";
+import type { Timing } from "./align.ts";
 
 export interface EdlCut {
   /** R2 key of the source to cut from. The MASTER — a render reads this. */
@@ -95,6 +96,16 @@ export function buildEdl(
      Optional so every existing caller keeps working; without it the preview
      plays the master, which is correct and merely slower. */
   previewKey?: string,
+  /*
+   * WHAT THE WORD TIMINGS ARE WORTH, which decides where a cut lands.
+   *
+   * With forced timings a cut moves into the silence beside the words rather
+   * than sitting on the last phoneme — Phase 1's "on the pause, not the
+   * phoneme". With recogniser timings it does not, because the gap they
+   * report is fuzzier than the room it would make. Optional, and recogniser
+   * by default, so a caller with no opinion gets what it always got.
+   */
+  timing?: Timing,
 ): Edl {
   const out: EdlCut[] = [];
 
@@ -130,7 +141,7 @@ export function buildEdl(
     const key = block.mediaKey || sourceKey;
     if (!key) continue;
 
-    for (const range of blockRanges(block, cuts)) {
+    for (const range of blockRanges(block, cuts, timing)) {
       if (range.end_ms <= range.start_ms) continue;
       out.push({
         /*

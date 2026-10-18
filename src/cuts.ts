@@ -13,6 +13,8 @@
  * whole source transcript rather than one block.
  */
 
+import { frameAccurate, timingOf, type Timing } from "./align.ts";
+
 export interface Cut {
   /** Segment index in the source transcript. */
   seg: number;
@@ -40,6 +42,57 @@ export interface Cut {
 export const PAUSE_OVER_MS = 2000;
 /** And this much of it is left behind. Cutting a pause to nothing sounds spliced. */
 export const PAUSE_BEAT_MS = 260;
+
+/**
+ * HOW FAR A CUT MOVES INTO THE SILENCE BESIDE IT.
+ *
+ * Phase 1's acceptance: "a word-span cut renders with the audio cut on the
+ * pause, not the phoneme". A forced aligner puts the end of a word at the
+ * end of its last phoneme, which is earlier than where the word actually
+ * stops being heard — the release, the breath, the decay of the room. Cut
+ * exactly there and the join clicks; cut in the gap and it does not.
+ *
+ * Sixty milliseconds is a frame and a half at 25fps: enough for a release
+ * and an onset, short enough that nothing of the neighbouring word arrives.
+ * It is also only ever HALF the real gap, so two cuts either side of one
+ * silence can never meet in the middle and overlap.
+ */
+export const EDGE_MS = 60;
+
+/**
+ * A RUN OF SURVIVING WORDS, with room to breathe at both ends.
+ *
+ * Shared by `playableRanges` and `blockRanges` because those two already
+ * carry a comment saying they must not disagree — the footer's runtime and
+ * the rendered file are built from them, and the whole point of this
+ * refinement is that the number a person reads is the file they get.
+ *
+ * ONLY WHEN THE TIMINGS CAN TAKE IT. A recogniser timing is worth about
+ * 110 ms (src/align.ts), so the gap it reports is fuzzy by more than the
+ * padding is wide — the next word's true onset could already be inside the
+ * room this makes. `frameAccurate` is the question to ask, and it is the
+ * question the timing contract was written for: this does not refuse, it
+ * declines the refinement and cuts where it always did.
+ */
+export function runRange(
+  words: StoredWord[],
+  first: number,
+  last: number,
+  bounds: { start_ms: number; end_ms: number },
+  breathing: boolean,
+): { start_ms: number; end_ms: number } {
+  let start_ms = wordStartMs(words[first]);
+  let end_ms = wordEndMs(words[last]);
+  if (!breathing) return { start_ms, end_ms };
+
+  /* Half the gap, capped — and never past the line's own bounds, which came
+     from the recogniser's sentence split and are somebody else's edge. */
+  const before = first > 0 ? wordEndMs(words[first - 1]) : bounds.start_ms;
+  const after = last < words.length - 1 ? wordStartMs(words[last + 1]) : bounds.end_ms;
+  start_ms -= Math.max(0, Math.min(EDGE_MS, Math.floor((start_ms - before) / 2)));
+  end_ms += Math.max(0, Math.min(EDGE_MS, Math.floor((after - end_ms) / 2)));
+  return { start_ms, end_ms };
+}
 
 /** Parses the stored JSON, treating anything malformed as "no cuts". */
 export function parseCuts(json: string | null): Cut[] {
@@ -165,8 +218,16 @@ export function parseWords(json: string | null): StoredWord[] {
  * removes footage: the render is built from these ranges. Adjacent survivors
  * are merged so the render does not cut and rejoin at every word boundary.
  */
-export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ start_ms: number; end_ms: number }> {
+export function playableRanges(
+  segments: Segmentish[],
+  cuts: Cut[],
+  /* Where the word timings came from. Recogniser by default, which is what
+     every caller before forced alignment had and what every caller that has
+     no opinion should keep getting. */
+  timing: Timing = timingOf("recogniser"),
+): Array<{ start_ms: number; end_ms: number }> {
   const out: Array<{ start_ms: number; end_ms: number }> = [];
+  const breathing = frameAccurate(timing);
 
   for (const seg of segments) {
     if (isSegmentCut(cuts, seg.idx)) continue;
@@ -182,10 +243,13 @@ export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ sta
       continue;
     }
 
+    /* The run's FIRST word as well as its edges, because where a cut should
+       land is a question about the words either side of it. */
     let run: { start_ms: number; end_ms: number } | null = null;
+    let first = 0;
     for (let i = 0; i < words.length; i++) {
       if (isWordCut(cuts, seg.idx, i)) {
-        if (run) out.push(run);
+        if (run) out.push(runRange(words, first, i - 1, seg, breathing));
         run = null;
         continue;
       }
@@ -198,17 +262,28 @@ export function playableRanges(segments: Segmentish[], cuts: Cut[]): Array<{ sta
        * This is what "tighten" has to mean: the words either side both stay,
        * and only the gap between them goes. Striking the preceding word — the
        * first attempt — removed something that was said.
+       *
+       * Its own end rule, not the breathing one: PAUSE_BEAT_MS is a beat of
+       * silence left on purpose, and padding it as well would take 60 ms more
+       * out of a gap somebody asked to keep part of.
        */
       if (run && tightening && start - run.end_ms > PAUSE_OVER_MS) {
-        out.push({ start_ms: run.start_ms, end_ms: run.end_ms + PAUSE_BEAT_MS });
+        out.push({
+          start_ms: runRange(words, first, i - 1, seg, breathing).start_ms,
+          end_ms: run.end_ms + PAUSE_BEAT_MS,
+        });
         run = { start_ms: start, end_ms: end };
+        first = i;
         continue;
       }
 
       if (run) run.end_ms = end;
-      else run = { start_ms: start, end_ms: end };
+      else {
+        run = { start_ms: start, end_ms: end };
+        first = i;
+      }
     }
-    if (run) out.push(run);
+    if (run) out.push(runRange(words, first, words.length - 1, seg, breathing));
   }
 
   // Merge ranges that touch, so the render does not stitch at every boundary.

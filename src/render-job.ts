@@ -286,7 +286,17 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
 
   /* Two keys: the master for the render, the editing copy for the preview.
      playableKey is the one definition of which file you watch. */
-  const edl = buildEdl(source?.r2_key ?? "", blocks, cuts, source ? playableKey(source) : undefined);
+  /*
+   * THE CUT LANDS WHERE THE TIMINGS ALLOW.
+   *
+   * A source that has been through forced alignment knows where the silence
+   * between two words is, so the join goes there instead of on the last
+   * phoneme. One that has not keeps the cut it always had. This is the only
+   * place the two paths differ, and it is why the whole timing contract
+   * exists rather than a boolean somewhere.
+   */
+  const timing = await timingForProject(env, project.id);
+  const edl = buildEdl(source?.r2_key ?? "", blocks, cuts, source ? playableKey(source) : undefined, timing);
   return { edl, source, segments };
 }
 

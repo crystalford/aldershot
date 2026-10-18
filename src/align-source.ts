@@ -292,15 +292,33 @@ export async function timingForProject(env: Env, projectId: string): Promise<Tim
    * the whole library, which is what "three minutes on whatever I have"
    * means and what every project made before the column existed has.
    */
-  const project = await env.DB.prepare(
-    "SELECT user_id, scope FROM v2_projects WHERE id = ? AND deleted_at IS NULL",
-  )
-    .bind(projectId)
-    .first<{ user_id: string; scope: string | null }>();
+  /*
+   * ANY DOUBT AT ALL IS `recogniser`.
+   *
+   * This answers "what are these timings worth?", and the cautious answer is
+   * the one that makes a cut land where it always did. A project that is not
+   * there, a column that is not there, a database that will not answer — all
+   * of them are doubt, and none of them is a reason to fail a render over a
+   * hint. It is wrapped for that reason and not to hide a bug: the only
+   * consequence of the fallback is a join on the phoneme instead of in the
+   * pause, which is this product's behaviour everywhere alignment has not run.
+   */
+  let project: { user_id: string; scope: string | null } | null = null;
+  try {
+    project = await env.DB.prepare(
+      "SELECT user_id, scope FROM v2_projects WHERE id = ? AND deleted_at IS NULL",
+    )
+      .bind(projectId)
+      .first<{ user_id: string; scope: string | null }>();
+  } catch {
+    return timingOf("recogniser");
+  }
   if (!project) return timingOf("recogniser");
 
   const scope = scopeOf(project);
-  const { results } = scope
+  let results: Array<{ timing_source: string | null }> | undefined;
+  try {
+    ({ results } = scope
     ? await env.DB.prepare(
         `SELECT DISTINCT timing_source FROM sources
           WHERE deleted_at IS NULL AND id IN (${scope.map(() => "?").join(",")})`,
@@ -311,7 +329,10 @@ export async function timingForProject(env: Env, projectId: string): Promise<Tim
         "SELECT DISTINCT timing_source FROM sources WHERE user_id = ? AND deleted_at IS NULL",
       )
         .bind(project.user_id)
-        .all<{ timing_source: string | null }>();
+        .all<{ timing_source: string | null }>());
+  } catch {
+    return timingOf("recogniser");
+  }
 
   const rows = results ?? [];
   /* No rows is not "perfect", it is "nothing to go on" — and a cut with no

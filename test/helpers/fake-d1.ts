@@ -80,24 +80,39 @@ export function fakeR2(seed: Record<string, number> = {}) {
 }
 
 /** The tables library-ops touches, in the shape src/schema.ts creates them. */
+/*
+ * KEPT HONEST BY test/fake-schema.test.ts.
+ *
+ * These statements are written by hand while migrations/schema.sql is
+ * generated from the code that runs, so they drift — and the drift is
+ * invisible until a query reaches a column the fixture never heard of and
+ * fails with an error about SQL inside whatever was really being tested.
+ * `v2_projects.scope` was real for weeks before anything noticed. That test
+ * fails if a table declared here is missing a column the real one has, and
+ * it is how the eight above were found.
+ */
 export function schema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE v2_users (id TEXT PRIMARY KEY, email TEXT, name TEXT, plan TEXT,
       is_owner INTEGER DEFAULT 0, created_at INTEGER, stripe_customer_id TEXT);
     CREATE TABLE sources (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, filename TEXT,
-      origin TEXT, r2_key TEXT, proxy_r2_key TEXT, duration_s INTEGER, width INTEGER, height INTEGER,
+      origin TEXT, r2_key TEXT, proxy_r2_key TEXT, stream_uid TEXT,
+      duration_s INTEGER, width INTEGER, height INTEGER,
       transcript_state TEXT, poster_r2_key TEXT, cut_title TEXT, brief TEXT, bytes INTEGER,
+      timing_source TEXT, aligned_at INTEGER,
       created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE segments (id TEXT PRIMARY KEY, source_id TEXT, idx INTEGER,
       start_ms INTEGER, end_ms INTEGER, speaker TEXT, text TEXT, words TEXT);
     CREATE TABLE v2_projects (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, kind TEXT,
       source_id TEXT, brief TEXT, has_acts INTEGER DEFAULT 0, runtime_s INTEGER,
       pct INTEGER DEFAULT 0, next_action TEXT, poster_r2_key TEXT, cuts TEXT, block_order TEXT,
+      scope TEXT,
       archived_at INTEGER, created_at INTEGER, updated_at INTEGER, deleted_at INTEGER);
     CREATE TABLE v2_clips (id TEXT PRIMARY KEY, user_id TEXT, source_id TEXT,
-      start_ms INTEGER, end_ms INTEGER, quote TEXT, why TEXT, score INTEGER, heat INTEGER,
+      start_ms INTEGER, end_ms INTEGER, start_word INTEGER, end_word INTEGER,
+      quote TEXT, why TEXT, score INTEGER, heat INTEGER,
       frame_r2_key TEXT, kept INTEGER DEFAULT 0, origin TEXT, used_count INTEGER DEFAULT 0,
-      created_at INTEGER, deleted_at INTEGER);
+      embedded_at INTEGER, created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE v2_threads (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, summary TEXT,
       clip_count INTEGER, created_at INTEGER);
     CREATE TABLE v2_clip_threads (clip_id TEXT, thread_id TEXT, confidence REAL);
@@ -107,7 +122,7 @@ export function schema(db: DatabaseSync): void {
     CREATE TABLE renders (id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, kind TEXT,
       format TEXT, aspect TEXT, caption_style TEXT, clip_id TEXT, r2_key TEXT,
       stream_uid TEXT, duration_s INTEGER, bytes INTEGER, state TEXT, error TEXT,
-      created_at INTEGER);
+      enhance INTEGER, created_at INTEGER);
     CREATE TABLE passes (id TEXT PRIMARY KEY, project_id TEXT, source_id TEXT, n INTEGER,
       instruction TEXT, result TEXT, undo TEXT, undone_at INTEGER, first_change TEXT,
       model TEXT, tokens_in INTEGER, tokens_out INTEGER, created_at INTEGER);
