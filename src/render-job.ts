@@ -15,6 +15,8 @@ import type { Env } from "./env.ts";
 import { FRAME_MS, frameAccurate } from "./align.ts";
 import { timingForProject } from "./align-source.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
+import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
+import { loadRules } from "./rule-store.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
@@ -249,6 +251,57 @@ export async function listFinished(
  * read from — the number the user sees and the video they get must come from
  * the same place.
  */
+/**
+ * THE ENVELOPE, CHECKED AT THE DOOR.
+ *
+ * compute()'s four reducers cannot split a must-keep group any more — each of
+ * them drops whole groups (see src/envelope.ts). This is the assertion that
+ * makes that a guarantee rather than four careful functions: invariant 2 says
+ * validate and measure every edit before showing it, and never trust a claim
+ * of success. A render is the last point where that is still cheap.
+ *
+ * It is deliberately ignorant of HOW a group got split. A hand cut can do it
+ * and a person is entitled to — step 6 of the engine overrides everything
+ * above it — but then they are told, here, rather than publishing a claim
+ * whose qualifier they struck three edits ago and forgot. A fifth reducer
+ * added by someone who has not read envelope.ts lands here too.
+ *
+ * KEPT means "has a beat that is not struck whole". A moment with no beat at
+ * all is not in the render, which is the same thing to a viewer, so the two
+ * cases are not distinguished. A group with nothing kept is not a break: the
+ * whole proposition is simply not in this cut.
+ */
+export async function envelopeBreaks(
+  env: Env,
+  projectId: string,
+): Promise<Array<{ ids: Array<string | number>; line: string }>> {
+  const bs = bindings(await loadRules(env.DB, projectId));
+  if (!bs.length) return [];
+
+  const { results } = await env.DB.prepare(
+    `SELECT clip_id, struck, text FROM beats WHERE project_id=? AND clip_id IS NOT NULL`,
+  )
+    .bind(projectId)
+    .all<{ clip_id: string; struck: string | null; text: string | null }>();
+
+  const kept = new Set<string>();
+  const textOf = new Map<string, string>();
+  for (const row of results ?? []) {
+    if (row.text) textOf.set(row.clip_id, row.text);
+    /* The same reading of the column as blocks.ts line 239, which is the one
+       place that says what a cut is. Two readings of "struck" would disagree
+       the first time either was touched. */
+    const struckWhole = Boolean(row.struck) && row.struck !== "0";
+    if (!struckWhole) kept.add(row.clip_id);
+  }
+
+  const isKept = (id: string | number) => kept.has(String(id));
+  return splitBindings(bs, () => true, isKept).map((b: Binding) => ({
+    ids: b.ids,
+    line: splitLine(b, (id: string | number) => textOf.get(String(id)), isKept),
+  }));
+}
+
 export async function edlForProject(env: Env, project: Project, userId: string) {
   /*
    * A PROJECT NEED NOT HAVE A VIDEO.
@@ -364,6 +417,14 @@ export async function runRender(
 
     const render = await env.DB.prepare(`SELECT * FROM renders WHERE id=?`).bind(renderId).first<RenderRow>();
     if (!render) return void (await fail("That render isn't there any more."));
+
+    /*
+     * Before anything is built, because this is a refusal rather than a
+     * failure: nothing has been spent yet and the fix is one press in the
+     * editor. doc 09: "a variant that would split them does not render".
+     */
+    const broken = await envelopeBreaks(env, opts.projectId);
+    if (broken.length) return void (await fail(broken[0].line));
 
     await startJob(env.DB, jobId, "putting it together");
     await env.DB.prepare(`UPDATE renders SET state='running' WHERE id=?`).bind(renderId).run();

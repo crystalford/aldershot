@@ -18,10 +18,20 @@
  * like quirks.
  */
 
+import { bindings } from "./envelope.ts";
 import { contentWords } from "./moment-tags.ts";
 import { opening, problems } from "./shorts.ts";
 
-export type RuleKind = "keep" | "drop" | "order" | "gap" | "cap" | "len" | "count" | "hook";
+export type RuleKind =
+  | "keep"
+  | "drop"
+  | "order"
+  | "gap"
+  | "cap"
+  | "len"
+  | "count"
+  | "hook"
+  | "must_keep";
 export type Order = "time" | "strand" | "open";
 
 export interface Rule {
@@ -33,6 +43,12 @@ export interface Rule {
   /** What it matches: a tag, one moment, or a set of them. */
   tag?: string;
   cid?: number | string;
+  /**
+   * The moments a rule names — and for `must_keep`, the ones tied together.
+   *
+   * Doc 03 writes must-keep as (cid_a, cid_b). See the header of
+   * src/envelope.ts for why it is this column and two-or-more instead.
+   */
   cids?: Array<number | string>;
   /**
    * OR A SUBJECT, BY THE WORDS THAT WERE SAID.
@@ -331,18 +347,69 @@ export function compute(
     }
   }
 
+  /*
+   * THE ENVELOPE, set up before the four reducers that could break it.
+   *
+   * must_keep ties moments that mean something different apart from what they
+   * mean together — a claim and its qualifier. Each of the four steps below
+   * chooses what to leave out, so each of them is a way to keep a claim and
+   * lose the thing that qualified it, which is the one edit this product must
+   * never make on its own. They are made group-aware rather than trusted:
+   * what a reducer drops, it drops whole.
+   *
+   * Together-or-NEITHER, not together-or-both. A ceiling that cannot be met
+   * is a cut that is too long; a claim shown without its qualifier is a cut
+   * that says something the footage does not. So the pair goes out as a unit
+   * and length stays a dial, which is what doc 09 means by "length as a dial
+   * without context collapse".
+   */
+  const env = bindings(on);
+  const groupOf = new Map<string, Judged[]>();
+  for (const b of env) {
+    const want = new Set(b.ids.map((id) => String(id)));
+    /* In the set's own order, and only what this scope actually holds. */
+    const members = st.filter((p) => want.has(String(p.id)));
+    for (const mem of members) groupOf.set(String(mem.id), members);
+  }
+  /** A moment's group-mates in set order, itself included; itself alone when bound to nothing. */
+  const peers = (m: Judged): Judged[] => groupOf.get(String(m.id)) ?? [m];
+  /** What a reducer drops, it drops whole. Returns the seconds that frees. */
+  const dropGroup = (m: Judged, by: Rule["id"]): number => {
+    let freed = 0;
+    for (const p of peers(m)) {
+      if (!p.in) continue;
+      p.in = false;
+      p.dropId = by;
+      freed += wdur(p);
+    }
+    return freed;
+  };
+  /** A group's length is its members' length: the proposition is the unit. */
+  const groupDur = (m: Judged): number =>
+    peers(m).filter((p) => p.in).reduce((n, p) => n + wdur(p), 0);
+  /** Stable identity for a group, so count() can treat it as one item. */
+  const groupKey = (m: Judged): string => String(peers(m)[0].id);
+
   /* 5. cap: drop until under the ceiling, never a `strong` moment. */
   const cap = on.find((r) => r.kind === "cap");
   if (cap && typeof cap.secs === "number") {
     let total = st.filter((m) => m.in).reduce((n, m) => n + wdur(m), 0);
     const inCut = st.filter((m) => m.in);
-    const candidates = inCut.filter((m) => !m.tags.includes("strong"));
-    const protected_ = inCut.filter((m) => m.tags.includes("strong"));
+    /*
+     * A group inherits the strongest protection any member has. Without this
+     * the cap would drop the ordinary half of a pair, the envelope would take
+     * the `strong` half out with it, and step 5 would have broken its own
+     * documented promise never to drop a strong moment — by obeying a rule
+     * written to protect meaning.
+     */
+    const strongHere = (m: Judged) => peers(m).some((p) => p.tags.includes("strong"));
+    const candidates = inCut.filter((m) => !strongHere(m));
+    const protected_ = inCut.filter((m) => strongHere(m));
     for (const m of capDropOrder(candidates, protected_)) {
       if (total <= cap.secs) break;
-      m.in = false;
-      m.dropId = cap.id;
-      total -= wdur(m);
+      /* It may already have gone out with a group-mate earlier in this loop. */
+      if (!m.in) continue;
+      total -= dropGroup(m, cap.id);
     }
   }
 
@@ -358,11 +425,12 @@ export function compute(
   if (len && (typeof len.minSecs === "number" || typeof len.maxSecs === "number")) {
     for (const m of st) {
       if (!m.in) continue;
-      const d = wdur(m);
+      /* A bound pair is one thing of one length, even when that length is the
+         sum of two moments: a window is about what the viewer sits through. */
+      const d = groupDur(m);
       if ((typeof len.minSecs === "number" && d < len.minSecs) ||
           (typeof len.maxSecs === "number" && d > len.maxSecs)) {
-        m.in = false;
-        m.dropId = len.id;
+        dropGroup(m, len.id);
       }
     }
   }
@@ -379,10 +447,15 @@ export function compute(
   if (hook) {
     for (const m of st) {
       if (!m.in) continue;
-      if (!hooksFast(m, wdur(m))) {
-        m.in = false;
-        m.dropId = hook.id;
-      }
+      /*
+       * A group is judged once, where it opens. The qualifier on a claim is
+       * allowed to open on "but" and to point back at the claim — that is
+       * what makes it a qualifier, and hooksFast would fail every one of
+       * them for exactly the thing they exist to do.
+       */
+      const first = peers(m).find((p) => p.in);
+      if (first !== m) continue;
+      if (!hooksFast(m, wdur(m))) dropGroup(m, hook.id);
     }
   }
 
@@ -401,13 +474,17 @@ export function compute(
   const count = on.find((r) => r.kind === "count");
   if (count && typeof count.n === "number" && count.n >= 0) {
     let kept = 0;
+    /* A bound group is one item on the shortlist, counted at its first
+       member: "the best eight" means eight things to watch, and a claim
+       with its qualifier is one of them. */
+    const counted = new Set<string>();
     for (const m of st) {
       if (!m.in) continue;
+      const k = groupKey(m);
+      if (counted.has(k)) continue;
+      counted.add(k);
       kept += 1;
-      if (kept > count.n) {
-        m.in = false;
-        m.dropId = count.id;
-      }
+      if (kept > count.n) dropGroup(m, count.id);
     }
   }
 
