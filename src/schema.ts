@@ -143,6 +143,24 @@ const STATEMENTS: string[] = [
      clip_ids TEXT,
      ord TEXT,
      secs INTEGER,
+     /*
+      * THE KIND-SPECIFIC REST, AS JSON.
+      *
+      * The data model (doc 03) writes a rule as kind + params, and for a while
+      * this table had no params at all: tag, clip_ids, ord and secs were every
+      * field any kind could carry. The kinds added since carry more — len a
+      * window, count a number, a subject rule the words it matches — and all
+      * three were written nowhere and came back undefined, which compute()
+      * reads as "no window", "no limit" and "no words": a rule that still reads
+      * correctly in the pane and has no effect on the cut. Invariant 1 says the
+      * rules ARE the cut, so a rule that does not survive a reload is not a
+      * rule, and this one failed silently in both directions.
+      *
+      * The four columns above stay columns because they are the fields shared
+      * across kinds. This one is the per-kind remainder, and avoid (topic, re)
+      * and fx (fx, scope) land here when they are built.
+      */
+     params TEXT,
      hand INTEGER NOT NULL DEFAULT 0,
      wins INTEGER NOT NULL DEFAULT 0,
      created_at INTEGER NOT NULL,
@@ -984,6 +1002,20 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * useless.
    */
   { table: "passes", column: "first_change", ddl: "ALTER TABLE passes ADD COLUMN first_change TEXT" },
+
+  /*
+   * THE KIND-SPECIFIC REST OF A RULE.
+   *
+   * See the params column in the rules table above for what it holds and why
+   * it had to exist. It is listed here as well because there is no migration
+   * runner: the CREATE above is IF NOT EXISTS, so every database that already
+   * had a rules table would have kept the old thirteen columns and every save
+   * would have failed on "table rules has no column named params" — a cut that
+   * cannot be saved at all, which is louder than the bug being fixed but no
+   * better. A column added to a table that already exists belongs in both
+   * places, always.
+   */
+  { table: "rules", column: "params", ddl: "ALTER TABLE rules ADD COLUMN params TEXT" },
 ];
 
 let ensured = false;

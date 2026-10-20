@@ -59,6 +59,35 @@ for (const f of walk(path.join(ROOT, 'src'))) {
     const stmt = m[1];
     const name = (stmt.match(/create (?:table|(?:unique )?index) if not exists (\w+)/i) || [])[1];
     if (!name || seen.has(name)) continue;
+    /*
+     * A TRUNCATED STATEMENT IS NEVER WRITTEN OUT.
+     *
+     * The capture above is delimited by backticks, so a single backtick
+     * anywhere inside the statement -- including inside a SQL comment --
+     * ends it early. That is the same trap src/ui/client.ts carries a
+     * warning about, one level up: there the template literal breaks and
+     * tsc says so, here the generator just captures less and reports the
+     * same statement count as before. Measured: a comment containing a
+     * backticked filename cut the rules table off after three columns and
+     * wrote "*;" where the rest of it should have been, and the only
+     * symptom was a schema document missing five columns, two uniques and
+     * a primary key.
+     *
+     * Parentheses have to balance and the statement has to close on one,
+     * or this stops rather than writing a document that looks complete.
+     */
+    let depth = 0;
+    for (const ch of stmt) {
+      if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
+    }
+    if (depth !== 0 || !/\)\s*$/.test(stmt)) {
+      console.error(
+        `\nschema-doc: ${name} in ${path.relative(ROOT, f)} did not close.\n` +
+          `A backtick inside the statement ends the capture early -- check its comments.\n`,
+      );
+      process.exit(1);
+    }
     seen.add(name);
     statements.push({ file: path.relative(ROOT, f), sql: stmt.replace(/\n   /g, '\n  ').trim() });
   }

@@ -126,6 +126,24 @@ CREATE TABLE IF NOT EXISTS rules (
     clip_ids TEXT,
     ord TEXT,
     secs INTEGER,
+    /*
+     * THE KIND-SPECIFIC REST, AS JSON.
+     *
+     * The data model (doc 03) writes a rule as kind + params, and for a while
+     * this table had no params at all: tag, clip_ids, ord and secs were every
+     * field any kind could carry. The kinds added since carry more — len a
+     * window, count a number, a subject rule the words it matches — and all
+     * three were written nowhere and came back undefined, which compute()
+     * reads as "no window", "no limit" and "no words": a rule that still reads
+     * correctly in the pane and has no effect on the cut. Invariant 1 says the
+     * rules ARE the cut, so a rule that does not survive a reload is not a
+     * rule, and this one failed silently in both directions.
+     *
+     * The four columns above stay columns because they are the fields shared
+     * across kinds. This one is the per-kind remainder, and avoid (topic, re)
+     * and fx (fx, scope) land here when they are built.
+     */
+    params TEXT,
     hand INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
@@ -503,3 +521,4 @@ ALTER TABLE passes ADD COLUMN undo TEXT;
 ALTER TABLE passes ADD COLUMN undone_at INTEGER;
 ALTER TABLE usage_events ADD COLUMN outcome TEXT;
 ALTER TABLE passes ADD COLUMN first_change TEXT;
+ALTER TABLE rules ADD COLUMN params TEXT;
