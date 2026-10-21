@@ -923,6 +923,16 @@ async function checkStrings() {
         "sentence beside it leads on what the person gets, because most " +
         "people reading it have never had a dispute and should still open it.",
     ],
+    [
+      "Before you post &nearr;",
+      "Doc 09's checklist, and the first of the three links because it is the " +
+        "one read first. The prototype has no Before you post step at all, " +
+        "which is why none of these three can be matched against it.\n\n" +
+        "The phrase is doc 09's own heading and is what the step is called " +
+        "everywhere else in the handoff, so renaming it here would leave the " +
+        "product and its documentation using different words for the same " +
+        "screen.",
+    ],
   ]);
 
   const SHORT = 24;

@@ -61,13 +61,23 @@ export function exportPanel(projectId: string, plan: string): string {
       <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
     </div>
     <!--
+      THE CHECKLIST, first of the three because it is the one read first.
+      It says what Aldershot checked and what it cannot check at all — three
+      of doc 09's seven lines have nothing behind them in this product, and
+      a tick beside them would be worse than no checklist.
+    -->
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/before-post" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Before you post &nearr;</a>
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.</span>
+    </div>
+    <!--
       THE WAY OUT, beside the way to a finished file.
       A timeline is not a render: it needs no job and no waiting, because the
       edit already is data. It sits here rather than behind its own control
       because this is the panel a person opens when they are thinking about
       where this video goes next.
     -->
-    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
       <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
     </div>

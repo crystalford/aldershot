@@ -72,6 +72,10 @@ import { UNSURE, classify } from "./classify.ts";
 import { allowed, type Move, type Source as PictureSource } from "./pictures.ts";
 import { cueSheetFor, cueSheetText } from "./cuesheet.ts";
 import { commentary, disputeFor, disputeText, usedSeconds } from "./dispute.ts";
+import { beforePost, checklistText } from "./beforepost.ts";
+import { overTheLimit, sidecarWanted } from "./captions.ts";
+import { captionCues } from "./edl.ts";
+import { loudnessVerdict } from "./loudness.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3259,6 +3263,70 @@ app.get("/api/projects/:id/dispute", async (c) => {
       },
     },
   );
+});
+
+/**
+ * BEFORE YOU POST.
+ *
+ * Doc 09's checklist, assembled from everything that was written down as the
+ * cut was made — the dispute file's rows, the cue sheet's, the captions the
+ * EDL produces, and the loudness of the last export of this project.
+ *
+ * NOTHING IS COMPUTED SPECIALLY FOR IT and nothing is asked of a model. If a
+ * line here could only be answered by going and looking at the video now,
+ * that line would be a promise this product makes once and breaks whenever
+ * the job is slow.
+ *
+ * THE LOUDNESS IS THE LAST RENDER'S, and is "not measured" before there is
+ * one. A cut that has never been exported has no loudness — the number is a
+ * property of a finished file, not of a plan — and saying so is better than
+ * predicting it.
+ */
+app.get("/api/projects/:id/before-post", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const external = await disputeFor(c.env.DB, project.id);
+  const pictures = await cueSheetFor(c.env.DB, project.id);
+  const built = await edlForProject(c.env, project, user.id);
+  const cues = built ? captionCues(built.edl) : [];
+
+  const last = await c.env.DB
+    .prepare(
+      `SELECT lufs, true_peak, caption_style FROM renders
+        WHERE project_id=? AND user_id=? AND state='ready'
+        ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(project.id, user.id)
+    .first<{ lufs: number | null; true_peak: number | null; caption_style: string | null }>();
+
+  const lines = beforePost({
+    external,
+    commentary: commentary(
+      built ? built.edl.durationMs / 1000 : null,
+      external.reduce((n, e) => n + usedSeconds(e), 0),
+    ),
+    pictures,
+    loudness: loudnessVerdict({
+      lufs: last?.lufs ?? null,
+      truePeak: last?.true_peak ?? null,
+      lra: null,
+    }),
+    tooFast: overTheLimit(cues),
+    sidecar: sidecarWanted(last?.caption_style ?? null),
+    cueCount: cues.length,
+    everRendered: Boolean(last),
+  });
+
+  const name = (project.title || "before-you-post").replace(/[^\w.\- ]/g, "_");
+  return new Response(checklistText(lines, project.title || "Untitled"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "content-disposition": `attachment; filename="${name} before you post.txt"`,
+    },
+  });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {
