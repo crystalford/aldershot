@@ -32,6 +32,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
+import { callReason } from "./llm.ts";
 import { VERDICTS, isVerdict, type Verdict } from "./eval-set.ts";
 
 /**
@@ -355,15 +356,22 @@ export async function judge(env: Env, claim: string, candidates: Candidate[]): P
   }
 
   const ids = shortIds(candidates);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
-  const res = await run(model.id, {
-    messages: [
-      { role: "system", content: systemPrompt() },
-      { role: "user", content: userPrompt(claim, candidates, ids) },
-    ],
-    response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 2000,
-  });
+  /*
+   * Through callReason, which is the only thing that knows how to speak to
+   * either provider. This used to call env.AI.run with model.id whatever the
+   * resolved provider said — so the day somebody set ANTHROPIC_API_KEY, the
+   * judge would have asked Workers AI for "claude-sonnet-5".
+   */
+  const { raw: res } = await callReason(
+    env,
+    model,
+    {
+      system: systemPrompt(),
+      user: userPrompt(claim, candidates, ids),
+      maxTokens: 2000,
+      schema: SCHEMA,
+    },
+  );
 
   const { tokensIn, tokensOut } = usageTokens(res);
   return { judgements: parseJudgements(res, candidates, ids, model.id), tokensIn, tokensOut, model: model.id };

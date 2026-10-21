@@ -28,6 +28,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
+import { callReason } from "./llm.ts";
 import { MOVES, type Move } from "./pictures.ts";
 import { momentTags } from "./moment-tags.ts";
 
@@ -259,14 +260,13 @@ export async function classify(env: Env, lines: Line[]): Promise<ClassifyResult>
    * words, and the model is being asked for the ones that are not.
    */
   const ids = shortIds(lines);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
-  const res = await run(model.id, {
-    messages: [
-      { role: "system", content: systemPrompt() },
-      { role: "user", content: userPrompt(lines, ids) },
-    ],
-    response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 3000,
+  /* Through callReason: the resolved provider decides who is spoken to, and
+     this used to hand an Anthropic model id to Workers AI. */
+  const { raw: res } = await callReason(env, model, {
+    system: systemPrompt(),
+    user: userPrompt(lines, ids),
+    maxTokens: 3000,
+    schema: SCHEMA,
   });
 
   const { tokensIn, tokensOut } = usageTokens(res);
