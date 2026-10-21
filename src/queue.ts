@@ -299,6 +299,28 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
           "Couldn't line up the words. The cut still works, on the recogniser's own timings.",
         ));
       }
+      /*
+       * A PARTIAL RUN FINISHES, AND SAYS SO.
+       *
+       * Not a failure: most of the video did line up and those timings are
+       * better than they were. But it is not a clean success either, and the
+       * source has correctly refused to claim frame accuracy — so the job
+       * saying nothing would leave that refusal with no explanation anywhere
+       * a person could find it.
+       */
+      if (out.failedWindows) {
+        console.log(
+          `[align] ${msg.sourceId}: ${out.failedWindows} window(s) came back empty — ` +
+            `${out.aligned} words lined up, ${out.kept} left on the recogniser's timings, ` +
+            `so this source does not claim frame accuracy`,
+        );
+        await advance(
+          env.DB,
+          msg.jobId,
+          100,
+          "lined up most of it — some of the video kept its original timings",
+        );
+      }
       return void (await finishJob(env.DB, msg.jobId));
     }
     case "judge": {

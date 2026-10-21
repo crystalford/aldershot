@@ -61,6 +61,14 @@ export interface AlignOutcome {
   kept: number;
   /** Windows that returned nothing at all. */
   failedWindows: number;
+  /**
+   * Whether the source may now claim frame-accurate timings.
+   *
+   * False when any window failed, however many succeeded. See the comment at
+   * the write below: the claim is about the whole video, and a video with a
+   * minute of recogniser timings in the middle of it is not frame-accurate.
+   */
+  claimsForced: boolean;
   /** How many words had to be pulled back into order. See `monotonic`. */
   repaired: number;
 }
@@ -171,6 +179,38 @@ export function applyToSegments(
  * failure path records it — invariant 7: a handler that swallowed this would
  * leave a source that says it was aligned and was not.
  */
+/**
+ * How many windows did not come back usable.
+ *
+ * A window that returned `ok: false` and a batch that returned FEWER results
+ * than it was given windows are the same failure to the words inside them:
+ * stitchAlignment reads `results[wi]` and silently skips anything missing.
+ * Counting only `!r.ok` would miss a truncated batch entirely, which is the
+ * shape a container that dies halfway returns.
+ */
+export function failedWindowCount(windows: number, results: Array<{ ok: boolean }>): number {
+  let n = 0;
+  for (let i = 0; i < windows; i += 1) if (!results[i]?.ok) n += 1;
+  return n;
+}
+
+/**
+ * May this source now claim frame-accurate timings?
+ *
+ * ONLY IF EVERY WINDOW CAME BACK. Not "if most did", and not "if anything
+ * moved" — which is what the write used to say, and which covered the run
+ * where every window failed while missing the one that matters more. One
+ * window of thirty failing left a minute of the video on recogniser timings
+ * inside a source that claimed frame accuracy, and nothing downstream could
+ * tell: stitchAlignment skips a failed window without a word.
+ *
+ * The words that did align keep their better timings either way. What is
+ * withheld is the claim, because the claim is about the whole video.
+ */
+export function claimsFrameAccurate(o: { moved: number; failedWindows: number }): boolean {
+  return o.moved > 0 && o.failedWindows === 0;
+}
+
 export async function alignSource(
   env: Env,
   sourceId: string,
@@ -221,6 +261,9 @@ export async function alignSource(
 
   const writes = applyToSegments(segments ?? [], moved);
   const now = Date.now();
+
+  const failedWindows = failedWindowCount(plan.length, results);
+  const claimsForced = claimsFrameAccurate({ moved: moved.size, failedWindows });
   await env.DB.batch([
     ...writes.map((w) =>
       env.DB.prepare("UPDATE segments SET words = ? WHERE source_id = ? AND idx = ?").bind(
@@ -230,16 +273,28 @@ export async function alignSource(
       ),
     ),
     /*
-     * `forced` ONLY IF SOMETHING ACTUALLY MOVED.
+     * `forced` ONLY IF EVERY WINDOW CAME BACK.
      *
-     * A run where every window failed would otherwise mark the source as
-     * frame-accurate while it still carries recogniser timings — and
-     * `frameAccurate()` exists precisely so that a cut can refuse rather
-     * than quietly do the wrong thing with numbers that were never that
-     * precise. A lie here defeats the whole contract.
+     * This said "only if something actually moved", which covered the run
+     * where EVERY window failed and missed the one that matters more: a run
+     * where one window of thirty failed wrote `forced` and then
+     * stitchAlignment skipped that window silently, so a minute of the video
+     * kept recogniser timings while the whole source claimed frame accuracy.
+     * Nothing downstream could tell. timingForProject takes the worst source
+     * in a cut on the grounds that "one unaligned video makes the whole
+     * export soft" — and then trusted a per-source answer that had quietly
+     * averaged over its own holes.
+     *
+     * `frameAccurate()` exists so a cut can refuse rather than quietly do
+     * the wrong thing with numbers that were never that precise, and the
+     * comment that used to be here already said a lie defeats the whole
+     * contract. One failed window is a smaller lie, not a different one.
+     *
+     * The words that DID align keep their better timings — they are written
+     * above either way. What is withheld is only the CLAIM.
      */
     env.DB.prepare("UPDATE sources SET timing_source = ?, aligned_at = ? WHERE id = ?").bind(
-      moved.size ? "forced" : null,
+      claimsForced ? "forced" : null,
       now,
       sourceId,
     ),
@@ -248,7 +303,8 @@ export async function alignSource(
   return {
     aligned: moved.size,
     kept: words.length - moved.size,
-    failedWindows: results.filter((r) => !r.ok).length,
+    failedWindows,
+    claimsForced,
     repaired,
   };
 }
