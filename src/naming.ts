@@ -19,7 +19,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import { meter } from "./usage.ts";
 
 /**
@@ -153,7 +153,7 @@ export async function nameCut(env: Env, text: string): Promise<{ title: string; 
   }
 
   try {
-    const model = resolveModel("reason", env, "default");
+    const model = resolveFor("name", env);
     const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
     const res = await run(model.id, {
       messages: [

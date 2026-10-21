@@ -31,7 +31,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import { callReason } from "./llm.ts";
 import { VERDICTS, isVerdict, type Verdict } from "./eval-set.ts";
 
@@ -350,7 +350,8 @@ export interface JudgeResult {
  * Shown them one at a time it has nothing to be near-miss RELATIVE TO.
  */
 export async function judge(env: Env, claim: string, candidates: Candidate[]): Promise<JudgeResult> {
-  const model = resolveModel("reason", env, "upgrade");
+  /* Load-bearing: this answer IS invariant 4. See CAPABILITIES. */
+  const model = resolveFor("judge", env);
   if (!claim.trim() || !candidates.length) {
     return { judgements: [], tokensIn: 0, tokensOut: 0, model: model.id };
   }

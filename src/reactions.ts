@@ -13,7 +13,7 @@
 
 import type { Env } from "./env.ts";
 import { groundClips, parseClips, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import type { Segment } from "./sources.ts";
 
 const SCHEMA = {
@@ -85,7 +85,7 @@ export async function placeReactions(
 ): Promise<ReactionResult> {
   if (!segments.length) return { beats: [], tokensIn: 0, tokensOut: 0, model: "" };
 
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
+  const model = resolveFor("direct", env);
   const transcript = segments.map((s) => `[${s.start_ms}-${s.end_ms}] ${s.text}`).join("\n");
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
 

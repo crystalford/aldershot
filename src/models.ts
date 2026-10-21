@@ -162,8 +162,138 @@ export const EMBED: ModelSpec = {
   native: true,
   
 };
-/** Anthropic model used for the upgraded path. */
-export const ANTHROPIC_REASON = "claude-sonnet-5";
+/* ── The Anthropic models, newest family ────────────────────────────────── */
+
+/**
+ * The most capable model available, for the work the product rests on.
+ *
+ * `claude-sonnet-5` was named here and is a family behind. That mattered less
+ * when nothing could call it — src/llm.ts is the first thing in this codebase
+ * that actually can.
+ */
+export const ANTHROPIC_BEST = "claude-opus-5-5";
+
+/*
+ * THERE IS NO MIDDLE ANTHROPIC TIER HERE, and one was written and deleted.
+ *
+ * Sonnet 5.5 would be the obvious "good enough for the less critical calls"
+ * option, and nothing in this file wants it: load-bearing work takes the best
+ * there is, long-context work stays on the 1M-window model for reasons that
+ * are about the window rather than the power, and the one latency-sensitive
+ * call wants the fastest thing available. A third constant with no caller is
+ * a decision nobody has made yet, sitting where it looks like one somebody
+ * did.
+ */
+
+/** Kept as the name the rest of the code used before capabilities existed. */
+export const ANTHROPIC_REASON = ANTHROPIC_BEST;
+
+/* ── What a call is FOR, which is what decides the model ─────────────────── */
+
+/**
+ * CAPABILITIES, NOT TIERS.
+ *
+ * There was one reasoning role and a binary tier, so every reasoning call in
+ * the product shared one model and the only question was "better or not".
+ * That was the right shape when the product cut blocks and asked a model to
+ * score them. It is the wrong shape now: the reasoning layer IS the editing,
+ * and the calls in it do not resemble each other.
+ *
+ * Deciding whether a clip backs a claim is invariant 4 — a wrong answer is a
+ * receipt that lies, on a page published to strangers. Naming a project is a
+ * title. Treating those as one decision means either overpaying for titles or
+ * underpowering the thing the product's honesty rests on, and for a long time
+ * it was the second.
+ *
+ * `loadBearing` is the word that decides. It does not mean important; it
+ * means an invariant depends on the answer being right.
+ */
+export type Capability = "judge" | "classify" | "direct" | "read" | "name" | "arrange";
+
+export interface CapabilitySpec {
+  /** Why this one gets what it gets. Read by nothing; read by people. */
+  why: string;
+  /** An invariant depends on this answer being right. */
+  loadBearing: boolean;
+  /**
+   * Needs the whole transcript in one window.
+   *
+   * A QUALITY argument, not a cost one. A 1M-token window reads a two-hour
+   * transcript in one piece; a 200k window reads it in chunks and cannot see
+   * across the joins. For "which moments carry this subject", the model that
+   * sees all of it at once is doing the better job even when it is the
+   * smaller model.
+   */
+  longContext: boolean;
+}
+
+export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
+  judge: {
+    why: "Decides whether a clip backs a claim. Invariant 4 — a wrong answer is a receipt that lies.",
+    loadBearing: true,
+    longContext: false,
+  },
+  classify: {
+    why: "Decides what job a line's picture has, which decides whether a generated picture may sit over a claim. Invariant 8.",
+    loadBearing: true,
+    longContext: false,
+  },
+  direct: {
+    why: "Decides what the video says: the claim, the beats, the order. Wrong here and the cut argues something nobody meant.",
+    loadBearing: true,
+    longContext: false,
+  },
+  read: {
+    why: "Reads a whole transcript and says which moments carry the subject. Wants the whole thing in one window more than it wants raw power.",
+    loadBearing: false,
+    longContext: true,
+  },
+  arrange: {
+    why: "Puts kept moments in an order. A deterministic solver places; this only suggests.",
+    loadBearing: false,
+    longContext: false,
+  },
+  name: {
+    why: "Titles and short labels, with somebody waiting on the result. Latency is the quality that matters here.",
+    loadBearing: false,
+    longContext: false,
+  },
+};
+
+/**
+ * The model for a capability.
+ *
+ * Load-bearing work gets the best model there is, and falls back to the best
+ * available WITHOUT a key rather than to the cheap default — the point of the
+ * fallback is to stay as close to the intended quality as the configuration
+ * allows, not to quietly become something else.
+ *
+ * Long-context work stays on the 1M-window model on purpose, which is the one
+ * place in here where the biggest model is not the best choice. See
+ * `longContext` above.
+ */
+export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string }): Resolved {
+  const spec = CAPABILITIES[cap];
+
+  if (spec.longContext) {
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+  }
+
+  if (spec.loadBearing) {
+    if (env.ANTHROPIC_API_KEY) {
+      return { provider: "anthropic", id: ANTHROPIC_BEST, context: 200_000, jsonSchema: true, diarizes: false };
+    }
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+  }
+
+  if (cap === "name") {
+    /* Fast on purpose. Somebody is watching a box where a title should
+       appear, and a better title two seconds later is a worse product. */
+    return { provider: "workers-ai", id: REASON.id, context: REASON.context, jsonSchema: true, diarizes: false };
+  }
+
+  return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+}
 
 /**
  * The reasoning upgrade WITHOUT an external account.

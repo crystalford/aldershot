@@ -26,7 +26,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 
 /** What a beat is for. The prototype's own three. */
 export const ROLES = ["subject", "counter", "outside"] as const;
@@ -116,7 +116,8 @@ function systemPrompt(topic: string): string {
  * than filled with something that does not meet it.
  */
 export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
+  /* Directing: what the video says. Not a place to save a call. */
+  const model = resolveFor("direct", env);
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
 
   const res = await run(model.id, {

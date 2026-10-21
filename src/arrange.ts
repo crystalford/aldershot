@@ -19,7 +19,7 @@
  */
 
 import type { Env } from "./env.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import { usageTokens } from "./grounding.ts";
 import type { Block } from "./blocks.ts";
 
@@ -149,7 +149,7 @@ export async function runArrange(
   const none: Arranged = { order: null, moved: 0, tokensIn: 0, tokensOut: 0 };
   if (blocks.length < 2 || blocks.length > ARRANGE_MAX) return none;
 
-  const model = resolveModel("reason", env);
+  const model = resolveFor("arrange", env);
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
 
   const lines = blocks

@@ -27,7 +27,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import { callReason } from "./llm.ts";
 import { MOVES, type Move } from "./pictures.ts";
 import { momentTags } from "./moment-tags.ts";
@@ -227,7 +227,9 @@ export interface ClassifyResult {
  * marked `certain`.
  */
 export async function classify(env: Env, lines: Line[]): Promise<ClassifyResult> {
-  const model = resolveModel("reason", env, "upgrade");
+  /* Load-bearing: this answer decides whether a generated picture may
+     sit over a claim. Invariant 8. */
+  const model = resolveFor("classify", env);
   if (!lines.length) return { lines: [], tokensIn: 0, tokensOut: 0, model: model.id };
 
   const known = new Map<string, Classified>();

@@ -13,7 +13,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 
 /** The design's own act names. */
 export const ACTS = ["Setup", "Development", "Turn", "Resolution"] as const;
@@ -120,7 +120,7 @@ export async function draftOutline(
   menu: MenuClip[],
   opts: { upgrade?: boolean } = {},
 ): Promise<EssayOutline> {
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
+  const model = resolveFor("direct", env);
   const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
 
   const res = await run(model.id, {
