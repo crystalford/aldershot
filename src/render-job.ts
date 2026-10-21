@@ -14,6 +14,7 @@
 import type { Env } from "./env.ts";
 import { FRAME_MS, frameAccurate } from "./align.ts";
 import { timingForProject } from "./align-source.ts";
+import { sidecarWanted } from "./captions.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
 import { loadRules } from "./rule-store.ts";
@@ -535,8 +536,18 @@ export async function runRender(
     const size = await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
     const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
 
-    // Subtitles alongside the render, in output time (Phase 3).
-    const srt = buildSrt(built.edl);
+    /*
+     * SUBTITLES ALONGSIDE THE RENDER, in output time (Phase 3) — unless the
+     * captions are already burned into the picture.
+     *
+     * Doc 09: "a subtitle file alongside; no stacking on burned-in
+     * subtitles". A viewer who leaves subtitles on by default gets the
+     * player's copy drawn over the one in the frame, and the overlap is
+     * unreadable in a way neither alone would be. The burned-in case is also
+     * the one doc 09 exempts for shorts, "because muted viewing is a
+     * different medium".
+     */
+    const srt = sidecarWanted(render.caption_style) ? buildSrt(built.edl) : "";
     if (srt) {
       await env.MEDIA.put(`u/${opts.userId}/renders/${renderId}.srt`, srt, {
         httpMetadata: { contentType: "application/x-subrip" },

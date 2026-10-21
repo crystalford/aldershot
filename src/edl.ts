@@ -11,7 +11,8 @@
  * export is testable without a container, an encoder, or a video file.
  */
 
-import { type Cut, wordStartMs, wordEndMs } from "./cuts.ts";
+import { type Cut, type StoredWord, wordStartMs, wordEndMs } from "./cuts.ts";
+import { cuesFromWords, stretch, wrap } from "./captions.ts";
 import { blockRanges, type Block } from "./blocks.ts";
 import type { Timing } from "./align.ts";
 
@@ -42,6 +43,15 @@ export interface EdlCut {
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
   text: string;
+  /**
+   * The words of this range, with their SOURCE timings.
+   *
+   * Carried so captions can be split on real timings rather than on an
+   * estimate — see the header of src/captions.ts for why an estimated clock
+   * is not acceptable here. Absent on a block with no word timings, such as
+   * a recording, and a cut with no words is simply never split.
+   */
+  words?: StoredWord[];
   /**
    * The label the renderer draws over this range, and null for almost all of
    * them. Carried from the block so the file and the cue sheet cannot
@@ -165,6 +175,7 @@ export function buildEdl(
         start_ms: range.start_ms,
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),
+        ...(block.words.length ? { words: wordsForRange(block, range.start_ms, range.end_ms) } : {}),
       });
     }
   }
@@ -181,6 +192,17 @@ export function buildEdl(
  * words the video no longer contains. Falls back to the line when there are no
  * word timings to go on.
  */
+/**
+ * The words of one range, by the same filter textForRange reads them with.
+ *
+ * Two filters would drift the first time either moved, and the drift would be
+ * a caption whose text and whose timings disagreed about which words are in
+ * it — which is the one failure a product built on receipts cannot have.
+ */
+function wordsForRange(block: Block, startMs: number, endMs: number): StoredWord[] {
+  return block.words.filter((w) => wordEndMs(w) > startMs && wordStartMs(w) < endMs);
+}
+
 function textForRange(block: Block, startMs: number, endMs: number): string {
   if (!block.words.length) return (block.text ?? "").trim();
   return block.words
@@ -231,11 +253,36 @@ export function captionCues(edl: Edl): CaptionCue[] {
   for (const cut of edl.cuts) {
     const dur = cut.end_ms - cut.start_ms;
     const text = cut.text.trim();
-    if (text) cues.push({ start_ms: outMs, end_ms: outMs + dur, text });
+    if (cut.words?.length) {
+      /*
+       * Word timings are the SOURCE's; the cue needs the finished timeline's.
+       * One subtraction and one addition, exact, no estimate anywhere — the
+       * offset is the same for every word in the range because a range is
+       * contiguous by construction (a struck word splits a block into two
+       * ranges rather than leaving a hole in one).
+       */
+      const shift = outMs - cut.start_ms;
+      cues.push(
+        ...cuesFromWords(
+          cut.words.map((w) => ({
+            w: w.w,
+            startMs: wordStartMs(w) + shift,
+            endMs: wordEndMs(w) + shift,
+          })),
+        ),
+      );
+    } else if (text) {
+      /* No word timings — a recording, or footage that never went through
+         alignment. One cue for the whole cut, never split, and reported by
+         overTheLimit if it reads too fast. */
+      cues.push({ start_ms: outMs, end_ms: outMs + dur, text: wrap(text) });
+    }
     outMs += dur;
   }
 
-  return cues;
+  /* Each cue takes what it needs from the gap after it, bounded by the next
+     cue and by the end of the film. */
+  return stretch(cues, outMs);
 }
 
 export function buildSrt(edl: Edl): string {
