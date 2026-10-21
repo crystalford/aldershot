@@ -44,3 +44,33 @@ evidence presented as a receipt is the failure this whole set exists to catch.
 **agreement** — raw, and Cohen's kappa. A set two people cannot agree on is
 measuring the labellers rather than the system. Below about 0.6 the labelling
 guidance needs work before any other number here means anything.
+
+## `adversarial.jsonl` — the constructed half
+
+19 claims, 25 judgements, authored rather than collected. Every one is a way a
+judge says "backs" when it should not: the claim's own words used to deny it, a
+counterfactual, somebody else's words quoted, the right act about the wrong
+person, a claim asserted and then narrowed to nothing. Five are controls —
+genuine support — because a set of nothing but near misses rewards a judge for
+refusing everything, and a judge that refuses everything has a false-support
+rate of zero and is useless.
+
+Run it against the judge:
+
+    npm run eval:set -- --file eval/adversarial.jsonl
+
+**What it is not.** One author's labels, so it measures failure modes and not
+inter-rater agreement — kappa over this set is a number about nobody. A worst
+case rather than a sample, so a rate here is not the rate in the wild. And it
+says nothing about retrieval: whether the right clip is found at all is
+`set.jsonl`'s job, over real footage, which nothing in this repo can invent.
+
+It exists so a model swap is a measurement. CLAUDE.md requires one — "gated by
+the eval set before a model swap" — and until this file there was nothing to
+gate against, so every model in the product was chosen on price and
+plausibility.
+
+The categories are in `src/eval-adversarial.ts` with a sentence each, and
+`coverage()` fails the set if one of them is empty or the controls fall below a
+fifth. That check caught its own author on the first draft: three controls in
+seventeen claims.
