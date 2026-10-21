@@ -144,7 +144,13 @@ export function systemPrompt(): string {
     "- If you answer backs, name the ONE sentence that does it, by its number.",
     "  If you cannot name one, the answer is related, not backs.",
     "- Being on the same topic is not backing. Most near-misses are related.",
-    "- Judge what was SAID, not what the speaker probably meant.",
+    "- Different words are fine. A sentence that establishes the claim in its",
+    "  own words backs it; backing is not restatement, and a claim whose",
+    "  support has to be read rather than matched is still backed.",
+    "- But never supply what was not said. A plan, a denial, somebody else's",
+    "  claim, a different person, a different place, a different time, or a",
+    "  thing said and then taken back is not the claim, however close the",
+    "  words are.",
     "- Never quote the speech back. Say what the sentence establishes, in a line.",
     "- Answer for every moment you are given, once each.",
   ].join("\n");
@@ -371,19 +377,47 @@ export interface JudgeResult {
 /**
  * How much room the answer gets.
  *
- * MEASURED, NOT PICKED. It was a flat 2000 and the first run of the
- * adversarial set lost two whole claims to it: GLM-5.3 reasons before it
- * answers, spent 1519 output tokens on a two-moment claim, and on the ones
- * it found hard the JSON was cut off mid-array. A truncated answer does not
- * arrive as an error — `JSON.parse` fails, the object is empty, and every
- * moment comes back `unrelated`, which reads as a judge with no opinions
- * instead of a call that failed.
+ * MEASURED TWICE, AND THE FIRST MEASUREMENT WAS TOO MEAN. It was a flat
+ * 2000, and the first run of the adversarial set lost two whole claims to
+ * it: GLM-5.3 reasons before it answers, and on the ones it found hard the
+ * JSON was cut off mid-array. A truncated answer does not arrive as an
+ * error — `JSON.parse` fails, the object is empty, and every moment comes
+ * back `unrelated`, which reads as a judge with no opinions instead of as a
+ * call that failed.
  *
- * Per moment because that is what both halves scale with: the reasoning and
- * the array. The floor covers a single moment a model thinks hard about.
+ * src/naming.ts found this exact bug first — "every call came back with
+ * completion_tokens exactly 32, i.e. truncated" — and the lesson did not
+ * travel. It is written here as a number instead of a comment this time.
+ *
+ * THE FLOOR IS LARGE BECAUSE THE THINKING IS PER CLAIM, NOT PER MOMENT.
+ * Sized at 2500 + 1400/moment the hardest two-moment claim in the
+ * adversarial set spent 4355 of its 5300 and failed twice under load, which
+ * is a ceiling dressed as a budget. The difficulty is mostly in the claim;
+ * only the answer array scales with the count.
+ *
+ * AND A HIGH CAP IS NOT A SPEND. Only generated tokens are billed, so the
+ * room costs nothing on the calls that do not use it. What a high cap
+ * actually risks is latency on a model that will not stop, and the single
+ * re-ask is what bounds that.
  */
 export function budgetFor(moments: number): number {
-  return Math.min(16000, 2500 + 1400 * Math.max(1, moments));
+  return Math.min(24000, 6000 + 1500 * Math.max(1, moments));
+}
+
+/**
+ * Whether the answer was cut off, as a MEASUREMENT rather than a claim.
+ *
+ * Neither provider reports a stop reason through `usageTokens`, and asking
+ * the model whether it finished would be trusting the thing that did not.
+ * Spending every token that was offered is what truncation looks like from
+ * the outside, and it is the same test src/naming.ts applied by hand.
+ *
+ * `>=` and not `===`: a provider that counts the stop token differently by
+ * one would make an equality check silently never fire, which is how a
+ * guard becomes decoration.
+ */
+export function wasTruncated(tokensOut: number, maxTokens: number): boolean {
+  return maxTokens > 0 && tokensOut >= maxTokens;
 }
 
 /**
@@ -423,15 +457,15 @@ export async function judge(
    * resolved provider said — so the day somebody set ANTHROPIC_API_KEY, the
    * judge would have asked Workers AI for "claude-sonnet-5".
    */
-  const ask = (missing: string[]) =>
+  const ask = (missing: string[], room: number) =>
     callReason(env, model, {
       system: systemPrompt(),
       user: userPrompt(claim, candidates, ids, missing),
-      maxTokens,
+      maxTokens: room,
       schema: SCHEMA,
     });
 
-  const { raw: res } = await ask([]);
+  const { raw: res } = await ask([], maxTokens);
   let judgements = parseJudgements(res, candidates, ids, model.id);
   let { tokensIn, tokensOut } = usageTokens(res);
 
@@ -451,7 +485,13 @@ export async function judge(
   const missing = judgements.filter((j) => !j.answered).map((j) => ids.get(j.id)!);
   const reasked = missing.length > 0;
   if (reasked) {
-    const { raw: again } = await ask(missing);
+    /* MORE ROOM WHEN ROOM WAS THE PROBLEM. A re-ask at the budget that was
+       just exhausted is the same call again, and a model that thought past
+       its ceiling once will do it twice. Where the first answer stopped
+       short of the ceiling the cause was not space — it skipped a moment —
+       and the same budget is the right one. */
+    const room = wasTruncated(tokensOut, maxTokens) ? Math.min(24000, maxTokens * 2) : maxTokens;
+    const { raw: again } = await ask(missing, room);
     const second = parseJudgements(again, candidates, ids, model.id);
     const t2 = usageTokens(again);
     tokensIn += t2.tokensIn;

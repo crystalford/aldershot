@@ -152,6 +152,19 @@ function report(label, predictions, reasked = 0) {
     );
   }
 
+  /*
+   * A PERFECT SCORE IS A WARNING. The set exists to say which of two models
+   * is wrong less often, and one that nothing gets wrong cannot. Printing
+   * that in green would be the report congratulating its own author — which
+   * is what the first green run nearly was, three bugs deep.
+   */
+  if (!wrong.length && !missed.length && predictions.length) {
+    console.log(
+      `  ${RED}the set is saturated${OFF} — ${predictions.length}/${predictions.length} right, so it ` +
+        `cannot rank\n  two models. It needs harder cases before a green run licenses anything.`,
+    );
+  }
+
   const downgraded = predictions.filter((p) => p.downgraded).length;
   if (downgraded) {
     console.log(`${DIM}  (the structural rule downgraded ${downgraded} "backs" that pointed at nothing)${OFF}`);

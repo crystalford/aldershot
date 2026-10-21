@@ -74,3 +74,52 @@ The categories are in `src/eval-adversarial.ts` with a sentence each, and
 `coverage()` fails the set if one of them is empty or the controls fall below a
 fifth. That check caught its own author on the first draft: three controls in
 seventeen claims.
+
+### It is saturated, which is a result and not a pass
+
+As of 21 Oct 2026 the shipping judge gets all 25 right: 0.0% false support,
+nothing refused, nothing unanswered. That is **not** the set working. A set
+everything passes cannot say which of two models is wrong less often, and that
+is the only question it exists to answer.
+
+The three numbers behind that run, each one a separate fix:
+
+| | false support | real support refused | unanswered |
+|---|---|---|---|
+| first run | 0.0% | 5 of 9 | 4 |
+| re-ask + measured budget | 0.0% | 1 of 9 | 0 |
+| prompt: entailment counts | 0.0% | 0 of 9 | 0 |
+
+Two of that first "5 of 9" were never answered at all — a truncated response
+parsed to nothing and every moment defaulted to `unrelated`, which read as
+caution. The other three were real over-caution: the prompt's one line
+"judge what was SAID, not what the speaker probably meant" was killing
+paraphrase along with the hypotheticals it was written for.
+
+So the next thing this file needs is harder cases, not more of these: near
+misses that survive a judge which already handles denial, tense, attribution,
+subject, place, time and self-correction. Until it has them, a green run here
+licenses nothing.
+
+### When a model's disagreement may change a label
+
+Almost never, and once so far. The rule:
+
+A disagreement is a **flag for re-reading the pair**, never an answer. The
+label changes only if a careful reader with the claim and the clip in front of
+them, and no knowledge of what any model said, would not have written it — and
+then the row records what it used to say and why it was wrong. If the re-read
+confirms the label, the label stands and the model is wrong; that is the normal
+case and the whole point.
+
+`adv-backs-1` is the one. Its claim read "she priced the move in rent because
+the other price was harder to say" over a clip that names both prices and never
+says why she led with rent. A reason for a choice is an interpretation of the
+speaker, not a thing said — the same distinction the judge's own prompt draws —
+and the note called it "stated plainly" when it was not stated at all. The
+claim now reads what the clip establishes.
+
+The failure mode this rule guards against is obvious and fatal: relabel every
+disagreement and the set converges on whatever the current model happens to
+say, scores 100%, and measures nothing. The table above is already one row away
+from that.

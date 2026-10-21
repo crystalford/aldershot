@@ -14,7 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetFor, judge } from "../src/judge.ts";
+import { budgetFor, judge, wasTruncated } from "../src/judge.ts";
 
 const CANDIDATES = [
   { id: "c1", quote: "The launch went out and the review landed a week after it." },
@@ -112,16 +112,83 @@ test("a second answer that is no better leaves the result short, and says so", a
   assert.deepEqual(out.judgements.map((j) => j.said), ["unrelated", "unrelated"]);
 });
 
-test("the budget grows with the moments, because the reasoning does", async () => {
+test("the budget clears the hardest claim measured, with room to spare", async () => {
   /*
-   * It was a flat 2000. GLM-5.3 spent 1519 output tokens on a two-moment
-   * claim, so eight moments had no chance and the answer was cut off
-   * mid-array.
+   * It was a flat 2000, then 2500 + 1400/moment. The hardest two-moment
+   * claim in eval/adversarial.jsonl spends 4355 output tokens — so the
+   * second sizing gave it 5300 and it failed twice under load. A budget a
+   * known case comes within 18% of is a ceiling.
    */
-  assert.ok(budgetFor(2) > 1519 * 2, "two moments must not be able to spend the budget twice over");
+  assert.ok(budgetFor(2) > 4355 * 1.5, "the worst case measured needs real headroom, not 18%");
   assert.ok(budgetFor(8) > budgetFor(2), "more moments, more room");
   assert.equal(budgetFor(0), budgetFor(1), "there is no call with no moments; the floor is one");
-  assert.ok(budgetFor(100) <= 16000, "and it is capped, or a long list is a runaway");
+  assert.ok(budgetFor(100) <= 24000, "and it is capped, or a long list is a runaway");
+});
+
+test("truncation is measured, not asked about", async () => {
+  /* Spending every token offered is what being cut off looks like from
+     outside. Neither provider reports a stop reason, and the model's own
+     account of whether it finished is the thing that did not finish. */
+  assert.equal(wasTruncated(5300, 5300), true);
+  assert.equal(wasTruncated(5301, 5300), true, ">= not ===, or an off-by-one never fires");
+  assert.equal(wasTruncated(4355, 5300), false);
+  assert.equal(wasTruncated(0, 0), false, "no budget is not a truncation");
+});
+
+test("a truncated first answer is re-asked with more room, not the same room", async () => {
+  /*
+   * A re-ask at the budget just exhausted is the same call again, and a
+   * model that thought past its ceiling once will do it twice. This is the
+   * failure that survived a re-ask on the real set.
+   */
+  const rooms: number[] = [];
+  const env = {
+    AI: {
+      run: async (_m: string, input: Record<string, unknown>) => {
+        const room = Number(input.max_tokens);
+        rooms.push(room);
+        /* Spends every token it is given, and so answers nothing. */
+        if (rooms.length === 1) return { response: "{\"judgements\": [{\"mom", usage: { completion_tokens: room } };
+        return {
+          judgements: [
+            { moment: "m1", verdict: "backs", sentence: 1 },
+            { moment: "m2", verdict: "related" },
+          ],
+        };
+      },
+    },
+  } as never;
+
+  const out = await judge(env, "the launch was moved before the review came in", CANDIDATES);
+  assert.equal(rooms.length, 2);
+  assert.ok(rooms[1] > rooms[0], `the second ask got ${rooms[1]}, no more than the budget that failed`);
+  assert.equal(out.unanswered, 0);
+});
+
+test("an untruncated skip is re-asked at the same budget", async () => {
+  /* Room was not the problem — it answered inside its budget and left a
+     moment out — so doubling would buy nothing and cost latency. */
+  const rooms: number[] = [];
+  const env = {
+    AI: {
+      run: async (_m: string, input: Record<string, unknown>) => {
+        rooms.push(Number(input.max_tokens));
+        if (rooms.length === 1) {
+          return { judgements: [{ moment: "m1", verdict: "backs", sentence: 1 }], usage: { completion_tokens: 40 } };
+        }
+        return {
+          judgements: [
+            { moment: "m1", verdict: "backs", sentence: 1 },
+            { moment: "m2", verdict: "related" },
+          ],
+        };
+      },
+    },
+  } as never;
+
+  await judge(env, "the launch was moved before the review came in", CANDIDATES);
+  assert.equal(rooms.length, 2);
+  assert.equal(rooms[1], rooms[0]);
 });
 
 test("the budget reaches the call", async () => {
