@@ -31,6 +31,7 @@ import { runJudge } from "./judge-run.ts";
 import { runTake } from "./take-run.ts";
 import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
+import { nearingCap, underCap } from "./spend.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { runShortRender } from "./short-render.ts";
@@ -386,6 +387,30 @@ export async function dispatch(
   ctx: { waitUntil(p: Promise<unknown>): void },
   msg: JobMessage,
 ): Promise<void> {
+  /*
+   * THE SPEND CAP, AT THE ONE DOOR EVERY JOB GOES THROUGH.
+   *
+   * doc 10: "a monthly spend cap per account; nothing runs past it without
+   * the user raising it". Metering was entirely retrospective — every job
+   * wrote what it cost and nothing ever read those rows back to decide
+   * anything — so an account could run up any bill at all and the first
+   * anybody would know was the invoice.
+   *
+   * Here rather than at each call site because there are a dozen of those
+   * and they will keep arriving; dispatch is the only thing all of them have
+   * in common. The job row is already written by the time we get here, so
+   * the refusal lands on the job the person is watching, with the sentence
+   * that says what to do about it.
+   */
+  const cap = await underCap(env.DB, msg.userId);
+  if (!cap.allowed) {
+    await failJob(env.DB, msg.jobId, cap.says);
+    return;
+  }
+  if (nearingCap(cap)) {
+    console.log(`[spend] ${msg.userId} is at ${cap.says}`);
+  }
+
   if (env.JOBS) {
     await env.JOBS.send(msg);
     return;

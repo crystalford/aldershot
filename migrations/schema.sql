@@ -16,6 +16,13 @@
 CREATE TABLE IF NOT EXISTS v2_users (
     id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT,
     plan TEXT NOT NULL DEFAULT 'free',
+    /*
+     * The monthly spend cap, in dollars. NULL is "never set", which is not
+     * the same as no cap: src/spend.ts reads it as DEFAULT_CAP_USD, because
+     * a cap that only protects the people who went looking for it protects
+     * nobody.
+     */
+    spend_cap_usd REAL,
     is_owner INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
@@ -543,3 +550,4 @@ ALTER TABLE passes ADD COLUMN first_change TEXT;
 ALTER TABLE rules ADD COLUMN params TEXT;
 ALTER TABLE renders ADD COLUMN lufs REAL;
 ALTER TABLE renders ADD COLUMN true_peak REAL;
+ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;

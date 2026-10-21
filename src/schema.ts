@@ -21,6 +21,13 @@ const STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS v2_users (
      id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT,
      plan TEXT NOT NULL DEFAULT 'free',
+     /*
+      * The monthly spend cap, in dollars. NULL is "never set", which is not
+      * the same as no cap: src/spend.ts reads it as DEFAULT_CAP_USD, because
+      * a cap that only protects the people who went looking for it protects
+      * nobody.
+      */
+     spend_cap_usd REAL,
      is_owner INTEGER NOT NULL DEFAULT 0,
      created_at INTEGER NOT NULL
    )`,
@@ -1063,6 +1070,10 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    */
   { table: "renders", column: "lufs", ddl: "ALTER TABLE renders ADD COLUMN lufs REAL" },
   { table: "renders", column: "true_peak", ddl: "ALTER TABLE renders ADD COLUMN true_peak REAL" },
+
+  /* The spend cap. See the v2_users table above; here as well because there
+     is no migration runner and every existing account already has a row. */
+  { table: "v2_users", column: "spend_cap_usd", ddl: "ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL" },
 ];
 
 let ensured = false;

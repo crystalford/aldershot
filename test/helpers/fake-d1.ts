@@ -94,7 +94,7 @@ export function fakeR2(seed: Record<string, number> = {}) {
 export function schema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE v2_users (id TEXT PRIMARY KEY, email TEXT, name TEXT, plan TEXT,
-      is_owner INTEGER DEFAULT 0, created_at INTEGER, stripe_customer_id TEXT);
+      is_owner INTEGER DEFAULT 0, spend_cap_usd REAL, created_at INTEGER, stripe_customer_id TEXT);
     CREATE TABLE sources (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, filename TEXT,
       origin TEXT, r2_key TEXT, proxy_r2_key TEXT, stream_uid TEXT,
       duration_s INTEGER, width INTEGER, height INTEGER,
