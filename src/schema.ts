@@ -334,6 +334,15 @@ const STATEMENTS: string[] = [
      aspect TEXT NOT NULL DEFAULT '16:9',
      caption_style TEXT, r2_key TEXT, stream_uid TEXT,
      duration_s INTEGER, bytes INTEGER,
+     /*
+      * HOW LOUD IT CAME OUT, measured on the finished file by the container.
+      *
+      * Doc 09 asks for this to be checked on every export rather than offered
+      * as a fix, so it is measured whether or not the export was enhanced and
+      * NULL means "not measured", which loudnessVerdict reports as its own
+      * answer rather than as a pass.
+      */
+     lufs REAL, true_peak REAL,
      state TEXT NOT NULL DEFAULT 'queued',
      error TEXT, created_at INTEGER NOT NULL
    )`,
@@ -1016,6 +1025,15 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * places, always.
    */
   { table: "rules", column: "params", ddl: "ALTER TABLE rules ADD COLUMN params TEXT" },
+
+  /*
+   * The loudness of a finished export. See the renders table above. Here as
+   * well because there is no migration runner and the CREATE is IF NOT
+   * EXISTS, so a database that already has a renders table would never gain
+   * the columns and every finished render would fail on the UPDATE.
+   */
+  { table: "renders", column: "lufs", ddl: "ALTER TABLE renders ADD COLUMN lufs REAL" },
+  { table: "renders", column: "true_peak", ddl: "ALTER TABLE renders ADD COLUMN true_peak REAL" },
 ];
 
 let ensured = false;

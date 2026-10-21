@@ -144,7 +144,19 @@ const ENHANCE_FILTERS = [
   HAS_RNNOISE ? "arnndn=m=" + RNNOISE_MODEL + ":mix=0.8" : "",
   "equalizer=f=3000:t=q:w=1:g=2",
   "acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
-  "loudnorm=I=-16:TP=-1.5:LRA=11",
+  /*
+   * -14 LUFS, which is what doc 09 asks for. It said -16 with no comment
+   * saying why — two LU quieter than the handoff, and quiet enough that
+   * every platform would turn it up on the way in.
+   *
+   * TP aims at -1.5 while the SPEC says peaks under -1, and that is not a
+   * disagreement: the AAC encode runs after this filter and adds true peak
+   * to a signal that measured compliant going in. Aiming at the ceiling
+   * lands above it. src/loudness.ts holds both numbers and says so at
+   * length; scripts/check-loudness.cjs measures the encoded file to prove
+   * it, because measuring the wav would be measuring a file nobody gets.
+   */
+  "loudnorm=I=-14:TP=-1.5:LRA=11",
   "alimiter=limit=-1.5dB",
 ]
   .filter((f) => f)
@@ -605,10 +617,53 @@ function render(plan, res) {
         pr.on("error", () => resolve(0));
       });
 
-      console.log(`render ${id}: ${cuts.length} cuts, ${st.size} bytes, ${measured}s, ${Date.now() - t0}ms`);
+      /*
+       * HOW LOUD IT CAME OUT, measured on every export.
+       *
+       * Doc 09's Sound and captions row is "checked on every export, not
+       * offered as a fix" — so this runs whether or not the export asked to
+       * be cleaned up. An export that was not enhanced is not normalised and
+       * will usually be off target; the point is that it SAYS so rather than
+       * the product being silent about the one thing every platform will
+       * change on upload.
+       *
+       * On the finished mp4, after the encode, because true peak moves there.
+       * A measurement that fails leaves nulls and the Worker reports "not
+       * measured", which is not the same as "fine" — see loudnessVerdict.
+       */
+      const loudness = await new Promise((resolve) => {
+        const ff = spawn("ffmpeg", [
+          "-hide_banner", "-nostdin", "-i", outPath,
+          "-af", "loudnorm=print_format=json", "-f", "null", "-",
+        ]);
+        let err = "";
+        /* The JSON goes to stderr, with everything else ffmpeg says. */
+        ff.stderr.on("data", (d) => { err += d; });
+        ff.on("close", () => {
+          /*
+           * FOUND AND FORWARDED, NOT PARSED.
+           *
+           * The Worker reads this with parseLoudnorm in src/loudness.ts,
+           * which has tests. Nothing in this file does, because nothing in
+           * this file can be run without a docker daemon — so the less of
+           * the thinking that happens here the better. All this does is
+           * locate ffmpeg's block and flatten it onto one line, because a
+           * header cannot contain a newline.
+           */
+          const block = err.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
+          resolve(block ? block[0].replace(/\s+/g, " ") : null);
+        });
+        ff.on("error", () => resolve(null));
+      });
+
+      console.log(
+        `render ${id}: ${cuts.length} cuts, ${st.size} bytes, ${measured}s, ` +
+          `${loudness ?? "loudness not measured"}, ${Date.now() - t0}ms`,
+      );
       job.outPath = outPath;
       job.bytes = st.size;
       job.durationS = measured;
+      job.loudness = loudness;
       job.stage = "ready";
       job.pct = 100;
       job.at = Date.now();
@@ -682,6 +737,10 @@ function renderResult(id, res) {
     "content-type": "video/mp4",
     "content-length": String(job.bytes),
     "x-duration-s": String(job.durationS),
+    /* Absent rather than empty when it could not be measured: the Worker
+       reads a missing header as "not measured", which is its own answer and
+       not a pass. */
+    ...(job.loudness ? { "x-loudness": job.loudness } : {}),
   });
   createReadStream(job.outPath).pipe(res).on("close", () => {
     RENDERS.delete(id);

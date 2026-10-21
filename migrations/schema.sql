@@ -236,6 +236,15 @@ CREATE TABLE IF NOT EXISTS renders (
     aspect TEXT NOT NULL DEFAULT '16:9',
     caption_style TEXT, r2_key TEXT, stream_uid TEXT,
     duration_s INTEGER, bytes INTEGER,
+    /*
+     * HOW LOUD IT CAME OUT, measured on the finished file by the container.
+     *
+     * Doc 09 asks for this to be checked on every export rather than offered
+     * as a fix, so it is measured whether or not the export was enhanced and
+     * NULL means "not measured", which loudnessVerdict reports as its own
+     * answer rather than as a pass.
+     */
+    lufs REAL, true_peak REAL,
     state TEXT NOT NULL DEFAULT 'queued',
     error TEXT, created_at INTEGER NOT NULL
   );
@@ -522,3 +531,5 @@ ALTER TABLE passes ADD COLUMN undone_at INTEGER;
 ALTER TABLE usage_events ADD COLUMN outcome TEXT;
 ALTER TABLE passes ADD COLUMN first_change TEXT;
 ALTER TABLE rules ADD COLUMN params TEXT;
+ALTER TABLE renders ADD COLUMN lufs REAL;
+ALTER TABLE renders ADD COLUMN true_peak REAL;

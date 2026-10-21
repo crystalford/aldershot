@@ -15,6 +15,7 @@ import type { Env } from "./env.ts";
 import { FRAME_MS, frameAccurate } from "./align.ts";
 import { timingForProject } from "./align-source.ts";
 import { sidecarWanted } from "./captions.ts";
+import { loudnessVerdict, parseLoudnorm } from "./loudness.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
 import { loadRules } from "./rule-store.ts";
@@ -89,6 +90,9 @@ export interface RenderRow {
   stream_uid: string | null;
   duration_s: number | null;
   bytes: number | null;
+  /** What the finished file measured. Null is "not measured", never "fine". */
+  lufs: number | null;
+  true_peak: number | null;
   state: string;
   error: string | null;
   created_at: number;
@@ -111,6 +115,9 @@ export async function createRender(
     stream_uid: null,
     duration_s: null,
     bytes: null,
+    /* Nothing has been rendered yet, so nothing has been measured. */
+    lufs: null,
+    true_peak: null,
     state: "queued",
     error: null,
     created_at: Date.now(),
@@ -537,6 +544,31 @@ export async function runRender(
     const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
 
     /*
+     * HOW LOUD IT CAME OUT. The container found ffmpeg's block and forwarded
+     * it; the parsing happens here, where there are tests for it.
+     *
+     * A missing header is "not measured" and stays null all the way to the
+     * row. Reading it as a number would make an unmeasured export 0 LUFS,
+     * which is a real and very loud level, and it would be reported as 14 LU
+     * too loud rather than as unmeasured.
+     */
+    const measuredLoudness = parseLoudnorm(res.headers.get("x-loudness") ?? "");
+    const { lufs, truePeak } = measuredLoudness;
+
+    /*
+     * Said once per render, beside the line about where the cuts landed.
+     *
+     * Doc 09 wants this checked on every export rather than offered as a fix,
+     * and the export panel is where a person will eventually read it. Until
+     * then it is in the log rather than nowhere: an export that is 9 LU quiet
+     * is a thing somebody needs to find out before a platform tells them.
+     */
+    const heard = loudnessVerdict(measuredLoudness);
+    if (!heard.ok) {
+      console.log(`[render] sound: ${heard.summary} ${heard.problems.join(" ")}`);
+    }
+
+    /*
      * SUBTITLES ALONGSIDE THE RENDER, in output time (Phase 3) — unless the
      * captions are already burned into the picture.
      *
@@ -555,11 +587,11 @@ export async function runRender(
     }
 
     await env.DB
-      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
+      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=?, lufs=?, true_peak=? WHERE id=?`)
       /* The encoder measures the finished file; the EDL only says what the cut
          was meant to add up to. They differ when a source is shorter than its
          transcript claims, and the row should describe the video that exists. */
-      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), renderId)
+      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), lufs, truePeak, renderId)
       .run();
 
     await meter(env.DB, {

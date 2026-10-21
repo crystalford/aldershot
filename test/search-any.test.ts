@@ -40,8 +40,21 @@ function db(moments: Array<{ quote: string; title?: string }>) {
        s.proxy_r2_key, which lives in ADDED_COLUMNS rather than in the
        CREATE — a fixture built from the CREATE alone answers "no such
        column" from inside whatever is really being tested. */
-    for (const m of SCHEMA.matchAll(/ALTER TABLE (\w+) ADD COLUMN .*?;/gi)) {
-      if (m[1].toLowerCase() === name) d.exec(m[0]);
+    for (const m of SCHEMA.matchAll(/ALTER TABLE (\w+) ADD COLUMN (\w+) .*?;/gi)) {
+      if (m[1].toLowerCase() !== name) continue;
+      /*
+       * The same PRAGMA guard ensureV2Schema uses, for the same reason.
+       *
+       * A column lives in BOTH the CREATE and ADDED_COLUMNS on purpose —
+       * there is no migration runner, so a database that already has the
+       * table only ever gains it through the ALTER. Replaying the ALTER
+       * against a table that was just created with the column fails on
+       * "duplicate column name", and that is a bug in the fixture rather
+       * than in the schema: `renders.lufs` broke four tests this way, and
+       * `rules.params` would have, had `rules` been in this list.
+       */
+      const has = d.prepare(`PRAGMA table_info(${name})`).all().some((c) => c.name === m[2]);
+      if (!has) d.exec(m[0]);
     }
   }
   d.prepare("INSERT INTO v2_users (id,email,created_at) VALUES ('u1','a@b.c',1)").run();
