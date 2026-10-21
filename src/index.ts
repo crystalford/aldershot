@@ -70,6 +70,7 @@ import { honestReply, parseRules } from "./rule-parse.ts";
 import { compileBrief, shortlistDiff } from "./brief.ts";
 import { UNSURE, classify } from "./classify.ts";
 import { allowed, type Move, type Source as PictureSource } from "./pictures.ts";
+import { cueSheetFor, cueSheetText } from "./cuesheet.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3193,6 +3194,31 @@ app.get("/api/projects/:id/timeline.otio", async (c) => {
     headers: {
       "content-type": "application/json",
       "content-disposition": `attachment; filename="${(project.title || "timeline").replace(/[^\w.\- ]/g, "_")}.otio"`,
+    },
+  });
+});
+
+/**
+ * THE CUE SHEET, which ships with the file.
+ *
+ * Doc 09 lists it among the export formats beside the subtitle file and the
+ * provenance manifest, and Phase 6 accepts on it arriving "without user
+ * action" — so there is no setting and nothing to tick. A cut with no
+ * generated or stock pictures gets a document that says so, rather than a
+ * 404: "there are none" is an answer somebody may need to show.
+ */
+app.get("/api/projects/:id/cuesheet", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const entries = await cueSheetFor(c.env.DB, project.id);
+  const name = (project.title || "cue-sheet").replace(/[^\w.\- ]/g, "_");
+  return new Response(cueSheetText(entries, project.title || "Untitled"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "content-disposition": `attachment; filename="${name} cue sheet.txt"`,
     },
   });
 });

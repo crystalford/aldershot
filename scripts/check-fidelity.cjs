@@ -902,6 +902,18 @@ async function checkStrings() {
         "markup and does not decode one. Said here so the next person to " +
         "paste a signed-off string does not spend an evening on it.",
     ],
+    [
+      "The cue sheet &nearr;",
+      "The cue sheet, in the export panel under the OTIO link. The prototype " +
+        "has no Before you post step at all — doc 09 does, and this is the " +
+        "first piece of it — so there was no wording to follow.\n\n" +
+        "Named rather than described, because 'cue sheet' is what the " +
+        "document is called by everyone who will ever ask for one: a " +
+        "platform reviewer, a broadcaster, somebody answering a complaint. " +
+        "Inventing a friendlier phrase would leave the person unable to say " +
+        "what they have. The sentence beside it does the explaining.\n\n" +
+        "The entity rather than the character, same trap as the line above.",
+    ],
   ]);
 
   const SHORT = 24;
@@ -1246,12 +1258,63 @@ function checkReachable() {
    * check. Wire them or take them out; a list like this earns its keep only
    * by getting shorter.
    */
-  const KNOWN_DEAD = ['/api/projects/:id/outline', '/api/projects/:id/shorts-from-line'];
+  const KNOWN_DEAD = [
+    '/api/projects/:id/outline',
+    /*
+     * React mode's planner, written ahead of its phase.
+     *
+     * It lays out clips interleaved with lines to say after them, which is
+     * doc 09's React mode, and React mode has no UI yet. It surfaced on
+     * 21 Oct 2026 when this rule stopped accepting a comment as a caller —
+     * it had never been reachable, and the rule had never been able to say
+     * so. Listed rather than exempted so it stays visible every run.
+     */
+    '/api/projects/:id/reactions',
+  ];
   const callers = server
     .split('\n')
     .filter((line) => !/app\.(?:get|post|put|delete)\("\/api\//.test(line))
     .join('\n');
-  const haystack = client + '\n' + pages + '\n' + callers;
+  /*
+   * AN IMPORT PATH IS NOT A CALLER.
+   *
+   * The tail test below asks whether '/<last segment>' appears anywhere, and a
+   * relative module specifier contains exactly that: `/api/projects/:id/cuesheet`
+   * was satisfied by `from "./cuesheet.ts"` in the same file that declared the
+   * route. So a route implemented in a module named after it reached this check
+   * already reachable, and the one thing it had to notice — a route nothing
+   * asks for — it could not notice at all. The sibling bug in this same rule
+   * (a haystack that included the file being checked) is in CLAUDE.md under
+   * "Things that bite"; this is the same mistake one layer down.
+   *
+   * Module paths are stripped rather than the whole import line, so an import
+   * that happens to sit beside a real fetch is not thrown away with it.
+   */
+  const MODULE_PATH = /\bfrom\s+["'][.~/]|^\s*import\s+["'][.~/]/;
+  /*
+   * NOR IS A COMMENT A CALLER, and this is the half that had real teeth.
+   *
+   * `server` is every file under src/, so the haystack contained the prose of
+   * the whole codebase. Any comment mentioning a path — "see src/cuesheet.ts",
+   * "src/reactions.ts does this" — contains '/<tail>' and marked that route
+   * reachable. A route was therefore reachable if anyone had ever written its
+   * module name down, which is nearly the opposite of what this rule claims.
+   *
+   * Line comments are only stripped where '//' does not follow a colon, quote
+   * or backslash, so a URL in a real fetch survives.
+   */
+  const stripComments = (src) =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((line) => line.replace(/(^|[^:"'`\\])\/\/.*$/, '$1'))
+      .join('\n');
+  const asksForThings = (src) =>
+    stripComments(src)
+      .split('\n')
+      .filter((line) => !MODULE_PATH.test(line))
+      .join('\n');
+  const haystack = asksForThings(client) + '\n' + asksForThings(pages) + '\n' + asksForThings(callers);
 
   const deadStill = [];
   for (const m of index.matchAll(ROUTE)) {

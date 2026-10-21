@@ -25,6 +25,7 @@ const BLOCK = {
   struck: false,
   score: null,
   why: null,
+  label: null,
   mediaKey: null,
 } as never;
 
@@ -183,6 +184,7 @@ test("the Shorts tab grades every line and withholds none", () => {
     struck: false,
     score: null,
     why: null,
+    label: null,
     mediaKey: null,
     previewKey: null,
     voiceKey: null,

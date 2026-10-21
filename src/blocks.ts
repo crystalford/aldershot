@@ -18,6 +18,7 @@
 
 import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, runRange, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
 import { frameAccurate, timingOf, type Timing } from "./align.ts";
+import { labelFor } from "./cuesheet.ts";
 
 export type BlockOrigin = "footage" | "voice" | "generated";
 
@@ -36,6 +37,19 @@ export interface Block {
   /** The model's opinion, when it has one. Null is not zero; it means unjudged. */
   score: number | null;
   why: string | null;
+  /**
+   * WHAT GOES ON SCREEN OVER THIS BLOCK, and null for almost all of them.
+   *
+   * A generated picture and a stock clip carry a label; the maker's own
+   * footage and their own voice do not, because a label on every block is a
+   * label on nothing. Derived from the beat's kind rather than stored, so it
+   * cannot disagree with what the block actually is — see src/cuesheet.ts.
+   *
+   * `origin` cannot answer this: it maps both kinds of picture to
+   * "generated", and an AI picture and somebody else's footage are different
+   * claims to a viewer.
+   */
+  label: string | null;
   /**
    * WHAT THIS BLOCK RENDERS FROM. Read by buildEdl, and only by buildEdl.
    *
@@ -205,6 +219,7 @@ export function buildBlocks(opts: {
     struck: isSegmentCut(cuts, s.idx),
     score: verdicts.get(s.idx)?.score ?? null,
     why: verdicts.get(s.idx)?.why ?? null,
+    label: null,
     mediaKey: null,
     previewKey: null,
     voiceKey: null,
@@ -239,6 +254,9 @@ export function buildBlocks(opts: {
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: p.sourceTitle,
+    /* The maker's own footage, pulled from another of their videos. A credit
+       line is a different thing and lives with the external moments. */
+    label: null,
     /* The two differ HERE and essentially nowhere else, which is the whole
        reason previewKey exists: this block belongs to another video, so it
        renders from that video's master and plays that video's copy. */
@@ -266,6 +284,8 @@ export function buildBlocks(opts: {
      * nobody reads.
      */
     why: b.take_verdict && b.take_verdict !== "matches" ? (b.take_reason ?? null) : null,
+    /* No user action: the kind decides the type, the type decides the label. */
+    label: labelFor(b.kind),
     /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
     previewKey: b.media_r2_key,

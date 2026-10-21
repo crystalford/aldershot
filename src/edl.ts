@@ -43,6 +43,12 @@ export interface EdlCut {
   /** What is said over this range, for captions and the SRT. */
   text: string;
   /**
+   * The label the renderer draws over this range, and null for almost all of
+   * them. Carried from the block so the file and the cue sheet cannot
+   * disagree about which pictures were labelled.
+   */
+  label?: string | null;
+  /**
    * This cut has SOUND BUT NO PICTURE — a voiceover the user recorded.
    *
    * It has to be flagged, because the renderer treats every cut as video: it
@@ -126,6 +132,9 @@ export function buildEdl(
         start_ms: 0,
         end_ms: Math.max(0, block.end_ms - block.start_ms),
         text: block.text ?? "",
+        /* A generated picture or a stock clip arrives labelled; footage and
+           voice carry null and the field is left off. */
+        ...(block.label ? { label: block.label } : {}),
         ...(audioOnly ? { audioOnly: true } : {}),
       });
       continue;
@@ -241,7 +250,15 @@ export function buildSrt(edl: Edl): string {
  * be logged, diffed, and re-run.
  */
 export interface RenderPlan {
-  cuts: Array<{ key: string; start_s: number; end_s: number; voiceKey?: string; audioOnly?: boolean }>;
+  cuts: Array<{
+    key: string;
+    start_s: number;
+    end_s: number;
+    voiceKey?: string;
+    /** Drawn over the picture, perceivable at first exposure. See src/cuesheet.ts. */
+    label?: string;
+    audioOnly?: boolean;
+  }>;
   format: string;
   aspect: string;
   durationS: number;
@@ -287,6 +304,7 @@ export function buildRenderPlan(
       /* The KEY, not a url — runRender presigns it, exactly as it does the
          footage. Nothing here ever holds a credential. */
       ...(c.voiceKey ? { voiceKey: c.voiceKey } : {}),
+      ...(c.label ? { label: c.label } : {}),
       ...(c.audioOnly ? { audioOnly: true } : {}),
     })),
     format,

@@ -71,6 +71,18 @@ export function exportPanel(projectId: string, plan: string): string {
       <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
       <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
     </div>
+    <!--
+      THE CUE SHEET, which goes out whether anybody opens it or not.
+      It is here to be read, not to be switched on: the label on a generated
+      picture and this document both come from the beat's kind, so there is
+      nothing to tick and nothing that can be forgotten. A cut with no
+      generated or stock pictures gets a cue sheet saying exactly that,
+      because "there are none" is an answer somebody may have to show.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/cuesheet" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The cue sheet &nearr;</a>
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.</span>
+    </div>
   </form>`;
 }
 

@@ -152,6 +152,19 @@ function machine(d: EvalData): string {
   return `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <button id="ask-judge" type="button" ${d.labels ? "" : "disabled "}style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${d.labels ? C.ink70 : C.ink32};border:none;cursor:${d.labels ? "pointer" : "default"};font-family:inherit">Ask the judge</button>
     <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(said)} · one model call per claim, and it never appears beside a moment you are answering</span>
+  </div>
+  <!--
+    THE SET ITSELF, as a file.
+    The runner (npm run eval:set) reads eval/set.jsonl, and the only way to
+    produce one was to know the endpoint existed and curl it — so the route
+    shipped with no caller and the fidelity check could not see that, because
+    a comment mentioning the module satisfied it. Whoever is doing the
+    labelling is the person who wants the file, so the link belongs where
+    they already are.
+  -->
+  <div style="margin-top:8px">
+    <a href="/api/eval/export" download="set.jsonl" style="font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take the set away &nearr;</a>
+    <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}"> · every answer so far, as the file the runner reads</span>
   </div>`;
 }
 

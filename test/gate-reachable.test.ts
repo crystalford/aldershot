@@ -12,6 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,7 +32,7 @@ test("ACCEPTANCE: the route-reachability haystack excludes the declarations", ()
   );
   assert.match(
     GATE,
-    /const haystack = client \+ '\\n' \+ pages \+ '\\n' \+ callers;/,
+    /const haystack = asksForThings\(client\)[\s\S]{0,120}asksForThings\(callers\);/,
     "the haystack must be built from `callers`, not from `server`",
   );
   /* And `server` itself is never the haystack, which is the exact bug. */
@@ -39,6 +40,37 @@ test("ACCEPTANCE: the route-reachability haystack excludes the declarations", ()
     !/const haystack = client \+ '\\n' \+ pages \+ '\\n' \+ server;/.test(GATE),
     "the haystack must not include src/index.ts, where the routes are declared",
   );
+});
+
+test("ACCEPTANCE: neither a comment nor an import counts as a caller", () => {
+  /*
+   * THE SECOND HALF OF THE SAME BUG, found 21 Oct 2026.
+   *
+   * Filtering the declaration lines out of `server` was not enough, because
+   * `server` is every file under src/ — so the haystack still held the prose
+   * and the import graph of the whole codebase. Two ways a route passed
+   * without a caller:
+   *
+   *   from "./cuesheet.ts"      → contains "/cuesheet"
+   *   "see src/reactions.ts"    → contains "/reactions"
+   *
+   * A route was therefore reachable if it was implemented in a module named
+   * after it, or if anybody had ever written that module's name in a comment.
+   * `/api/projects/:id/cuesheet` shipped green with nothing calling it, and
+   * so had `/api/eval/export` and `/api/projects/:id/reactions` before it.
+   */
+  assert.match(GATE, /AN IMPORT PATH IS NOT A CALLER/, "the import case is named");
+  assert.match(GATE, /NOR IS A COMMENT A CALLER/, "and the comment case");
+  assert.match(GATE, /const MODULE_PATH = /, "module specifiers are stripped");
+  assert.match(GATE, /const stripComments = /, "and so are comments");
+  assert.match(
+    GATE,
+    /asksForThings = \(src\) =>\s*\n\s*stripComments\(src\)/,
+    "and the haystack goes through both, in that order",
+  );
+  /* A URL in a real fetch must survive the line-comment strip, or the fix
+     trades a false pass for a false failure. */
+  assert.match(GATE, /\[\^:"'`/, "the line-comment strip spares '//' after a colon or quote");
 });
 
 test("every exemption carries a reason, and one of them still checks something", () => {
@@ -71,14 +103,41 @@ test("ACCEPTANCE: the known-dead list is printed on every run", () => {
 });
 
 test("the known-dead list holds only what was found, and says when", () => {
-  /* Two routes, found the day the rule could fire for the first time. A list
-     that grew without anybody noticing would be the rule switched off by
-     instalments. */
-  const list = GATE.match(/const KNOWN_DEAD = \[([^\]]*)\]/)?.[1] ?? "";
-  const routes = [...list.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual(routes, ["/api/projects/:id/outline", "/api/projects/:id/shorts-from-line"]);
+  /*
+   * A list that grew without anybody noticing would be the rule switched off
+   * by instalments, so the exact contents are pinned here and changing them
+   * takes an argument in a commit message.
+   *
+   * `shorts-from-line` came off it the day the Shorts tab wired it, which is
+   * the list doing what it is for. `reactions` went on the day comments
+   * stopped counting as callers: React mode's planner, written ahead of its
+   * phase, never reachable, and until then never reportable either.
+   */
+  const list = GATE.match(/const KNOWN_DEAD = \[([\s\S]*?)\];/)?.[1] ?? "";
+  /* Route-shaped only: the comments in the list contain apostrophes, and
+     "React mode's planner" is not a route. */
+  const routes = [...list.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(routes, ["/api/projects/:id/outline", "/api/projects/:id/reactions"]);
   assert.match(GATE, /18 Oct 2026/, "the list says when it was written");
+  assert.match(GATE, /21 Oct 2026/, "and when it was added to");
   assert.match(GATE, /Wire them or take them out/);
+});
+
+test("ACCEPTANCE: the rule passes on this repo, and says what it is still carrying", () => {
+  /*
+   * The only assertion here that is not a regex over the gate's own source.
+   * Everything above describes the fix; this runs it. A rule that cannot be
+   * run from a test is a rule whose next edit is unverified.
+   */
+  const out = execFileSync("node", [join(import.meta.dirname, "..", "scripts", "check-fidelity.cjs")], {
+    encoding: "utf8",
+  });
+  assert.match(out, /✔ reachable/, "the rule passes on the repo as it stands");
+  assert.match(
+    out,
+    /2 route\(s\) still unreachable and known: \/api\/projects\/:id\/reactions, \/api\/projects\/:id\/outline/,
+    "and names both of them, every run",
+  );
 });
 
 test("the rule the gate cannot see through, said out loud", () => {
