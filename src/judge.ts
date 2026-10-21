@@ -150,11 +150,27 @@ export function systemPrompt(): string {
   ].join("\n");
 }
 
-export function userPrompt(claim: string, candidates: Candidate[], ids: Map<string, string>): string {
+export function userPrompt(
+  claim: string,
+  candidates: Candidate[],
+  ids: Map<string, string>,
+  /**
+   * Short ids the first answer did not cover, on a re-ask.
+   *
+   * EVERY MOMENT IS SENT AGAIN, not just these. The comparison is the work —
+   * see `judge` below — and a re-ask narrowed to the gap would ask the
+   * hardest question with the context that makes it answerable removed. The
+   * tail names what is still owed; the list stays whole.
+   */
+  missing: string[] = [],
+): string {
   const lines = [`CLAIM: ${claim}`, "", "MOMENTS:"];
   for (const c of candidates) {
     lines.push(`${ids.get(c.id)}:`);
     sentences(c.quote).forEach((s, i) => lines.push(`  ${i + 1}. ${s}`));
+  }
+  if (missing.length) {
+    lines.push("", `You did not answer for ${missing.join(", ")}. Answer for those as well.`);
   }
   return lines.join("\n");
 }
@@ -339,6 +355,35 @@ export interface JudgeResult {
   tokensIn: number;
   tokensOut: number;
   model: string;
+  /**
+   * Moments the judge was shown and never answered for, AFTER the re-ask.
+   *
+   * Nonzero means this result is degraded: those moments are scored
+   * `unrelated` because something has to be, and `unrelated` is the one
+   * verdict nobody asserted. A caller that cares about invariant 7 reads
+   * this rather than the list, where the loss is invisible.
+   */
+  unanswered: number;
+  /** Whether a second call was needed to cover the moments. */
+  reasked: boolean;
+}
+
+/**
+ * How much room the answer gets.
+ *
+ * MEASURED, NOT PICKED. It was a flat 2000 and the first run of the
+ * adversarial set lost two whole claims to it: GLM-5.3 reasons before it
+ * answers, spent 1519 output tokens on a two-moment claim, and on the ones
+ * it found hard the JSON was cut off mid-array. A truncated answer does not
+ * arrive as an error — `JSON.parse` fails, the object is empty, and every
+ * moment comes back `unrelated`, which reads as a judge with no opinions
+ * instead of a call that failed.
+ *
+ * Per moment because that is what both halves scale with: the reasoning and
+ * the array. The floor covers a single moment a model thinks hard about.
+ */
+export function budgetFor(moments: number): number {
+  return Math.min(16000, 2500 + 1400 * Math.max(1, moments));
 }
 
 /**
@@ -367,27 +412,63 @@ export async function judge(
   /* Load-bearing: this answer IS invariant 4. See CAPABILITIES. */
   const model = opts.model ?? resolveFor("judge", env);
   if (!claim.trim() || !candidates.length) {
-    return { judgements: [], tokensIn: 0, tokensOut: 0, model: model.id };
+    return { judgements: [], tokensIn: 0, tokensOut: 0, model: model.id, unanswered: 0, reasked: false };
   }
 
   const ids = shortIds(candidates);
+  const maxTokens = budgetFor(candidates.length);
   /*
    * Through callReason, which is the only thing that knows how to speak to
    * either provider. This used to call env.AI.run with model.id whatever the
    * resolved provider said — so the day somebody set ANTHROPIC_API_KEY, the
    * judge would have asked Workers AI for "claude-sonnet-5".
    */
-  const { raw: res } = await callReason(
-    env,
-    model,
-    {
+  const ask = (missing: string[]) =>
+    callReason(env, model, {
       system: systemPrompt(),
-      user: userPrompt(claim, candidates, ids),
-      maxTokens: 2000,
+      user: userPrompt(claim, candidates, ids, missing),
+      maxTokens,
       schema: SCHEMA,
-    },
-  );
+    });
 
-  const { tokensIn, tokensOut } = usageTokens(res);
-  return { judgements: parseJudgements(res, candidates, ids, model.id), tokensIn, tokensOut, model: model.id };
+  const { raw: res } = await ask([]);
+  let judgements = parseJudgements(res, candidates, ids, model.id);
+  let { tokensIn, tokensOut } = usageTokens(res);
+
+  /*
+   * THE RE-ASK, which exists because a moment nobody answered for is scored
+   * `unrelated` and that is indistinguishable from a verdict.
+   *
+   * The prompt already says "answer for every moment you are given". It is
+   * not obeyed: the first run of the adversarial set lost both of its
+   * two-moment near-miss claims this way, and asked one at a time the same
+   * model got both right. Begging harder is not a fix — a second call that
+   * names the gap is, and it costs nothing on the calls that do not need it.
+   *
+   * ONCE. A loop here would turn a model that cannot answer into a bill,
+   * and the honest end state is a result that says what it is missing.
+   */
+  const missing = judgements.filter((j) => !j.answered).map((j) => ids.get(j.id)!);
+  const reasked = missing.length > 0;
+  if (reasked) {
+    const { raw: again } = await ask(missing);
+    const second = parseJudgements(again, candidates, ids, model.id);
+    const t2 = usageTokens(again);
+    tokensIn += t2.tokensIn;
+    tokensOut += t2.tokensOut;
+    /* The first answer wins where it exists. A model asked again about a
+       moment it already judged may answer differently, and the verdict that
+       was reached with nothing owed is the better of the two. */
+    judgements = judgements.map((j, i) => (j.answered ? j : second[i]));
+  }
+
+  const unanswered = judgements.filter((j) => !j.answered).length;
+  if (unanswered) {
+    console.warn(
+      `[judge] ${unanswered} of ${candidates.length} moment(s) unanswered after a re-ask ` +
+        `(${model.id}) — scored "unrelated", which nobody asserted`,
+    );
+  }
+
+  return { judgements, tokensIn, tokensOut, model: model.id, unanswered, reasked };
 }

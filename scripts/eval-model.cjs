@@ -56,6 +56,10 @@ function truthOf(claim) {
 async function score(model, claims, cookie) {
   const predictions = [];
   let asked = 0;
+  /* How often one call did not cover the moments it was shown. A number
+     worth watching per model: it is the shape of failure that reads as
+     caution in every other line of this report. */
+  let reasked = 0;
   for (const claim of claims) {
     const truth = truthOf(claim);
     const candidates = [...new Set(claim.judgements.map((j) => j.clipId))].map((id) => {
@@ -74,6 +78,7 @@ async function score(model, claims, cookie) {
     }
     const out = await res.json();
     asked += 1;
+    if (out.reasked) reasked += 1;
     for (const j of out.judgements) {
       const t = truth.get(j.clipId);
       if (t === null || t === undefined) continue; /* disputed or unknown */
@@ -84,15 +89,16 @@ async function score(model, claims, cookie) {
         truth: t,
         category: claim.category,
         downgraded: j.downgraded,
+        answered: j.answered !== false,
       });
     }
   }
-  return { predictions, asked };
+  return { predictions, asked, reasked };
 }
 
 const pct = (n) => (n === null ? '  —  ' : `${(n * 100).toFixed(1)}%`);
 
-function report(label, predictions) {
+function report(label, predictions, reasked = 0) {
   const said = predictions.filter((p) => p.said === 'backs');
   const wrong = said.filter((p) => p.truth !== 'backs');
   const rate = said.length ? wrong.length / said.length : null;
@@ -120,6 +126,32 @@ function report(label, predictions) {
     const mark = w > 0 ? `${RED}✘${OFF}` : `${GREEN}✔${OFF}`;
     console.log(`    ${mark} ${cat.padEnd(16)} ${w}/${mine.length} wrong`);
   }
+  /*
+   * WHAT IT REFUSED, NAMED. The rate says a model is over-cautious; this says
+   * on what, which is the difference between knowing there is a problem and
+   * being able to do something about it. Printed for real support only —
+   * false support is already listed above and a dump of everything is a
+   * report nobody reads twice.
+   */
+  if (missed.length) {
+    console.log(`${DIM}  real support it would not call support:${OFF}`);
+    for (const m of missed) {
+      /* NOT ANSWERED AT ALL is a different fault from answered wrongly, and
+         the scored verdict is the same word for both. Saying which one it
+         was is the difference between a prompt that needs loosening and a
+         call that silently returned a shorter list. */
+      const how = m.answered ? `it said "${m.said}"` : `it never answered — scored "${m.said}"`;
+      console.log(`    ${RED}✘${OFF} ${m.claimId}/${m.clipId} ${DIM}— ${how}${OFF}`);
+    }
+  }
+
+  const silent = predictions.filter((p) => !p.answered).length;
+  if (silent || reasked) {
+    console.log(
+      `${DIM}  (${reasked} claim(s) needed a second ask; ${silent} clip(s) still unanswered after it)${OFF}`,
+    );
+  }
+
   const downgraded = predictions.filter((p) => p.downgraded).length;
   if (downgraded) {
     console.log(`${DIM}  (the structural rule downgraded ${downgraded} "backs" that pointed at nothing)${OFF}`);
@@ -143,11 +175,11 @@ async function main() {
 
   console.log(`${FILE}: ${claims.length} claims`);
   const a = await score(model, claims, cookie);
-  const rateA = report(model ?? 'the shipping judge', a.predictions);
+  const rateA = report(model ?? 'the shipping judge', a.predictions, a.reasked);
 
   if (against) {
     const b = await score(against, claims, cookie);
-    const rateB = report(against, b.predictions);
+    const rateB = report(against, b.predictions, b.reasked);
     const { compare } = await import('../src/eval-adversarial.ts');
     console.log(`\n${compare({ model: model ?? 'the shipping judge', rate: rateA }, { model: against, rate: rateB })}`);
   } else {

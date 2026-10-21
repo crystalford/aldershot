@@ -2841,6 +2841,11 @@ app.post("/api/eval/score", async (c) => {
     model: out.model,
     tokensIn: out.tokensIn,
     tokensOut: out.tokensOut,
+    /* A degraded answer, named. `unanswered` above zero means some of the
+       verdicts below are the default rather than a judgement, and a score
+       computed over them is a score of the call failing. */
+    unanswered: out.unanswered,
+    reasked: out.reasked,
     /* The shipping shape, including what the structural downgrade did: a
        `backs` that pointed at nothing is a different answer from a `related`
        the model chose, and an eval that flattened them would hide the one
@@ -2851,6 +2856,12 @@ app.post("/api/eval/score", async (c) => {
       raw: j.raw,
       downgraded: j.downgraded,
       why: j.why,
+      /* Whether the model said anything about this clip AT ALL. An
+         unanswered clip is scored `unrelated`, which is the honest default
+         and an indistinguishable one: a report that cannot tell "it is a
+         different subject" from "it never looked" sends you to fix the
+         wrong thing. The first measurement did exactly that. */
+      answered: j.answered,
     })),
   });
 });
