@@ -77,6 +77,7 @@ import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
+import { receiptsHtml, receiptsPage } from "./receipts.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3447,6 +3448,166 @@ app.get("/api/projects/:id/manifest", async (c) => {
       "content-disposition": `attachment; filename="${name} provenance.json"`,
     },
   });
+});
+
+/**
+ * THE RECEIPTS PAGE A VIEWER READS.
+ *
+ * PUBLIC, and deliberately the only thing here that is. No requireUser, no
+ * cookie, no referrer check: a link in a video description has to work for
+ * somebody who has never heard of this product, on a phone, in one tap.
+ *
+ * The token is the whole of the authorisation and it is unguessable; a
+ * revoked page is gone, and an unknown token is a plain 404 rather than
+ * anything that distinguishes "never existed" from "taken down". Somebody
+ * guessing tokens learns nothing either way.
+ *
+ * It is rebuilt from the rows on every request rather than stored as HTML.
+ * A receipt that could drift from the ledger behind it is not a receipt, and
+ * a maker who corrects an attribution should not have to republish.
+ */
+app.get("/r/:token", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const token = c.req.param("token");
+
+  const page = await c.env.DB
+    .prepare(`SELECT project_id, user_id FROM receipt_pages WHERE token=? AND revoked_at IS NULL`)
+    .bind(token)
+    .first<{ project_id: string; user_id: string }>();
+  if (!page) return c.text("There is no receipts page here.", 404);
+
+  const project = await getProject(c.env.DB, page.project_id, page.user_id);
+  if (!project) return c.text("There is no receipts page here.", 404);
+
+  const planRow = await c.env.DB
+    .prepare(`SELECT claim FROM plans WHERE project_id=? LIMIT 1`)
+    .bind(project.id)
+    .first<{ claim: string | null }>();
+
+  const body = receiptsHtml(
+    receiptsPage({
+      title: project.title || "Untitled",
+      claim: planRow?.claim ?? null,
+      external: await disputeFor(c.env.DB, project.id),
+      pictures: await cueSheetFor(c.env.DB, project.id),
+    }),
+  );
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      /* Fresh enough that a corrected credit shows up, cheap enough that a
+         link in a popular description does not re-read the ledger per view. */
+      "cache-control": "public, max-age=300",
+      "referrer-policy": "no-referrer",
+      "x-robots-tag": "noindex",
+    },
+  });
+});
+
+/**
+ * Publish the receipts page, or take it down.
+ *
+ * A form post rather than a fetch, so this needs nothing in client.ts — and
+ * because publishing something to the public web should feel like pressing a
+ * button on a page rather than like a thing that happened while you were
+ * looking elsewhere.
+ */
+app.post("/api/projects/:id/receipts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const form = await c.req.formData().catch(() => null);
+  const wants = String(form?.get("do") ?? "publish");
+
+  if (wants === "revoke") {
+    /* Revoked, not deleted: a page that was never published and a page
+       somebody took down are different facts, and only one of them is worth
+       being able to answer a question about later. */
+    await c.env.DB
+      .prepare(`UPDATE receipt_pages SET revoked_at=? WHERE project_id=? AND user_id=?`)
+      .bind(Date.now(), project.id, user.id)
+      .run();
+  } else {
+    /*
+     * A NEW TOKEN EVERY TIME IT IS PUBLISHED.
+     *
+     * Republishing after a revoke has to mint a fresh one, or the old link
+     * in somebody's cached description comes back to life the moment the
+     * maker changes their mind twice.
+     */
+    const token = `${ulid()}${Math.random().toString(36).slice(2, 10)}`.toLowerCase();
+    await c.env.DB
+      .prepare(
+        `INSERT INTO receipt_pages (project_id, user_id, token, published_at, revoked_at)
+         VALUES (?,?,?,?,NULL)
+         ON CONFLICT(project_id) DO UPDATE SET token=excluded.token,
+           published_at=excluded.published_at, revoked_at=NULL`,
+      )
+      .bind(project.id, user.id, token, Date.now())
+      .run();
+  }
+  return c.redirect(`/api/projects/${project.id}/receipts`, 303);
+});
+
+/**
+ * Where the maker manages it: the state, the link, and the one press.
+ *
+ * A small page of its own rather than a panel in the editor, because it is
+ * the only control in this product that puts something on the public web and
+ * it should be somewhere a person arrives on purpose.
+ */
+app.get("/api/projects/:id/receipts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const row = await c.env.DB
+    .prepare(`SELECT token, revoked_at FROM receipt_pages WHERE project_id=? AND user_id=?`)
+    .bind(project.id, user.id)
+    .first<{ token: string; revoked_at: number | null }>();
+  const live = row && row.revoked_at === null ? row.token : null;
+  const url = live ? new URL(`/r/${live}`, c.req.url).toString() : null;
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipts for viewers — ${esc(project.title || "Untitled")}</title>
+<style>
+  body{margin:0;padding:40px 20px;background:#131316;color:#ececf1;
+       font:16px/1.65 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:620px;margin:0 auto}
+  h1{font-size:22px;letter-spacing:-0.02em;margin:0 0 10px}
+  p{color:rgba(236,236,241,0.6)}
+  code{display:block;padding:12px 14px;margin:18px 0;border-radius:8px;
+       background:rgba(255,255,255,0.05);word-break:break-all;color:#d8b96a}
+  button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;cursor:pointer}
+  .go{background:#ececf1;color:#131316}
+  .stop{background:rgba(255,255,255,0.08);color:#ececf1}
+  a{color:#d8b96a}
+</style></head><body><main>
+<h1>Receipts for viewers</h1>
+${
+  url
+    ? `<p>This page is live. Anyone with the link can read what this video quoted and where from — nothing else about your footage is on it.</p>
+       <code>${esc(url)}</code>
+       <p><a href="${esc(url)}">Open it &nearr;</a></p>
+       <form method="post" action="/api/projects/${esc(project.id)}/receipts">
+         <input type="hidden" name="do" value="revoke">
+         <button class="stop" type="submit">Take it down</button>
+       </form>
+       <p>Taking it down stops the link working. Publishing again makes a new link, so the old one stays dead.</p>`
+    : `<p>Publish a page your viewers can read: every clip in this cut that came from somebody else, the words, the link to the original, and whether it was checked. It does not list your own footage, your rules or anything you cut.</p>
+       <form method="post" action="/api/projects/${esc(project.id)}/receipts">
+         <input type="hidden" name="do" value="publish">
+         <button class="go" type="submit">Publish it</button>
+       </form>
+       <p>Nothing is public until you press this.</p>`
+}
+</main></body></html>`;
+  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

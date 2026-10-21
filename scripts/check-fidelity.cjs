@@ -942,6 +942,17 @@ async function checkStrings() {
         "says what you get — the whole record — and the sentence beside it " +
         "says what that means and what it leaves out.",
     ],
+    [
+      "Receipts for viewers &nearr;",
+      "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
+        "the audience, not just the maker\". The prototype has no Before you " +
+        "post step and no public surface at all, so there was nothing to " +
+        "match.\n\n" +
+        "\"for viewers\" is doing the work in that phrase. The other four " +
+        "links in this panel give the reader a document; this one gives " +
+        "somebody else a page, and that difference has to land before the " +
+        "press, not after it.",
+    ],
   ]);
 
   const SHORT = 24;

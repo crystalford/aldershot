@@ -43,6 +43,14 @@ export interface DisputeClip {
   credit: string | null;
   /** Written and then taken off, which is not the same as never written. */
   creditRemoved: boolean;
+  /**
+   * Whether the quote was checked against its source, word for word.
+   *
+   * "verified" | "paraphrase" | "rejected" from src/scout-verify.ts, and null
+   * where nothing looked. The receipts page shows this to a stranger, so it
+   * is the difference between "we checked this" and "somebody typed this".
+   */
+  verify?: string | null;
   quote: string;
 }
 
@@ -226,6 +234,7 @@ interface Row {
   duration_s: number | null;
   credit_text: string | null;
   removed: number | null;
+  verify: string | null;
 }
 
 /**
@@ -241,7 +250,7 @@ export async function disputeFor(db: D1Database, projectId: string): Promise<Dis
     .prepare(
       `SELECT m.ledger_id, m.in_s, m.out_s, m.quote,
               s.channel, s.title, s.adapter, s.url, s.duration_s,
-              a.credit_text, a.removed
+              a.credit_text, a.removed, l.verify
          FROM scout_missions m
          LEFT JOIN scout_ledger l ON l.id = m.ledger_id
          LEFT JOIN scout_sources s ON s.id = l.source_id
@@ -264,6 +273,7 @@ export async function disputeFor(db: D1Database, projectId: string): Promise<Dis
       originalS: r.duration_s === null ? null : Number(r.duration_s),
       credit: r.credit_text,
       creditRemoved: Boolean(r.removed),
+      verify: r.verify,
       quote: r.quote,
     })),
   );

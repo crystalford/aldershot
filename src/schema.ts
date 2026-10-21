@@ -712,6 +712,35 @@ const STATEMENTS: string[] = [
    * "removed" rather than a delete, because nothing here is deleted: a
    * source that vanished keeps its row and says it vanished.
    */
+  /*
+   * A RECEIPTS PAGE, PUBLISHED FOR THE AUDIENCE.
+   *
+   * Doc 09: "The evidence ledger is also a receipts page published with the
+   * video... 'The edit you can interrogate' is a promise to the audience, not
+   * just the maker." Everything else this product exports is read by the
+   * person who made the cut; this one is read by strangers, from a link in a
+   * video description.
+   *
+   * So it is the only thing here that is PUBLIC, and therefore the only thing
+   * that must be an explicit act. A page nobody asked to publish would put
+   * somebody's footage in front of the world because they pressed Export.
+   *
+   * `revoked_at` rather than a delete, because invariant 6 holds here too and
+   * because the two facts differ: a page that was never published and a page
+   * somebody took down are different, and only the second needs the link to
+   * stop working while the record of it having existed stays.
+   */
+  `CREATE TABLE IF NOT EXISTS receipt_pages (
+     project_id TEXT PRIMARY KEY REFERENCES v2_projects(id),
+     user_id TEXT NOT NULL,
+     token TEXT NOT NULL,
+     published_at INTEGER NOT NULL,
+     revoked_at INTEGER
+   )`,
+  /* The token is how a stranger finds the page, so it is the lookup and it
+     has to be unique across every project. */
+  `CREATE UNIQUE INDEX IF NOT EXISTS receipt_pages_by_token ON receipt_pages(token)`,
+
   `CREATE TABLE IF NOT EXISTS scout_attributions (
      id TEXT PRIMARY KEY,
      ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),

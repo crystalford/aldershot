@@ -481,6 +481,16 @@ CREATE INDEX IF NOT EXISTS scout_missions_by_project ON scout_missions(project_i
 
 CREATE UNIQUE INDEX IF NOT EXISTS scout_missions_one_per_cut ON scout_missions(project_id, ledger_id);
 
+CREATE TABLE IF NOT EXISTS receipt_pages (
+    project_id TEXT PRIMARY KEY REFERENCES v2_projects(id),
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    published_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS receipt_pages_by_token ON receipt_pages(token);
+
 CREATE TABLE IF NOT EXISTS scout_attributions (
     id TEXT PRIMARY KEY,
     ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),

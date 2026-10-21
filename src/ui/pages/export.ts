@@ -114,6 +114,17 @@ export function exportPanel(projectId: string, plan: string): string {
       <a href="/api/projects/${esc(projectId)}/manifest" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The whole record &nearr;</a>
       <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.</span>
     </div>
+    <!--
+      THE ONE THAT FACES OUTWARD, and the only control in this product that
+      puts anything on the public web. It goes last and leads with "for
+      viewers", because the other four are for the person reading this and
+      this one is not. Nothing is published by pressing Export: the link goes
+      to a page with a button on it.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/receipts" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Receipts for viewers &nearr;</a>
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.</span>
+    </div>
   </form>`;
 }
 
