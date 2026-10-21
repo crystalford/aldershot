@@ -34,6 +34,28 @@ export const PRICES = {
   /** bge-large-en-v1.5: 18,582 neurons per million input tokens. */
   neurons_per_m_tokens_embed: 18_582,
 
+  /*
+   * ANTHROPIC, IN DOLLARS, BECAUSE NEURONS ARE A CLOUDFLARE UNIT.
+   *
+   * Every token this product metered was priced at Workers AI neuron rates,
+   * whichever provider actually ran the call — so the moment src/llm.ts could
+   * reach Anthropic, the ledger started understating those calls by about an
+   * order of magnitude. The spend cap reads that ledger, so the brake was
+   * calibrated in the wrong unit too.
+   *
+   * Claude Opus 5.5 list prices, per million tokens, as of 21 Oct 2026. Doc
+   * 10's own instruction about its cost table applies here: "confirm every
+   * price", and re-run on the first hundred real jobs. A second Anthropic
+   * model means a second row — there is deliberately no default, so adding
+   * one is a thing somebody does on purpose.
+   */
+  usd_per_m_anthropic_in: 4,
+  usd_per_m_anthropic_out: 20,
+  /** A cache hit, which is the whole point of caching: 0.05x the input rate. */
+  usd_per_m_anthropic_cache_read: 0.2,
+  /** Writing the entry: 1.25x input for the 5-minute cache. */
+  usd_per_m_anthropic_cache_write: 5,
+
   /** R2, per GB-month stored and per GB delivered (R2 has no egress fee). */
   usd_per_gb_month_r2: 0.015,
   usd_per_gb_delivered: 0,
@@ -127,6 +149,15 @@ export interface UsageInput {
   gpu_ms?: number;
   tokens_in?: number;
   tokens_out?: number;
+  /**
+   * Who ran it. Absent means Workers AI, which is what every row written
+   * before this field existed was.
+   */
+  provider?: "workers-ai" | "anthropic";
+  /** Tokens served from the prompt cache, at a fraction of the input rate. */
+  cache_read_tokens?: number;
+  /** Tokens written into the prompt cache, at a premium over the input rate. */
+  cache_write_tokens?: number;
   bytes_stored?: number;
   bytes_delivered?: number;
   stream_minutes_stored?: number;
@@ -147,6 +178,25 @@ export interface UsageInput {
  * prices it was actually written with.
  */
 export function computeCost(u: UsageInput, p: Prices): number {
+  /*
+   * AN ANTHROPIC CALL IS PRICED IN DOLLARS, NOT NEURONS.
+   *
+   * `tokens_in` on an Anthropic row is the tokens that were NOT cached —
+   * which is how the provider reports it — so the three token figures add up
+   * rather than overlapping. Pricing a cache read at the input rate would
+   * make caching look like it saved nothing, and pricing it at zero would
+   * make a long cached conversation look free.
+   */
+  if (u.provider === "anthropic") {
+    const m = (n: number | undefined) => (n ?? 0) / 1e6;
+    return (
+      m(u.tokens_in) * p.usd_per_m_anthropic_in +
+      m(u.tokens_out) * p.usd_per_m_anthropic_out +
+      m(u.cache_read_tokens) * p.usd_per_m_anthropic_cache_read +
+      m(u.cache_write_tokens) * p.usd_per_m_anthropic_cache_write
+    );
+  }
+
   const neurons =
     (u.source_minutes ?? 0) *
       (u.diarized
