@@ -37,6 +37,7 @@ const checked = (over: Partial<Checked> = {}): Checked => ({
   sidecar: true,
   cueCount: 12,
   everRendered: true,
+  hasClaim: false,
   ...over,
 });
 
@@ -182,10 +183,22 @@ test("a cut with no words says so rather than reporting perfect captions", () =>
   assert.match(l.detail.join(" "), /no captions, because nothing in this cut has words/);
 });
 
-test("provenance admits the manifest is not built", () => {
+test("provenance is a real record now, and still says what it cannot carry", () => {
+  /*
+   * The line is ok because the manifest exists and downloads. It would be
+   * dishonest at that state without the two caveats: doc 09 asks for a
+   * per-claim ledger and for existing records to be kept, and neither is
+   * true. Somebody who reads "ok" and stops would believe both.
+   */
   const l = line(checked(), "provenance");
-  assert.equal(l.state, "unchecked");
-  assert.match(l.detail.join(" "), /not built/);
+  assert.equal(l.state, "ok");
+  assert.match(l.detail.join(" "), /Download it as the provenance manifest/);
+  assert.match(l.detail.join(" "), /not read, so it is not carried through/);
+
+  const claimed = line(checked({ hasClaim: true }), "provenance");
+  assert.match(claimed.says, /the claim with what was found for each beat/);
+  assert.match(claimed.detail.join(" "), /no per-claim evidence ledger/);
+  assert.notEqual(claimed.says, l.says, "a cut with a claim records more than one without");
 });
 
 test("every line is a sentence somebody would say", () => {

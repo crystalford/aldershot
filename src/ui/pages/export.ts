@@ -104,6 +104,16 @@ export function exportPanel(projectId: string, plan: string): string {
       <a href="/api/projects/${esc(projectId)}/dispute" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The dispute file &nearr;</a>
       <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.</span>
     </div>
+    <!--
+      THE MANIFEST. The only one of the four written for a machine as much as
+      a person, which is why it is last: a platform ingesting it, a lawyer's
+      tooling diffing two cuts, a later version of this reading it back. It
+      carries what it cannot cover in the file itself.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/manifest" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The whole record &nearr;</a>
+      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.</span>
+    </div>
   </form>`;
 }
 

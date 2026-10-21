@@ -76,6 +76,7 @@ import { beforePost, checklistText } from "./beforepost.ts";
 import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
+import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3318,6 +3319,12 @@ app.get("/api/projects/:id/before-post", async (c) => {
     sidecar: sidecarWanted(last?.caption_style ?? null),
     cueCount: cues.length,
     everRendered: Boolean(last),
+    hasClaim: Boolean(
+      await c.env.DB
+        .prepare(`SELECT 1 AS n FROM plans WHERE project_id=? AND user_id=? AND claim IS NOT NULL LIMIT 1`)
+        .bind(project.id, user.id)
+        .first<{ n: number }>(),
+    ),
   });
 
   const name = (project.title || "before-you-post").replace(/[^\w.\- ]/g, "_");
@@ -3325,6 +3332,119 @@ app.get("/api/projects/:id/before-post", async (c) => {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "content-disposition": `attachment; filename="${name} before you post.txt"`,
+    },
+  });
+});
+
+/**
+ * THE PROVENANCE MANIFEST.
+ *
+ * Doc 09's Provenance record row, which it marks "always on". Every source,
+ * every edit, and what was left out and by which rule — the rules being the
+ * edits, because invariant 1 says a cut IS its rules.
+ *
+ * The left-out list is computed from the same compute() the editor's Footage
+ * tab reads, over the same scoped pool, so the manifest and the screen cannot
+ * disagree about which rule removed what. Computing it any other way would
+ * make this a second opinion about the cut rather than a record of it.
+ */
+app.get("/api/projects/:id/manifest", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const rules = await loadRules(c.env.DB, project.id);
+  const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
+  const judged = rules.length ? compute(rules, { set: toFootageSet(pool, momentTags) }).st : [];
+
+  /* What each rule says, by its own name, so leftOut reads in the person's
+     words rather than in rule ids. */
+  const saysOf = new Map(rules.map((r, n) => [String(r.id), r.text ?? `rule ${n + 1}`]));
+  const leftOut: LeftOut[] = judged
+    .filter((m) => !m.in && m.dropId !== null)
+    .map((m) => ({
+      momentId: String(m.id),
+      text: m.text,
+      rule: saysOf.get(String(m.dropId)) ?? "a rule that is no longer in the set",
+    }));
+
+  const external = await disputeFor(c.env.DB, project.id);
+  const pictures = await cueSheetFor(c.env.DB, project.id);
+
+  /* The sources this cut actually draws on: the user's own, plus whoever the
+     external clips belong to. */
+  const own = await listSources(c.env.DB, user.id, "newest");
+  const used = new Set(pool.map((m) => m.source_id));
+  const sources: ManifestSource[] = own
+    .filter((srcRow) => used.has(srcRow.id) || srcRow.id === project.source_id)
+    .map((srcRow) => ({ id: srcRow.id, title: srcRow.title, from: "yours" }));
+  for (const e of external) {
+    sources.push({
+      id: e.ledgerId,
+      title: e.sourceTitle ?? e.channel ?? "an external clip",
+      from: e.platform ?? "elsewhere",
+      ...(e.url ? { url: e.url } : {}),
+    });
+  }
+
+  /* The claim and its beats, where this cut came from a plan. */
+  const planRow = await c.env.DB
+    .prepare(`SELECT id, claim FROM plans WHERE project_id=? AND user_id=? LIMIT 1`)
+    .bind(project.id, user.id)
+    .first<{ id: string; claim: string | null }>();
+  let claim: Parameters<typeof buildManifest>[0]["claim"] = null;
+  if (planRow?.claim) {
+    const { results } = await c.env.DB
+      .prepare(`SELECT name, need, found FROM plan_beats WHERE plan_id=? AND kept=1 ORDER BY idx`)
+      .bind(planRow.id)
+      .all<{ name: string; need: string; found: string | null }>();
+    claim = {
+      text: planRow.claim,
+      beats: (results ?? []).map((b) => ({
+        name: b.name,
+        need: b.need,
+        found: b.found ? (JSON.parse(b.found) as string[]) : [],
+      })),
+    };
+  }
+
+  const built = await edlForProject(c.env, project, user.id);
+
+  /*
+   * AND WHAT WAS STRUCK, which for most cuts is the whole of the editing.
+   *
+   * `leftOut` above covers moments a rule removed, and on a cut made by
+   * striking text it is empty — there are no scored moments, so the engine
+   * judged nothing. buildBlocks is the one place that says what a cut IS, so
+   * the struck blocks come from there, exactly as the render does.
+   */
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const struckOut = blocks
+    .filter((b) => b.struck && b.text.trim())
+    .map((b) => ({ blockId: b.id, text: b.text.trim() }));
+
+  const body = manifestJson(
+    buildManifest({
+      projectId: project.id,
+      title: project.title || "Untitled",
+      runtimeS: built ? Math.round(built.edl.durationMs / 1000) : null,
+      sources,
+      rules,
+      leftOut,
+      struckOut,
+      pictures,
+      external,
+      claim,
+      madeAt: Date.now(),
+    }),
+  );
+
+  const name = (project.title || "manifest").replace(/[^\w.\- ]/g, "_");
+  return new Response(body, {
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="${name} provenance.json"`,
     },
   });
 });

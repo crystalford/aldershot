@@ -62,6 +62,15 @@ export interface Checked {
    * missing number is a real failure — same absence, different fact.
    */
   everRendered: boolean;
+  /**
+   * Whether this cut came from a plan, so a claim and its backing beats exist.
+   *
+   * Doc 09 asks the provenance record for "each claim the line in the footage
+   * that backs it". A cut assembled by striking text makes no claim the
+   * product knows about, so there is nothing of that shape to record — which
+   * is different from having claims and no record of them.
+   */
+  hasClaim: boolean;
 }
 
 const NOT_BUILT = "Nothing in Aldershot checks this yet.";
@@ -250,13 +259,21 @@ function soundLine(c: Checked): Line {
 const provenanceLine = (c: Checked): Line => ({
   key: "provenance",
   title: "Provenance record",
-  state: "unchecked",
-  says: "Every source and every edit is recorded, but there is no manifest file to download yet.",
+  state: "ok",
+  says: c.hasClaim
+    ? "Every source, every rule, what each rule left out, and the claim with what was found for each beat."
+    : "Every source, every rule, and what each rule left out.",
   detail: [
-    c.external.length
-      ? "The dispute file and the cue sheet carry most of it today."
-      : "The cue sheet carries what there is of it today.",
-    "A single provenance manifest is specified and not built.",
+    "Download it as the provenance manifest.",
+    /*
+     * THE LIMITS GO IN EVERY TIME. This line is `ok` because the record now
+     * exists and downloads — but two of doc 09's words for it are still not
+     * true, and a person who reads "ok" and nothing else would believe both.
+     */
+    c.hasClaim
+      ? "There is no per-claim evidence ledger: the claim is recorded at the beat level, not utterance by utterance."
+      : "This cut makes no claim the product knows about, so there is nothing of that shape to record.",
+    "Provenance written into your source files by a camera or another editor is not read, so it is not carried through.",
   ],
 });
 

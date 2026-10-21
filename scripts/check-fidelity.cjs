@@ -933,6 +933,15 @@ async function checkStrings() {
         "product and its documentation using different words for the same " +
         "screen.",
     ],
+    [
+      "The whole record &nearr;",
+      "The provenance manifest, last of the four export documents because it " +
+        "is the only one written for a machine as much as for a person.\n\n" +
+        "Not called 'the provenance manifest' on the link, because nobody " +
+        "asks for one by that name until they already know what it is. It " +
+        "says what you get — the whole record — and the sentence beside it " +
+        "says what that means and what it leaves out.",
+    ],
   ]);
 
   const SHORT = 24;
