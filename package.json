@@ -19,7 +19,8 @@
     "labels": "node --experimental-strip-types scripts/read-labels.ts",
     "eval:set": "node --experimental-strip-types scripts/eval-set.ts",
     "schema": "node scripts/schema-doc.cjs",
-    "check:loudness": "node scripts/check-loudness.cjs"
+    "check:loudness": "node scripts/check-loudness.cjs",
+    "eval:model": "node scripts/eval-model.cjs"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

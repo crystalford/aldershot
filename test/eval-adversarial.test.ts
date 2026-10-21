@@ -24,6 +24,8 @@ import {
   coverage,
   falseSupportByCategory,
   type AdversarialClaim,
+  asCandidateModel,
+  isModelId,
   type Category,
 } from "../src/eval-adversarial.ts";
 
@@ -212,4 +214,50 @@ test("every category in the taxonomy is described, not just named", () => {
     assert.ok(CATEGORIES[cat].length > 30, `${cat} has no description`);
     assert.match(CATEGORIES[cat], /[.!]$/);
   }
+});
+
+/* ── Naming a model to try ───────────────────────────────────────────────── */
+
+test("ACCEPTANCE: a model id is checked by shape, not against a list", () => {
+  /*
+   * THE POINT OF THE EVAL IS MODELS NOT YET IN models.ts, so an allowlist
+   * would refuse exactly the thing being measured. What is refused is
+   * anything not shaped like a model id: the value reaches an inference
+   * binding, and "whatever the caller sent" is not an input this codebase
+   * hands to anything.
+   */
+  for (const good of [
+    "@cf/cloudflare/clairic",
+    "@cf/cloudflare/clef-flash",
+    "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "@cf/zai-org/glm-5.3-flash",
+    "claude-opus-5-5",
+  ]) {
+    assert.ok(isModelId(good), `${good} was refused and it is a model id`);
+  }
+  for (const bad of [
+    "",
+    "   ",
+    "../../etc/passwd",
+    "https://evil.example/model",
+    "@cf/only-one-part",
+    "cf/missing-at/sign",
+    "claude opus",
+    "@cf/a/b; DROP TABLE",
+    "@cf/a/b\nX-Injected: 1",
+    "a".repeat(200),
+  ]) {
+    assert.equal(isModelId(bad), false, `"${bad.slice(0, 30)}" was accepted as a model id`);
+  }
+});
+
+test("the provider is read off the id, and nothing else is guessed", () => {
+  /*
+   * A window and whether a model does structured output cannot be known for
+   * a model nobody has run. Guessing would put a number in the manifest that
+   * nothing measured.
+   */
+  assert.equal(asCandidateModel("@cf/cloudflare/clairic").provider, "workers-ai");
+  assert.equal(asCandidateModel("claude-opus-5-5").provider, "anthropic");
+  assert.equal(asCandidateModel("@cf/cloudflare/clairic").id, "@cf/cloudflare/clairic");
 });

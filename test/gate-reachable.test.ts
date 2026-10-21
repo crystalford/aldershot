@@ -32,9 +32,13 @@ test("ACCEPTANCE: the route-reachability haystack excludes the declarations", ()
   );
   assert.match(
     GATE,
-    /const haystack = asksForThings\(client\)[\s\S]{0,120}asksForThings\(callers\);/,
+    /const haystack =\s*\n?\s*asksForThings\(client\)[\s\S]{0,200}asksForThings\(callers\)/,
     "the haystack must be built from `callers`, not from `server`",
   );
+  /* And from scripts/, because a route the owner reaches by running a runner
+     is reached. See the comment at `runners`. */
+  assert.match(GATE, /A SCRIPT IN THIS REPO IS A CALLER/);
+  assert.match(GATE, /asksForThings\(runners\)/);
   /* And `server` itself is never the haystack, which is the exact bug. */
   assert.ok(
     !/const haystack = client \+ '\\n' \+ pages \+ '\\n' \+ server;/.test(GATE),

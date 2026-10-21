@@ -31,7 +31,7 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveFor } from "./models.ts";
+import { resolveFor, type Resolved } from "./models.ts";
 import { callReason } from "./llm.ts";
 import { VERDICTS, isVerdict, type Verdict } from "./eval-set.ts";
 
@@ -349,9 +349,23 @@ export interface JudgeResult {
  * that actually says it and the other seven are about the same evening.
  * Shown them one at a time it has nothing to be near-miss RELATIVE TO.
  */
-export async function judge(env: Env, claim: string, candidates: Candidate[]): Promise<JudgeResult> {
+export async function judge(
+  env: Env,
+  claim: string,
+  candidates: Candidate[],
+  /**
+   * A model to use instead of the capability's own.
+   *
+   * FOR THE EVAL AND NOTHING ELSE. Scoring a candidate model has to run the
+   * SHIPPING judge — same prompts, same schema, same structural downgrade —
+   * or it measures a reimplementation and tells you nothing about what would
+   * happen if you swapped. An override here is the smallest way to do that;
+   * a second judge written for the eval is the largest way to be wrong.
+   */
+  opts: { model?: Resolved } = {},
+): Promise<JudgeResult> {
   /* Load-bearing: this answer IS invariant 4. See CAPABILITIES. */
-  const model = resolveFor("judge", env);
+  const model = opts.model ?? resolveFor("judge", env);
   if (!claim.trim() || !candidates.length) {
     return { judgements: [], tokensIn: 0, tokensOut: 0, model: model.id };
   }

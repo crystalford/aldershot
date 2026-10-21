@@ -168,3 +168,47 @@ export interface AdversarialClaim {
   note: string;
   judgements: Array<{ clipId: string; labeller: string; verdict: Verdict; quote: string; sourceTitle: string }>;
 }
+
+/* ── Naming a model to try ───────────────────────────────────────────────── */
+
+/**
+ * Whether a string is a model id this product will hand to a provider.
+ *
+ * THE POINT OF THE EVAL IS MODELS NOT YET IN models.ts, so an allowlist of
+ * known ids would refuse exactly the thing being measured. What is refused is
+ * anything that is not shaped like a model id at all: the value reaches an
+ * inference binding, and "whatever the caller sent" is not an input this
+ * codebase passes to anything.
+ *
+ * Workers AI ids are `@cf/vendor/model`; Anthropic's are `claude-...`. Both
+ * are matched by shape and bounded in length, which is enough to keep a
+ * request body from becoming a URL, a path or an injection.
+ */
+export const MODEL_ID = /^(@cf\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|claude-[a-z0-9.-]+)$/i;
+
+export const isModelId = (v: unknown): v is string =>
+  typeof v === "string" && v.length > 0 && v.length <= 120 && MODEL_ID.test(v);
+
+/**
+ * What a candidate model is, given its id.
+ *
+ * Shape only: a window and whether it does structured output cannot be known
+ * for a model nobody has run, and guessing would put a number in the manifest
+ * that nothing measured. The window here is what the EVAL needs — a claim and
+ * a handful of quotes — not a claim about the model.
+ */
+export function asCandidateModel(id: string): {
+  provider: "workers-ai" | "anthropic";
+  id: string;
+  context: number;
+  jsonSchema: boolean;
+  diarizes: boolean;
+} {
+  return {
+    provider: id.startsWith("@cf/") ? "workers-ai" : "anthropic",
+    id,
+    context: 32_000,
+    jsonSchema: true,
+    diarizes: false,
+  };
+}

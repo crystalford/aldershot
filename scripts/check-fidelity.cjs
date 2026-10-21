@@ -1353,7 +1353,36 @@ function checkReachable() {
       .split('\n')
       .filter((line) => !MODULE_PATH.test(line))
       .join('\n');
-  const haystack = asksForThings(client) + '\n' + asksForThings(pages) + '\n' + asksForThings(callers);
+  /*
+   * A SCRIPT IN THIS REPO IS A CALLER.
+   *
+   * The rule asks whether anything can reach a route. scripts/ is how the
+   * owner reaches several — the eval runner scores models through
+   * /api/eval/score, and there is no screen for that and should not be. A
+   * route called only by a script is reachable by the person who runs it,
+   * which is the question being asked; counting it as dead would push
+   * somebody to build a page nobody wants so a check goes green.
+   *
+   * It does not weaken the rule for the routes it was written for: a UI
+   * route still needs a caller, and if the only caller is a script then a
+   * script is genuinely what reaches it.
+   */
+  const runners = walkAny(path.join(ROOT, 'scripts'), [])
+    .filter((f) => /\.(c?js|ts)$/.test(f))
+    /*
+     * NOT THIS FILE. It holds KNOWN_DEAD, which is a list of route literals —
+     * so including it made the gate's own record of dead routes mark them
+     * alive, and the "still unreachable and known" line vanished on the first
+     * run. CLAUDE.md has the general form under "Things that bite": a
+     * fidelity rule whose haystack includes the file it is checking is a rule
+     * that matches its own declarations. Third time this session.
+     */
+    .filter((f) => !f.endsWith('check-fidelity.cjs'))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
+
+  const haystack =
+    asksForThings(client) + '\n' + asksForThings(pages) + '\n' + asksForThings(callers) + '\n' + asksForThings(runners);
 
   const deadStill = [];
   for (const m of index.matchAll(ROUTE)) {

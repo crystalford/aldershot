@@ -77,6 +77,8 @@ import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
+import { asCandidateModel, isModelId } from "./eval-adversarial.ts";
+import { judge } from "./judge.ts";
 import { receiptsHtml, receiptsPage } from "./receipts.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
@@ -2793,6 +2795,66 @@ app.get("/eval", async (c) => {
  * is minutes of calls. The page shows it running like any other work in
  * this product.
  */
+/**
+ * SCORE ONE CLAIM, SYNCHRONOUSLY, OPTIONALLY ON A NAMED MODEL.
+ *
+ * The eval runner walks eval/adversarial.jsonl and asks this per claim. It
+ * runs the SHIPPING judge — same prompts, same schema, same structural
+ * downgrade — because an eval against a reimplementation measures the
+ * reimplementation. The only thing it overrides is which model answers.
+ *
+ * OWNER ONLY WHEN A MODEL IS NAMED. The id reaches an inference binding and
+ * spends money, and "try this model" is a thing the person paying for the
+ * product gets to say rather than anybody with an account. Without a model
+ * it is the ordinary judge on the ordinary capability, and anybody may ask
+ * for that.
+ *
+ * Synchronous rather than a job: the runner wants an answer per claim to
+ * aggregate, and a queue would make it poll nineteen times for work that
+ * takes one call each.
+ */
+app.post("/api/eval/score", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const body = await c.req.json<{
+    claim?: string;
+    candidates?: Array<{ id?: string; quote?: string; sourceTitle?: string }>;
+    model?: string;
+  }>().catch(() => null);
+
+  const claim = body?.claim?.trim();
+  const candidates = (body?.candidates ?? [])
+    .filter((x) => x?.id && x?.quote)
+    .map((x) => ({ id: String(x.id), quote: String(x.quote), sourceTitle: String(x.sourceTitle ?? "") }));
+  if (!claim || !candidates.length) return c.json({ error: "a claim and at least one candidate" }, 422);
+
+  let model: ReturnType<typeof asCandidateModel> | undefined;
+  if (body?.model) {
+    if (!user.is_owner) return c.json({ error: "naming a model is owner-only" }, 403);
+    if (!isModelId(body.model)) return c.json({ error: "that is not a model id" }, 422);
+    model = asCandidateModel(body.model);
+  }
+
+  const out = await judge(c.env, claim, candidates, model ? { model } : {});
+  return c.json({
+    model: out.model,
+    tokensIn: out.tokensIn,
+    tokensOut: out.tokensOut,
+    /* The shipping shape, including what the structural downgrade did: a
+       `backs` that pointed at nothing is a different answer from a `related`
+       the model chose, and an eval that flattened them would hide the one
+       rule the judge applies on the way out. */
+    judgements: out.judgements.map((j) => ({
+      clipId: j.id,
+      verdict: j.said,
+      raw: j.raw,
+      downgraded: j.downgraded,
+      why: j.why,
+    })),
+  });
+});
+
 app.post("/api/eval/judge", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
