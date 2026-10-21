@@ -45,7 +45,19 @@ export interface ReasonResult {
   provider: Resolved["provider"];
   /** True when the user's own key paid for this call. */
   onUserKey: boolean;
+  /** What the prompt cache did, where the provider reports it. */
+  cache: { read: number; written: number };
 }
+
+/**
+ * How long a cached prefix lives.
+ *
+ * "5m" for anything a person is sitting in front of — an editing session is a
+ * run of calls minutes apart, and the cache refreshes free on every hit. "1h"
+ * for a Scout run or an overnight queue, where the gap between calls is
+ * longer than five minutes and the write is worth paying twice for.
+ */
+export type CacheTtl = "5m" | "1h";
 
 /* ── Whose fault was it ─────────────────────────────────────────────────── */
 
@@ -139,7 +151,13 @@ const ANTHROPIC_VERSION = "2023-06-01";
  * and the callers already parse defensively, since a model that returns
  * something unparseable is a case this product has always had to handle.
  */
-async function callAnthropic(key: string, model: string, call: ReasonCall, onUserKey: boolean): Promise<unknown> {
+async function callAnthropic(
+  key: string,
+  model: string,
+  call: ReasonCall,
+  onUserKey: boolean,
+  ttl: CacheTtl,
+): Promise<{ raw: unknown; cache: { read: number; written: number } }> {
   const system = call.schema
     ? `${call.system}\n\nReply with JSON only, matching this schema exactly:\n${JSON.stringify(call.schema)}`
     : call.system;
@@ -156,7 +174,24 @@ async function callAnthropic(key: string, model: string, call: ReasonCall, onUse
     body: JSON.stringify({
       model,
       max_tokens: call.maxTokens,
-      system,
+      /*
+       * THE CACHE BREAKPOINT GOES ON THE SYSTEM BLOCK, which is the last
+       * thing that is identical across calls. Everything after it — the
+       * claim, the candidates, the window of transcript — changes every
+       * time.
+       *
+       * Putting it on the varying content is the documented mistake and the
+       * expensive one: a prefix hash that never matches writes a fresh entry
+       * on every request and reads none of them, so it costs 25% MORE than
+       * not caching at all while looking like an optimisation.
+       *
+       * This is invariant 5 one layer down. "Footage is read and charged
+       * once; editing is free" has been true of transcription and false of
+       * every model call over the same footage: re-cutting re-read the same
+       * transcript at full price. A cached prefix is what makes the second
+       * read cost a fraction of the first.
+       */
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl } }],
       messages: [{ role: "user", content: call.user }],
     }),
   });
@@ -165,7 +200,15 @@ async function callAnthropic(key: string, model: string, call: ReasonCall, onUse
     const body = await res.text().catch(() => "");
     throw new ModelCallFailed(blameFor(res.status, redact(body, key), onUserKey));
   }
-  return res.json();
+  const raw = (await res.json()) as { usage?: Record<string, unknown> };
+  const n = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    raw,
+    cache: {
+      read: n(raw?.usage?.cache_read_input_tokens),
+      written: n(raw?.usage?.cache_creation_input_tokens),
+    },
+  };
 }
 
 /**
@@ -192,6 +235,8 @@ export interface CallOptions {
    * believed they were paying for it themselves.
    */
   billUsIfMyKeyFails?: boolean;
+  /** How long a cached prefix should live. See CacheTtl. */
+  cacheTtl?: CacheTtl;
 }
 
 /**
@@ -222,8 +267,10 @@ export async function callReason(
       });
     }
 
+    const ttl = opts.cacheTtl ?? "5m";
     try {
-      return { raw: await callAnthropic(key, model.id, call, key === userKey), model: model.id, provider: "anthropic", onUserKey: key === userKey };
+      const out = await callAnthropic(key, model.id, call, key === userKey, ttl);
+      return { ...out, model: model.id, provider: "anthropic", onUserKey: key === userKey };
     } catch (err) {
       const failed = err instanceof ModelCallFailed ? err : null;
       const canFallBack =
@@ -233,7 +280,8 @@ export async function callReason(
         opts.billUsIfMyKeyFails === true &&
         failed.blame !== "ours";
       if (!canFallBack) throw err;
-      return { raw: await callAnthropic(platformKey, model.id, call, false), model: model.id, provider: "anthropic", onUserKey: false };
+      const out = await callAnthropic(platformKey, model.id, call, false, ttl);
+      return { ...out, model: model.id, provider: "anthropic", onUserKey: false };
     }
   }
 
@@ -247,5 +295,7 @@ export async function callReason(
     ...(call.schema ? { response_format: { type: "json_schema", json_schema: call.schema } } : {}),
     max_tokens: call.maxTokens,
   });
-  return { raw, model: model.id, provider: "workers-ai", onUserKey: false };
+  /* Workers AI has no prompt cache to report on. Zeroes rather than nulls:
+     "nothing was cached" is the true answer, not "we could not tell". */
+  return { raw, model: model.id, provider: "workers-ai", onUserKey: false, cache: { read: 0, written: 0 } };
 }

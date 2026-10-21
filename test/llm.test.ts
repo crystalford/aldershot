@@ -199,3 +199,89 @@ test("no key at all is our failure, not the provider's", () => {
     (err: ModelCallFailed) => err.blame === "ours",
   );
 });
+
+/* ── The prompt cache ────────────────────────────────────────────────────── */
+
+test("ACCEPTANCE: the breakpoint is on the system block, not on what varies", () => {
+  /*
+   * THE DOCUMENTED AND EXPENSIVE MISTAKE. A breakpoint on content that
+   * changes every request produces a prefix hash that never matches: a fresh
+   * cache entry is written every time and none is ever read, which costs 25%
+   * MORE than not caching while looking like an optimisation.
+   *
+   * The system prompt is the last thing identical across calls. The claim,
+   * the candidates and the window of transcript are not.
+   */
+  const { env } = fakeEnv();
+  return withFetch({ status: 200, body: {} }, async (seen) => {
+    await callReason(env as never, CLAUDE, { system: "stable", user: "varies", maxTokens: 100 }, {
+      userKey: "sk-theirs-bbbbbbbb",
+    });
+    const body = JSON.parse(seen[0].body) as {
+      system: Array<{ text: string; cache_control?: unknown }>;
+      messages: Array<{ content: unknown; cache_control?: unknown }>;
+    };
+    assert.equal(body.system[0].text, "stable");
+    assert.deepEqual(body.system[0].cache_control, { type: "ephemeral", ttl: "5m" });
+    assert.equal(body.messages[0].cache_control, undefined, "the breakpoint is on the varying message");
+  });
+});
+
+test("the schema is inside the cached prefix, because it never changes either", () => {
+  /* A closed schema is a constant. Leaving it out of the cached block would
+     re-send it on every call for no reason. */
+  const { env } = fakeEnv();
+  return withFetch({ status: 200, body: {} }, async (seen) => {
+    await callReason(
+      env as never,
+      CLAUDE,
+      { system: "stable", user: "varies", maxTokens: 100, schema: { type: "object" } },
+      { userKey: "sk-theirs-bbbbbbbb" },
+    );
+    const body = JSON.parse(seen[0].body) as { system: Array<{ text: string; cache_control?: unknown }> };
+    assert.match(body.system[0].text, /"type":"object"/);
+    assert.ok(body.system[0].cache_control, "the schema landed outside the cached block");
+  });
+});
+
+test("an hour is available for the runs that need it", () => {
+  /* Five minutes suits an editing session, where calls are minutes apart and
+     a hit refreshes the entry free. A Scout run is longer than that. */
+  const { env } = fakeEnv();
+  return withFetch({ status: 200, body: {} }, async (seen) => {
+    await callReason(env as never, CLAUDE, CALL, { userKey: "sk-theirs-bbbbbbbb", cacheTtl: "1h" });
+    const body = JSON.parse(seen[0].body) as { system: Array<{ cache_control: { ttl: string } }> };
+    assert.equal(body.system[0].cache_control.ttl, "1h");
+  });
+});
+
+test("what the cache did comes back, so the ledger can know", () => {
+  /*
+   * A cached read costs a fraction of a fresh one. Metering that does not
+   * know the difference overstates spend — and the spend cap built on that
+   * ledger would stop somebody working over money they never spent.
+   */
+  const { env } = fakeEnv();
+  return withFetch(
+    { status: 200, body: { usage: { cache_read_input_tokens: 4096, cache_creation_input_tokens: 0 } } },
+    async () => {
+      const out = await callReason(env as never, CLAUDE, CALL, { userKey: "sk-theirs-bbbbbbbb" });
+      assert.deepEqual(out.cache, { read: 4096, written: 0 });
+    },
+  );
+});
+
+test("a provider that reports nothing reports zero, not nothing", () => {
+  /* Workers AI has no prompt cache. "Nothing was cached" is the true answer;
+     a null would make every caller handle a case that cannot happen. */
+  const { env } = fakeEnv();
+  return withFetch({ status: 200 }, async () => {
+    const cf = await callReason(env as never, CF, CALL);
+    assert.deepEqual(cf.cache, { read: 0, written: 0 });
+  }).then(() =>
+    withFetch({ status: 200, body: {} }, async () => {
+      const none = await callReason(env as never, CLAUDE, CALL, { userKey: "sk-theirs-bbbbbbbb" });
+      assert.deepEqual(none.cache, { read: 0, written: 0 }, "a missing usage block became NaN");
+    }),
+  );
+});
