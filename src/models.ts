@@ -210,6 +210,30 @@ export const ANTHROPIC_REASON = ANTHROPIC_BEST;
  */
 export type Capability = "judge" | "classify" | "direct" | "read" | "name" | "arrange";
 
+/**
+ * HOW HARD THE MODEL THINKS, which is a second axis and was not being used.
+ *
+ * `output_config.effort` is a per-request setting on Claude, GA and needing
+ * no beta header, and the Anthropic branch of callReason was not sending it
+ * at all. That is not a neutral omission: Opus 5.5 defaults to `medium`,
+ * one level BELOW the `high` its predecessor defaulted to, so every
+ * load-bearing call in this product — the judge that IS invariant 4, the
+ * classifier invariant 8 rests on, the director that decides what the video
+ * says — has been running the frontier model at middling depth because
+ * nobody named a level.
+ *
+ * AND IT IS THE CHEAPER AXIS TO ROUTE ON. A second model means a second
+ * prompt cache: caches are model-scoped, so a cascade across two models
+ * forfeits every cached prefix the other one built. Effort moves the depth
+ * without moving the namespace. Anthropic's own guidance is to measure the
+ * best model at lower effort BEFORE building a multi-model cascade, and this
+ * is what makes that measurable here.
+ *
+ * Anthropic only — Workers AI has no equivalent, so a resolved Workers AI
+ * model carries no effort and the field is absent rather than defaulted.
+ */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface CapabilitySpec {
   /** Why this one gets what it gets. Read by nothing; read by people. */
   why: string;
@@ -225,6 +249,20 @@ export interface CapabilitySpec {
    * smaller model.
    */
   longContext: boolean;
+  /**
+   * The depth this capability is worth, from the published ladder: a minimum
+   * of `high` for intelligence-sensitive work, `max` only where correctness
+   * matters more than cost AND measurement shows headroom at the level
+   * below, `low` for simple or latency-bound calls.
+   *
+   * NOT MEASURED YET, and the honest reason is that the only capability with
+   * an eval set is `judge`, whose set is currently saturated — it cannot
+   * tell two efforts apart any more than it can tell two models apart. So
+   * these come from the ladder and the invariant each capability carries,
+   * they are recorded here rather than buried in a call site, and
+   * `npm run eval:model -- --effort` is what will turn them into numbers.
+   */
+  effort: Effort;
 }
 
 export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
@@ -232,31 +270,55 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
     why: "Decides whether a clip backs a claim. Invariant 4 — a wrong answer is a receipt that lies.",
     loadBearing: true,
     longContext: false,
+    /* The deepest setting any capability gets. A receipt that lies is the
+       worst thing this product can do, and the near-miss separation it is
+       asked for is the hardest reading in it. */
+    effort: "xhigh",
   },
   classify: {
     why: "Decides what job a line's picture has, which decides whether a generated picture may sit over a claim. Invariant 8.",
     loadBearing: true,
     longContext: false,
+    /* Load-bearing, but it is a small question over a fixed set of answers
+       rather than a reading. `high` is the floor for anything an invariant
+       rests on; the depth above that buys nothing on a choice this narrow. */
+    effort: "high",
   },
   direct: {
     why: "Decides what the video says: the claim, the beats, the order. Wrong here and the cut argues something nobody meant.",
     loadBearing: true,
     longContext: false,
+    /* Open-ended and consequential: there is no schema that catches a claim
+       nobody meant, only a person reading it afterwards. */
+    effort: "xhigh",
   },
   read: {
     why: "Reads a whole transcript and says which moments carry the subject. Wants the whole thing in one window more than it wants raw power.",
     loadBearing: false,
     longContext: true,
+    /* Never reaches Anthropic — longContext pins it to the 1M-window Workers
+       AI model — so this is the value it WOULD take, recorded rather than
+       left to look like an oversight. Reading a transcript for subject is
+       breadth, not depth. */
+    effort: "medium",
   },
   arrange: {
     why: "Puts kept moments in an order. A deterministic solver places; this only suggests.",
     loadBearing: false,
     longContext: false,
+    /* Invariant 2: it suggests and a solver places, and permutationOf
+       repairs whatever comes back. Depth here is paid for an answer that is
+       then validated anyway. */
+    effort: "low",
   },
   name: {
     why: "Titles and short labels, with somebody waiting on the result. Latency is the quality that matters here.",
     loadBearing: false,
     longContext: false,
+    /* Effort costs time, and a better title two seconds later is a worse
+       product. The one place where the lowest setting is the RIGHT one
+       rather than the cheap one. */
+    effort: "low",
   },
 };
 
@@ -281,14 +343,31 @@ export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string })
 
   if (spec.loadBearing) {
     if (env.ANTHROPIC_API_KEY) {
-      return { provider: "anthropic", id: ANTHROPIC_BEST, context: 200_000, jsonSchema: true, diarizes: false };
+      return {
+        provider: "anthropic",
+        id: ANTHROPIC_BEST,
+        context: 200_000,
+        jsonSchema: true,
+        diarizes: false,
+        effort: spec.effort,
+      };
     }
     return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
   }
 
   if (cap === "name") {
     /* Fast on purpose. Somebody is watching a box where a title should
-       appear, and a better title two seconds later is a worse product. */
+       appear, and a better title two seconds later is a worse product.
+
+       NOT REVISITED, AND IT SHOULD BE. This stays on Workers AI even when a
+       key exists, which was the right call when the Anthropic branch meant
+       the frontier tier. Haiku 5.5 is $0.10/$0.50 per million with a 1M
+       window — cheaper per token than most of the Workers AI catalog and
+       built for exactly this — so the latency argument above is now the
+       only thing holding the choice, and nobody has timed the two. There is
+       no eval set for `name`, which is why this is a comment and not a
+       change: the one lesson of the judge is that an unmeasured swap is a
+       guess with a changelog entry. */
     return { provider: "workers-ai", id: REASON.id, context: REASON.context, jsonSchema: true, diarizes: false };
   }
 
@@ -322,6 +401,14 @@ export interface Resolved {
   jsonSchema: boolean;
   /** Whether this choice returns speaker labels. Only the upgrade tier does. */
   diarizes: boolean;
+  /**
+   * How hard to think, where the provider has a setting for it.
+   *
+   * ABSENT ON WORKERS AI, not defaulted: there is no equivalent parameter
+   * there, and a field carrying "medium" into a provider that cannot read it
+   * would be a setting nobody applies that everybody can see.
+   */
+  effort?: Effort;
 }
 
 /**

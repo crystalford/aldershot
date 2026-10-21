@@ -21,7 +21,7 @@
  * either provider is spoken to.
  */
 
-import type { Resolved } from "./models.ts";
+import type { Effort, Resolved } from "./models.ts";
 import { usageTokens } from "./grounding.ts";
 
 /** What a reasoning call asks for. Deliberately small and provider-neutral. */
@@ -158,6 +158,7 @@ async function callAnthropic(
   call: ReasonCall,
   onUserKey: boolean,
   ttl: CacheTtl,
+  effort?: Effort,
 ): Promise<{ raw: unknown; cache: { read: number; written: number } }> {
   const system = call.schema
     ? `${call.system}\n\nReply with JSON only, matching this schema exactly:\n${JSON.stringify(call.schema)}`
@@ -194,6 +195,23 @@ async function callAnthropic(
        */
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral", ttl } }],
       messages: [{ role: "user", content: call.user }],
+      /*
+       * HOW HARD TO THINK, named rather than defaulted.
+       *
+       * This was not sent at all, and the omission was not neutral: Opus 5.5
+       * defaults to `medium`, one level below what its predecessor defaulted
+       * to, so the judge that IS invariant 4 was running the best model in
+       * the product at middling depth because nobody said otherwise. The
+       * level per capability is in CAPABILITIES, with the reason beside it.
+       *
+       * Inside `output_config`, not top-level — a common mistake and a
+       * silent one, since an unknown top-level key is simply ignored and the
+       * call succeeds at the default. GA; no beta header.
+       *
+       * Omitted entirely when the resolved model carries no effort, so a
+       * provider without the setting is not sent an empty object.
+       */
+      ...(effort ? { output_config: { effort } } : {}),
     }),
   });
 
@@ -344,7 +362,7 @@ export async function callReason(
 
     const ttl = opts.cacheTtl ?? "5m";
     try {
-      const out = await callAnthropic(key, model.id, call, key === userKey, ttl);
+      const out = await callAnthropic(key, model.id, call, key === userKey, ttl, model.effort);
       return { ...out, model: model.id, provider: "anthropic", onUserKey: key === userKey };
     } catch (err) {
       const failed = err instanceof ModelCallFailed ? err : null;
@@ -355,7 +373,7 @@ export async function callReason(
         opts.billUsIfMyKeyFails === true &&
         failed.blame !== "ours";
       if (!canFallBack) throw err;
-      const out = await callAnthropic(platformKey, model.id, call, false, ttl);
+      const out = await callAnthropic(platformKey, model.id, call, false, ttl, model.effort);
       return { ...out, model: model.id, provider: "anthropic", onUserKey: false };
     }
   }

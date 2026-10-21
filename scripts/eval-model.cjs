@@ -10,6 +10,15 @@
  *   npm run eval:model                                   the shipping judge
  *   npm run eval:model -- --model @cf/cloudflare/clairic  a candidate
  *   npm run eval:model -- --model X --against Y           two of them
+ *   npm run eval:model -- --model X --sweep               X at every effort
+ *
+ * EFFORT IS A CANDIDATE, NOT A SETTING. "Which model" and "how hard it
+ * thinks" are two axes, and the second is the cheaper to route on — a second
+ * model means a second prompt cache, a second effort on the same model
+ * shares the one it has. Anthropic's guidance is to measure the best model
+ * at lower effort before reaching for a cascade; --sweep is that
+ * measurement. Anthropic models only: Workers AI has no such setting, and
+ * the route refuses an effort it cannot apply.
  *
  * It runs the SHIPPING judge through /api/eval/score and overrides only which
  * model answers, because an eval against a reimplementation measures the
@@ -53,7 +62,7 @@ function truthOf(claim) {
   return byClip;
 }
 
-async function score(model, claims, cookie) {
+async function score(model, claims, cookie, effort) {
   const predictions = [];
   let asked = 0;
   /* How often one call did not cover the moments it was shown. A number
@@ -70,7 +79,12 @@ async function score(model, claims, cookie) {
     const res = await fetch(`${BASE}/api/eval/score`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
-      body: JSON.stringify({ claim: claim.claim, candidates, ...(model ? { model } : {}) }),
+      body: JSON.stringify({
+        claim: claim.claim,
+        candidates,
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -176,6 +190,12 @@ async function main() {
   const claims = load();
   const model = arg('model');
   const against = arg('against');
+  const sweep = process.argv.includes('--sweep');
+  const effort = arg('effort');
+  if (sweep && !model) {
+    console.log(`${RED}--sweep needs --model${OFF}: an effort on the capability's own model is a run nobody could name afterwards.`);
+    process.exit(1);
+  }
 
   /* The dev login is a cookie, and the owner check on the route is what makes
      naming a model privileged. Fetched once so one failure explains itself. */
@@ -187,11 +207,42 @@ async function main() {
   const cookie = (home.headers.get('set-cookie') ?? '').split(';')[0] || '';
 
   console.log(`${FILE}: ${claims.length} claims`);
-  const a = await score(model, claims, cookie);
-  const rateA = report(model ?? 'the shipping judge', a.predictions, a.reasked);
+
+  if (sweep) {
+    const { EFFORTS } = await import('../src/eval-adversarial.ts');
+    /* Every level, lowest first, so the report reads as a curve. The point
+       of the sweep is the SHAPE: a flat line says the capability does not
+       need the depth it is paying for, and a line that stops improving says
+       where to stop. */
+    const rows = [];
+    for (const level of EFFORTS) {
+      const r = await score(model, claims, cookie, level);
+      const rate = report(`${model} @ ${level}`, r.predictions, r.reasked);
+      const real = r.predictions.filter((p) => p.truth === 'backs');
+      rows.push({
+        level,
+        rate,
+        refused: real.filter((p) => p.said !== 'backs').length,
+        of: real.length,
+      });
+    }
+    console.log(`\n${BOLD}the curve${OFF}`);
+    for (const r of rows) {
+      console.log(`  ${r.level.padEnd(7)} false support ${pct(r.rate)}   refused ${r.refused} of ${r.of}`);
+    }
+    console.log(
+      `\n${DIM}A flat curve means this capability is paying for depth it does not use.\n` +
+        `Where it stops improving is where to stop. Neither reading is available\n` +
+        `while the set is saturated — see eval/README.md.${OFF}`,
+    );
+    return;
+  }
+
+  const a = await score(model, claims, cookie, effort);
+  const rateA = report(model ? `${model}${effort ? ` @ ${effort}` : ''}` : 'the shipping judge', a.predictions, a.reasked);
 
   if (against) {
-    const b = await score(against, claims, cookie);
+    const b = await score(against, claims, cookie, effort);
     const rateB = report(against, b.predictions, b.reasked);
     const { compare } = await import('../src/eval-adversarial.ts');
     console.log(`\n${compare({ model: model ?? 'the shipping judge', rate: rateA }, { model: against, rate: rateB })}`);

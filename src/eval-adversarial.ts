@@ -29,6 +29,7 @@
 
 import type { Verdict } from "./eval-set.ts";
 import { falseSupportRate, type Prediction } from "./eval-metrics.ts";
+import type { Effort } from "./models.ts";
 
 /**
  * The named ways a near miss is near.
@@ -197,18 +198,39 @@ export const isModelId = (v: unknown): v is string =>
  * that nothing measured. The window here is what the EVAL needs — a claim and
  * a handful of quotes — not a claim about the model.
  */
-export function asCandidateModel(id: string): {
+export function asCandidateModel(id: string, effort?: Effort): {
   provider: "workers-ai" | "anthropic";
   id: string;
   context: number;
   jsonSchema: boolean;
   diarizes: boolean;
+  effort?: Effort;
 } {
+  const provider = id.startsWith("@cf/") ? "workers-ai" : "anthropic";
   return {
-    provider: id.startsWith("@cf/") ? "workers-ai" : "anthropic",
+    provider,
     id,
     context: 32_000,
     jsonSchema: true,
     diarizes: false,
+    /*
+     * EFFORT IS A CANDIDATE TOO. "Which model" is one axis and "how hard it
+     * thinks" is another, and the second one is the cheaper to route on: a
+     * second model means a second prompt cache, while a second effort on the
+     * same model shares the one it already has. Anthropic's own guidance is
+     * to measure the best model at lower effort BEFORE reaching for a
+     * cascade, and a sweep is how that gets measured rather than argued.
+     *
+     * Dropped for Workers AI, which has no such setting — naming an effort
+     * for a model that cannot read it would produce two scored runs that
+     * were the same run.
+     */
+    ...(provider === "anthropic" && effort ? { effort } : {}),
   };
 }
+
+/** The five published levels, lowest first. Anything else is not a level. */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+export const isEffort = (v: unknown): v is Effort =>
+  typeof v === "string" && (EFFORTS as readonly string[]).includes(v);

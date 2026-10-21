@@ -77,7 +77,7 @@ import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
-import { asCandidateModel, isModelId } from "./eval-adversarial.ts";
+import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
 import { receiptsHtml, receiptsPage } from "./receipts.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
@@ -2821,6 +2821,7 @@ app.post("/api/eval/score", async (c) => {
     claim?: string;
     candidates?: Array<{ id?: string; quote?: string; sourceTitle?: string }>;
     model?: string;
+    effort?: string;
   }>().catch(() => null);
 
   const claim = body?.claim?.trim();
@@ -2833,12 +2834,22 @@ app.post("/api/eval/score", async (c) => {
   if (body?.model) {
     if (!user.is_owner) return c.json({ error: "naming a model is owner-only" }, 403);
     if (!isModelId(body.model)) return c.json({ error: "that is not a model id" }, 422);
-    model = asCandidateModel(body.model);
+    /* An effort without a model would be an effort on whatever the
+       capability resolved to, which is a run nobody could name afterwards. */
+    if (body.effort !== undefined && !isEffort(body.effort)) {
+      return c.json({ error: "that is not an effort level" }, 422);
+    }
+    model = asCandidateModel(body.model, body.effort as Parameters<typeof asCandidateModel>[1]);
+  } else if (body?.effort !== undefined) {
+    return c.json({ error: "an effort needs a model to go with it" }, 422);
   }
 
   const out = await judge(c.env, claim, candidates, model ? { model } : {});
   return c.json({
     model: out.model,
+    /* Echoed so a scored run can be labelled by what actually ran, not by
+       what was asked for. */
+    effort: model?.effort ?? null,
     tokensIn: out.tokensIn,
     tokensOut: out.tokensOut,
     /* A degraded answer, named. `unanswered` above zero means some of the

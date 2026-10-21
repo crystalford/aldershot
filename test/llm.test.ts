@@ -285,3 +285,63 @@ test("a provider that reports nothing reports zero, not nothing", () => {
     }),
   );
 });
+
+/*
+ * ── Effort ──────────────────────────────────────────────────────────────
+ *
+ * `output_config.effort` was not being sent at all, and the omission was
+ * not neutral: Opus 5.5 defaults to `medium`, one level below what its
+ * predecessor defaulted to, so the judge that IS invariant 4 ran the best
+ * model in the product at middling depth because nobody named a level.
+ */
+
+test("ACCEPTANCE: effort goes INSIDE output_config, where it is read", () => {
+  /*
+   * THE WHOLE TEST. An unknown TOP-LEVEL key is ignored by the API and the
+   * call succeeds at the default, so sending `effort` in the wrong place
+   * looks exactly like sending it in the right one — a 200, a good answer,
+   * and a setting nobody applied. Nothing but the request body can tell
+   * those apart.
+   */
+  const { env } = fakeEnv({ ANTHROPIC_API_KEY: "sk-platform-aaaaaaaa" });
+  return withFetch({ status: 200, body: { content: [] } }, async (seen) => {
+    await callReason(env as never, { ...CLAUDE, effort: "xhigh" }, CALL);
+    const body = JSON.parse(seen[0].body) as Record<string, unknown>;
+    assert.deepEqual(body.output_config, { effort: "xhigh" });
+    assert.ok(!("effort" in body), "a top-level effort is silently ignored by the API");
+  });
+});
+
+test("a model with no effort sends no output_config at all", () => {
+  /* Workers AI has no such setting. An empty object would be a parameter
+     nobody applies that everybody can see in the request. */
+  const { env } = fakeEnv({ ANTHROPIC_API_KEY: "sk-platform-aaaaaaaa" });
+  return withFetch({ status: 200, body: { content: [] } }, async (seen) => {
+    await callReason(env as never, CLAUDE, CALL);
+    const body = JSON.parse(seen[0].body) as Record<string, unknown>;
+    assert.ok(!("output_config" in body), `sent ${JSON.stringify(body.output_config)}`);
+  });
+});
+
+test("the effort survives the fall back from a user's key to ours", () => {
+  /*
+   * The fallback re-sends the request on the platform key. Dropping the
+   * effort there would mean a call that fell back was quietly shallower
+   * than the same call that did not — the kind of difference that shows up
+   * as "the judge is worse for some users" and has no visible cause.
+   */
+  const { env } = fakeEnv({ ANTHROPIC_API_KEY: "sk-platform-aaaaaaaa" });
+  return withFetch({ status: 429, body: { error: "slow down" } }, async (seen) => {
+    await callReason(
+      env as never,
+      { ...CLAUDE, effort: "max" },
+      CALL,
+      { userKey: "sk-user-bbbbbbbb", billUsIfMyKeyFails: true },
+    ).catch(() => undefined);
+    assert.equal(seen.length, 2, "the user's key failed and ours was not tried");
+    for (const [i, call] of seen.entries()) {
+      const body = JSON.parse(call.body) as Record<string, unknown>;
+      assert.deepEqual(body.output_config, { effort: "max" }, `call ${i + 1} lost the effort`);
+    }
+  });
+});
