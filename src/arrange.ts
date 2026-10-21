@@ -22,6 +22,7 @@ import type { Env } from "./env.ts";
 import { resolveFor } from "./models.ts";
 import { usageTokens } from "./grounding.ts";
 import type { Block } from "./blocks.ts";
+import { runRead } from "./llm.ts";
 
 /**
  * Does this sentence mean "change the order"?
@@ -150,7 +151,7 @@ export async function runArrange(
   if (blocks.length < 2 || blocks.length > ARRANGE_MAX) return none;
 
   const model = resolveFor("arrange", env);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "arrange", m, i);
 
   const lines = blocks
     .map((b, i) => `${i}. ${(b.text ?? b.words.map((w) => w.w).join(" ")).slice(0, 200)}`)
@@ -164,7 +165,17 @@ export async function runArrange(
         { role: "user", content: `What the user asked for: ${instruction}\n\nLines:\n${lines}` },
       ],
       response_format: { type: "json_schema", json_schema: SCHEMA },
-      max_tokens: 2000,
+      /*
+       * 2000 is the number src/judge.ts was caught at, on the same model
+       * family and for the same kind of work — read a numbered list, decide
+       * an order, answer with indices. Ordering n blocks is more thinking
+       * than judging one claim, not less, and a cut-off answer here does not
+       * fail loudly: `permutationOf` repairs a short or broken order into a
+       * valid one, so a truncated call arrives as a plausible arrangement
+       * nobody chose. Raised on that argument; `runRead` is what will say
+       * whether it is still too mean.
+       */
+      max_tokens: 8000,
     });
   } catch {
     return none;

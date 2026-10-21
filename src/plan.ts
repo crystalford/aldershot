@@ -27,6 +27,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
+import { runRead } from "./llm.ts";
 
 /** What a beat is for. The prototype's own three. */
 export const ROLES = ["subject", "counter", "outside"] as const;
@@ -118,7 +119,7 @@ function systemPrompt(topic: string): string {
 export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
   /* Directing: what the video says. Not a place to save a call. */
   const model = resolveFor("direct", env);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "plan", m, i);
 
   const res = await run(model.id, {
     messages: [

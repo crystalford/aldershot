@@ -14,7 +14,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetFor, judge, wasTruncated } from "../src/judge.ts";
+import { budgetFor, judge } from "../src/judge.ts";
+import { wasTruncated } from "../src/llm.ts";
 
 const CANDIDATES = [
   { id: "c1", quote: "The launch went out and the review landed a week after it." },
@@ -125,7 +126,7 @@ test("the budget clears the hardest claim measured, with room to spare", async (
   assert.ok(budgetFor(100) <= 24000, "and it is capped, or a long list is a runaway");
 });
 
-test("truncation is measured, not asked about", async () => {
+test("truncation is measured at the seam, not asked about", async () => {
   /* Spending every token offered is what being cut off looks like from
      outside. Neither provider reports a stop reason, and the model's own
      account of whether it finished is the thing that did not finish. */

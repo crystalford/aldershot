@@ -32,7 +32,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor, type Resolved } from "./models.ts";
-import { callReason } from "./llm.ts";
+import { callReason, reportRoom } from "./llm.ts";
 import { VERDICTS, isVerdict, type Verdict } from "./eval-set.ts";
 
 /**
@@ -404,21 +404,7 @@ export function budgetFor(moments: number): number {
   return Math.min(24000, 6000 + 1500 * Math.max(1, moments));
 }
 
-/**
- * Whether the answer was cut off, as a MEASUREMENT rather than a claim.
- *
- * Neither provider reports a stop reason through `usageTokens`, and asking
- * the model whether it finished would be trusting the thing that did not.
- * Spending every token that was offered is what truncation looks like from
- * the outside, and it is the same test src/naming.ts applied by hand.
- *
- * `>=` and not `===`: a provider that counts the stop token differently by
- * one would make an equality check silently never fire, which is how a
- * guard becomes decoration.
- */
-export function wasTruncated(tokensOut: number, maxTokens: number): boolean {
-  return maxTokens > 0 && tokensOut >= maxTokens;
-}
+
 
 /**
  * Judge every candidate against one claim, in one call.
@@ -490,7 +476,7 @@ export async function judge(
        its ceiling once will do it twice. Where the first answer stopped
        short of the ceiling the cause was not space — it skipped a moment —
        and the same budget is the right one. */
-    const room = wasTruncated(tokensOut, maxTokens) ? Math.min(24000, maxTokens * 2) : maxTokens;
+    const room = reportRoom("judge", tokensOut, maxTokens) ? Math.min(24000, maxTokens * 2) : maxTokens;
     const { raw: again } = await ask(missing, room);
     const second = parseJudgements(again, candidates, ids, model.id);
     const t2 = usageTokens(again);

@@ -15,6 +15,7 @@ import type { Env } from "./env.ts";
 import { groundClips, parseClips, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
 import type { Segment } from "./sources.ts";
+import { runRead } from "./llm.ts";
 
 const SCHEMA = {
   type: "object",
@@ -87,7 +88,7 @@ export async function placeReactions(
 
   const model = resolveFor("direct", env);
   const transcript = segments.map((s) => `[${s.start_ms}-${s.end_ms}] ${s.text}`).join("\n");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "reactions", m, i);
 
   const res = await run(model.id, {
     messages: [

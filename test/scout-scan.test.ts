@@ -427,11 +427,28 @@ test("an answer in a code fence is still an answer", () => {
 /* ── The call ───────────────────────────────────────────────────────────── */
 
 function fakeAI(answer: unknown) {
-  const asked: Array<{ messages: Array<{ role: string; content: string }>; max_tokens: number }> = [];
+  const asked: Array<{
+    messages: Array<{ role: string; content: string }>;
+    max_tokens: number;
+    /* Kept because the closed schema, not the budget, is what bounds the
+       answer — see the budget test below. */
+    response_format?: { json_schema?: { properties?: Record<string, unknown> } };
+  }> = [];
   const env = {
     AI: {
-      run: async (_m: string, i: { messages: Array<{ role: string; content: string }>; max_tokens: number }) => {
-        asked.push({ messages: i.messages.map((m) => ({ ...m })), max_tokens: i.max_tokens });
+      run: async (
+        _m: string,
+        i: {
+          messages: Array<{ role: string; content: string }>;
+          max_tokens: number;
+          response_format?: { json_schema?: { properties?: Record<string, unknown> } };
+        },
+      ) => {
+        asked.push({
+          messages: i.messages.map((m) => ({ ...m })),
+          max_tokens: i.max_tokens,
+          response_format: i.response_format,
+        });
         return { response: JSON.stringify(answer), usage: { prompt_tokens: 1800, completion_tokens: 30 } };
       },
     },
@@ -471,12 +488,32 @@ test("the prompt says NONE is expected and forbids reasoning from reputation", a
   assert.match(system, /not with the numbers turned into digits/);
 });
 
-test("the answer budget is short, because a long one invites an essay", async () => {
-  /* The answer is a quote and an id. A budget that allows an essay gets one,
-     and the essay is the model explaining why the passage nearly fits. */
+test("the budget covers the thinking, and the SCHEMA is what keeps the answer short", async () => {
+  /*
+   * THIS TEST USED TO ASSERT THE OPPOSITE, at `max_tokens <= 600`, with the
+   * reasoning "the answer is a quote and an id; a budget that allows an
+   * essay gets one". The concern is real and the mechanism was wrong: the
+   * cap does not bound the ANSWER, it bounds the answer plus everything the
+   * model thinks first, and `assistantText` discards the thinking. What
+   * actually stops an essay is the closed schema — three string fields and
+   * nowhere for prose to go — and the parse that rejects anything else.
+   *
+   * At 400 a reading-comprehension question over two thousand tokens was
+   * being cut off before the quote arrived, on every window, and arriving
+   * as a window with nothing in it. src/naming.ts was found at 32 for this
+   * reason and src/judge.ts at 2000 and again at 5300.
+   */
   const { env, asked } = fakeAI({ answer: "NONE", quote: "", first_word_id: "" });
   await scanWindow(env, win(), "Does this transcript show: anything?");
-  assert.ok(asked[0].max_tokens <= 600, `max_tokens was ${asked[0].max_tokens}`);
+
+  assert.ok(
+    asked[0].max_tokens >= 2000,
+    `max_tokens was ${asked[0].max_tokens} — a reasoning tier spends more than that before it answers`,
+  );
+
+  /* And the thing that does bound the answer. */
+  const props = asked[0].response_format?.json_schema?.properties ?? {};
+  assert.deepEqual(Object.keys(props).sort(), ["answer", "first_word_id", "quote"]);
 });
 
 test("a small model does the reading, not the frontier tier", async () => {

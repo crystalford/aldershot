@@ -15,6 +15,7 @@ import type { Env } from "./env.ts";
 import { resolveFor } from "./models.ts";
 import type { Segment } from "./sources.ts";
 import { groundClips, parseClips, usageTokens, type ScoredClip } from "./grounding.ts";
+import { runRead } from "./llm.ts";
 
 export { groundClips, parseClips, type ScoredClip } from "./grounding.ts";
 
@@ -296,7 +297,7 @@ export async function scorePass(
 
   /* Reads whole transcripts: wants the window more than the power. */
   const model = resolveFor("read", env);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "score", m, i);
   const windows = windowSegments(segments);
 
   /**

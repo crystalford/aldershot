@@ -22,6 +22,7 @@
  */
 
 import type { Resolved } from "./models.ts";
+import { usageTokens } from "./grounding.ts";
 
 /** What a reasoning call asks for. Deliberately small and provider-neutral. */
 export interface ReasonCall {
@@ -247,6 +248,80 @@ export interface CallOptions {
  * no user key for it — so a BYOK user still has the default tier on our bill,
  * which is what the $29 platform fee in doc 10 is for.
  */
+/**
+ * WHETHER THE ANSWER WAS CUT OFF, AS A MEASUREMENT.
+ *
+ * Neither provider reports a stop reason through `usageTokens`, and asking a
+ * model whether it finished is trusting the thing that did not. Spending
+ * every token offered is what truncation looks like from outside.
+ *
+ * `>=` and not `===`: a provider that counts the stop token differently by
+ * one would make an equality check silently never fire, which is how a guard
+ * becomes decoration.
+ */
+export function wasTruncated(tokensOut: number, maxTokens: number): boolean {
+  return maxTokens > 0 && tokensOut >= maxTokens;
+}
+
+/**
+ * SAY SO WHEN IT HAPPENS, from wherever it happens.
+ *
+ * This repo has now sized a token budget for the ANSWER three times and been
+ * wrong three times, because the reasoning tier spends tokens thinking first
+ * and `assistantText` throws the thinking away. A budget that fits the answer
+ * cuts the model off mid-thought and the answer never arrives at all:
+ *
+ *   src/naming.ts     32 → every call came back at exactly 32
+ *   src/judge.ts    2000 → two claims of nineteen lost, read as caution
+ *   src/judge.ts    5300 → the hardest claim spends 4355 and fails under load
+ *
+ * None of the three announced itself. The first was found by reading token
+ * counts by hand, the second by an eval set that happened to have controls,
+ * the third by probing one claim. This is the line that makes the fourth one
+ * announce itself, and it belongs here because `llm.ts` is the seam every
+ * model call either goes through or should.
+ *
+ * It returns the verdict so a caller that can do something about it — the
+ * judge re-asks with more room — does not need its own copy of the test.
+ */
+export function reportRoom(where: string, tokensOut: number, maxTokens: number): boolean {
+  const truncated = wasTruncated(tokensOut, maxTokens);
+  if (truncated) {
+    console.warn(
+      `[${where}] cut off: spent all ${maxTokens} output token(s), so the answer is ` +
+        `incomplete and anything parsed from it is a guess. Raise the budget.`,
+    );
+  }
+  return truncated;
+}
+
+/**
+ * `env.AI.run`, with the room checked on the way out.
+ *
+ * MOST MODEL CALLS IN THIS REPO DO NOT GO THROUGH `callReason`. They were
+ * written before it existed, each with its own `max_tokens` literal and its
+ * own reason for the number, and none of them could tell you whether the
+ * answer it parsed was a whole one. That is how the same bug reached
+ * production three times.
+ *
+ * The budget stays where it was — inside the input object the caller already
+ * builds — so there is no second copy of the number to drift from the first.
+ * This reads it back out and checks it. A call site that wants the token
+ * counts still takes them from `usageTokens`; this does not change what is
+ * returned.
+ */
+export async function runRead(
+  env: { AI: { run(model: string, input: Record<string, unknown>): Promise<unknown> } },
+  where: string,
+  model: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const raw = await env.AI.run(model, input);
+  const { tokensOut } = usageTokens(raw);
+  reportRoom(where, tokensOut, Number(input.max_tokens ?? 0));
+  return raw;
+}
+
 export async function callReason(
   env: { AI: { run(model: string, input: Record<string, unknown>): Promise<unknown> }; ANTHROPIC_API_KEY?: string },
   model: Resolved,
@@ -295,6 +370,7 @@ export async function callReason(
     ...(call.schema ? { response_format: { type: "json_schema", json_schema: call.schema } } : {}),
     max_tokens: call.maxTokens,
   });
+  reportRoom(`callReason ${model.id}`, usageTokens(raw).tokensOut, call.maxTokens);
   /* Workers AI has no prompt cache to report on. Zeroes rather than nulls:
      "nothing was cached" is the true answer, not "we could not tell". */
   return { raw, model: model.id, provider: "workers-ai", onUserKey: false, cache: { read: 0, written: 0 } };

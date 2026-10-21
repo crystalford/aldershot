@@ -226,6 +226,72 @@ function checkWired() {
   }
 }
 
+/**
+ * ROOM — every token budget is watched by something.
+ *
+ * THREE TIMES. A `max_tokens` sized for the ANSWER cuts a reasoning model
+ * off mid-thought, `assistantText` drops the thinking, and what arrives is
+ * an empty parse that every caller treats as "the model had nothing to say":
+ *
+ *   src/naming.ts     32 → every call returned exactly 32, found by hand
+ *   src/judge.ts    2000 → two claims of nineteen lost, read as over-caution
+ *   src/judge.ts    5300 → the hardest claim spends 4355, failed under load
+ *
+ * Not one announced itself, and each was found by a different accident. So
+ * the rule is structural rather than a number: a file that sets a text
+ * budget must route through something that reads the budget back out and
+ * says when it was spent — `runRead` or `callReason`, both in src/llm.ts.
+ *
+ * NO FLOOR IS ASSERTED HERE. A minimum would be a threshold invented against
+ * nothing, which is what this codebase refuses everywhere else; the runtime
+ * warning is the measurement, and it only exists if the call is wired to it.
+ *
+ * Comments are stripped first, so the three numbers in the doc comment above
+ * each budget do not read as budgets. Embedding, transcription and
+ * text-to-speech calls set no `max_tokens` and are therefore not matched —
+ * there is nothing to truncate.
+ */
+function checkRoom() {
+  const bad = [];
+  const rel = (f) => path.relative(ROOT, f);
+  const decomment = (t) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+
+  /*
+   * COUNTED, BECAUSE THE FIRST VERSION PASSED WITH ITS MATCHER BROKEN.
+   * Replacing the test below with `continue` — so the rule examined nothing
+   * at all — printed the same green line as a clean run. That is the fault
+   * that let `reachable`'s route check never fire once, arriving in a rule
+   * written the day after it was fixed. A check that cannot tell "nothing is
+   * wrong" from "I did not look" is decoration.
+   */
+  let seen = 0;
+  for (const f of walk(path.join(ROOT, 'src'))) {
+    const code = decomment(fs.readFileSync(f, 'utf8'));
+    if (!/\bmax_?[Tt]okens\s*:/.test(code)) continue;
+    seen += 1;
+    /* llm.ts is where both of them live. */
+    if (path.basename(f) === 'llm.ts') continue;
+    if (/\brunRead\s*\(/.test(code) || /\bcallReason\s*\(/.test(code)) continue;
+    bad.push(
+      `${rel(f)} — sets a token budget and reaches neither runRead nor callReason, ` +
+        `so a truncated answer there is indistinguishable from an empty one`,
+    );
+  }
+
+  if (bad.length) {
+    fail('room', 'A token budget nothing is watching.', bad.join('\n'));
+  } else if (seen < 2) {
+    fail(
+      'room',
+      'This rule found no token budgets, and src/ has a dozen.',
+      `matched ${seen} file(s) — the matcher is broken, not the code`,
+    );
+  } else {
+    pass('room', `${seen} token budgets in src/, all reporting when they are spent`);
+  }
+}
+
 /** Every .ts/.cjs/.mjs under a directory. */
 function walkAny(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -1669,6 +1735,7 @@ function checkSchema() {
 
 checkTemplate();
 checkWired();
+checkRoom();
 checkConventions();
 checkReachable();
 checkSchema();

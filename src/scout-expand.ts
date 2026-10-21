@@ -36,6 +36,7 @@ import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
 import type { Family, SourceCandidate } from "./scout-adapters.ts";
 import { normTokens } from "./scout-verify.ts";
+import { runRead } from "./llm.ts";
 
 /* ── Vocabulary ─────────────────────────────────────────────────────────── */
 
@@ -456,7 +457,7 @@ export function parseExpansion(
  */
 export async function expandQueries(env: Env, input: ExpandInput): Promise<Expansion> {
   const model = resolveModel("reason", env, "upgrade");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "expand", m, i);
 
   const res = await run(model.id, {
     messages: [

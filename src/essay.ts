@@ -14,6 +14,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
+import { runRead } from "./llm.ts";
 
 /** The design's own act names. */
 export const ACTS = ["Setup", "Development", "Turn", "Resolution"] as const;
@@ -121,7 +122,7 @@ export async function draftOutline(
   opts: { upgrade?: boolean } = {},
 ): Promise<EssayOutline> {
   const model = resolveFor("direct", env);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "essay", m, i);
 
   const res = await run(model.id, {
     messages: [
