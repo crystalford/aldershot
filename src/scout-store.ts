@@ -210,8 +210,8 @@ export async function writeSources(
     candidates.map((c) =>
       db
         .prepare(
-          "INSERT OR IGNORE INTO scout_sources (id, run_id, adapter, external_id, url, title, channel, published_at, duration_s, kind, transcript, licence, fetched_at, expires_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT OR IGNORE INTO scout_sources (id, run_id, adapter, external_id, url, title, channel, published_at, duration_s, kind, transcript, transcript_url, licence, fetched_at, expires_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(
           ulid(now),
@@ -225,6 +225,7 @@ export async function writeSources(
           c.durationS ?? null,
           c.kind ?? null,
           c.transcript ?? "none",
+          c.transcriptUrl ?? null,
           c.licence ?? null,
           now,
           c.expiresAt ?? null,
@@ -243,6 +244,44 @@ export async function setTriage(
       db.prepare("UPDATE scout_sources SET triage_score = ? WHERE id = ?").bind(r.score, r.sourceId),
     ),
   );
+}
+
+export interface Scannable {
+  id: string;
+  url: string;
+  title: string | null;
+  transcriptUrl: string;
+  durationS: number | null;
+}
+
+/**
+ * Sources with words in them that nobody has read yet.
+ *
+ * TRIAGE ORDER, highest first, because the budget may stop the run partway
+ * and the sources most likely to carry the moment should be the ones that
+ * got read. A source with no transcript_url is not here however promising:
+ * the scan phase needs an address, and "we know it has a transcript" is not
+ * one.
+ */
+export async function sourcesToScan(db: D1Database, runId: string, limit = 5): Promise<Scannable[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, url, title, transcript_url, duration_s
+         FROM scout_sources
+        WHERE run_id = ? AND scanned = 0 AND transcript != 'none'
+          AND transcript_url IS NOT NULL AND transcript_url != ''
+        ORDER BY COALESCE(triage_score, 0) DESC, id
+        LIMIT ?`,
+    )
+    .bind(runId, limit)
+    .all<{ id: string; url: string; title: string | null; transcript_url: string; duration_s: number | null }>();
+  return (results ?? []).map((r) => ({
+    id: r.id,
+    url: r.url,
+    title: r.title,
+    transcriptUrl: r.transcript_url,
+    durationS: r.duration_s,
+  }));
 }
 
 export async function markScanned(db: D1Database, sourceId: string, yieldN: number): Promise<void> {

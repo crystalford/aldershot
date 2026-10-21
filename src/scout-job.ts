@@ -31,12 +31,13 @@
 import type { Env } from "./env.ts";
 import { QuotaLedger, d1QuotaStore, runSearches, type ScoutAdapter, type SearchRequest } from "./scout-adapters.ts";
 import { decompose } from "./scout-decompose.ts";
+import { scanSource } from "./scout-scan-run.ts";
 import { expandQueries, type Term } from "./scout-expand.ts";
 import { podcastAdapter } from "./scout-podcast.ts";
 import { youtubeAdapter } from "./scout-youtube.ts";
 import { nextStep, rowFor, type RunSnapshot } from "./scout-run.ts";
 import { DEFAULT_BUDGET, coverageOf, recapture, type Point } from "./scout-stop.ts";
-import {
+import { sourcesToScan,
   getBeats,
   queriesTried,
   snapshot,
@@ -170,11 +171,37 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
       return { ...job, queriesPending: [] };
     }
 
+    case "scan": {
+      /*
+       * READING THE SOURCES THAT HAVE WORDS IN THEM.
+       *
+       * This arm did not exist, and the comment below said why: "none is
+       * reachable until a source arrives with words in it". One had —
+       * the podcast adapter marks an episode with a published transcript
+       * `native` — but scout_sources recorded THAT a transcript existed and
+       * never WHERE, so the run could not reach it. The column is there now.
+       *
+       * A few sources per invocation, highest triage score first, and the
+       * phase returns so the run re-dispatches. A long transcript is read
+       * across rounds rather than in one call that times out.
+       */
+      const ready = await sourcesToScan(env.DB, job.runId, 3);
+      if (!ready.length) return { ...job, snowballed: false };
+
+      for (const source of ready) {
+        const out = await scanSource(env, { runId: job.runId, source, beats });
+        console.log(
+          `[scout] scan ${source.id}: ${out.scanned} window(s), ${out.found} quote(s)` +
+            `${out.skipped ? ` — skipped: ${out.skipped}` : ""}`,
+        );
+      }
+      return { ...job, snowballed: false };
+    }
+
     /*
      * THE PHASES THAT NEED WHAT V0 HAS NOT GOT. Triage needs the harvested
-     * vocabulary; scan needs a readable transcript, which only the podcast
-     * adapter currently produces; verify needs that scan. Each is built and
-     * tested; none is reachable until a source arrives with words in it.
+     * vocabulary; verify needs the scan above to have written something.
+     * Both are built and tested.
      *
      * Returning null ENDS the chain rather than looping. A job that
      * re-dispatched itself into a phase it cannot perform is a message that

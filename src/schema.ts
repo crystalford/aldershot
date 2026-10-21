@@ -619,6 +619,16 @@ const STATEMENTS: string[] = [
      duration_s INTEGER,
      kind TEXT,
      transcript TEXT NOT NULL DEFAULT 'none',
+     /*
+      * WHERE THE WORDS ARE, for a source that published some.
+      *
+      * The transcript column above is a STATE — native, transcribed, none —
+      * and the scan phase needs an address, not a state. Without it the run
+      * knew a podcast episode had a readable transcript and had no way to
+      * reach it, which is most of why the scan phase has never run. Null for
+      * every adapter that publishes none, which is all of them but one.
+      */
+     transcript_url TEXT,
      licence TEXT,
      triage_score REAL,
      scanned INTEGER NOT NULL DEFAULT 0,
@@ -1074,6 +1084,9 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /* The spend cap. See the v2_users table above; here as well because there
      is no migration runner and every existing account already has a row. */
   { table: "v2_users", column: "spend_cap_usd", ddl: "ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL" },
+
+  /* Where a source's published transcript lives. See scout_sources above. */
+  { table: "scout_sources", column: "transcript_url", ddl: "ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT" },
 ];
 
 let ensured = false;

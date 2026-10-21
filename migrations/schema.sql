@@ -422,6 +422,16 @@ CREATE TABLE IF NOT EXISTS scout_sources (
     duration_s INTEGER,
     kind TEXT,
     transcript TEXT NOT NULL DEFAULT 'none',
+    /*
+     * WHERE THE WORDS ARE, for a source that published some.
+     *
+     * The transcript column above is a STATE — native, transcribed, none —
+     * and the scan phase needs an address, not a state. Without it the run
+     * knew a podcast episode had a readable transcript and had no way to
+     * reach it, which is most of why the scan phase has never run. Null for
+     * every adapter that publishes none, which is all of them but one.
+     */
+    transcript_url TEXT,
     licence TEXT,
     triage_score REAL,
     scanned INTEGER NOT NULL DEFAULT 0,
@@ -551,3 +561,4 @@ ALTER TABLE rules ADD COLUMN params TEXT;
 ALTER TABLE renders ADD COLUMN lufs REAL;
 ALTER TABLE renders ADD COLUMN true_peak REAL;
 ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;
+ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT;
