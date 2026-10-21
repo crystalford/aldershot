@@ -914,6 +914,15 @@ async function checkStrings() {
         "what they have. The sentence beside it does the explaining.\n\n" +
         "The entity rather than the character, same trap as the line above.",
     ],
+    [
+      "The dispute file &nearr;",
+      "The dispute file, under the cue sheet. Same reason as the line above: " +
+        "the prototype has no Before you post step for it to belong to.\n\n" +
+        "'Dispute file' is doc 09's own name for it and the name it would be " +
+        "asked for by, so it is named rather than described — but the " +
+        "sentence beside it leads on what the person gets, because most " +
+        "people reading it have never had a dispute and should still open it.",
+    ],
   ]);
 
   const SHORT = 24;

@@ -71,6 +71,7 @@ import { compileBrief, shortlistDiff } from "./brief.ts";
 import { UNSURE, classify } from "./classify.ts";
 import { allowed, type Move, type Source as PictureSource } from "./pictures.ts";
 import { cueSheetFor, cueSheetText } from "./cuesheet.ts";
+import { commentary, disputeFor, disputeText, usedSeconds } from "./dispute.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -3221,6 +3222,43 @@ app.get("/api/projects/:id/cuesheet", async (c) => {
       "content-disposition": `attachment; filename="${name} cue sheet.txt"`,
     },
   });
+});
+
+/**
+ * THE DISPUTE FILE, assembled as the video is made.
+ *
+ * Doc 09 is emphatic that this exists BEFORE a claim arrives, not after one:
+ * a document written in answer to a complaint is written by somebody with a
+ * reason to shade it, and it lands weeks late. Nothing here is computed on
+ * demand except the division — the ledger, the missions and the attributions
+ * were all written as the cut was built.
+ *
+ * The runtime comes from the same EDL the render is built from, so the ratio
+ * is about the file somebody would actually publish rather than about the
+ * blocks on the page. Where there is no EDL to measure, the file says the
+ * runtime is not known rather than reporting nought to one.
+ */
+app.get("/api/projects/:id/dispute", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const entries = await disputeFor(c.env.DB, project.id);
+  const built = entries.length ? await edlForProject(c.env, project, user.id) : null;
+  const totalS = built ? built.edl.durationMs / 1000 : null;
+  const clipS = entries.reduce((n, e) => n + usedSeconds(e), 0);
+
+  const name = (project.title || "dispute-file").replace(/[^\w.\- ]/g, "_");
+  return new Response(
+    disputeText(entries, commentary(totalS, clipS), project.title || "Untitled"),
+    {
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "content-disposition": `attachment; filename="${name} dispute file.txt"`,
+      },
+    },
+  );
 });
 
 app.get("/api/projects/:id/renders", async (c) => {

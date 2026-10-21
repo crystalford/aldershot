@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -129,10 +129,23 @@ test("ACCEPTANCE: the rule passes on this repo, and says what it is still carryi
    * Everything above describes the fix; this runs it. A rule that cannot be
    * run from a test is a rule whose next edit is unverified.
    */
-  const out = execFileSync("node", [join(import.meta.dirname, "..", "scripts", "check-fidelity.cjs")], {
+  /*
+   * spawnSync, and the exit CODE is deliberately not asserted.
+   *
+   * The first version used execFileSync, which throws on a non-zero exit —
+   * and that exit covers every rule in the file, including `strings`, which
+   * only runs at all when a dev server happens to be up. So this test passed
+   * or failed on whether something unrelated was listening on 8787, twice in
+   * one afternoon. A test that fails for a reason it does not name is a test
+   * somebody deletes. This one claims something about reachability, so it
+   * reads the reachability lines and nothing else.
+   */
+  const run = spawnSync("node", [join(import.meta.dirname, "..", "scripts", "check-fidelity.cjs")], {
     encoding: "utf8",
   });
+  const out = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
   assert.match(out, /✔ reachable/, "the rule passes on the repo as it stands");
+  assert.doesNotMatch(out, /nothing anywhere asks for it/, "and nothing is unwired");
   assert.match(
     out,
     /2 route\(s\) still unreachable and known: \/api\/projects\/:id\/reactions, \/api\/projects\/:id\/outline/,
