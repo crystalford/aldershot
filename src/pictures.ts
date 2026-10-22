@@ -201,7 +201,40 @@ export function allowed(move: Move, c: Candidate): Refusal {
     return { reason: "it is about the subject rather than evidence of it" };
   }
 
-  if (!MOVE_RULES[move].wants.includes(c.source)) {
+  /*
+   * A VERIFIED SCOUT FIND IS THE THING ITSELF, and doc 08 could not say so.
+   *
+   * Its table gives EVIDENCE "own footage → user's documents" and forbids
+   * "generated anything · stock · I2V". It forbids STOCK. It does not
+   * mention a verified recording of somebody saying the thing, because
+   * Scout is doc 18 and did not exist when that table was written — and
+   * this codebase maps both onto one source, `world`, so the beat insert's
+   * `kind: "stock"` and a checked Scout quote arrive here indistinguishable.
+   *
+   * The Manual settles it, and CLAUDE.md says the Manual is the later word
+   * on what the product IS: Scout "finds what it's missing — THE PROOF, the
+   * other side, the original a clip came from". A find whose quote the
+   * deterministic verifier matched word for word against the recording,
+   * with the time read off word ids, is not an illustration of the proof.
+   * It is the proof. The move's own refusal sentence is the argument —
+   * "proof cannot be illustrated; it has to be the thing itself" — and a
+   * verified recording is the thing itself.
+   *
+   * SO THE TEST IS WHAT IT IS, NOT WHERE IT CAME FROM. `kind: "evidence"`
+   * AND probative, which stock can never be: the beat insert builds a stock
+   * candidate as `kind: "illustration"` with no probative flag, and the
+   * probative check above has already refused anything explicitly marked
+   * false. Generated is refused before any of this and stays refused —
+   * Phase 5's acceptance ("a generated image can never be placed on an
+   * EVIDENCE or CLAIM block") is untouched, and tested.
+   *
+   * docs/handoff/08-PICTURES-AND-VOICE.md carries this change in its table,
+   * per the repo rule: when a decision looks wrong, argue it and move the
+   * doc in the same breath rather than routing around it.
+   */
+  const provenVerified = move === "evidence" && c.source === "world" && c.kind === "evidence" && c.probative === true;
+
+  if (!provenVerified && !MOVE_RULES[move].wants.includes(c.source)) {
     return { reason: `${MOVE_RULES[move].refuses} — this is from ${c.source}` };
   }
 

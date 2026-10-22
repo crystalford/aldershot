@@ -273,3 +273,60 @@ test("a clean chart renders, and every failure says why in words", () => {
     assert.doesNotMatch(l.reason, /invalid|malformed|error/i, "it says what is wrong, not that something is");
   }
 });
+
+/*
+ * ── A verified Scout find, on an EVIDENCE line ───────────────────────────
+ *
+ * Doc 08's table gives EVIDENCE "own footage → user's documents" and forbids
+ * "generated anything · stock · I2V". It forbids STOCK and never mentions a
+ * verified recording, because Scout is doc 18 and did not exist when the
+ * table was written — and this codebase maps both onto `world`.
+ *
+ * The Manual is the later word on what the product is, and it says Scout
+ * "finds what it's missing — the proof". So the test is what a candidate IS,
+ * not where it came from.
+ */
+
+test("ACCEPTANCE: a verified outside recording may carry evidence", () => {
+  /* kind evidence AND probative: the deterministic verifier matched the
+     quote word for word against the recording. "Proof cannot be illustrated;
+     it has to be the thing itself" — and this is the thing itself. */
+  assert.equal(
+    allowed("evidence", { id: "L1", source: "world", kind: "evidence", probative: true }).reason,
+    null,
+  );
+});
+
+test("ACCEPTANCE: and stock still cannot, which is the door this must not open", () => {
+  /*
+   * The beat insert builds a stock candidate as `kind: "illustration"` with
+   * no probative flag — see /api/projects/:id/beats in src/index.ts. Doc 08
+   * forbids exactly this and the change above must not admit it.
+   */
+  const stock = allowed("evidence", { id: "new", source: "world", kind: "illustration" });
+  assert.ok(stock.reason, "stock footage was admitted as evidence");
+  assert.match(stock.reason, /proof cannot be illustrated/);
+
+  /* Nor an outside clip that calls itself evidence without having been
+     checked. Verified is a fact in a column, not a label a caller picks. */
+  const unchecked = allowed("evidence", { id: "x", source: "world", kind: "evidence" });
+  assert.ok(unchecked.reason, "an unverified outside clip was admitted as evidence");
+});
+
+test("ACCEPTANCE: generated is still refused on evidence and on a claim", () => {
+  /* Phase 5's named acceptance, re-asserted next to the change that could
+     have weakened it. Checked before any source list, so no amount of
+     claiming to be probative evidence gets a generated picture through. */
+  for (const move of ["evidence", "claim"] as const) {
+    const no = allowed(move, { id: "g", source: "generated", kind: "evidence", probative: true });
+    assert.ok(no.reason, `${move} admitted a generated picture`);
+    assert.match(no.reason, /generated picture cannot carry/);
+  }
+});
+
+test("the new door is only open on evidence", () => {
+  /* A claim is shown by who made it. A verified outside recording of
+     somebody else saying the thing is not the speaker making this claim. */
+  const onClaim = allowed("claim", { id: "L1", source: "world", kind: "evidence", probative: true });
+  assert.ok(onClaim.reason, "a claim admitted an outside recording");
+});

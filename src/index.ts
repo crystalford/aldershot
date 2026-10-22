@@ -77,6 +77,7 @@ import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { answerLead, ask } from "./ask.ts";
+import { emptyNote, offerFor } from "./picture-supply.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
@@ -3784,6 +3785,63 @@ app.post("/api/projects/:id/beats", async (c) => {
     clip_id: b.clipId ?? null,
   });
   return c.json({ beats });
+});
+
+/**
+ * WHAT COULD GO ON THIS LINE.
+ *
+ * The other half of invariant 8. `allowed()` has bitten at the insert above
+ * since it was written — ask for a generated card over a claim and you are
+ * refused — and nothing ever OFFERED a picture, so `place()` and
+ * `reasonFor()` had no candidates and lived only in their tests.
+ *
+ * The move comes from the same `classify` call the insert uses, over the
+ * whole cut, because a move is a statement about a line IN CONTEXT. An
+ * unanswered line is `claim`, which wants the speaker's own footage and
+ * refuses the rest — so a failed classification costs an offer, never a
+ * generated card over somebody's proof.
+ *
+ * GET, because it spends one model call and returns no change. The answer
+ * includes everything refused with the reason each was: doc 08's premise is
+ * that the picture answers "why am I seeing this", and the alternatives are
+ * half of that answer.
+ */
+app.get("/api/projects/:id/pictures", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const blockId = c.req.query("block") || "";
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const lines = blocks.filter((x) => x.text.trim()).map((x) => ({ id: x.id, text: x.text }));
+  const against = lines.find((x) => x.id === blockId);
+  if (!against) return c.json({ error: "no such line in this cut" }, 404);
+
+  let move: Move = UNSURE;
+  try {
+    move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+  } catch {
+    /* Unknown is `claim`, which is the most restrictive move. The offer
+       comes back short rather than permissive. */
+  }
+
+  /*
+   * WHAT THIS CUT HAS ALREADY SHOWN, so a reprise costs something.
+   *
+   * The FILE behind every block that renders from one, which is what the
+   * novelty penalty is about and what the candidates key on. A null
+   * mediaKey is this project's own source — left out, because a cut is
+   * mostly its own footage and penalising that would penalise everything.
+   * `place()` waives the penalty on a TURN, the one move that means "this,
+   * again, differently".
+   */
+  const seen = new Set(
+    blocks.map((b) => b.mediaKey).filter((k): k is string => !!k),
+  );
+
+  const offer = await offerFor(c.env, user.id, { line: against.text, move, seen });
+  return c.json({ ...offer, note: emptyNote(offer.empty) });
 });
 
 /**

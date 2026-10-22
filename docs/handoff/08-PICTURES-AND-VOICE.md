@@ -9,9 +9,33 @@ Every script-to-video tool matches nouns: "the court ruled" gets a stock gavel. 
 1. **Classify each line's move**: CLAIM · EVIDENCE · TURN · CONTEXT · EXAMPLE · ABSTRACTION · JOKE · TRANSITION · CONCLUSION.
 2. **The move sets the picture's job, its source order and its risk**:
 
+> **EVIDENCE gained a third source, 22 Oct 2026.** This table forbids *stock*
+> on an EVIDENCE line and says nothing about a verified recording, because
+> Scout is doc 18 and did not exist when it was written. `src/pictures.ts`
+> maps both onto one source, `world`, so the beat insert's `kind: "stock"`
+> and a checked Scout quote reached the refusal indistinguishable — and the
+> Manual, which is the later word on what the product is, says Scout "finds
+> what it's missing — **the proof**, the other side, the original a clip came
+> from".
+>
+> The argument is this row's own refusal: *proof cannot be illustrated; it has
+> to be the thing itself.* A find whose quote the deterministic verifier
+> matched word for word against the recording, with the time read off word
+> ids, is not an illustration of the proof — it is the proof. Stock is an
+> illustration and stays forbidden.
+>
+> So the gate is **what a candidate is, not where it came from**: `world` is
+> admitted on EVIDENCE only when it is `kind: "evidence"` *and* probative,
+> which a stock candidate never is. Generated is refused before the source
+> list is consulted and is unaffected; Phase 5's acceptance — "a generated
+> image can never be placed on an EVIDENCE or CLAIM block" — is re-asserted
+> in `test/pictures.test.ts` beside the change, along with the door this must
+> not open.
+
+
 | Move | Visual job | Source order | Forbidden |
 |---|---|---|---|
-| EVIDENCE | probative — the proof itself; the document with its line marked | own footage → user's documents | generated anything · stock · I2V |
+| EVIDENCE | probative — the proof itself; the document with its line marked | own footage → user's documents → **a verified Scout find** | generated anything · stock · I2V |
 | CLAIM | attribution — the speaker, a name super, kinetic type of the claim | own footage | generated · stock |
 | TURN | contrast — cut back, split, reprise with new meaning | own footage, reused | two unrelated stock clips |
 | CONTEXT | orientation — place, timeline | own → open world → stylised plate | stock with readable text or brands |

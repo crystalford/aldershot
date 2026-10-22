@@ -1009,6 +1009,24 @@ async function checkStrings() {
         "says what that means and what it leaves out.",
     ],
     [
+      "What goes here",
+      "Invariant 8's other half, on every line of the cut that has words.\n\n" +
+        "src/pictures.ts has been complete and half-reachable since Phase 5: " +
+        "`allowed()` refuses a generated card over a claim at the beat " +
+        "insert, so the refusal bites, and nothing in the product ever " +
+        "OFFERED a picture — so `place()` and `reasonFor()` chose between " +
+        "candidates only in their own tests. There was no surface to match " +
+        "against, because the prototype's block row has no picture control " +
+        "at all.\n\n" +
+        "Three words rather than 'Suggest a picture', because the question " +
+        "the panel answers is doc 08's: not 'what noun did the sentence " +
+        "contain' but 'why am I seeing this'. The panel leads with what was " +
+        "chosen and why, then what was refused and why, then the sources " +
+        "that have nothing behind them yet — naming documents and generated " +
+        "rather than omitting them, since an empty list and an unbuilt " +
+        "source look identical and are not.",
+    ],
+    [
       "Receipts for viewers &nearr;",
       "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
         "the audience, not just the maker\". The prototype has no Before you " +

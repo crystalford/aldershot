@@ -250,6 +250,24 @@ function blockRow(
       : "";
 
   /*
+   * WHAT COULD GO ON THIS LINE.
+   *
+   * Invariant 8's other half. `allowed()` has refused a generated card over
+   * a claim since it was written; nothing ever OFFERED one, so doc 08's
+   * table chose between candidates only in its tests.
+   *
+   * On a line with words and not on a recording, which has no line to be
+   * about. The answer opens under the block — see the handler in
+   * src/ui/client.ts — and leads with what it refused and why, because doc
+   * 08's premise is that the picture answers "why am I seeing this" and the
+   * alternatives are half of that answer.
+   */
+  const picture = b.text.trim()
+    ? `<button class="blk-picture" data-block="${esc(b.id)}"
+        style="background:none;border:none;padding:0 2px;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill">What goes here</span></button>`
+    : "";
+
+  /*
    * The thumbnail.
    *
    * The prototype gives every block a 78px frame with a play badge and its
@@ -411,6 +429,7 @@ function blockRow(
       ${judged}
       ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
       ${short}
+      ${picture}
       <button class="blk-strike" data-block="${esc(b.id)}"
         style="background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill" data-kept="${struck ? 0 : 1}">${struck ? "Add back" : "Cut"}</span></button>
     </div>

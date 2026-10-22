@@ -1520,6 +1520,7 @@ if (blocksEl) {
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");
     const short = e.target.closest(".blk-short");
+    const picture = e.target.closest(".blk-picture");
     const rec = e.target.closest(".blk-record");
     const unrec = e.target.closest(".blk-unrecord");
     const tts = e.target.closest(".blk-tts");
@@ -1529,6 +1530,61 @@ if (blocksEl) {
     const seamOpen = e.target.closest(".seam-open");
     const seamClose = e.target.closest(".seam-close");
     const row = e.target.closest(".blk");
+
+    /*
+     * WHAT COULD GO ON THIS LINE.
+     *
+     * Invariant 8's other half: allowed() already refuses a generated
+     * card over a claim, and nothing offered one. The panel opens under the
+     * block and leads with the choice and its reason, then what was refused
+     * and why — doc 08's premise is that a picture answers "why am I seeing
+     * this", and the alternatives are half of that answer.
+     *
+     * No backticks: this file is one String.raw template.
+     */
+    if (picture) {
+      const blk = picture.closest(".blk");
+      const already = blk.querySelector(".pic-panel");
+      if (already) { already.remove(); return; }
+
+      const panel = document.createElement("div");
+      panel.className = "pic-panel";
+      panel.style.cssText =
+        "margin:8px 0 2px;padding:10px 12px;border-radius:8px;background:#141418;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.62)";
+      panel.textContent = "Reading the line…";
+      blk.appendChild(panel);
+
+      try {
+        /* The project id lives on the brief box, which is the only element
+           on this page that carries it. body does not. */
+        const box = document.getElementById("brief-box");
+        const pid = box ? box.getAttribute("data-project") : "";
+        if (!pid) { panel.textContent = "Could not read that line."; return; }
+        const res = await fetch(
+          "/api/projects/" + encodeURIComponent(pid) + "/pictures?block=" +
+            encodeURIComponent(picture.getAttribute("data-block")),
+        );
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { panel.textContent = d.error || "Could not read that line."; return; }
+
+        let html =
+          '<div style="color:#ECECF1">' + escapeHtml(d.placed && d.placed.reason ? d.placed.reason : "") + "</div>";
+        const refused = (d.placed && d.placed.refused) || [];
+        if (refused.length) {
+          html +=
+            '<div style="margin-top:8px">Refused: ' +
+            refused.map((r) => escapeHtml(r.reason)).join("; ") +
+            "</div>";
+        }
+        /* The sources with nothing behind them, named. An empty list and an
+           unbuilt source look identical and are not. */
+        if (d.note) html += '<div style="margin-top:8px;color:rgba(236,236,241,0.42)">' + escapeHtml(d.note) + "</div>";
+        panel.innerHTML = html;
+      } catch {
+        panel.textContent = "Could not read that line.";
+      }
+      return;
+    }
 
     /* Give this block your voice. record() handles the whole take and only
        touches the server once you stop, so an abandoned one costs nothing. */
