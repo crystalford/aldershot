@@ -99,6 +99,35 @@ const TIGHTEN_MS = 3 * 60_000;
  * targetFromBrief's answer so the two cannot disagree about what "two minutes"
  * means.
  */
+/**
+ * WHAT A LENGTH RULE CALLS ITSELF.
+ *
+ * It must say what the rule DOES. "keep it under 30 seconds" produced a cap
+ * of 30 seconds wearing the words "Keep it under 1 minute." — the rounding
+ * went to whole minutes and the `|| 1` turned every sub-minute cap into one
+ * minute. The rule was right and the sentence beside it in the rules pane
+ * was wrong, which is the worst way round: invariant 1 says the rules are
+ * the source of truth, and a person switching rules on and off reads the
+ * words.
+ *
+ * Found by putting a rule in front of somebody to agree to — the composer's
+ * Ask mode shows the rule's own text in the proposal, and "keep it under 30
+ * seconds" came back asking to be allowed to keep it under a minute.
+ *
+ * Under a minute it says seconds. Over, it says minutes, and only when the
+ * number is whole — 90 seconds is "a minute and a half" to a person and
+ * "1 minute" to a rounder, so it stays in seconds rather than lie by five
+ * per cent.
+ */
+export function capText(ms: number): string {
+  const secs = Math.max(1, Math.round(ms / 1000));
+  if (secs % 60 === 0 && secs >= 60) {
+    const mins = secs / 60;
+    return `Keep it under ${mins} minute${mins === 1 ? "" : "s"}.`;
+  }
+  return `Keep it under ${secs} second${secs === 1 ? "" : "s"}.`;
+}
+
 export function parseRules(sentence: string): Parsed {
   const text = sentence.trim();
   const rules: Array<Omit<Rule, "id">> = [];
@@ -112,7 +141,7 @@ export function parseRules(sentence: string): Parsed {
       kind: "cap",
       secs: Math.round(target.ms / 1000),
       on: true,
-      text: `Keep it under ${Math.round(target.ms / 60_000) || 1} minute${target.ms >= 120_000 ? "s" : ""}.`,
+      text: capText(target.ms),
     });
   }
 

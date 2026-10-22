@@ -17,7 +17,7 @@ import { ensureV2Schema } from "./schema.ts";
 import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
 import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
 import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
-import { page, type ShortsCtx, type View } from "./ui/shell.ts";
+import { page, type View } from "./ui/shell.ts";
 import { renderBoard } from "./ui/pages/board.ts";
 import { boardFor } from "./scout-board-data.ts";
 import { createRun, diligence } from "./scout-store.ts";
@@ -33,6 +33,7 @@ import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
 import { buildSummary, renderBlockSlice, renderCut, type CutView } from "./ui/pages/cut.ts";
+import { previewFromRules } from "./assemble.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
@@ -112,6 +113,7 @@ import { begin } from "./begin.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
 import { readPref, resolvePress, writePref } from "./outside.ts";
+import { announces, applies, readMode, resolvePress as resolveModePress, writeMode } from "./decide.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
 import { shouldAlign, timingForProject } from "./align-source.ts";
 import { JUDGE_VERSION } from "./judge.ts";
@@ -242,9 +244,8 @@ function surface(
   title: string,
   body: string,
   email: string | null,
-  shortsCtx: ShortsCtx = "nav",
 ) {
-  return page({ title, view, screenLabel, shortsCtx, email }, body);
+  return page({ title, view, screenLabel, email }, body);
 }
 
 /* ── Auth ──────────────────────────────────────────────────────────────
@@ -811,7 +812,7 @@ const roomHandler = async (c: Ctx) => {
      off. "exact" means they asked for the words, so the notice is not news. */
   const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
 
-  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount, outsidePref] =
+  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount, outsidePref, askMode, recent] =
     await Promise.all([
       listSources(c.env.DB, user.id, "newest"),
       listProjects(c.env.DB, user.id),
@@ -821,6 +822,8 @@ const roomHandler = async (c: Ctx) => {
       activeJobs(c.env.DB, user.id),
       countExternal(c.env.DB, user.id),
       readPref(c.env.DB, user.id),
+      readMode(c.env.DB, user.id),
+      recentlyFinished(c.env.DB, user.id),
     ]);
 
   /*
@@ -831,16 +834,45 @@ const roomHandler = async (c: Ctx) => {
    * the person cannot find. Better to say nothing about it than to say that.
    */
   const sourceById = new Map(sources.map((s) => [s.id, s]));
-  const working = jobs
+  /*
+   * PER-ITEM PROGRESS WHERE THE JOB HAS ITEMS, and the job's own pct where
+   * it does not.
+   *
+   * `pct` is written by whatever stage is running, so a stage that reported
+   * ninety per cent and then died leaves a job claiming nine tenths of work
+   * that never happened. A count of item rows cannot say that. This moved
+   * here from the bell, which was the only thing reading it.
+   */
+  const working = await Promise.all(
+    jobs
+      .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+      .map(async (j) => ({
+        label:
+          sourceById.get(j.ref_id ?? "")?.title ??
+          projects.find((p) => p.id === j.ref_id)?.title ??
+          "a video",
+        type: j.type,
+        stage: j.stage_label ?? "working on",
+        pct: j.pct,
+        says: (await itemProgress(c.env.DB, j.id))?.says ?? null,
+      })),
+  );
+
+  /*
+   * AND WHAT FINISHED, which only the bell used to show.
+   *
+   * Named by the same rule the running list follows: a job whose ref_id
+   * matches no source and no project would read as "a video", which is news
+   * about something the person cannot find.
+   */
+  const finished = recent
     .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
     .map((j) => ({
       label:
         sourceById.get(j.ref_id ?? "")?.title ??
         projects.find((p) => p.id === j.ref_id)?.title ??
         "a video",
-      type: j.type,
-      stage: j.stage_label ?? "working on",
-      pct: j.pct,
+      failed: j.state === "failed",
     }));
 
   /*
@@ -955,12 +987,14 @@ const roomHandler = async (c: Ctx) => {
       renderRoom({
         tab,
         outsidePref,
+        askMode,
         attached,
         q,
         mode,
         meaningUnavailable: mode === "exact" ? false : meaningUnavailable,
         threads: threads.map((t) => ({ name: t.name, moments: t.clip_count })),
         working,
+        finished,
         sources: sources.map((s) => ({
           id: s.id,
           title: s.title,
@@ -1602,9 +1636,10 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   return c.html(
     page(
-      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", shortsCtx: "editor", email: user.email },
+      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", email: user.email },
       renderCut({
         projectId: project.id,
+        askMode: await readMode(c.env.DB, user.id),
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,
@@ -4532,9 +4567,20 @@ app.post("/api/projects/:id/passes", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ instruction: string }>(c);
+  const b = await body<{ instruction: string; apply?: boolean }>(c);
   const instruction = (b.instruction || "").trim();
   if (!instruction) return c.json({ error: "say what you want" }, 400);
+
+  /*
+   * HOW MUCH IT DECIDES — the composer's dial (src/decide.ts).
+   *
+   * `apply` is not a way round the dial, it is what Ask is FOR: the proposal
+   * carries the sentence back, and pressing Add it posts the same sentence
+   * with apply set. A person who has just pressed Add has asked, so the
+   * second half of "it proposes each rule and waits for Add" is this flag.
+   */
+  const mode = await readMode(c.env.DB, user.id);
+  const doIt = b.apply === true || applies(mode);
 
   /*
    * WHAT THE ASSISTANT CAN DO TO AN EDIT WITH NO TRANSCRIPT OF ITS OWN.
@@ -4576,7 +4622,40 @@ app.post("/api/projects/:id/passes", async (c) => {
         if (!same) next = applyRule(next, { ...r, id: ruleKey(r) });
       }
 
-      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
+      const scope = scopeOf(project);
+      /*
+       * ASK: WORK OUT WHAT IT WOULD DO, AND DO NOTHING.
+       *
+       * previewFromRules has no write in it, which is the point — a dry-run
+       * flag on the writing function would be one mistyped call away from
+       * changing a cut the person is still being asked about.
+       *
+       * Both sides are computed, because a proposal that said only "6
+       * moments · 4:12" leaves the reader to remember what it is now. The
+       * consequence is the difference, so the answer carries both ends of
+       * it.
+       */
+      if (!doIt) {
+        const [now, would] = await Promise.all([
+          previewFromRules(c.env, { userId: user.id, rules: before, scope }),
+          previewFromRules(c.env, { userId: user.id, rules: next, scope }),
+        ]);
+        if (!would) return c.json({ error: "there is no footage left to cut from" }, 422);
+        return c.json({
+          ok: true,
+          proposal: {
+            instruction,
+            /* The rules it would add, in the words the rules pane uses —
+               not a restatement of the sentence, because what is being
+               agreed to is the rule and not the phrasing. */
+            rules: asked.rules.map((r) => r.text ?? ruleKey(r)),
+            from: now ? { kept: now.kept, secs: now.secs } : null,
+            to: { kept: would.kept, secs: would.secs },
+          },
+        });
+      }
+
+      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope });
       if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
       await saveRules(c.env.DB, project.id, next);
 
@@ -4591,7 +4670,11 @@ app.post("/api/projects/:id/passes", async (c) => {
         firstChange: null,
       }).catch(() => {});
 
-      return c.json({ ok: true, kept: out.kept, secs: out.secs });
+      /* Recommend says what it did with the way back attached; Auto writes
+         it into the record and leaves you alone. Undo exists either way —
+         the pass is recorded in both, and a mode that could turn that off
+         would break invariant 1 rather than express a preference. */
+      return c.json({ ok: true, kept: out.kept, secs: out.secs, announce: announces(mode) });
     }
 
     /*
@@ -4617,6 +4700,23 @@ app.post("/api/projects/:id/passes", async (c) => {
   return c.json({
     jobId: job.id,
     before: { cuts: project.cuts ?? null, order: project.block_order ?? null },
+    /*
+     * ASK CANNOT ASK ABOUT THIS ONE, and says so rather than going quiet.
+     *
+     * A pass on a project with its own transcript is a READ: the model has
+     * to go through the whole thing before anything knows what it would do,
+     * and that reading is the work and the cost. There is no rule to propose
+     * in advance, so the dial's promise — "it proposes each rule and waits
+     * for Add" — has nothing to propose.
+     *
+     * The alternative was to let the setting quietly mean nothing here,
+     * which is how a control becomes one nobody trusts. It runs, because
+     * Run it was pressed, and it is undoable like every other pass; this
+     * line is the product saying which of the two things it did.
+     */
+    note: doIt
+      ? null
+      : "This one reads the whole transcript before it knows what it would do, so it runs rather than proposes. Undo is on the turn.",
   });
 });
 
@@ -4739,6 +4839,25 @@ app.post("/api/account/outside", async (c) => {
      what the answer says it is. */
   if (!stale) await writePref(c.env.DB, user.id, pref);
   return c.json({ ok: true, pref, stale });
+});
+
+/**
+ * HOW MUCH IT DECIDES — the composer's dial.
+ *
+ * Same shape as the Scout pill above, and for the same reason: the body
+ * names the mode the dial was SHOWING, the server computes the next one from
+ * what is stored, and a disagreement reports the truth rather than taking a
+ * second step. Here it matters slightly more — a client that could post
+ * `{mode:"auto"}` could hand itself permission to stop asking.
+ */
+app.post("/api/account/ask-mode", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const sent = (await body<{ from?: string }>(c)).from;
+  const stored = await readMode(c.env.DB, user.id);
+  const { mode, stale } = resolveModePress(stored, sent);
+  if (!stale) await writeMode(c.env.DB, user.id, mode);
+  return c.json({ ok: true, mode, stale });
 });
 
 /**
@@ -4956,33 +5075,16 @@ app.get("/api/documents/:id/file", async (c) => {
 });
 
 /** What the bell knows: what is running, and what finished while you were away. */
-app.get("/api/notifications", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const [running, done] = await Promise.all([
-    activeJobs(c.env.DB, user.id),
-    recentlyFinished(c.env.DB, user.id),
-  ]);
-
-  /*
-   * PER-ITEM PROGRESS, where the job has items.
-   *
-   * `pct` is written by whatever stage is running, so a stage that reported
-   * 90% and then died leaves a job claiming nine tenths of work that never
-   * happened. A count of item rows cannot say that, so a job with items
-   * reports the count and the sentence beside it.
-   *
-   * Null for a job this machinery does not track, which the bell reads as
-   * "keep showing what you were showing" rather than as zero.
-   */
-  const withItems = await Promise.all(
-    running.map(async (j) => {
-      const items = await itemProgress(c.env.DB, j.id);
-      return items ? { ...j, items } : j;
-    }),
-  );
-  return c.json({ running: withItems, done });
-});
+/*
+ * /api/notifications was here, and is gone with the bell that was the only
+ * thing that ever called it.
+ *
+ * It answered with running jobs and recently finished ones. Both are now
+ * read by the room directly — `activeJobs` for what is going and
+ * `recentlyFinished` for what stopped — and rendered in its working row, so
+ * the answer arrives with the page rather than a tick after it. The gate
+ * found this: a route nothing asks for.
+ */
 
 /*
  * Billing.

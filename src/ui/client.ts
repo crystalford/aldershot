@@ -1359,6 +1359,20 @@ if (blocksEl) {
    * repainting either by hand is how the page and the server drift. A toast
    * does not survive that, so the snapshot is parked and picked up here, once.
    */
+  /*
+   * A LINE PARKED THE SAME WAY, for the same reason.
+   *
+   * runPass reloads the page a tick after it answers, so anything it says
+   * there is said to a page that is about to be replaced. The one thing it
+   * has to say — that Ask could not propose this pass because the pass is a
+   * read — rides across in session storage and is said here, once.
+   */
+  const note = sessionStorage.getItem("pass-note:" + projectId);
+  if (note) {
+    sessionStorage.removeItem("pass-note:" + projectId);
+    setTimeout(() => toast(note), 0);
+  }
+
   const parked = sessionStorage.getItem("undo:" + projectId);
   if (parked) {
     sessionStorage.removeItem("undo:" + projectId);
@@ -2006,7 +2020,7 @@ if (assist) {
 
   /* A pass is queued work, so the page reloads into the running strip rather
      than pretending the answer is instant. */
-  const runPass = async (instruction, btn) => {
+  const runPass = async (instruction, btn, apply) => {
     /* A verb button holds spans — its name and sometimes a count — so swapping
        the BUTTON's textContent would eat them. The name is swapped instead. */
     const label = btn ? btn.querySelector("span:not([data-content])") || btn : null;
@@ -2017,10 +2031,36 @@ if (assist) {
       const res = await fetch("/api/projects/" + projectId + "/passes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ instruction, apply: apply === true }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't start");
+      /*
+       * ASK: NOTHING HAPPENED YET, so do not reload.
+       *
+       * The dial is on Ask, the server worked out what the rule would do and
+       * changed nothing, and the row below says so and waits. Reloading here
+       * would throw the proposal away and show a cut that had not moved,
+       * which reads as the button being broken.
+       */
+      if (out.proposal) {
+        showProposal(out.proposal, (apply) => runPass(instruction, btn, apply));
+        if (btn) btn.disabled = false;
+        if (label) label.textContent = was;
+        if (field) field.value = "";
+        return;
+      }
+      /*
+       * Ask on a project that has its own transcript: there was no rule to
+       * propose in advance, so it ran. Said once rather than left to be
+       * noticed — a setting that quietly means nothing on half the projects
+       * is a setting nobody trusts.
+       *
+       * PARKED, NOT TOASTED HERE. The next line reloads the page, and a
+       * toast posted a tick before a reload is a toast nobody sees. It
+       * rides to the other side in the same place the pass undo does.
+       */
+      if (out.note) sessionStorage.setItem("pass-note:" + projectId, out.note);
       /*
        * A pass rewrites the cut, so it needs an undo — and it finishes minutes
        * after this reload, so the state to go back to is the one that exists
@@ -2060,95 +2100,13 @@ if (assist) {
     void runPass(instruction, form.querySelector("button[type=submit]"));
   });
 
-  /*
-   * SAYING THE INSTRUCTION INSTEAD OF TYPING IT.
-   *
-   * Nothing in this market does this — the search for it turns up only voice
-   * OUTPUT, text-to-speech and cloning. The reason it is worth having here and
-   * the reason it must NOT fire a pass are the same one: editing is
-   * issue-then-review, voice is good at issuing and bad at reviewing, and
-   * review is where the time goes. So the words land in the box and you press
-   * the button yourself.
-   *
-   * Same getUserMedia and MediaRecorder the beat recorder uses, and the same
-   * blinking red dot, because it means the same thing.
-   */
-  const mic = assist.querySelector(".asst-mic");
-  if (mic && navigator.mediaDevices) {
-    const dot = mic.querySelector(".asst-mic-dot");
-    const label = mic.querySelector(".asst-mic-label");
-    const hint = assist.querySelector(".asst-hint");
-    const hintWas = hint ? hint.textContent : "";
-    let rec = null;
-    let stream = null;
-
-    const say = (t) => { if (label) label.textContent = t; };
-    const note = (t) => { if (hint) hint.textContent = t; };
-    const idle = () => {
-      if (dot) dot.hidden = true;
-      say("Say it");
-      mic.disabled = false;
-    };
-
-    const stop = () => {
-      if (rec && rec.state !== "inactive") rec.stop();
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-      rec = null;
-      stream = null;
-    };
-
-    mic.addEventListener("click", async () => {
-      if (rec) { stop(); return; }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (err) {
-        toast("I could not reach the microphone.");
-        return;
-      }
-      const chunks = [];
-      rec = new MediaRecorder(stream);
-      rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
-      rec.addEventListener("stop", async () => {
-        if (dot) dot.hidden = true;
-        /* NOT "Listening" — it has stopped listening, that is why we are here.
-           The hint below says what is happening; the button must not disagree
-           with it. */
-        say("Working…");
-        mic.disabled = true;
-        note("Working out what you said…");
-        try {
-          const blob = new Blob(chunks, { type: "audio/webm" });
-          /* Nothing to send is not an error worth a toast — you pressed twice. */
-          if (blob.size < 1200) { idle(); note(hintWas); return; }
-          const res = await fetch("/api/dictate", {
-            method: "POST",
-            headers: { "content-type": "audio/webm" },
-            body: blob,
-          });
-          const out = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(out.error || "I did not catch that");
-          if (field) {
-            /* Appended, not replaced: pressing it twice adds a second
-               sentence rather than throwing the first one away. */
-            const now = (field.value || "").trim();
-            field.value = now ? now + " " + out.text : out.text;
-            field.focus();
-            field.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-          note(hintWas);
-        } catch (err) {
-          note(hintWas);
-          toast((err && err.message) || "I did not catch that");
-        } finally {
-          idle();
-        }
-      });
-      rec.start();
-      if (dot) dot.hidden = false;
-      say("Stop");
-      note("Listening — press again when you are done.");
-    });
-  }
+  /* The assistant's mic. The behaviour is in wireMic, below. */
+  wireMic(assist.querySelector(".asst-mic"), field, {
+    dot: assist.querySelector(".asst-mic-dot"),
+    label: assist.querySelector(".asst-mic-label"),
+    hint: assist.querySelector(".asst-hint"),
+    idleLabel: "Say it",
+  });
 
   /* Show me what it changed. goToBlock is published by the editor so this and
      the find panel can never disagree about what "go there" means. */
@@ -2280,7 +2238,6 @@ const palette = document.querySelector("#palette");
 const paletteInput = document.querySelector("#paletteInput");
 const paletteResults = document.querySelector("#paletteResults");
 const keysheet = document.querySelector("#keysheet");
-const notifpanel = document.querySelector("#notifpanel");
 
 function toggle(el, on) {
   if (!el) return false;
@@ -2293,7 +2250,7 @@ function toggle(el, on) {
 /** Closes anything open. Returns whether there was something to close. */
 function closeOverlays() {
   let closed = false;
-  for (const el of [palette, keysheet, notifpanel]) {
+  for (const el of [palette, keysheet]) {
     if (el && !el.hidden) { el.hidden = true; closed = true; }
   }
   return closed;
@@ -2390,81 +2347,52 @@ if (paletteInput) {
 for (const el of [palette, keysheet]) {
   if (el) el.addEventListener("click", (e) => { if (e.target === el) closeOverlays(); });
 }
-if (notifpanel) {
-  const back = notifpanel.querySelector("[data-close]");
-  if (back) back.addEventListener("click", closeOverlays);
-}
+/*
+ * #navSearch, #navKeys, #navNotif and the notification panel lived here.
+ *
+ * One Take's bar is the wordmark and the avatar, so all three buttons went
+ * with it. Nothing they did went with them: Cmd-K still opens the palette,
+ * "?" still opens the shortcut sheet, and what the bell listed is in the
+ * room's working row — running work was already there, and what finished is
+ * there now too.
+ */
 
-const navSearch = document.querySelector("#navSearch");
-if (navSearch) navSearch.addEventListener("click", openPalette);
-
-const navKeys = document.querySelector("#navKeys");
-if (navKeys) navKeys.addEventListener("click", () => {
-  const open = keysheet && keysheet.hidden;
-  closeOverlays();
-  if (keysheet && open) keysheet.hidden = false;
-});
-
-/* The bell. Its gold dot claimed news for months with nothing behind it. */
-const navNotif = document.querySelector("#navNotif");
-const notifDot = navNotif ? navNotif.querySelector("span") : null;
-const notifBody = document.querySelector("#notifBody");
-
-function notifRow(label, sub, tone, href) {
-  const inner =
-    '<span class="notif-dot" data-tone="' + tone + '"></span>' +
-    '<span class="pal-title">' + escapeHtml(label) + "</span>" +
-    '<span class="pal-sub">' + escapeHtml(sub) + "</span>";
-  return href
-    ? '<a class="notif-row" href="' + href + '">' + inner + "</a>"
-    : '<div class="notif-row">' + inner + "</div>";
-}
-
-async function loadNotifications() {
-  if (!notifBody) return;
+/*
+ * THE MARK CYCLES, one colour per visit.
+ *
+ * MARK_PALETTE in tokens.ts, which is the prototype's own four:
+ *
+ *   const PAL = ["#5EB8C9", "#5EC98F", "#E06A6A", "#D9B36A"];
+ *   markStart() { ... (parseInt(localStorage.getItem(k) || "-1", 10) + 1) % 4 }
+ *
+ * It is not a status light. The build read it as one — a lookup from the
+ * surface you were on, gold for Home, cyan for the archive — which was right
+ * for the retired design's several surfaces and wrong for a product with one
+ * room. The owner spotted it from a screenshot: the build was gold where the
+ * prototype was teal.
+ *
+ * The server paints the first of the four, so a browser with no storage at
+ * all still gets a mark; this moves it to wherever the cycle had got to, and
+ * hovering steps it on.
+ */
+const MARK_PALETTE = ["#5EB8C9", "#5EC98F", "#E06A6A", "#D9B36A"];
+const markEl = document.querySelector("[data-mark]");
+if (markEl) {
+  const bars = markEl.querySelectorAll(".mark-bar");
+  let at = 0;
   try {
-    const res = await fetch("/api/notifications");
-    if (!res.ok) throw new Error("no");
-    const { running, done } = await res.json();
-    const rowsHtml = []
-      /*
-       * PER-ITEM PROGRESS WHERE THERE IS ANY, and "running" where there is
-       * not. The job's own pct is written by whatever stage is going, so a
-       * stage that reported most of the way and then died leaves a bar
-       * claiming work that never happened; a count of items cannot. Null
-       * means this job is not item-tracked, not that nothing is happening.
-       */
-      .concat(
-        (running || []).map((j) =>
-          notifRow(j.stage_label || j.type, j.items ? j.items.says : "running", "run", null),
-        ),
-      )
-      .concat(
-        (done || []).map((j) =>
-          notifRow(
-            j.state === "failed" ? (j.error || "Something failed") : (j.stage_label || j.type),
-            j.state === "failed" ? "failed" : "done",
-            j.state === "failed" ? "fail" : "done",
-            null,
-          ),
-        ),
-      );
-    notifBody.innerHTML = rowsHtml.length ? rowsHtml.join("") : '<div class="pal-note">Nothing running.</div>';
-    /* The dot means something now: it is only there when work is. */
-    if (notifDot) notifDot.hidden = !(running || []).length;
+    at = (parseInt(localStorage.getItem("aldershot.mark") || "-1", 10) + 1) % MARK_PALETTE.length;
+    if (!Number.isFinite(at) || at < 0) at = 0;
+    localStorage.setItem("aldershot.mark", String(at));
   } catch (err) {
-    notifBody.innerHTML = '<div class="pal-note">Couldn\'t load that.</div>';
+    /* Private windows and blocked storage. The server's colour stands. */
+    at = 0;
   }
-}
-
-if (navNotif) {
-  navNotif.addEventListener("click", () => {
-    const open = notifpanel && notifpanel.hidden;
-    closeOverlays();
-    if (notifpanel && open) { notifpanel.hidden = false; loadNotifications(); }
-  });
-  /* Settle the dot on load rather than leaving it permanently lit. */
-  loadNotifications();
+  const paintMark = () => {
+    for (const b of bars) b.style.background = MARK_PALETTE[at % MARK_PALETTE.length];
+  };
+  paintMark();
+  markEl.addEventListener("mouseenter", () => { at = (at + 1) % MARK_PALETTE.length; paintMark(); });
 }
 
 /*
@@ -4156,6 +4084,165 @@ if (scoutRow) {
   });
 }
 
+/*
+ * THE PROPOSAL ROW — what it would do, waiting to be agreed to.
+ *
+ * Only ever shown on Ask. The diff is the point of it: a row that said only
+ * "6 moments · 4:12" leaves the reader to remember what it is now, and the
+ * consequence of a rule IS the difference, so both ends travel with it.
+ *
+ * Nothing has been written when this appears. Leave it discards a proposal
+ * and not an edit, which is why the second button is not called Undo.
+ */
+function showProposal(p, decide) {
+  const row = $("#proposal");
+  if (!row) return;
+  const rule = $("#proposalRule");
+  const diff = $("#proposalDiff");
+  const add = $("#proposalAdd");
+  const bin = $("#proposalBin");
+
+  rule.textContent = (p.rules || []).join(" ") || p.instruction;
+  /* No diff when the current state could not be worked out — say nothing
+     rather than half a comparison. */
+  diff.textContent = p.from && p.to
+    ? p.from.kept + " moments \u00b7 " + clockOf(p.from.secs) + "  \u2192  " + p.to.kept + " moments \u00b7 " + clockOf(p.to.secs)
+    : "";
+  row.hidden = false;
+
+  const close = () => { row.hidden = true; add.onclick = null; bin.onclick = null; };
+  add.onclick = () => { close(); decide(true); };
+  bin.onclick = close;
+}
+
+/* m:ss, the one format this product shows a runtime in. */
+function clockOf(secs) {
+  const n = Math.max(0, Math.round(secs || 0));
+  return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
+}
+
+/*
+ * THE ASSISTANT COLUMN STOPS ABOVE THE EXPORT BAR.
+ *
+ * The column is sticky and viewport-tall, the bar is sticky to the bottom
+ * and paints over whatever is beneath it, and the composer lives at the foot
+ * of the column. So the column's height has to be "from where it starts to
+ * where the bar starts".
+ *
+ * CSS CANNOT READ THE FIRST OF THOSE. A sticky top only applies once the
+ * page has scrolled; before that the column begins wherever the content
+ * above it ends, and that moves with the title, the rules and anything else
+ * the page is carrying. shell.ts subtracts a constant, which is right for
+ * exactly one header — it was wrong by 13px on a project with one more rule
+ * than the one it was tuned against, and the composer sat under the bar
+ * until you scrolled. check-editor.cjs asserts the two never overlap and is
+ * the only reason that was ever noticed.
+ *
+ * So it is measured here, where both numbers exist. On load and on resize,
+ * never on scroll: scrolling only pins the column HIGHER, which gives it
+ * more room than this, and resizing a column while somebody scrolls is a
+ * jitter nobody asked for.
+ */
+const aside = $(".asst");
+if (aside) {
+  const bar = $("#cut-runtime") && $("#cut-runtime").closest("div");
+  let fitted = "";
+  const fitAside = () => {
+    if (!bar) return;
+    /*
+     * WHERE THE COLUMN STARTS RIGHT NOW, not where it starts at the top of
+     * the page.
+     *
+     * It is sticky: scrolling pins it at 88px and hands it another 160 of
+     * height. Sizing it once for the unscrolled position cost it that room
+     * for the whole session to be correct for the first moment — and the
+     * room is what the conversation is short of.
+     */
+    const startsAt = Math.max(0, aside.getBoundingClientRect().top);
+    const barHigh = bar.getBoundingClientRect().height || 56;
+    /* 360 is the floor shell.ts already sets: below that the conversation
+       has no room and a scrollbar is the better answer than a crush. */
+    const room = Math.max(360, window.innerHeight - startsAt - barHigh);
+    const want = room + "px";
+    /* Only when it actually changes. The observer below watches the page,
+       and the page contains this column — writing the same height back
+       every time would be a loop that never settles. */
+    if (want === fitted) return;
+    fitted = want;
+    aside.style.height = want;
+
+  };
+  fitAside();
+  window.addEventListener("resize", fitAside);
+  /*
+   * AND AGAIN WHENEVER THE PAGE ABOVE IT MOVES.
+   *
+   * Both numbers this depends on settle late. The bar is 53px before the
+   * fonts load and 55px after; the column's own start shifts by a pixel or
+   * two as the conversation above it fills in. Sized once on load, the
+   * composer finished two pixels under the bar — still under the bar, and
+   * check-editor.cjs said so.
+   *
+   * A couple of pixels of safety margin would have hidden that rather than
+   * fixed it. Both numbers are live, so both are read live.
+   */
+  if (window.ResizeObserver) new ResizeObserver(fitAside).observe(document.body);
+  /* And on scroll, because that is when it pins and the number changes.
+     Passive, and a no-op once the height stops moving. */
+  window.addEventListener("scroll", fitAside, { passive: true });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAside);
+}
+
+/* ── The room: the composer's dial and its mic ────────────────────────
+   The dial cycles Ask → Recommend → Auto. Its words come from the server for
+   the same reason the Scout row's do: this file is one String.raw template
+   with no interpolation in it, so a second copy of them here would disagree
+   the day one is reworded. All three ride on the button. */
+const askMode = $("#askMode");
+if (askMode) {
+  const askModeLabel = $("#askModeLabel");
+  const paintMode = (mode) => {
+    if (!mode) return;
+    const label = askMode.getAttribute("data-label-" + mode);
+    const hint = askMode.getAttribute("data-hint-" + mode);
+    if (label === null || hint === null) return;
+    askMode.setAttribute("data-mode", mode);
+    askMode.title = hint;
+    askModeLabel.textContent = label;
+  };
+  askMode.addEventListener("click", async () => {
+    if (askMode.dataset.busy === "1") return;
+    askMode.dataset.busy = "1";
+    try {
+      const r = await fetch("/api/account/ask-mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ from: askMode.getAttribute("data-mode") }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error("no");
+      paintMode(j.mode);
+      if (j.stale) window.toast("That was already set to " + askModeLabel.textContent + ".");
+    } catch {
+      window.toast("That didn't change.");
+    }
+    askMode.dataset.busy = "0";
+  });
+}
+
+/* The room composer's mic — the same wiring as the assistant's, which is why
+   it is the same function and the same classes. It fills #brief and does not
+   press Run it. */
+const roomComposer = $("#composer");
+if (roomComposer) {
+  wireMic(roomComposer.querySelector(".asst-mic"), $("#brief"), {
+    dot: roomComposer.querySelector(".asst-mic-dot"),
+    label: roomComposer.querySelector(".asst-mic-label"),
+    hint: null,
+    idleLabel: "Say it",
+  });
+}
+
 /* ── The rules pane: switch one off ───────────────────────────────────
    Invariant 1: a cut is re-produced from rules. So this does not patch the
    document it disagrees with — it tells the server the rule's new state and
@@ -4261,7 +4348,7 @@ if (passForm) {
       const res = await fetch("/api/projects/" + passForm.getAttribute("data-project") + "/passes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ instruction, apply: apply === true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "That pass didn't run");
@@ -5001,4 +5088,101 @@ if (reading) {
   };
   setTimeout(tick, 1500);
 }
+
+/*
+ * SAYING THE INSTRUCTION INSTEAD OF TYPING IT.
+ *
+ * Nothing in this market does this — the search for it turns up only voice
+ * OUTPUT, text-to-speech and cloning. The reason it is worth having and the
+ * reason it must NOT fire the thing it is attached to are the same one:
+ * editing is issue-then-review, voice is good at issuing and bad at
+ * reviewing, and review is where the time goes. So the words land in the box
+ * and you press the button yourself.
+ *
+ * Same getUserMedia and MediaRecorder the beat recorder uses, and the same
+ * blinking red dot, because it means the same thing.
+ *
+ * ONE COPY, TWO COMPOSERS. The project assistant had this and the room's
+ * composer did not, which is the prototype's mic missing from the front
+ * door. A second copy of a MediaRecorder dance is a second place for the
+ * stream not to be released, so the parts are passed in and the behaviour
+ * is not.
+ */
+function wireMic(mic, field, parts) {
+  if (!mic || !navigator.mediaDevices) return;
+  const dot = parts.dot;
+  const label = parts.label;
+  const hint = parts.hint;
+  const hintWas = hint ? hint.textContent : "";
+  let rec = null;
+  let stream = null;
+
+  const say = (t) => { if (label) label.textContent = t; };
+  const note = (t) => { if (hint) hint.textContent = t; };
+  const idle = () => {
+    if (dot) dot.hidden = true;
+    say(parts.idleLabel);
+    mic.disabled = false;
+  };
+
+  const stop = () => {
+    if (rec && rec.state !== "inactive") rec.stop();
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    rec = null;
+    stream = null;
+  };
+
+  mic.addEventListener("click", async () => {
+    if (rec) { stop(); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      toast("I could not reach the microphone.");
+      return;
+    }
+    const chunks = [];
+    rec = new MediaRecorder(stream);
+    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    rec.addEventListener("stop", async () => {
+      if (dot) dot.hidden = true;
+      /* NOT "Listening" — it has stopped listening, that is why we are here.
+         The hint below says what is happening; the button must not disagree
+         with it. */
+      say("Working…");
+      mic.disabled = true;
+      note("Working out what you said…");
+      try {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        /* Nothing to send is not an error worth a toast — you pressed twice. */
+        if (blob.size < 1200) { idle(); note(hintWas); return; }
+        const res = await fetch("/api/dictate", {
+          method: "POST",
+          headers: { "content-type": "audio/webm" },
+          body: blob,
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "I did not catch that");
+        if (field) {
+          /* Appended, not replaced: pressing it twice adds a second
+             sentence rather than throwing the first one away. */
+          const now = (field.value || "").trim();
+          field.value = now ? now + " " + out.text : out.text;
+          field.focus();
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        note(hintWas);
+      } catch (err) {
+        note(hintWas);
+        toast((err && err.message) || "I did not catch that");
+      } finally {
+        idle();
+      }
+    });
+    rec.start();
+    if (dot) dot.hidden = false;
+    say("Stop");
+    note("Listening — press again when you are done.");
+  });
+}
+
 `;

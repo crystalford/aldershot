@@ -92,16 +92,28 @@ export function accentBg(hex: string): string {
  * map (Aldershot.dc.html) — note `cut` and `projects` share green, `home` and
  * `essay` share gold.
  */
-export const MARK_LEAD: Record<string, string> = {
-  home: ACCENT.gold,
-  projects: ACCENT.green,
-  cut: ACCENT.green,
-  essay: ACCENT.gold,
-  shorts: ACCENT.red,
-  archive: ACCENT.cyan,
-  settings: C.ink,
-};
-export const MARK_LEAD_DEFAULT = ACCENT.gold;
+/**
+ * THE WORDMARK'S THREE BARS, which cycle rather than mean a surface.
+ *
+ * They used to be a lookup from the view — gold on Home, green on a cut,
+ * cyan on the archive — because the RETIRED design was several surfaces and
+ * the mark said which one you were on. One Take is one room, so there is no
+ * surface for it to name, and the prototype does something else entirely:
+ *
+ *   const PAL = ["#5EB8C9", "#5EC98F", "#E06A6A", "#D9B36A"];
+ *
+ * one colour per visit, stored in localStorage and stepped on hover. The
+ * mark is the product's one piece of play, not a status light. These are
+ * the same four values in the same order.
+ *
+ * The owner spotted the difference from a screenshot: the build read gold
+ * where the prototype read teal, because gold is what `home` mapped to and
+ * teal is where that visit's cycle happened to be.
+ */
+export const MARK_PALETTE = [ACCENT.cyan, ACCENT.green, ACCENT.red, ACCENT.gold] as const;
+
+/** What the server paints before the client knows where the cycle is. */
+export const MARK_LEAD_DEFAULT = MARK_PALETTE[0];
 
 /** Radii. Tight — fully round pill buttons were explicitly rejected. */
 export const RADIUS = {

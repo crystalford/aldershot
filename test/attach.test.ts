@@ -73,6 +73,7 @@ test("attaching toggles, and survives a page load in the URL", () => {
   const base: RoomData = {
     tab: "videos",
     outsidePref: "ask",
+    askMode: "rec",
     attached: [],
     threads: [],
     mode: "meaning" as const,
@@ -81,6 +82,7 @@ test("attaching toggles, and survives a page load in the URL", () => {
     q: "",
     meaningUnavailable: false,
     working: [],
+    finished: [],
     sources: [
       { id: "srcA", title: "Tuesday", poster_r2_key: null, transcript_state: "ready", duration_s: null, clips: 4 },
       { id: "srcB", title: "Thursday", poster_r2_key: null, transcript_state: "ready", duration_s: null, clips: 5 },

@@ -352,6 +352,30 @@ export async function recomputeFromRules(
   env: Env,
   opts: { userId: string; projectId: string; rules: Rule[]; scope?: string[] | null },
 ): Promise<{ kept: number; secs: number; moments: Moment[] } | null> {
+  const out = await previewFromRules(env, opts);
+  if (!out) return null;
+  await putBeats(env.DB, opts.projectId, beatsFor(out.moments));
+  return out;
+}
+
+/**
+ * WHAT THAT RULE SET WOULD PRODUCE, without producing it.
+ *
+ * The same arithmetic with the write taken off the end — which is a thing
+ * invariant 1 makes cheap: a cut is re-produced from rules rather than
+ * stored, so "what would this do" and "do it" differ by one line.
+ *
+ * It exists for the composer's dial on Ask, where the answer has to be the
+ * real consequence and nothing may change until somebody presses Add. That
+ * is also why the split is here rather than a flag on the function above: a
+ * boolean named `dryRun` is one mistyped call away from writing the beats of
+ * a cut the person is still being asked about, and a function with no write
+ * in it cannot do that however it is called.
+ */
+export async function previewFromRules(
+  env: Env,
+  opts: { userId: string; rules: Rule[]; scope?: string[] | null },
+): Promise<{ kept: number; secs: number; moments: Moment[] } | null> {
   const pool = inScope(await listMoments(env.DB, opts.userId, CANDIDATE_POOL), opts.scope);
   if (!pool.length) return null;
 
@@ -363,7 +387,6 @@ export async function recomputeFromRules(
     .map((r) => byId.get(String(r.moment!.id)))
     .filter((m): m is Moment => !!m);
 
-  await putBeats(env.DB, opts.projectId, beatsFor(moments));
   return { kept: moments.length, secs: cut.secs, moments };
 }
 

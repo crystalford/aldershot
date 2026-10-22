@@ -421,14 +421,37 @@ async function main() {
       await page.evaluate(() => window.scrollTo(0, 600));
       await page.waitForTimeout(250);
     }
+    /* THE NUMBERS, NOT JUST THE CROSS. This failed once and said only that
+       it had; working out BY HOW MUCH, and from where, took a separate
+       script and three rounds of guessing. A geometry assertion that cannot
+       say what it measured is an assertion you have to re-measure by hand. */
+    const geo = await $(() => {
+      const foot = document.querySelector(".asst-foot");
+      const bar = document.querySelector("#cut-runtime").closest("div");
+      if (!foot || !bar) return null;
+      const a = document.querySelector(".asst");
+      return {
+        foot: Math.round(foot.getBoundingClientRect().bottom),
+        bar: Math.round(bar.getBoundingClientRect().top),
+        y: Math.round(window.scrollY),
+        /* The column and its children, because knowing the overlap without
+           knowing WHICH child is too tall took three rounds of guessing and
+           a separate script. */
+        dbg: a
+          ? (a.style.height || "unset") +
+            " top=" + Math.round(a.getBoundingClientRect().top) +
+            " barH=" + Math.round(bar.getBoundingClientRect().height) +
+            " ih=" + window.innerHeight +
+            " kids=" + [...a.children].map((c) => c.className + ":" + Math.round(c.getBoundingClientRect().height)).join(",")
+          : "no aside",
+      };
+    });
     say(
-      await $(() => {
-        const foot = document.querySelector(".asst-foot");
-        const bar = document.querySelector("#cut-runtime").closest("div");
-        if (!foot || !bar) return false;
-        return foot.getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1;
-      }),
+      !!geo && geo.foot <= geo.bar + 1,
       "the composer clears the export bar (" + where + ")",
+      geo && geo.foot > geo.bar + 1
+        ? "composer ends at " + geo.foot + ", bar starts at " + geo.bar + " (scrollY " + geo.y + "; " + geo.dbg + ")"
+        : undefined,
     );
   }
   await page.evaluate(() => window.scrollTo(0, 0));

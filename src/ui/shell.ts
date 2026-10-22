@@ -7,42 +7,21 @@
  * block and its children). Every value is copied, not chosen.
  */
 
-import { C, ACCENT, FONT, LAYOUT, MARK_LEAD, MARK_LEAD_DEFAULT, HOVER, RADIUS, SIZE, accentBg } from "./tokens.ts";
-import { iconBell, iconSearch } from "./icons.ts";
+import { C, ACCENT, FONT, LAYOUT, MARK_LEAD_DEFAULT, HOVER, RADIUS, SIZE, accentBg } from "./tokens.ts";
 import { FONT_CSS } from "./fontfaces.ts";
 
 /** The prototype's `view` strings. Routing maps URLs onto these (10-ROUTES-AND-KEYS.md). */
 export type View = "room" | "home" | "cut" | "essay" | "transcript" | "shorts" | "archive" | "projects" | "settings";
 
-/**
- * Which nav item lights for a given view. Note `shorts` is context-dependent:
- * reached from the nav it lights Clipping, reached as an editor stage it keeps
- * Editor lit. That is `shortsCtx` in the prototype and it is why the editor
- * feels like one place — preserve it.
+/*
+ * `navItemFor`, `NavItem` and `ShortsCtx` lived here and are gone.
+ *
+ * They answered one question — which of Home, Editor and Footage to light —
+ * and One Take's bar has none of them. `shortsCtx` in particular existed so
+ * that opening Shorts from inside a project kept Editor lit rather than
+ * moving the highlight, which is a real piece of care about a nav bar that
+ * no longer exists.
  */
-export type ShortsCtx = "editor" | "nav";
-type NavItem = "home" | "editor" | "footage" | null;
-
-export function navItemFor(view: View, shortsCtx: ShortsCtx = "nav"): NavItem {
-  switch (view) {
-    /* The room IS home — one surface with two states. */
-    case "room":
-    case "home":
-      return "home";
-    case "cut":
-    case "essay":
-    case "transcript":
-      return "editor";
-    case "shorts":
-      return "editor";
-    case "archive":
-      return "footage";
-    // Projects and Settings deliberately light nothing — the nav holds verbs,
-    // and those two are state (01-PRODUCT.md "Nav").
-    default:
-      return null;
-  }
-}
 
 export function esc(s: unknown): string {
   return String(s ?? "")
@@ -52,15 +31,22 @@ export function esc(s: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Nav labels are `#ECECF1` when lit, `rgba(236,236,241,0.45)` otherwise. */
-function navColor(active: boolean): string {
-  return active ? C.ink : C.ink45;
-}
-
-function wordmark(markLead: string): string {
+/**
+ * THE WORDMARK, AND WHAT PRESSING IT MEANS.
+ *
+ * In One Take it is not a logo that happens to link home — it is the way
+ * OUT of a project. Its title in the prototype says so: "Close the project —
+ * back to your footage". There is one room and two states, so leaving the
+ * project is the only navigation there is, and this is the control for it.
+ *
+ * The three bars carry a colour from MARK_PALETTE, one per visit, stepped on
+ * hover. The server paints the first of the four and client.ts corrects it
+ * to wherever this browser's cycle had got to.
+ */
+function wordmark(): string {
   const bar = (opacity: string) =>
-    `<span style="width:5.5px;height:11px;background:${markLead};${opacity}border-radius:2px;transition:background-color .35s ease"></span>`;
-  return `<a href="/" data-mark="true" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:${SIZE.wordmark};letter-spacing:-0.01em;cursor:pointer;color:${C.ink}">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)">${bar("")}${bar("opacity:.5;")}${bar("opacity:.22;")}</span></a>`;
+    `<span class="mark-bar" style="width:5.5px;height:11px;background:${MARK_LEAD_DEFAULT};${opacity}border-radius:2px;transition:background-color .35s ease"></span>`;
+  return `<a href="/" data-mark="true" title="Close the project &mdash; back to your footage" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:${SIZE.wordmark};letter-spacing:-0.01em;cursor:pointer;color:${C.ink};text-decoration:none">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)">${bar("")}${bar("opacity:.5;")}${bar("opacity:.22;")}</span></a>`;
 }
 
 /**
@@ -75,31 +61,50 @@ function initialFor(email: string | null | undefined): string {
   return c ? c.toUpperCase() : "\u2022";
 }
 
-function nav(view: View, shortsCtx: ShortsCtx, email: string | null): string {
-  const lit = navItemFor(view, shortsCtx);
-  const markLead = MARK_LEAD[view] || MARK_LEAD_DEFAULT;
-  const link = (href: string, label: string, item: NavItem) =>
-    `<a href="${href}" style="cursor:pointer;font-weight:500;color:${navColor(lit === item)}">${label}</a>`;
-
-  return `<div style="border-bottom:1px solid rgba(255,255,255,0.05);position:sticky;top:0;background:rgba(16,16,19,0.86);backdrop-filter:blur(14px);z-index:5;padding:0 ${LAYOUT.gutter}"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;width:${LAYOUT.width};margin:0 auto;padding:12px 0">
-    ${wordmark(markLead)}
-    <div style="display:flex;align-items:center;gap:clamp(14px,2.4vw,26px);font-size:${SIZE.body};flex-wrap:wrap;justify-content:flex-end">
-      ${link("/", "Home", "home")}
-      ${link("/editor", "Editor", "editor")}
-      ${link("/footage", "Footage", "footage")}
-      <span tabindex="0" role="button" id="navSearch" style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border-radius:6px;background:${C.surface}">
-        ${iconSearch({ size: 14, stroke: "rgba(236,236,241,0.5)" })}
-        <span style="font-size:${SIZE.meta};color:rgba(236,236,241,0.4)">Ask for anything</span>
-      </span>
-      <span tabindex="0" role="button" id="navKeys" style="font-size:11.5px;font-family:${FONT.mono};color:rgba(236,236,241,0.28);cursor:pointer">?</span>
-      <div tabindex="0" role="button" id="navNotif" style="position:relative;cursor:pointer">
-        ${iconBell({ size: 15, stroke: "rgba(236,236,241,0.5)" })}
-        <!-- Hidden until the client finds something unread. It rendered lit
-             unconditionally, so every page flashed an alert badge on load —
-             including a brand-new account with nothing running. -->
-        <span id="navNotifDot" hidden style="position:absolute;top:-2px;right:-3px;width:6px;height:6px;border-radius:50%;background:${ACCENT.gold}"></span>
-      </div>
-      <a href="/settings" title="${esc(email ?? "")}" style="width:28px;height:28px;border-radius:50%;background:${C.pill};display:flex;align-items:center;justify-content:center;font-size:${SIZE.secondary};color:${C.ink70};cursor:pointer">${initialFor(email)}</a>
+/**
+ * THE BAR — the wordmark and the avatar, and nothing else.
+ *
+ * It carried Home, Editor and Footage, a search chip, a "?" and a bell. One
+ * Take's bar carries two things: the mark on the left, the initial on the
+ * right. That is the whole header, and it is not an omission in the design —
+ * it is the design. There is ONE room with two states, so a nav listing
+ * three places to go was describing a product with three places to go.
+ *
+ * WHAT WENT, AND WHERE IT WENT.
+ *
+ *  - Home. The wordmark is Home, and says so: pressing it closes the project
+ *    and goes back to your footage. Two controls for one destination.
+ *  - Footage. /footage is the surface the room replaced. The room's own tabs
+ *    — Videos, Highlights, Projects — are the footage.
+ *  - Editor. You reach a project by opening one, not by a nav item that
+ *    guesses which. The route still works for a bookmark.
+ *  - The search chip. Cmd-K still opens the same palette, and the room has a
+ *    search bar over every transcript, which is the surface for finding a
+ *    moment.
+ *  - The "?". The "?" key still opens the shortcut sheet, which is where
+ *    shortcuts live.
+ *  - The bell. Its running jobs were already in the room's working row; its
+ *    recently-finished ones are there now too, which is the one thing it
+ *    showed that nothing else did. See `workingRow` in home.ts.
+ *
+ * None of that is a route being deleted. Every one of them still answers;
+ * they are just no longer chrome on every page.
+ */
+function nav(email: string | null, column: string): string {
+  /*
+   * THE BAR IS AS WIDE AS THE PAGE UNDER IT.
+   *
+   * It was pinned to 960 while the room runs to 1440, so the mark sat a
+   * couple of hundred pixels inside the left edge of the content and the
+   * avatar nowhere near the right. The prototype's bar is full-bleed with a
+   * 24px gutter, and its mark lines up with everything below it. The law is
+   * that a page never declares its own width — not that every surface is
+   * 960 — so the shell hands the bar the same measure it hands the body.
+   */
+  return `<div style="border-bottom:1px solid rgba(255,255,255,0.06);position:sticky;top:0;background:rgba(16,16,19,0.86);backdrop-filter:blur(14px);z-index:5;padding:0 ${LAYOUT.gutter}"><div style="display:flex;align-items:center;gap:22px;width:${column};margin:0 auto;height:52px">
+    ${wordmark()}
+    <div style="flex:1;display:flex;gap:18px;justify-content:flex-end;align-items:center">
+      <a href="/settings" title="${esc(email ?? "Settings")}" style="width:28px;height:28px;border-radius:50%;background:${C.pill};display:flex;align-items:center;justify-content:center;font-size:${SIZE.secondary};font-weight:600;color:${C.ink};text-decoration:none;cursor:pointer">${initialFor(email)}</a>
     </div>
   </div>
   </div>`;
@@ -172,11 +177,6 @@ p,div{text-wrap:pretty}
 .pal-sub{flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}}
 .pal-note{padding:14px 18px;font-size:${SIZE.meta};color:${C.ink32}}
 .pal-note a{color:${ACCENT.cyan}}
-.notif-row{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:7px;text-decoration:none}
-.notif-dot{flex:none;width:6px;height:6px;border-radius:50%}
-.notif-dot[data-tone="run"]{background:${ACCENT.gold}}
-.notif-dot[data-tone="done"]{background:${ACCENT.green}}
-.notif-dot[data-tone="fail"]{background:${ACCENT.red}}
 /* The editor's left column.
    Sticky is right on a desktop, where the player sits BESIDE the blocks and
    should stay with whatever you are reading. On a phone the columns stack, so
@@ -254,8 +254,24 @@ p,div{text-wrap:pretty}
      sticky top only applies once the page has scrolled: before that the
      column starts below the page header, so a height measured from the nav
      alone runs the composer straight under the bar. This is measured from the
-     header instead, and check-editor.cjs asserts the two never overlap. */
-  position:sticky;top:88px;height:calc(100vh - 240px);min-height:360px;
+     header instead, and check-editor.cjs asserts the two never overlap.
+
+     THIS NUMBER CANNOT BE RIGHT FOR EVERY PAGE, which is why client.ts
+     measures it. The column starts wherever the content above it ends, and
+     that varies — a longer title, an undo bar, a second rule — so a height
+     subtracted from the viewport is only correct for the one header it was
+     measured against. It was 240 and the column ran 68px past the bar on a
+     page whose header was 13px taller than the one it was tuned on, with
+     the composer underneath, which is the exact failure this comment is
+     about. The value here is the no-JS fallback and errs short; fitAside in
+     client.ts sets the real one on load and on resize.
+
+     AND NO BACKTICKS IN HERE. This block is CSS inside a template literal,
+     so a slash-star is not a comment to the parser — it is text, and one
+     backtick in it ends the literal and takes the whole stylesheet with it.
+     The same rule client.ts carries at the top of the file, on a file
+     nobody had written it on. */
+  position:sticky;top:88px;height:calc(100vh - 320px);min-height:360px;
   display:flex;flex-direction:column;overflow:hidden}
 /*
  * THE RULES SCROLL; THE CONVERSATION DOES NOT GET CRUSHED.
@@ -597,22 +613,22 @@ function overlays(editing: boolean): string {
     </div>
   </div>`;
 
-  /* The bell. Its gold dot claimed unread news for months with nothing behind
-     it; the client now hides the dot when there is nothing to report. */
-  const notif = `<div id="notifpanel" hidden style="position:fixed;inset:0;z-index:70">
-    <div data-close style="position:absolute;inset:0"></div>
-    <div style="${panel};position:absolute;top:52px;right:max(16px,calc((100vw - ${LAYOUT.width}) / 2));width:min(340px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;padding:6px">
-      <div id="notifBody"></div>
-    </div>
-  </div>`;
-
-  return palette + keys + notif;
+  /*
+   * THE NOTIFICATION PANEL IS GONE, with the bell that was the only way to
+   * open it.
+   *
+   * One Take's bar is the wordmark and the avatar. What the panel listed is
+   * not lost: running work was already in the room's working row, and what
+   * finished is there now too — which is the one thing the bell showed that
+   * nothing else did. One place for what the product is doing, and it is the
+   * place you are already looking.
+   */
+  return palette + keys;
 }
 
 export interface PageOpts {
   title: string;
   view: View;
-  shortsCtx?: ShortsCtx;
   /** Screen label, used by the reference screenshots and the fidelity diff. */
   screenLabel: string;
   /**
@@ -649,7 +665,7 @@ export interface PageOpts {
  * red behind the skip.
  */
 export function page(opts: PageOpts, body: string): string {
-  const { title, view, shortsCtx = "nav", screenLabel } = opts;
+  const { title, view, screenLabel } = opts;
   const column = view === "room" || view === "cut" ? LAYOUT.room : LAYOUT.width;
   return `<!doctype html>
 <html lang="en">
@@ -663,7 +679,7 @@ ${GLOBAL_CSS}</style>
 </head>
 <body>
 <div style="min-height:100vh;background:${C.canvas};color:${C.ink};font-family:${FONT.ui}">
-${nav(view, shortsCtx, opts.email)}
+${nav(opts.email, column)}
 <div data-screen-label="${esc(screenLabel)}" style="display:flex;justify-content:center;padding:0 ${LAYOUT.gutter}">
   <div style="width:${column};padding:${LAYOUT.pagePad}">
 ${body}

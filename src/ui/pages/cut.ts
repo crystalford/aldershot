@@ -26,6 +26,8 @@ import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { GRADE_NAME, grade, type Grade } from "../../shorts.ts";
+import { dial } from "./home.ts";
+import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -65,6 +67,16 @@ export interface CutData {
   projectId: string;
   /** Which reading. Defaults to blocks everywhere it is not asked for. */
   view?: CutView;
+  /**
+   * How much the assistant decides — the composer's dial (src/decide.ts).
+   *
+   * The same stored preference the room's composer sets, because the
+   * prototype has ONE composer and one dial; the build has two composers,
+   * and two dials disagreeing about the same setting would be worse than
+   * none. Optional so every caller that predates it keeps the behaviour it
+   * had, which is Recommend.
+   */
+  askMode?: AskMode;
   title: string;
   sourceId: string | null;
   /** What the footage is called, for the line that links back to it. */
@@ -659,20 +671,37 @@ export function buildSummary(
  * and it belongs on the button rather than in a help page: this is the moment
  * somebody decides whether to let the product go outside.
  */
+/**
+ * SCOUT, IN ONE ROW.
+ *
+ * It was a card: a heading, a two-line paragraph about what Scout does, and
+ * two buttons under them — 132px of a column that has 598. Measured while
+ * chasing a composer that had ended up under the export bar, the arithmetic
+ * came out as: the player and rules take 93, this took 132, the composer
+ * takes 249, and the conversation got the 125px left over. The check calls
+ * 125px "not even one exchange", and it is right.
+ *
+ * So it says the same thing in the shape the front door says it: one line,
+ * the explanation in the title where a person can get at it, and the
+ * controls on the same row. The paragraph was the duplicate — the room's
+ * Scout row already carries that argument on the surface you meet Scout on.
+ *
+ * The two controls are unchanged, because they are the point of it.
+ */
 function scoutPanel(projectId: string): string {
+  const why =
+    "Scout finds clips that aren't yours yet — links, never downloads. " +
+    "He turns the brief into things a viewer could point to on camera, " +
+    "and searches for each and for its opposite.";
   return (
-    `<section style="margin-top:12px;padding:12px;border-radius:${RADIUS.card};background:${C.surface}">` +
-    `<div style="font:600 ${SIZE.secondary} ${FONT.ui};color:${C.ink}">Look outside this project</div>` +
-    `<div style="font:400 ${SIZE.meta} ${FONT.ui};color:${C.ink45};margin-top:3px">` +
-    `Scout finds clips that aren&rsquo;t yours yet &mdash; links, never downloads. ` +
-    `He turns the brief into things a viewer could point to on camera, and searches for each and for its opposite.</div>` +
-    `<div style="display:flex;gap:8px;margin-top:10px">` +
-    `<form method="post" action="/api/projects/${esc(projectId)}/scout/runs" style="margin:0">` +
-    `<button type="submit" style="padding:6px 12px;border:0;border-radius:${RADIUS.button};background:${C.ink};` +
+    `<section title="${esc(why)}" style="margin-top:12px;padding:8px 11px;border-radius:${RADIUS.card};background:${C.surface};display:flex;align-items:center;gap:9px;flex-wrap:wrap">` +
+    `<div style="flex:1 1 120px;min-width:0;font:600 ${SIZE.secondary} ${FONT.ui};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Look outside this project</div>` +
+    `<form method="post" action="/api/projects/${esc(projectId)}/scout/runs" style="margin:0;flex:none">` +
+    `<button type="submit" style="padding:5px 11px;border:0;border-radius:${RADIUS.button};background:${C.ink};` +
     `color:${C.canvas};font:600 ${SIZE.meta} ${FONT.ui};cursor:pointer">Send Scout</button></form>` +
-    `<a href="/api/projects/${esc(projectId)}/scout/board" style="padding:6px 12px;border-radius:${RADIUS.button};` +
+    `<a href="/api/projects/${esc(projectId)}/scout/board" style="flex:none;padding:5px 11px;border-radius:${RADIUS.button};` +
     `background:${C.pill};color:${C.ink70};font:600 ${SIZE.meta} ${FONT.ui};text-decoration:none">The board</a>` +
-    `</div></section>`
+    `</section>`
   );
 }
 
@@ -851,18 +880,24 @@ function assistant(d: CutData, player: string): string {
     <div class="asst-scout">${scoutPanel(d.projectId)}</div>
 
     <!--
-      min-height is a FLOOR, not the zero a flex child usually wants.
+      190px is what this ASKS FOR, not a floor it will die on.
 
-      It was 0 — the idiom that lets a flex child shrink so its own
-      overflow can scroll — and that is exactly what let the rules pane
-      above crush this to 125px on a project with six rules. Not room for
-      one exchange, let alone the two scripts/check-editor.cjs asks for.
-      The scrolling still works: overflow-y does that, and the floor only
-      stops the column giving this away. The rules pane scrolls instead,
-      which is the right one to scroll — it is a list, and this is a
-      conversation.
+      It was min-height:190px — a hard floor, put there because the rules
+      pane above had crushed this to 125px on a project with six rules, not
+      room for one exchange let alone the two scripts/check-editor.cjs asks
+      for. That argument is still right and the floor is still the wrong
+      shape for it: a child that cannot yield does not win the space, it
+      pushes whatever comes AFTER it out of the column. What comes after it
+      is the composer, and the composer ended two pixels under the export
+      bar the moment the dial went in beside the mic.
+
+      So it is a flex BASIS with a zero floor: 190 when there is room, less
+      when the only other option is a control nobody can press. The thing
+      it was protecting from is bounded separately — .asst-top carries
+      max-height:50% — and the two-exchange assertion in check-editor.cjs
+      is what says whether that is still enough.
     -->
-    <div class="asst-talk" style="flex:1;min-height:190px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+    <div class="asst-talk" style="flex:1 1 190px;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}
     </div>
 
@@ -922,6 +957,24 @@ function assistant(d: CutData, player: string): string {
         ${ask("Make it half as long", "cut this down to about half as long, keeping what matters")}
         ${ask("Cut where I asked", "cut the bits where I said to cut it — “can we cut that”, “strike that”, “let’s do that again”")}
       </div>
+      <!--
+        WHAT IT WOULD DO, WAITING TO BE AGREED TO.
+        
+        Only ever filled on Ask. Rendered hidden rather than built by the
+        client, for the reason the answer panel gives: the shape of a
+        proposal belongs in the same file as the shape of everything else on
+        this page, and the gate's wiring check can only see what a page
+        renders.
+      -->
+      <div id="proposal" hidden style="margin-bottom:10px;padding:11px 13px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+        <div id="proposalRule" style="font-size:${SIZE.secondary};line-height:1.5;color:${C.ink}"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+          <button type="button" id="proposalAdd" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:6px 14px;border-radius:5px;background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Add it</button>
+          <button type="button" id="proposalBin" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:6px 14px;border-radius:5px;background:transparent;color:${C.ink45};border:none;cursor:pointer;font-family:${FONT.ui}">Leave it</button>
+          <span style="flex:1"></span>
+          <span id="proposalDiff" data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45};white-space:nowrap"></span>
+        </div>
+      </div>
       <form class="pass-form" style="position:relative;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">
         <textarea name="instruction" rows="2" placeholder="Ask for a change…"
           style="display:block;width:100%;box-sizing:border-box;background:transparent;border:none;outline:none;resize:none;padding:9px 10px 4px;color:${C.ink};font-size:${SIZE.body};line-height:1.5;font-family:${FONT.ui}"></textarea>
@@ -938,7 +991,18 @@ function assistant(d: CutData, player: string): string {
           -->
           <button type="button" class="asst-mic"
             style="flex:none;display:flex;align-items:center;gap:5px;font-size:${SIZE.meta};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"><span class="asst-mic-dot" hidden style="width:6px;height:6px;border-radius:50%;background:${ACCENT.red};animation:blip 1.1s ease-in-out infinite"></span><span class="asst-mic-label">Say it</span></button>
-          <span class="asst-hint" style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">It reads the whole transcript.</span>
+          ${dial(d.askMode ?? DEFAULT_MODE)}
+          <!--
+            ONE LINE, ELLIPSIZED. The dial went in beside the mic and this
+            hint wrapped, which grew the footer by a row and pushed the
+            composer under the export bar — caught by check-editor.cjs, which
+            exists for exactly that overlap and has caught it before.
+            
+            Truncating this is the right thing to lose: the blinking red dot
+            and the button's own label already carry the recorder's state, as
+            the note above says, so the sentence is the third copy of it.
+          -->
+          <span class="asst-hint" style="flex:1 1 40px;min-width:0;font-size:${SIZE.meta};color:${C.ink32};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">It reads the whole transcript.</span>
           <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Run it</button>
         </div>
       </form>
@@ -1026,19 +1090,30 @@ function momentsThroughRules(d: CutData): string {
 }
 
 export function renderCut(d: CutData): string {
-  const [backLabel, backHref] = d.cameFrom;
+  const [backLabel] = d.cameFrom;
 
-  const head = `<div style="display:flex;align-items:center;gap:10px">
-    <a href="${esc(backHref)}" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);white-space:nowrap">← ${esc(backLabel)}</a>
-    <span style="margin-left:auto">${itemMenu("projects", d.projectId, d.title, "cut")}</span>
-  </div>
-  <!-- The runtime and the kept count were here AND in the bottom bar: the
+  /*
+   * ONE ROW, which is what the prototype has.
+   *
+   * It was two: a back link on its own line, then a 24px page title beside
+   * the view tabs. One Take's second row is a single 8px-padded line
+   * carrying the title at 13.5px, the tabs and the rest — and the back link
+   * is not in it at all, because the WORDMARK is the way out of a project
+   * and now says so ("Close the project — back to your footage"). Two
+   * controls for one destination is the same thing the nav bar was doing
+   * with Home.
+   *
+   * It is also 50px of a column that did not have 25 to spare: the editor's
+   * conversation pane was being crushed to 125px — "not even one exchange",
+   * in check-editor.cjs's words — by a header taller than the design's.
+   */
+  const head = `<!-- The runtime and the kept count were here AND in the bottom bar: the
        same two numbers twice on one screen. The bar is the one that stays
        with you as you scroll, so it is the one that keeps them. The ids
        remain because the client retotals by id and a second display that
        could disagree is worse than none. -->
-  <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.title)}</div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div data-content title="${esc(backLabel)}" style="font-size:${SIZE.body};font-weight:600;letter-spacing:-0.012em">${esc(d.title)}</div>
     <!--
       TWO READINGS OF THE SAME EDIT.
 
@@ -1056,6 +1131,9 @@ export function renderCut(d: CutData): string {
       <a href="/p/${esc(d.projectId)}/script"${d.view === "script" ? ' aria-current="page"' : ""}>Words</a>
       <a href="/p/${esc(d.projectId)}/shorts"${d.view === "shorts" ? ' aria-current="page"' : ""}>Shorts</a>
     </div>
+    <!-- Rename, duplicate, delete. It was on the back-link row that this
+         replaced; it is a control and had to come with it. -->
+    <span style="flex:none">${itemMenu("projects", d.projectId, d.title, "cut")}</span>
   </div>`;
 
   /*

@@ -22,9 +22,10 @@
 
 import { ACCENT, C, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
-import { composer, workingRow, type WorkingJob } from "./home.ts";
+import { composer, workingRow, type FinishedJob, type WorkingJob } from "./home.ts";
 import { LINE, OUTSIDE_PREFS, PILL, type OutsidePref } from "../../outside.ts";
 import { archiveSentence, countLine } from "../../archive.ts";
+import { type AskMode } from "../../decide.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
@@ -45,6 +46,8 @@ export interface RoomData {
    * while the database held another.
    */
   outsidePref: OutsidePref;
+  /** How much the assistant decides — the composer's dial. */
+  askMode: AskMode;
   tab: RoomTab;
   /** The sources attached so far, by id. A cut started now is scoped to them. */
   attached: string[];
@@ -60,6 +63,8 @@ export interface RoomData {
   ext: string[];
   /** What is being read or rendered right now. Empty when nothing is. */
   working: WorkingJob[];
+  /** What stopped in the last day — the bell's one unique job, rehoused. */
+  finished: FinishedJob[];
   /** What was searched for. */
   q: string;
   /** True when meaning search was asked for and could not answer. */
@@ -278,7 +283,7 @@ function verbCard(v: { tag: string; name: string; what: string; say: string }, a
  * stays the only file the words live in.
  *
  * NO GLYPH, AND THAT IS DELIBERATE. The prototype draws a Scout character
- * here through its own component, and src/ui/icons.ts holds ten shapes that
+ * here through its own component, and src/ui/icons.ts holds the shapes that
  * all match the design. Inventing an eleventh — a binocular, a magnifier —
  * is exactly the defensible substitution the fidelity checks exist to catch:
  * "a missing feature is obvious in review; a swapped icon set is invisible."
@@ -298,7 +303,7 @@ function scoutRow(pref: OutsidePref): string {
   </div>`;
 }
 
-function direction(attached: string[], ghosts: string[], pref: OutsidePref): string {
+function direction(attached: string[], ghosts: string[], pref: OutsidePref, mode: AskMode): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
     <div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">Pick what to make, or attach footage on the right and say it. Either way this becomes the project — its read, its rules, every change with Undo.</div>
     <div style="margin-top:6px">${label("MAKE")}</div>
@@ -306,7 +311,7 @@ function direction(attached: string[], ghosts: string[], pref: OutsidePref): str
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
     ${scoutRow(pref)}
-    ${composer(attached, { room: true, ghosts })}
+    ${composer(attached, { room: true, ghosts, mode })}
   </div>`;
 }
 
@@ -717,9 +722,12 @@ export function renderRoom(d: RoomData): string {
    * thing a person is most likely to have come back to check.
    */
   return `${titleRow(d)}
-  ${d.working.length ? workingRow(d.working) : ""}
+  <!-- Running work, or — when nothing is running — what finished. The
+       nav bar's bell was the only place the second of those was shown, and
+       One Take's bar has no bell. -->
+  ${d.working.length || d.finished.length ? workingRow(d.working, d.finished) : ""}
   <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:20px">
-    ${direction(d.attached, d.ext, d.outsidePref)}
+    ${direction(d.attached, d.ext, d.outsidePref, d.askMode)}
     ${footage(d)}
   </div>`;
 }

@@ -237,6 +237,7 @@ test("a find that is not verified cannot become a ghost", async () => {
 const base: RoomData = {
   tab: "highlights",
   outsidePref: "ask",
+  askMode: "rec",
   attached: [],
   ext: [],
   who: "all",
@@ -245,6 +246,7 @@ const base: RoomData = {
   q: "",
   meaningUnavailable: false,
   working: [],
+  finished: [],
   sources: [],
   moments: [],
   projects: [],

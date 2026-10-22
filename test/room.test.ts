@@ -16,6 +16,7 @@ import { DEFAULT_PREF, nextPref, prefOf } from "../src/outside.ts";
 const base: RoomData = {
   tab: "videos",
   outsidePref: "ask",
+  askMode: "rec",
   attached: [],
   threads: [],
   mode: "meaning" as const,
@@ -24,6 +25,7 @@ const base: RoomData = {
   q: "",
   meaningUnavailable: false,
   working: [],
+  finished: [],
   sources: [],
   moments: [],
   projects: [],
@@ -233,4 +235,70 @@ test("an unreadable preference is the cautious one, not a throw", () => {
   assert.equal(prefOf("yes please"), "ask");
   assert.equal(DEFAULT_PREF, "ask");
   assert.notEqual(DEFAULT_PREF, "always");
+});
+
+/**
+ * WHAT FINISHED WHILE YOU WERE AWAY — the bell's one unique job, rehoused.
+ *
+ * One Take's bar is the wordmark and the avatar, so the bell went. Its
+ * running jobs were already in this row; its finished ones are here now,
+ * because a product that stops saying what happened while you were gone is
+ * one you have to go and check.
+ */
+test("the row says what finished when nothing is running", () => {
+  const html = renderRoom({ ...base, finished: [{ label: "Tuesday", failed: false }] });
+  assert.match(html, /id="workingRow"/);
+  assert.match(html, /Tuesday finished\./);
+});
+
+test("a failure is named, not counted among the successes", () => {
+  /* "3 finished" over a failed read is the product being cheerful about bad
+     news. Coming back to a silent gap is worse than coming back to this. */
+  const html = renderRoom({
+    ...base,
+    finished: [
+      { label: "Tuesday", failed: true },
+      { label: "Thursday", failed: false },
+      { label: "Sunday", failed: false },
+    ],
+  });
+  /* esc() escapes &, <, > and " — not an apostrophe, so it is literal here. */
+  assert.match(html, /Tuesday didn't finish — 2 others did\./);
+});
+
+test("the same thing six times is one thing", () => {
+  /*
+   * Seen by rendering it: six failed reads of one video filled the row with
+   * its own title six times over. The same rule `collapse` applies to the
+   * feed — a repeated failure is one problem you have hit repeatedly.
+   */
+  const six = Array.from({ length: 6 }, () => ({ label: "Tuesday", failed: true }));
+  const html = renderRoom({ ...base, finished: six });
+  assert.match(html, /Tuesday \(6 times\) didn't finish\./);
+  assert.equal((html.match(/Tuesday/g) ?? []).length, 1, "named once, counted once");
+});
+
+test("running work wins the row, because it is the thing still happening", () => {
+  const html = renderRoom({
+    ...base,
+    working: [{ label: "Tuesday", type: "transcribe", stage: "reading it", pct: 42 }],
+    finished: [{ label: "Thursday", failed: false }],
+  });
+  assert.match(html, /transcribing Tuesday \(42%\)/);
+  assert.ok(!/Thursday finished/.test(html));
+});
+
+test("per-item progress beats the job's own percentage", () => {
+  /*
+   * pct is written by whatever stage is running, so a stage that reported
+   * most of the way and then died leaves a job claiming work that never
+   * happened. A count of item rows cannot. This used to be shown only by the
+   * bell, which is gone.
+   */
+  const html = renderRoom({
+    ...base,
+    working: [{ label: "Tuesday", type: "scout", stage: "looking", pct: 90, says: "6 of 14 done" }],
+  });
+  assert.match(html, /Tuesday \(6 of 14 done\)/);
+  assert.ok(!/90%/.test(html), "the item count replaces the percentage, it does not sit beside it");
 });

@@ -17,6 +17,8 @@
  */
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 /*
@@ -377,7 +379,56 @@ function walkAny(dir, out) {
  * dead dev server and a confusing esbuild message before the cause was
  * obvious. It is one line to check and it can never happen again.
  */
+/**
+ * A BACKTICK INSIDE A TEMPLATE LITERAL ENDS IT, and a comment in there is
+ * not a comment.
+ *
+ * TWO CHECKS, because they catch different halves of the same mistake.
+ *
+ * THE PARSER, over every file in src/ui. Inside a template literal a
+ * slash-star is text, and the parser does not know you meant to explain
+ * something — one backtick in it ends the literal and what follows is read
+ * as code. This landed in shell.ts (a note inside the stylesheet) and in
+ * home.ts (an HTML comment inside the composer) within an hour of each
+ * other; both took the whole page down, and neither file had anything
+ * watching it, because the rule below only ever looked at client.ts.
+ *
+ * `npx tsc` does not catch it — the text after the stray backtick is often
+ * still valid TypeScript, and client.ts is not typechecked at all. esbuild
+ * does, which is why the check IS esbuild rather than a scanner that
+ * approximates it: a hand-written lexer was tried first and reported four
+ * false positives on JSDoc that was never inside a template, which is the
+ * failure mode of every almost-right parser.
+ *
+ * THE LINE SCAN, for client.ts alone. The parser only objects when the
+ * leftover text happens to be invalid; a backtick that truncates the client
+ * and leaves something that still parses is silent, and the client is one
+ * String.raw template where any backtick at all is wrong.
+ */
+function checkTemplateParses() {
+  const files = walk(path.join(ROOT, 'src/ui'));
+  if (files.length < 5) {
+    fail('template', 'This rule found almost no files, and src/ui has a dozen.', 'read ' + files.length);
+    return false;
+  }
+  const r = spawnSync(
+    'npx',
+    ['esbuild', '--loader:.ts=ts', '--outdir=' + path.join(os.tmpdir(), 'aldershot-parse'), '--log-level=warning', ...files],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
+  if (r.status === 0) return files.length;
+  fail(
+    'template',
+    'A file in src/ui does not parse. A backtick inside a template literal is the usual reason — a comment in there is not a comment.',
+    (r.stderr || r.stdout || '').trim().split('\n').slice(0, 12).join('\n'),
+  );
+  return false;
+}
+
 function checkTemplate() {
+  const parsed = checkTemplateParses();
+  if (parsed === false) return;
+
   const file = path.join(ROOT, 'src/ui/client.ts');
   const src = fs.readFileSync(file, 'utf8');
   const lines = src.split('\n');
@@ -399,7 +450,7 @@ function checkTemplate() {
       strays.join('\n'),
     );
   } else {
-    pass('template', 'no backtick escapes the String.raw body of client.ts');
+    pass('template', parsed + ' files in src/ui parse, and no backtick escapes the String.raw body of client.ts');
   }
 }
 

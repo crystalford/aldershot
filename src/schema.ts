@@ -1232,6 +1232,18 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    */
   { table: "v2_users", column: "outside_pref", ddl: "ALTER TABLE v2_users ADD COLUMN outside_pref TEXT" },
 
+  /*
+   * HOW MUCH THE ASSISTANT DECIDES — the composer's dial, which the
+   * prototype has and the build did not.
+   *
+   * Three values: `ask` proposes and waits, `rec` applies and says so with
+   * Undo, `auto` applies and records it. Null means `rec`, which is the
+   * prototype's default and is what this product already did before the dial
+   * existed — so every account that predates this column keeps the behaviour
+   * it has had all along.
+   */
+  { table: "v2_users", column: "ask_mode", ddl: "ALTER TABLE v2_users ADD COLUMN ask_mode TEXT" },
+
   /* Where a source's published transcript lives. See scout_sources above. */
   { table: "scout_sources", column: "transcript_url", ddl: "ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT" },
 
