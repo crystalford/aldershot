@@ -78,6 +78,7 @@ import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { answerLead, ask } from "./ask.ts";
 import { emptyNote, offerFor } from "./picture-supply.ts";
+import { hasNoRaster, quoteCard } from "./graphics.ts";
 import {
   MAX_BYTES,
   addDocument,
@@ -3866,7 +3867,64 @@ app.get("/api/projects/:id/pictures", async (c) => {
   );
 
   const offer = await offerFor(c.env, user.id, { line: against.text, move, seen });
-  return c.json({ ...offer, note: emptyNote(offer.empty) });
+  /* The card's own link, which only this route knows: the supply makes the
+     candidate, the project and the block say where to fetch it from. */
+  const href = `/api/projects/${encodeURIComponent(project.id)}/graphic?block=${encodeURIComponent(against.id)}`;
+  const considered = offer.considered.map((c2) => (c2.source === "generated" ? { ...c2, href } : c2));
+  return c.json({
+    ...offer,
+    considered,
+    placed: offer.placed.picture?.source === "generated"
+      ? { ...offer.placed, picture: { ...offer.placed.picture, href } }
+      : offer.placed,
+    note: emptyNote(offer.empty),
+  });
+});
+
+/**
+ * THE GENERATED PICTURE FOR A LINE, drawn in code.
+ *
+ * Invariant 8's last clause: "graphics are code, never pixels". Doc 08 is
+ * blunt about why — "no diffusion model draws a word or a number (they
+ * can't)" — so the generated tier is an SVG built by arithmetic from our
+ * own design tokens, and "never photoreal" is structural rather than a
+ * policy somebody could break.
+ *
+ * SVG OUT, AND CHECKED ON THE WAY. `hasNoRaster` is asserted here rather
+ * than trusted: it is the one claim in this product that can be proved by
+ * looking at the bytes, so it is.
+ *
+ * The label is drawn by src/graphics.ts' shared frame, so it cannot be left
+ * off by this route or any other.
+ */
+app.get("/api/projects/:id/graphic", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const blockId = c.req.query("block") || "";
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const block = blocks.find((b) => b.id === blockId);
+  if (!block || !block.text.trim()) return c.json({ error: "no such line in this cut" }, 404);
+
+  const out = quoteCard({ quote: block.text.trim(), said: project.title });
+  if (!out.svg) return c.json({ error: out.refused[0]?.reason ?? "nothing to draw" }, 422);
+  if (!hasNoRaster(out.svg)) {
+    /* Unreachable by construction, and the one assertion worth paying for:
+       a raster here would be a photoreal generated picture, which decision
+       26 forbids outright. Louder than a comment. */
+    console.error("[graphic] a raster reached a generated picture");
+    return c.json({ error: "that picture could not be made" }, 500);
+  }
+
+  return new Response(out.svg, {
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      /* Deterministic from the line, so it caches like a static file. */
+      "cache-control": "private, max-age=3600",
+    },
+  });
 });
 
 /**

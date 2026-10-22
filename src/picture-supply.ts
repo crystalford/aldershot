@@ -203,11 +203,39 @@ export async function offerFor(
   if (!outside.length) empty.push("world");
 
   /* ── generated ─────────────────────────────────────────────────────────
-     Last tier, and unbuilt. When it lands it is a chart or a card drawn in
-     code — never an image model, never photoreal — so `lintChart` is what
-     will gate it and `allowed()` already refuses it over a claim or a
-     proof whatever it looks like. */
-  empty.push("generated");
+   *
+   * A CARD OF THE LINE ITSELF, set as type. Doc 08: "a quote's words lift
+   * from the page into kinetic type", and the reason this tier is not an
+   * image model is in the same paragraph — "no diffusion model draws a word
+   * or a number (they can't)".
+   *
+   * So it is always available and costs nothing: there is no retrieval and
+   * no call, just the words the line already has, drawn by src/graphics.ts
+   * from our own tokens. Never photoreal by construction rather than by
+   * policy, and `allowed()` refuses it over a claim or its proof whatever
+   * it looks like — which is most of the moves, and the refusal says so.
+   *
+   * NOT PROBATIVE, obviously: setting a sentence in type is not evidence
+   * that the sentence is true. Saying false rather than nothing, because
+   * here we know.
+   */
+  if (line) {
+    considered.push({
+      id: "card",
+      source: "generated",
+      kind: "synthetic",
+      probative: false,
+      /* One card per line, so showing the same line twice is a reprise. */
+      subject: `card:${line.slice(0, 80)}`,
+      label: `The line, set as type: “${line}”`,
+      at: "",
+      /* Filled by the caller, which is the only thing that knows the
+         project and the block. Empty here rather than a guessed path. */
+      href: "",
+    });
+  } else {
+    empty.push("generated");
+  }
 
   return {
     move: opts.move,
@@ -229,7 +257,7 @@ export function emptyNote(empty: readonly Source[]): string {
   if (empty.includes("own")) said.push("nothing in your own footage matches this line");
   if (empty.includes("documents")) said.push("no document you have added is about this line");
   if (empty.includes("world")) said.push("Scout has not verified anything outside your footage");
-  if (empty.includes("generated")) said.push("graphics are not built yet");
+  if (empty.includes("generated")) said.push("there are no words on this line to set");
   if (!said.length) return "";
   return `${said[0][0].toUpperCase()}${said[0].slice(1)}${said.length > 1 ? `; ${said.slice(1).join("; ")}` : ""}.`;
 }

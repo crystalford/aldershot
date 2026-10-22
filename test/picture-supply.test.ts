@@ -145,20 +145,63 @@ test("ACCEPTANCE: a source with nothing in it is named, not omitted", async () =
    * wondering why no document was suggested is owed a sentence — the same
    * discipline as invariant 4's reachable "nothing backs this".
    *
-   * `documents` was in this list as UNBUILT until it had a supply. It is
-   * named for a different reason now: nothing the maker has added is about
-   * this line, which is a fact about their library rather than about the
-   * product. `generated` is still the unbuilt one.
+   * `documents` and `generated` were BOTH in this list as unbuilt until they
+   * had a supply. Documents is named for a different reason now — nothing
+   * the maker has added is about this line, which is a fact about their
+   * library rather than about the product — and generated is never named
+   * here at all, because a card is made from the line and a line with words
+   * always has one.
    */
   const d = db();
   const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
   assert.ok(o.empty.includes("documents"));
-  assert.ok(o.empty.includes("generated"));
+  assert.ok(!o.empty.includes("generated"), "a card is always available on a line with words");
   const note = emptyNote(o.empty);
   /* Case-insensitive: the note capitalises whichever clause lands first, so
      pinning the capital would pin the ORDER rather than the content. */
   assert.match(note, /no document you have added is about this line/i);
-  assert.match(note, /graphics are not built yet/);
+});
+
+test("the generated tier is always available on a line with words", async () => {
+  /*
+   * It was the unbuilt one. It is a card of the line itself now — doc 08's
+   * "a quote's words lift from the page into kinetic type" — so there is
+   * nothing to retrieve and nothing to call, and the only way it is empty is
+   * a line with no words on it.
+   *
+   * NOT PROBATIVE, and explicitly so: setting a sentence in type is not
+   * evidence the sentence is true.
+   */
+  const d = db();
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
+  const card = o.considered.find((c) => c.source === "generated");
+  assert.ok(card, "no card was offered for a line with words");
+  assert.equal(card.kind, "synthetic");
+  assert.equal(card.probative, false);
+  assert.ok(!o.empty.includes("generated"));
+});
+
+test("a line with no words has no card to offer", async () => {
+  const d = db();
+  const o = await offerFor(env(d), "u1", { line: "   ", move: "context" });
+  assert.ok(o.empty.includes("generated"));
+  assert.match(emptyNote(o.empty), /no words on this line to set/);
+});
+
+test("a card is refused over a claim and over its proof", async () => {
+  /*
+   * Invariant 8's hard half, now that something actually offers a generated
+   * picture: "generated is never photoreal and never over a claim or its
+   * proof". Phase 5's named acceptance, reached through the supply rather
+   * than through a hand-built candidate.
+   */
+  const d = db();
+  for (const move of ["claim", "evidence"] as const) {
+    const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move });
+    const no = o.placed.refused.find((r) => r.id === "card");
+    assert.ok(no, `${move} did not refuse the card: ${JSON.stringify(o.placed.refused)}`);
+    assert.match(no.reason, /generated picture cannot carry/);
+  }
 });
 
 /** A document in the library, with or without the maker's marking. */
@@ -264,7 +307,9 @@ test("a query that matched nothing is not a suggestion", async () => {
     line: "zzzz nothing in this library is about this zzzz",
     move: "context",
   });
-  assert.equal(o.considered.length, 0);
+  /* The card is always there — it is made from the line, not found — so what
+     this test is about is that nothing was RETRIEVED. */
+  assert.equal(o.considered.filter((c) => c.source !== "generated").length, 0);
   assert.ok(o.empty.includes("own"));
 });
 

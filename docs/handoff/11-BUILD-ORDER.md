@@ -178,8 +178,28 @@ always lost to whatever clip retrieval returned from the maker's own
 library, because the probative bonus could never close the gap between
 tiers — on EVIDENCE, the one move defined by being proof, it now does.
 
-Still owed in Phase 5: the generated layer — a chart or card drawn in code,
-which `lintChart` already gates — and the sound rules.
+**The generated layer has landed, and it is not an image model.**
+`src/graphics.ts` is doc 08's code-first path: a spec in, SVG out, every mark
+placed by arithmetic from the design tokens. Which makes two rules that are
+policy everywhere else STRUCTURAL here — "never photoreal" is true because
+there is no pixel in the output (`hasNoRaster` proves it per render rather
+than trusting nobody added an `<image>`), and the Generated label is drawn by
+the shared frame so no code path can leave it off.
+
+A chart carries its receipt ON the picture: doc 08's house move is
+"provenance becomes a visible act and answers 'says who?' on screen", so the
+documents, pages and cells behind the numbers are set along the bottom rather
+than filed somewhere a viewer can choose not to open. The lints are hard
+fails — a failing spec returns its reasons and no picture at all.
+
+A quote card is the other half, and the reason the tier exists at all: a
+diffusion model cannot draw a word, so a line set as type is the one
+generated picture that is exactly what was said. Offered on every line of a
+cut, and refused over a claim or its proof, which is most of the moves.
+
+Still owed in Phase 5: the sound rules (duck by word timings), and
+rasterising an SVG inside the container so a generated picture reaches a
+render rather than only a browser.
 
 ## Phase 6 — Before you post and export
 
