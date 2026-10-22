@@ -459,6 +459,16 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at);
 
+CREATE TABLE IF NOT EXISTS pool_health (
+    pool TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL DEFAULT 0,
+    window_started_at INTEGER NOT NULL DEFAULT 0,
+    /* Null means the pool is open for business. */
+    opened_at INTEGER,
+    last_says TEXT,
+    last_at INTEGER NOT NULL
+  );
+
 CREATE TABLE IF NOT EXISTS scout_ledger (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES scout_runs(id),

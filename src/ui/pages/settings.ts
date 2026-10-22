@@ -38,6 +38,15 @@ export interface SettingsData {
   email: string;
   plan: string;
   isOwner: boolean;
+  /**
+   * Which model pools are answering. Owner-only, and null for everyone else.
+   *
+   * The breaker's state is useless if nobody can see it: a job that quietly
+   * finished on the free model is a job whose receipts are tagged with a
+   * different model, and the only way to know why is the sentence that shut
+   * the better pool. Invariant 3 — the reason, not a score.
+   */
+  pools?: Array<{ pool: string; verdict: string; failures: number; lastSays: string | null }> | null;
   meters: Meter[];
   /** Whether Stripe is configured. A button that cannot charge is not shown. */
   billingReady: boolean;
@@ -269,5 +278,48 @@ export function renderSettings(d: SettingsData): string {
 ${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
 ${trashBlock(d.trash)}
-${d.cost ? costPanel(d.cost) : ""}`;
+${d.cost ? costPanel(d.cost) : ""}
+${d.pools?.length ? poolPanel(d.pools) : ""}`;
+}
+
+/**
+ * WHICH POOLS ARE ANSWERING, and why one is not.
+ *
+ * A pool that is shut routes its capability to the free model, which works
+ * and is not as good — so the only honest way to show that is the sentence
+ * that shut it, beside the count that did. Owner-only: it is an operational
+ * fact about our providers, not about anybody's account.
+ *
+ * Not in the prototype, which has no settings panel for this. New UI, so
+ * 15-DESIGN-LANGUAGE decides, and it follows the cost panel's shape because
+ * it answers the same kind of question.
+ */
+function poolPanel(pools: NonNullable<SettingsData["pools"]>): string {
+  const rows = pools
+    .map((p) => {
+      const shut = p.verdict !== "closed";
+      return `<div style="display:flex;gap:12px;align-items:baseline;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+        <span style="flex:none;width:9px;height:9px;border-radius:50%;background:${
+          shut ? ACCENT.red : ACCENT.green
+        }"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:${SIZE.body};font-weight:500;font-family:${FONT.mono}">${esc(p.pool)}</div>
+          <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:3px;line-height:1.5">${
+            p.lastSays
+              ? esc(p.lastSays)
+              : /* Nothing has gone wrong, which is a sentence rather than a
+                   blank: an empty line reads as missing information. */
+                "Answering normally."
+          }</div>
+        </div>
+        <span style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${
+          shut ? esc(p.verdict) : `${p.failures} recent`
+        }</span>
+      </div>`;
+    })
+    .join("");
+
+  return `<div style="margin-top:48px;font-size:${SIZE.body};font-weight:600;color:${C.ink45};padding-left:4px">Model providers</div>
+  <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:6px;padding-left:4px;line-height:1.55;max-width:640px">A shut pool does not stop a job — the capability falls to the model that runs without an external key, and every answer records which model made it.</div>
+  <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
 }

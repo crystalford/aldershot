@@ -79,6 +79,7 @@ import { loudnessVerdict } from "./loudness.ts";
 import { answerLead, ask } from "./ask.ts";
 import { emptyNote, offerFor } from "./picture-supply.ts";
 import { hasNoRaster, quoteCard } from "./graphics.ts";
+import { allHealth } from "./breaker.ts";
 import {
   MAX_BYTES,
   addDocument,
@@ -5174,7 +5175,26 @@ app.get("/settings", async (c) => {
       "settings",
       "Settings",
       "Settings — Aldershot",
-      renderSettings({ name: user.name, email: user.email, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
+      renderSettings({
+        name: user.name,
+        email: user.email,
+        plan: user.plan,
+        isOwner: !!user.is_owner,
+        meters,
+        cost,
+        /* Owner-only: which model pools are answering is a fact about our
+           providers, not about anybody's account. */
+        pools: user.is_owner
+          ? (await allHealth(c.env.DB)).map((p) => ({
+              pool: p.pool,
+              verdict: p.verdict,
+              failures: p.failures,
+              lastSays: p.lastSays,
+            }))
+          : null,
+        billingReady: billingReady(c.env),
+        trash: await listTrash(c.env.DB, user.id),
+      }),
       user.email,
     ),
   );

@@ -690,6 +690,27 @@ const STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at)`,
 
+  /*
+   * POOL HEALTH — the breaker's state, as a row rather than a counter.
+   *
+   * A Worker is stateless per request and there is no isolate to hold a
+   * count in; a module-level variable would count one isolate's failures and
+   * route the whole account on them.
+   *
+   * `last_says` is here because invariant 3 asks for the reason rather than
+   * the score: a person shown that a pool is shut is owed the sentence that
+   * shut it, not a number. One row per pool, for ever — there are three.
+   */
+  `CREATE TABLE IF NOT EXISTS pool_health (
+     pool TEXT PRIMARY KEY,
+     failures INTEGER NOT NULL DEFAULT 0,
+     window_started_at INTEGER NOT NULL DEFAULT 0,
+     /* Null means the pool is open for business. */
+     opened_at INTEGER,
+     last_says TEXT,
+     last_at INTEGER NOT NULL
+   )`,
+
   `CREATE TABLE IF NOT EXISTS scout_ledger (
      id TEXT PRIMARY KEY,
      run_id TEXT NOT NULL REFERENCES scout_runs(id),

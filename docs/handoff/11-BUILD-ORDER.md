@@ -271,6 +271,31 @@ Item state machine, completion invariant, DLQs, same-model multi-pool routing, b
 
 - **Accept:** kill a provider mid-job in staging and the job completes on another pool with every item accounted for; exhaust retries on one item and it lands in the DLQ as `failed_terminal` with an alert, never silently; a job's cost appears in the owner's cost view within a day; a BYOK key over its rate limit produces "your key hit its limit" and never a platform charge; the spend cap halts top-ups.
 
+**The breaker and the second pool have landed.** `src/breaker.ts` shuts a
+model pool that is failing and routes its capability elsewhere, which is the
+first half of Phase 8's acceptance. The second half turned out to exist
+already: a load-bearing capability routes to Claude with a key and to Workers
+AI without one, so the fallback is `resolveFor(cap, {})` — the branch most of
+this product runs on, tested on every commit rather than only during an
+outage. A degraded answer is a normal answer from a model that is merely not
+the best one, and it is tagged, because every judgement already records the
+model that made it.
+
+**What may never trip a pool is the point.** `blameFor` splits a failure four
+ways and only two are the pool's fault: a 429 on somebody's own key is their
+account's limit and a 401 is their key being wrong. Shutting a shared pool on
+either would take the platform down for everybody because one person pasted a
+bad key — the failure a breaker is most likely to introduce, so it is the
+first thing the file refuses to do and the first thing the tests pin.
+
+Settings carries the state, owner-only: which pools are answering, and the
+sentence that shut one. The state has to be visible or the degradation is
+silent.
+
+Still owed in Phase 8: content-addressed caching, per-item progress, canaries
+and the SLO dashboard. The item state machine, the completion invariant, the
+DLQ, metering, the spend cap and BYOK blame are all in.
+
 ## Then
 
 The deferred list (`12-DEFERRED.md`), in its own order. Nothing in it blocks launch.

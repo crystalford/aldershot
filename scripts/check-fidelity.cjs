@@ -272,9 +272,16 @@ function checkRoom() {
     seen += 1;
     /* llm.ts is where both of them live. */
     if (path.basename(f) === 'llm.ts') continue;
-    if (/\brunRead\s*\(/.test(code) || /\bcallReason\s*\(/.test(code)) continue;
+    /*
+     * `callRouted` COUNTS, because it is callReason with the breaker around
+     * it — src/breaker.ts calls through, so the budget is still read back
+     * out and still reported. Added when the judge moved onto it and this
+     * rule said the budget was unwatched; the rule was right to ask and
+     * wrong about the name.
+     */
+    if (/\brunRead\s*\(/.test(code) || /\bcall(?:Reason|Routed)\s*\(/.test(code)) continue;
     bad.push(
-      `${rel(f)} — sets a token budget and reaches neither runRead nor callReason, ` +
+      `${rel(f)} — sets a token budget and reaches none of runRead, callReason or callRouted, ` +
         `so a truncated answer there is indistinguishable from an empty one`,
     );
   }
@@ -1065,6 +1072,47 @@ async function checkStrings() {
         "asks for one by that name until they already know what it is. It " +
         "says what you get — the whole record — and the sentence beside it " +
         "says what that means and what it leaves out.",
+    ],
+    [
+      "Model providers",
+      "The breaker's state, on Settings and owner-only. Phase 8 accepts on " +
+        "\"kill a provider mid-job in staging and the job completes on another " +
+        "pool\" \u2014 and a pool that is shut routes its capability to the model " +
+        "that runs without an external key, which works and is not as good.\n\n" +
+        "So the state has to be visible or the degradation is silent: a job " +
+        "that quietly finished on the free model is a job whose receipts are " +
+        "tagged with a different model, and the sentence that shut the better " +
+        "pool is the only answer to why. Invariant 3 \u2014 the reason, not a " +
+        "score. The prototype has no panel for this, and could not: it " +
+        "predates there being more than one pool.",
+    ],
+    [
+      "Answering normally.",
+      "What a healthy pool says, and a sentence rather than a blank. An " +
+        "empty line beside a pool name reads as missing information \u2014 the " +
+        "same reason \"nothing backs this\" is a sentence and not an empty " +
+        "list.",
+    ],
+    [
+      "anthropic/user",
+      "A pool is a way IN to a model, not a model: the same Claude is reached " +
+        "through the user's own key or through ours, and those fail " +
+        "separately. Named as the route rather than prettified, because the " +
+        "person reading this panel is the owner deciding whether a provider " +
+        "is down or a key is wrong, and \"Your Claude key\" would hide which " +
+        "of the two shut.",
+    ],
+    [
+      "anthropic/platform",
+      "Our own Claude key, as a pool. See anthropic/user \u2014 the split is the " +
+        "point: a 429 on somebody's own key is their account's limit and must " +
+        "never shut this one.",
+    ],
+    [
+      "workers-ai",
+      "The pool that needs no external key, and the one a shut Anthropic pool " +
+        "falls to. Listed beside the others because it can fail too, and " +
+        "because its being healthy is what makes the fallback honest.",
     ],
     [
       "What goes here",

@@ -32,7 +32,8 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor, type Resolved } from "./models.ts";
-import { callReason, reportRoom } from "./llm.ts";
+import { reportRoom } from "./llm.ts";
+import { callRouted } from "./breaker.ts";
 import { VERDICTS, isVerdict, type Verdict } from "./eval-set.ts";
 
 /**
@@ -443,8 +444,18 @@ export async function judge(
    * resolved provider said — so the day somebody set ANTHROPIC_API_KEY, the
    * judge would have asked Workers AI for "claude-sonnet-5".
    */
+  /*
+   * THROUGH THE BREAKER, because this is the capability a provider outage
+   * hurts most: invariant 4 lives here, and a judge that cannot be reached
+   * is a receipt that cannot be made.
+   *
+   * `callRouted` falls to the Workers AI model when the Anthropic pool is
+   * shut, and every judgement already records the model that made it — so a
+   * receipt produced during an outage says so afterwards rather than looking
+   * like any other.
+   */
   const ask = (missing: string[], room: number) =>
-    callReason(env, model, {
+    callRouted(env, "judge", model, {
       system: systemPrompt(),
       user: userPrompt(claim, candidates, ids, missing),
       maxTokens: room,
