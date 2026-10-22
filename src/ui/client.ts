@@ -3645,6 +3645,84 @@ document.querySelectorAll(".short-line").forEach((btn) => {
 /* ── Ask the judge ───────────────────────────────────────────────────
    A job, so this starts it and leaves; the bell and the page's own reload
    are where it is watched, the same as every other long thing here. */
+/*
+ * ASK IT ANYTHING ABOUT YOUR FOOTAGE.
+ *
+ * The composer's text is a sentence about your footage either way; Ask sends
+ * it as a question and the answer is the lines that say it, timed. No prose
+ * is generated anywhere — see src/ask.ts — so everything rendered below is
+ * either something somebody said, or the judge's own line about which
+ * sentence did the saying.
+ *
+ * NO BACKTICKS IN THIS FILE. It is one String.raw template and a single
+ * backtick ends it, so this builds its DOM by concatenation like
+ * renderHits above.
+ */
+{
+  const askBtn = document.getElementById("askBtn");
+  const askPanel = document.getElementById("askPanel");
+  const askLead = document.getElementById("askLead");
+  const askLines = document.getElementById("askLines");
+  const briefBox = document.getElementById("brief");
+
+  function lineCard(l, backs) {
+    /* The timestamp links into the source at that moment, and it came off
+       the moment's own span — never from a model. Invariant 2. */
+    const href = "/source/" + encodeURIComponent(l.sourceId) + "?t=" + Math.floor(l.atMs / 1000);
+    const said = l.line || l.quote;
+    return (
+      '<div style="padding:10px 12px;border-radius:8px;background:' +
+      (backs ? "#1A1A1F" : "#141418") + '">' +
+      '<div style="font-size:14px;line-height:1.5;color:' +
+      (backs ? "#ECECF1" : "rgba(236,236,241,0.62)") + '">“' +
+      escapeHtml(said) + '”</div>' +
+      '<div style="margin-top:6px;display:flex;gap:8px;align-items:baseline;font-size:12px;color:rgba(236,236,241,0.42)">' +
+      '<a href="' + href + '" style="flex:none;color:rgba(236,236,241,0.62);text-decoration:none;font-variant-numeric:tabular-nums">' +
+      escapeHtml(l.sourceTitle || "Untitled") + " · " + escapeHtml(l.atLabel) + "</a>" +
+      (l.why ? '<span style="flex:1;min-width:0">' + escapeHtml(l.why) + "</span>" : "") +
+      "</div></div>"
+    );
+  }
+
+  if (askBtn && askPanel && askLead && askLines && briefBox) {
+    askBtn.addEventListener("click", async () => {
+      const q = briefBox.value.trim();
+      if (!q) { window.toast("Ask a question about your footage."); return; }
+
+      askPanel.hidden = false;
+      askLead.textContent = "Reading your footage…";
+      askLines.innerHTML = "";
+      askBtn.disabled = true;
+      askBtn.style.opacity = ".5";
+
+      try {
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ q: q }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          askLead.textContent = data.error || "That could not be asked just now.";
+          return;
+        }
+        askLead.textContent = data.lead || "";
+        /* What backs it first, then the near things — two groups, never
+           interleaved, because a near miss shown as an answer is the false
+           support the judge exists to stop. */
+        const backs = (data.lines || []).map((l) => lineCard(l, true)).join("");
+        const near = (data.nearby || []).map((l) => lineCard(l, false)).join("");
+        askLines.innerHTML = backs + near;
+      } catch {
+        askLead.textContent = "That could not be asked just now.";
+      } finally {
+        askBtn.disabled = false;
+        askBtn.style.opacity = "1";
+      }
+    });
+  }
+}
+
 {
   const ask = document.getElementById("ask-judge");
   if (ask) {

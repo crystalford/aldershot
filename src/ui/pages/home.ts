@@ -158,9 +158,38 @@ export function composer(
         generic openers. Kept on the retired Home, which still has them.
       -->
       <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${opts.room ? "" : chips}</div>
+      <!--
+        TWO THINGS YOU CAN DO WITH ONE SENTENCE.
+        
+        The Manual puts them in the same breath on the front door: "attach
+        footage and say it in a sentence. Ask it anything about your footage
+        and it answers with the lines, timed." So this is not a second box —
+        a question and a brief are both a sentence about your footage, and
+        which one it is depends on which button you press.
+        
+        Not in the prototype, whose composer is the text, the dial and the
+        mic. New UI, so 15-DESIGN-LANGUAGE decides: the quiet treatment,
+        because Run it is still the thing most people came to press.
+      -->
+      ${opts.room ? `<button type="button" id="askBtn" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Ask</button>` : ""}
       <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${opts.room ? "Run it" : "Begin →"}</button>
     </div>
-  </form>`;
+  </form>
+  ${opts.room ? answerPanel() : ""}`;
+}
+
+/**
+ * Where the answer lands, empty until something is asked.
+ *
+ * Rendered hidden rather than created by the client, so the shape of an
+ * answer lives in the same file as the shape of everything else on this page
+ * and the gate's wiring check can see it. client.ts fills the two children.
+ */
+function answerPanel(): string {
+  return `<div id="askPanel" hidden style="margin-top:14px;background:${C.surface};border-radius:${RADIUS.card};padding:14px 16px">
+    <div id="askLead" style="font-size:${SIZE.secondary};color:${C.ink70};line-height:1.5"></div>
+    <div id="askLines" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
+  </div>`;
 }
 
 /*

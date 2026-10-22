@@ -288,3 +288,63 @@ test("a verdict about something not in the list changes nothing", () => {
   const items = [{ id: "a" }, { id: "b" }];
   assert.deepEqual(rerank(items, [j("zz", "backs")]).map((g) => g.id), ["a", "b"]);
 });
+
+test("ACCEPTANCE: a field the schema does not have cannot survive the parse", () => {
+  /*
+   * THE CHOKEPOINT FOR INVARIANT 2, and it was unpinned.
+   *
+   * The judge's schema holds four fields and none of them is a time. What
+   * makes that a guarantee rather than a hope is this function: it reads
+   * `moment`, `verdict`, `sentence` and `why` by name and constructs its own
+   * object, so anything else the model volunteers is gone before any caller
+   * sees it.
+   *
+   * Found while testing src/ask.ts, where the answer carries a clickable
+   * timestamp. A test there that fed the model every plausible time field
+   * could not be made to fail, because nothing downstream can read one —
+   * which is the right answer in the wrong place. The claim belongs here.
+   */
+  const candidates = [{ id: "c1", quote: "We moved the launch before the review came in." }];
+  /* Local ids, so the module-level `cands`/`ids` pair above is untouched. */
+  const localIds = shortIds(candidates);
+  const out = parseJudgements(
+    {
+      judgements: [
+        {
+          moment: "m1",
+          verdict: "backs",
+          sentence: 1,
+          why: "It dates the two.",
+          /* Every one of these is plausible and none is in SCHEMA. */
+          atMs: 999_000,
+          start_ms: 999_000,
+          at: "16:39",
+          t: 999,
+          timestamp: 999_000,
+        },
+      ],
+    },
+    candidates,
+    localIds,
+    "m/v1",
+  );
+
+  assert.equal(out.length, 1);
+  const keys = Object.keys(out[0]).sort();
+  assert.deepEqual(keys, [
+    "answered",
+    "downgraded",
+    "id",
+    "line",
+    "model",
+    "raw",
+    "said",
+    "version",
+    "why",
+  ]);
+  /* Named individually as well, because a future field added to Judgement
+     would change the list above and could quietly re-admit one of these. */
+  for (const k of ["atMs", "start_ms", "at", "t", "timestamp"]) {
+    assert.ok(!(k in out[0]), `${k} survived the parse — a model can now place a moment in time`);
+  }
+});

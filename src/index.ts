@@ -76,6 +76,7 @@ import { beforePost, checklistText } from "./beforepost.ts";
 import { overTheLimit, sidecarWanted } from "./captions.ts";
 import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
+import { answerLead, ask } from "./ask.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
@@ -4653,6 +4654,34 @@ app.get("/api/search", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   return c.json({ hits: await quickSearch(c.env.DB, user.id, c.req.query("q") || "") });
+});
+
+/**
+ * ASK IT ANYTHING ABOUT YOUR FOOTAGE.
+ *
+ * The Manual's front-door sentence — "it answers with the lines, timed" —
+ * and the handoff's "search in the conversation", which are the same
+ * feature. POST rather than GET because it spends a model call, and a
+ * question that runs again on every back button is a bill.
+ *
+ * The answer is built in src/ask.ts and no prose is generated anywhere: the
+ * lines are the answer, the times come off each moment's own span, and
+ * "nothing in your footage says that" is a reachable reply rather than an
+ * empty list dressed as one.
+ */
+app.post("/api/ask", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const body = await c.req.json<{ q?: string }>().catch(() => null);
+  const q = (body?.q ?? "").trim();
+  if (!q) return c.json({ error: "ask a question" }, 422);
+  /* A question is a sentence. Anything this long is a brief pasted into the
+     wrong box, and sending it to retrieval would match everything. */
+  if (q.length > 400) return c.json({ error: "that's long for a question — try a sentence" }, 422);
+
+  const answer = await ask(c.env, user.id, q);
+  return c.json({ ...answer, lead: answerLead(answer) });
 });
 
 /** What the bell knows: what is running, and what finished while you were away. */
