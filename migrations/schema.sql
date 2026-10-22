@@ -459,6 +459,18 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at);
 
+CREATE TABLE IF NOT EXISTS call_cache (
+    key TEXT PRIMARY KEY,
+    capability TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    body TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS call_cache_by_age ON call_cache(created_at);
+
 CREATE TABLE IF NOT EXISTS pool_health (
     pool TEXT PRIMARY KEY,
     failures INTEGER NOT NULL DEFAULT 0,

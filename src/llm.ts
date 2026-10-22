@@ -256,6 +256,20 @@ export interface CallOptions {
   billUsIfMyKeyFails?: boolean;
   /** How long a cached prefix should live. See CacheTtl. */
   cacheTtl?: CacheTtl;
+  /**
+   * The caller's own prompt version, which makes this call ADDRESSABLE.
+   *
+   * src/call-cache.ts hashes it into the key, so a prompt that changed
+   * evicts its own answers rather than serving the old question's for a
+   * month. Optional here and required there: a call that does not name a
+   * version is simply not cached, which is the safe default — the work
+   * happens and is charged, exactly as before.
+   *
+   * It belongs to the CALLER rather than to this file because only the
+   * caller knows when its prompt changed. src/judge.ts already exports
+   * JUDGE_VERSION for its own rows and passes the same string here.
+   */
+  promptVersion?: string;
 }
 
 /**

@@ -455,12 +455,25 @@ export async function judge(
    * like any other.
    */
   const ask = (missing: string[], room: number) =>
-    callRouted(env, "judge", model, {
-      system: systemPrompt(),
-      user: userPrompt(claim, candidates, ids, missing),
-      maxTokens: room,
-      schema: SCHEMA,
-    });
+    callRouted(
+      env,
+      "judge",
+      model,
+      {
+        system: systemPrompt(),
+        user: userPrompt(claim, candidates, ids, missing),
+        maxTokens: room,
+        schema: SCHEMA,
+      },
+      /*
+       * THE VERSION THAT MAKES THIS CACHEABLE, and it is the same string the
+       * rows are tagged with. Invariant 5: re-running the same judgement
+       * over the same moments is not work, so it is not charged — and the
+       * day this prompt changes, the version changes with it and every
+       * cached answer to the old question evicts itself.
+       */
+      { promptVersion: JUDGE_VERSION },
+    );
 
   const { raw: res } = await ask([], maxTokens);
   let judgements = parseJudgements(res, candidates, ids, model.id);

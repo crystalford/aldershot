@@ -38,6 +38,7 @@ import {
   type ReasonResult,
 } from "./llm.ts";
 import { resolveFor, type Capability, type Resolved } from "./models.ts";
+import { cacheable, countHit, keyFor, lookup, store } from "./call-cache.ts";
 
 /** The routes to the same model, named. A pool is a way in, not a model. */
 export const POOLS = ["anthropic/user", "anthropic/platform", "workers-ai"] as const;
@@ -244,6 +245,13 @@ export interface Routed extends ReasonResult {
   degraded: boolean;
   /** Why it was shut, where it was. The sentence, not a code. */
   why: string | null;
+  /**
+   * True when nobody was asked — this answer came out of the cache.
+   *
+   * Invariant 5: a hit is not metered, because charging for a call nobody
+   * made breaks "read and charged once" from the other side.
+   */
+  cached: boolean;
 }
 
 /**
@@ -272,6 +280,39 @@ export async function callRouted(
   opts: CallOptions = {},
 ): Promise<Routed> {
   const now = Date.now();
+
+  /*
+   * THE CACHE COMES FIRST, BEFORE THE BREAKER, which is the right order and
+   * worth saying why: an answer we already have does not care whether the
+   * provider is up. A shut pool and a cache hit together are a job that
+   * finishes at full quality during an outage, which is better than the
+   * acceptance asks for.
+   *
+   * Only where the capability has one right answer — see `cacheable`, which
+   * reads that off the temperature. A sampled capability skips all of this
+   * and pays for every call, deliberately.
+   */
+  const address = opts.promptVersion
+    ? { capability: cap, model, promptVersion: opts.promptVersion, system: call.system, user: call.user, ...(call.schema ? { schema: call.schema } : {}) }
+    : null;
+  const key = address && cacheable(model) ? await keyFor(address) : null;
+  if (key) {
+    const hit = await lookup(env.DB, key, now);
+    if (hit) {
+      await countHit(env.DB, key);
+      return {
+        raw: hit.raw,
+        model: model.id,
+        provider: model.provider,
+        onUserKey: false,
+        cache: { read: 0, written: 0 },
+        pool: poolOf(model, false),
+        degraded: false,
+        why: null,
+        cached: true,
+      };
+    }
+  }
   const wanted = poolOf(model, Boolean(opts.userKey?.trim()));
   const state = await healthOf(env.DB, wanted);
   const verdict = decide(state, now);
@@ -292,7 +333,14 @@ export async function callRouted(
     }
     console.warn(`[pool] ${wanted} is shut — ${cap} is going to ${other.id}: ${state.lastSays ?? "no reason recorded"}`);
     const out = await callReason(env as never, other, call, opts);
-    return { ...out, pool: poolOf(other, false), degraded: true, why: state.lastSays };
+    /* The fallback's answer is cached under ITS OWN address, because the
+       model is part of the key — a degraded answer must never be served
+       later as though the better pool had given it. */
+    if (address && cacheable(other)) {
+      const otherKey = await keyFor({ ...address, model: other });
+      await store(env.DB, otherKey, { ...address, model: other }, out.raw, now);
+    }
+    return { ...out, pool: poolOf(other, false), degraded: true, why: state.lastSays, cached: false };
   }
 
   try {
@@ -300,7 +348,8 @@ export async function callRouted(
     /* Only write on a change — a closed pool that answers is the common
        case and does not need a write per call. */
     if (state.failures || state.openedAt !== null) await writeHealth(env.DB, afterSuccess(state), now);
-    return { ...out, pool: wanted, degraded: false, why: null };
+    if (key && address) await store(env.DB, key, address, out.raw, now);
+    return { ...out, pool: wanted, degraded: false, why: null, cached: false };
   } catch (err) {
     const failed = err instanceof ModelCallFailed ? err : null;
     const blame: Blame = failed?.blame ?? "ours";

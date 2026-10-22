@@ -701,6 +701,37 @@ const STATEMENTS: string[] = [
    * the score: a person shown that a pool is shut is owed the sentence that
    * shut it, not a number. One row per pool, for ever — there are three.
    */
+  /*
+   * CONTENT-ADDRESSED CALL CACHE — invariant 5, where it still leaked.
+   *
+   * "Footage is read and charged once; editing is free." Transcription obeyed
+   * that and model calls did not: re-run a pass over the same transcript with
+   * the same brief and the same model and the whole thing was paid for again.
+   *
+   * The key is a hash of everything that decides the answer — model, effort,
+   * temperature, prompt version, system, user, schema — so a changed prompt
+   * evicts itself rather than serving answers to the old question.
+   *
+   * ONLY DETERMINISTIC CALLS LAND HERE. A capability left sampled (`direct`,
+   * `name`) writes prose, and a cache over it would freeze the first draft
+   * and make "try again" a lie. See src/call-cache.ts' `cacheable`, which
+   * reads that off the temperature rather than taking anyone's word.
+   *
+   * `hits` is kept because what caching saved is a number the owner's cost
+   * view should be able to show, not a belief.
+   */
+  `CREATE TABLE IF NOT EXISTS call_cache (
+     key TEXT PRIMARY KEY,
+     capability TEXT NOT NULL,
+     model TEXT NOT NULL,
+     prompt_version TEXT NOT NULL,
+     body TEXT NOT NULL,
+     hits INTEGER NOT NULL DEFAULT 0,
+     created_at INTEGER NOT NULL
+   )`,
+  /* The sweep's lookup: oldest first, so a month of rows goes in age order. */
+  `CREATE INDEX IF NOT EXISTS call_cache_by_age ON call_cache(created_at)`,
+
   `CREATE TABLE IF NOT EXISTS pool_health (
      pool TEXT PRIMARY KEY,
      failures INTEGER NOT NULL DEFAULT 0,

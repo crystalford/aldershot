@@ -292,8 +292,35 @@ Settings carries the state, owner-only: which pools are answering, and the
 sentence that shut one. The state has to be visible or the degradation is
 silent.
 
-Still owed in Phase 8: content-addressed caching, per-item progress, canaries
-and the SLO dashboard. The item state machine, the completion invariant, the
+**Content-addressed caching has landed**, and it closes the one place
+invariant 5 still leaked. "Footage is read and charged once; editing is free"
+was true of transcription and false of model calls: re-run a pass over the
+same transcript with the same brief and the same model and the whole thing
+was paid for again. `src/call-cache.ts` keys an answer on everything that
+decides it — capability, model, effort, temperature, prompt version, system,
+user, schema — so a changed prompt evicts its own answers rather than
+serving the old question's for a month.
+
+**Only a call with one right answer may be cached**, and that is read off the
+temperature rather than declared, so the two cannot disagree. judge, classify
+and arrange are pinned to 0 and cacheable; `direct` and `name` write prose and
+stay sampled, because a cache over those would freeze the first draft and make
+"try again" a lie. An Anthropic call is never cached at all — the sampling
+parameters are removed on the current models, so the better model is the one
+whose answers cannot be reused, which is a real limit rather than an oversight.
+
+The cache is consulted BEFORE the breaker, which is the right order: an answer
+we already have does not care whether the provider is up, so a shut pool and a
+cache hit together are a job that finishes at full quality during an outage. A
+degraded answer is cached under the fallback's own address, never the preferred
+model's — otherwise it would be served after the outage as though Claude had
+given it.
+
+A hit is not metered, because charging for a call nobody made breaks the same
+invariant from the other side, and the hits are counted so the saving is a
+number on the owner's cost view rather than a belief.
+
+Still owed in Phase 8: per-item progress, canaries and the SLO dashboard. The item state machine, the completion invariant, the
 DLQ, metering, the spend cap and BYOK blame are all in.
 
 ## Then

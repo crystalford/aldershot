@@ -80,6 +80,7 @@ import { answerLead, ask } from "./ask.ts";
 import { emptyNote, offerFor } from "./picture-supply.ts";
 import { hasNoRaster, quoteCard } from "./graphics.ts";
 import { allHealth } from "./breaker.ts";
+import { saved as savedCalls } from "./call-cache.ts";
 import {
   MAX_BYTES,
   addDocument,
@@ -5157,6 +5158,11 @@ app.get("/settings", async (c) => {
       else merged.set(label, { label, amount: l.cost, color, note });
     }
 
+    /* What the call cache saved, which is a count rather than a dollar
+       figure: what a reused answer would have cost depends on a token count
+       we never spent. See src/call-cache.ts. */
+    const cacheSaved = await savedCalls(c.env.DB);
+
     const finished = await c.env.DB
       .prepare(`SELECT COUNT(*) AS n FROM renders WHERE user_id=? AND state='ready' AND created_at>=?`)
       .bind(user.id, since)
@@ -5167,6 +5173,7 @@ app.get("/settings", async (c) => {
       total: roll.total,
       finished: finished?.n ?? 0,
       dayOfMonth: now.getUTCDate(),
+      cache: cacheSaved,
     };
   }
 

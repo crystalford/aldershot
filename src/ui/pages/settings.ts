@@ -58,6 +58,16 @@ export interface SettingsData {
     total: number;
     finished: number;
     dayOfMonth: number;
+    /**
+     * What the call cache has saved: answers kept, and times one was reused.
+     *
+     * Invariant 5 says footage is read and charged once, and a cached answer
+     * is a call nobody paid for twice. A saving nobody can see is a saving
+     * nobody believes, so the number goes beside the bill rather than in a
+     * log — and it is a COUNT, not a dollar figure, because what a reused
+     * answer would have cost depends on a token count we never spent.
+     */
+    cache: { rows: number; hits: number };
   } | null;
 }
 
@@ -181,6 +191,20 @@ function planBlock(plan: string, meters: Meter[], billingReady: boolean): string
  * bar makes every line look small.
  */
 function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
+  /*
+   * The cache line, and it says nothing when there is nothing to say.
+   *
+   * "0 answers reused" on a new account reads as a feature that does not
+   * work; the line appears when it has a number, which is the same rule as
+   * a clean-up chip that shows no count when it has nothing to count.
+   */
+  const cacheNote = cost.cache.hits
+    ? `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:10px;line-height:1.55">${cost.cache.hits} judgement${
+        cost.cache.hits === 1 ? "" : "s"
+      } came back from ${cost.cache.rows} kept answer${
+        cost.cache.rows === 1 ? "" : "s"
+      } instead of being asked again — re-cutting the same footage does not pay for the same reading twice.</div>`
+    : "";
   const max = Math.max(...cost.lines.map((l) => l.amount), 0.01);
   const perVideo = cost.finished ? cost.total / cost.finished : 0;
   const pace = cost.dayOfMonth ? (cost.total / cost.dayOfMonth) * 30 : 0;
@@ -227,6 +251,7 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid ${C.hairline};display:flex;flex-direction:column;gap:11px">
       ${cost.lines.map(line).join("")}
     </div>
+    ${cacheNote}
     <div style="margin-top:18px;padding-top:16px;border-top:1px solid ${C.hairline};display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
       <span data-content style="flex:1 1 220px;min-width:min(220px,100%);font-size:12px;color:rgba(236,236,241,0.4);line-height:1.5">Priced per source minute — the only unit that moves spend.</span>
       <a href="/api/usage/month" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.8);flex:none;white-space:nowrap">Export the month</a>

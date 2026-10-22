@@ -262,3 +262,71 @@ test("every pool is reported, including the ones nothing has written", async () 
   assert.deepEqual(rows.map((r) => r.pool), [...POOLS]);
   for (const r of rows) assert.equal(r.verdict, "closed");
 });
+
+/* ── The cache, where it meets the breaker ──────────────────────────────── */
+
+test("ACCEPTANCE: an answer we already have asks nobody, and is not charged", async () => {
+  /*
+   * Invariant 5: "footage is read and charged once; editing is free". The
+   * cache comes before the breaker on purpose — an answer we already have
+   * does not care whether the provider is up.
+   */
+  const d = db();
+  const cacheDdl = SCHEMA.split(";").find((s) => /create table if not exists call_cache\s*\(/i.test(s));
+  assert.ok(cacheDdl, "migrations/schema.sql has no call_cache — run `npm run schema`");
+  d.exec(cacheDdl + ";");
+
+  const CF = { ...CLAUDE, provider: "workers-ai" as const, id: "@cf/zai-org/glm-5.3", temperature: 0 };
+  const { env: e, asked } = env(d);
+
+  const first = await callRouted(e, "judge", CF, CALL, { promptVersion: "judge-1" });
+  assert.equal(first.cached, false);
+  assert.equal(asked.length, 1);
+
+  const second = await callRouted(e, "judge", CF, CALL, { promptVersion: "judge-1" });
+  assert.equal(second.cached, true, "the identical call was paid for twice");
+  assert.equal(asked.length, 1, "the model was asked again for an answer we had");
+  assert.deepEqual(second.raw, first.raw);
+});
+
+test("a call that names no prompt version is never cached", async () => {
+  /* Required there, optional here: a caller that cannot say when its prompt
+     changed must not have its answers reused for a month. */
+  const d = db();
+  const cacheDdl = SCHEMA.split(";").find((s) => /create table if not exists call_cache\s*\(/i.test(s));
+  d.exec(cacheDdl + ";");
+  const CF = { ...CLAUDE, provider: "workers-ai" as const, id: "@cf/zai-org/glm-5.3", temperature: 0 };
+  const { env: e, asked } = env(d);
+
+  await callRouted(e, "judge", CF, CALL);
+  await callRouted(e, "judge", CF, CALL);
+  assert.equal(asked.length, 2, "an unversioned call was cached");
+});
+
+test("ACCEPTANCE: a degraded answer is never served as the better pool's", async () => {
+  /*
+   * THE SUBTLE ONE. When the Anthropic pool is shut the answer comes from
+   * the free model, and it is cached — under ITS OWN address, because the
+   * model is part of the key. Cached under the preferred model's key it
+   * would be handed back later, after the outage, as though Claude had said
+   * it: a receipt tagged with a model that never saw the question.
+   */
+  const d = db();
+  const cacheDdl = SCHEMA.split(";").find((s) => /create table if not exists call_cache\s*\(/i.test(s));
+  d.exec(cacheDdl + ";");
+
+  let s = fresh("anthropic/platform");
+  for (let i = 0; i < TRIP_AFTER; i += 1) s = afterFailure(s, "provider_busy", "down", Date.now());
+  await writeHealth(fakeD1(d) as never, s);
+
+  const { env: e } = env(d, { ANTHROPIC_API_KEY: "sk-platform-aaaa" });
+  const out = await callRouted(e, "judge", CLAUDE, CALL, { promptVersion: "judge-1" });
+  assert.equal(out.degraded, true);
+
+  /* Nothing is stored under the model that was asked for and did not answer. */
+  const rows = d.prepare("SELECT model FROM call_cache").all() as Array<{ model: string }>;
+  assert.ok(rows.length, "the fallback's answer was not cached at all");
+  for (const r of rows) {
+    assert.notEqual(r.model, CLAUDE.id, "a free-model answer is addressed as though Claude gave it");
+  }
+});
