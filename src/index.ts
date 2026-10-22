@@ -79,9 +79,11 @@ import { loudnessVerdict } from "./loudness.ts";
 import { answerLead, ask } from "./ask.ts";
 import { emptyNote, offerFor } from "./picture-supply.ts";
 import { hasNoRaster, quoteCard } from "./graphics.ts";
-import { allHealth } from "./breaker.ts";
+
 import { saved as savedCalls } from "./call-cache.ts";
 import { itemProgress } from "./jobs.ts";
+import { recordCanary, runCanary } from "./canary.ts";
+import { slo as sloFor } from "./slo.ts";
 import {
   MAX_BYTES,
   addDocument,
@@ -5208,16 +5210,11 @@ app.get("/settings", async (c) => {
         isOwner: !!user.is_owner,
         meters,
         cost,
-        /* Owner-only: which model pools are answering is a fact about our
-           providers, not about anybody's account. */
-        pools: user.is_owner
-          ? (await allHealth(c.env.DB)).map((p) => ({
-              pool: p.pool,
-              verdict: p.verdict,
-              failures: p.failures,
-              lastSays: p.lastSays,
-            }))
-          : null,
+        /*
+         * Owner-only: whether this product is working is a fact about our
+         * providers and our jobs, not about anybody's account.
+         */
+        slo: user.is_owner ? await sloFor(c.env.DB) : null,
         billingReady: billingReady(c.env),
         trash: await listTrash(c.env.DB, user.id),
       }),
@@ -5822,6 +5819,32 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     .all<{ user_id: string }>();
 
   await reapRateLimits(env.DB);
+
+  /*
+   * THE CANARY, once a sweep.
+   *
+   * One synthetic judgement whose right answer is known, through the real
+   * judge. It goes before the per-user work because a provider that is down
+   * is the most useful thing to know first, and it is cheap: two short
+   * moments and one call.
+   *
+   * Uncached on purpose — see src/canary.ts. A check whose answer may be a
+   * month old is not a check.
+   */
+  try {
+    const canary = await runCanary(env);
+    await recordCanary(env.DB, canary);
+    if (canary.verdict !== "ok") {
+      /* Loud, because `wrong` is the failure nothing else in the product
+         would notice: a judge that has started calling denials support is
+         worse than one that is down. */
+      console.error(`[canary] ${canary.verdict}: ${canary.says} (${canary.model || "no model"})`);
+    } else {
+      console.log(`[canary] ok — ${canary.says}`);
+    }
+  } catch (err) {
+    console.error(`[canary] the check itself threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   /* Footage read before naming existed still shows its filename. Bounded, and
      outside the per-user loop because it is scoped by what is unnamed rather

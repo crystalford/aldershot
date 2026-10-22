@@ -1074,6 +1074,26 @@ async function checkStrings() {
         "says what that means and what it leaves out.",
     ],
     [
+      "Whether it is working",
+      "Phase 8's SLO dashboard, on Settings and owner-only. Four readings, and the hard part is what is left out: a dashboard of everything measurable is one nobody reads, and the thing somebody needs at 2am is \"is it broken, and which part\" rather than a percentile.\n\nNamed as the question rather than as \"Status\" or \"Health\", because those are nouns a reader has to decode and this is the sentence they already have in their head. The prototype has no such panel and could not: it predates there being providers to watch.",
+    ],
+    [
+      "The judge, checked",
+      "The canary's reading. One synthetic claim goes through the REAL judge every sweep, with the right answer known in advance \u2014 so a provider that answers with nonsense fails it, which a liveness probe would not notice. Never checked shows a dash and asks for attention, because reporting the absence of a check as the success of one is the failure this panel exists to avoid.",
+    ],
+    [
+      "Jobs finished",
+      "Finished against died, over a day. One failed job is Tuesday \u2014 a user cancels, a provider blips \u2014 so this asks for attention only when failures are a real share of the day, unlike the row below it.",
+    ],
+    [
+      "Pieces accounted for",
+      "The reading with teeth: items that failed inside jobs which reported finishing. Invariant 7 \u2014 \"a job is complete only when every item is terminal and none failed silently. Silent partial failure is a P1.\" The completion invariant exists to make it impossible; this counts whether it is happening anyway, because a rule nobody measures is a rule that can stop applying without telling you.\n\nNo acceptable rate, so no share to clear: one piece in twenty asks for attention. \"Pieces\" rather than \"items\" because a person reading this did not write the item state machine.",
+    ],
+    [
+      "Providers answering",
+      "The breaker's state, summarised, with the shut pool named underneath. A shut pool does not stop a job \u2014 the capability falls to the model that runs without an external key \u2014 so the summary is a count and the rows beneath it carry the sentence that shut one.",
+    ],
+    [
       "Model providers",
       "The breaker's state, on Settings and owner-only. Phase 8 accepts on " +
         "\"kill a provider mid-job in staging and the job completes on another " +

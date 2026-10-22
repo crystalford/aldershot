@@ -39,14 +39,21 @@ export interface SettingsData {
   plan: string;
   isOwner: boolean;
   /**
-   * Which model pools are answering. Owner-only, and null for everyone else.
+   * WHETHER THIS PRODUCT IS WORKING. Owner-only, null for everyone else.
    *
-   * The breaker's state is useless if nobody can see it: a job that quietly
-   * finished on the free model is a job whose receipts are tagged with a
-   * different model, and the only way to know why is the sentence that shut
-   * the better pool. Invariant 3 — the reason, not a score.
+   * Four readings and the pool rows behind one of them — see src/slo.ts for
+   * why four and which four. Each carries a SENTENCE rather than only a
+   * number, because the breaker's state is useless if nobody can see why: a
+   * job that quietly finished on the free model is a job whose receipts are
+   * tagged with a different model. Invariant 3 — the reason, not a score.
    */
-  pools?: Array<{ pool: string; verdict: string; failures: number; lastSays: string | null }> | null;
+  slo?: {
+    canary: Reading;
+    jobs: Reading;
+    items: Reading;
+    pools: Reading;
+    poolRows: Array<{ pool: string; verdict: string; failures: number; lastSays: string | null }>;
+  } | null;
   meters: Meter[];
   /** Whether Stripe is configured. A button that cannot charge is not shown. */
   billingReady: boolean;
@@ -259,6 +266,67 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
   </div>`;
 }
 
+export interface Reading {
+  label: string;
+  /** Null means nothing happened, which is not nothing going wrong. */
+  value: number | null;
+  of: number;
+  says: string;
+  attention: boolean;
+}
+
+/**
+ * WHETHER THIS PRODUCT IS WORKING, in four lines and the pools behind one.
+ *
+ * Phase 8's SLO dashboard. The hard part is what is left out: a dashboard of
+ * everything measurable is one nobody reads, and the thing somebody needs at
+ * 2am is "is it broken, and which part" rather than a percentile.
+ *
+ * A READING WITH NO DATA IS NOT A GREEN ONE. "Nothing has run today" and
+ * "everything ran" look alike as a number and are not, so the sentence
+ * carries the difference and a null value renders as a dash rather than a
+ * zero. The same discipline as a reachable "nothing backs this".
+ *
+ * Colour encodes exactly one thing: whether somebody should look. Not
+ * severity and not a grade — `attention`, which each reading decides for
+ * itself because the threshold differs. Any silent partial failure is a P1;
+ * one failed job in a day is Tuesday.
+ */
+function sloPanel(d: NonNullable<SettingsData["slo"]>): string {
+  const line = (r: Reading) => `<div style="display:flex;gap:12px;align-items:baseline;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+    <span style="flex:none;width:9px;height:9px;border-radius:50%;background:${r.attention ? ACCENT.red : ACCENT.green}"></span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:${SIZE.body};font-weight:500">${esc(r.label)}</div>
+      <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:3px;line-height:1.5">${esc(r.says)}</div>
+    </div>
+    <span style="flex:none;font-size:${SIZE.body};font-variant-numeric:tabular-nums;font-family:${FONT.mono};color:${
+      r.attention ? ACCENT.red : C.ink70
+    }">${r.value === null ? "&mdash;" : `${r.value}/${r.of}`}</span>
+  </div>`;
+
+  /* The pools get their own rows under their reading, because "one is shut"
+     is a summary and "which, and why" is what somebody acts on. */
+  const pools = d.poolRows
+    .map(
+      (p) => `<div style="display:flex;gap:10px;align-items:baseline;padding:8px 14px 8px 36px;font-size:${SIZE.secondary}">
+      <span style="flex:none;font-family:${FONT.mono};color:${p.verdict === "closed" ? C.ink45 : ACCENT.red}">${esc(p.pool)}</span>
+      <span data-content style="flex:1;min-width:0;color:${C.ink32};line-height:1.5">${
+        p.lastSays ? esc(p.lastSays) : "Answering normally."
+      }</span>
+    </div>`,
+    )
+    .join("");
+
+  return `<div style="margin-top:48px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+    <span style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap">Whether it is working</span>
+    <span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold};white-space:nowrap">OWNER ONLY</span>
+  </div>
+  <div data-content style="margin-top:6px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.55;max-width:640px">The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.</div>
+  <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">
+    ${line(d.canary)}${line(d.jobs)}${line(d.items)}${line(d.pools)}${pools}
+  </div>`;
+}
+
 /**
  * The deleted pile.
  *
@@ -304,47 +372,5 @@ ${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
 ${trashBlock(d.trash)}
 ${d.cost ? costPanel(d.cost) : ""}
-${d.pools?.length ? poolPanel(d.pools) : ""}`;
-}
-
-/**
- * WHICH POOLS ARE ANSWERING, and why one is not.
- *
- * A pool that is shut routes its capability to the free model, which works
- * and is not as good — so the only honest way to show that is the sentence
- * that shut it, beside the count that did. Owner-only: it is an operational
- * fact about our providers, not about anybody's account.
- *
- * Not in the prototype, which has no settings panel for this. New UI, so
- * 15-DESIGN-LANGUAGE decides, and it follows the cost panel's shape because
- * it answers the same kind of question.
- */
-function poolPanel(pools: NonNullable<SettingsData["pools"]>): string {
-  const rows = pools
-    .map((p) => {
-      const shut = p.verdict !== "closed";
-      return `<div style="display:flex;gap:12px;align-items:baseline;padding:11px 14px;border-radius:${RADIUS.card};background:${C.surface}">
-        <span style="flex:none;width:9px;height:9px;border-radius:50%;background:${
-          shut ? ACCENT.red : ACCENT.green
-        }"></span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:${SIZE.body};font-weight:500;font-family:${FONT.mono}">${esc(p.pool)}</div>
-          <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:3px;line-height:1.5">${
-            p.lastSays
-              ? esc(p.lastSays)
-              : /* Nothing has gone wrong, which is a sentence rather than a
-                   blank: an empty line reads as missing information. */
-                "Answering normally."
-          }</div>
-        </div>
-        <span style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${
-          shut ? esc(p.verdict) : `${p.failures} recent`
-        }</span>
-      </div>`;
-    })
-    .join("");
-
-  return `<div style="margin-top:48px;font-size:${SIZE.body};font-weight:600;color:${C.ink45};padding-left:4px">Model providers</div>
-  <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:6px;padding-left:4px;line-height:1.55;max-width:640px">A shut pool does not stop a job — the capability falls to the model that runs without an external key, and every answer records which model made it.</div>
-  <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
+${d.slo ? sloPanel(d.slo) : ""}`;
 }

@@ -336,8 +336,34 @@ reports zero and says so rather than reading as nothing-to-do: items that
 were never written are the first thing that goes wrong when this machinery is
 wired up.
 
-Still owed in Phase 8: canaries and the SLO dashboard. Both want a deploy to
-mean anything — a canary that never runs is a green tick nobody earned. The item state machine, the completion invariant, the
+**Canaries and the SLO dashboard have landed, and Phase 8 is complete.**
+
+`src/canary.ts` sends one synthetic claim through the REAL judge every sweep,
+with the right answer known in advance — so a provider that answers with
+nonsense fails it, which a liveness probe would not notice. It passes only
+when plain support is found AND the near miss is refused, and false support
+is reported first because a judge calling a denial support is producing
+receipts that lie.
+
+**It cannot be served from the cache**, which is the subtle part: the call
+cache keys on the prompt version, and a cached canary would come back green
+while the provider was down — testing our own table instead of the thing it
+watches. `promptVersion` is what makes a call cacheable, so the canary passes
+none.
+
+`src/slo.ts` is four readings on Settings, owner-only, all from rows the
+product already writes: the canary, jobs finished against died, **pieces
+accounted for**, and providers answering. The third is the one with teeth —
+items that failed inside jobs which reported finishing, which is invariant
+7's silent partial failure counted rather than assumed impossible. No
+acceptable rate there, so one piece in twenty asks for attention, unlike a
+single failed job which is Tuesday.
+
+A reading with no data shows a dash and says so: "nothing has run today" and
+"everything ran" look alike as a number and are not, and the canary reading
+asks for attention when nothing has ever checked, because reporting the
+absence of a check as the success of one is the failure the panel exists to
+avoid. The item state machine, the completion invariant, the
 DLQ, metering, the spend cap and BYOK blame are all in.
 
 ## Then

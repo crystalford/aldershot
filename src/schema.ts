@@ -732,6 +732,30 @@ const STATEMENTS: string[] = [
   /* The sweep's lookup: oldest first, so a month of rows goes in age order. */
   `CREATE INDEX IF NOT EXISTS call_cache_by_age ON call_cache(created_at)`,
 
+  /*
+   * CANARY RUNS — one synthetic judgement a sweep, with the right answer
+   * known in advance.
+   *
+   * Phase 8's canaries. A load-bearing capability can break in ways nothing
+   * else notices, and the first person to find out should not be somebody
+   * making a receipt.
+   *
+   * `verdict` has three values and they mean different things: `down` is the
+   * call not coming back, `wrong` is it coming back with the wrong answer.
+   * The second is worse and quieter, which is why this is not a liveness
+   * probe. An append-only log, because what matters is the shape over a day
+   * rather than the latest row.
+   */
+  `CREATE TABLE IF NOT EXISTS canary_runs (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     verdict TEXT NOT NULL,
+     says TEXT NOT NULL,
+     model TEXT,
+     ms INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS canary_runs_by_time ON canary_runs(at)`,
+
   `CREATE TABLE IF NOT EXISTS pool_health (
      pool TEXT PRIMARY KEY,
      failures INTEGER NOT NULL DEFAULT 0,

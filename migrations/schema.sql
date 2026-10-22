@@ -471,6 +471,17 @@ CREATE TABLE IF NOT EXISTS call_cache (
 
 CREATE INDEX IF NOT EXISTS call_cache_by_age ON call_cache(created_at);
 
+CREATE TABLE IF NOT EXISTS canary_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    verdict TEXT NOT NULL,
+    says TEXT NOT NULL,
+    model TEXT,
+    ms INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS canary_runs_by_time ON canary_runs(at);
+
 CREATE TABLE IF NOT EXISTS pool_health (
     pool TEXT PRIMARY KEY,
     failures INTEGER NOT NULL DEFAULT 0,
