@@ -240,7 +240,7 @@ const base: RoomData = {
   attached: [],
   ext: [],
   who: "all",
-  threadNames: [],
+  threads: [],
   mode: "meaning",
   q: "",
   meaningUnavailable: false,
@@ -248,7 +248,7 @@ const base: RoomData = {
   sources: [],
   moments: [],
   projects: [],
-  counts: { sources: 0, moments: 0, threads: 0, external: 0 },
+  counts: { sources: 0, moments: 0, external: 0 },
 };
 
 const ext = (over: Partial<RoomData["moments"][number]> = {}): RoomData["moments"][number] => ({

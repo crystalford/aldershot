@@ -17,7 +17,7 @@ const base: RoomData = {
   tab: "videos",
   outsidePref: "ask",
   attached: [],
-  threadNames: [],
+  threads: [],
   mode: "meaning" as const,
   who: "all" as const,
   ext: [],
@@ -27,7 +27,7 @@ const base: RoomData = {
   sources: [],
   moments: [],
   projects: [],
-  counts: { sources: 0, moments: 0, threads: 0, external: 0 },
+  counts: { sources: 0, moments: 0, external: 0 },
 };
 
 test("an unknown transcript state renders rather than crashing the page", () => {
@@ -44,7 +44,7 @@ test("an unknown transcript state renders rather than crashing the page", () => 
   const html = renderRoom({
     ...base,
     sources: [{ id: "s1", title: "Tuesday", poster_r2_key: null, transcript_state: "something-new", duration_s: null, clips: 0 }],
-    counts: { sources: 1, moments: 0, threads: 0, external: 0 },
+    counts: { sources: 1, moments: 0, external: 0 },
   });
   assert.match(html, /Tuesday/);
 });
@@ -60,7 +60,7 @@ test("the room names the four real transcript states", () => {
     renderRoom({
       ...base,
       sources: [{ id: "s1", title: "T", poster_r2_key: null, transcript_state: state, duration_s: null, clips: 0 }],
-      counts: { sources: 1, moments: 0, threads: 0, external: 0 },
+      counts: { sources: 1, moments: 0, external: 0 },
     });
   assert.match(say("ready"), />read</);
   assert.match(say("running"), />reading</);
@@ -72,12 +72,24 @@ test("counts are what was counted, and a zero is not mentioned", () => {
   /* A number that cannot be computed honestly is not shown — the same rule
      the clean-up chips follow. A library with no threads says nothing about
      threads rather than claiming nought. */
-  const none = renderRoom({ ...base, counts: { sources: 2, moments: 9, threads: 0, external: 0 } });
+  const none = renderRoom({ ...base, counts: { sources: 2, moments: 9, external: 0 } });
   assert.match(none, /2 videos read · 9 moments/);
   assert.ok(!/thread/.test(none.slice(none.indexOf("2 videos read"), none.indexOf("2 videos read") + 80)));
 
-  const some = renderRoom({ ...base, counts: { sources: 1, moments: 1, threads: 3, external: 0 } });
+  const some = renderRoom({
+    ...base,
+    counts: { sources: 1, moments: 1, external: 0 },
+    threads: [
+      { name: "the house", moments: 4 },
+      { name: "what it costs", moments: 3 },
+      { name: "landing it", moments: 2 },
+    ],
+  });
   assert.match(some, /1 video read · 1 moment · 3 threads/, "and it counts singulars properly");
+  /* The count in the title row is the LENGTH OF THE LIST the paragraph
+     names. It used to be a separate number carried beside it, which is the
+     shape of the bug this file has had three times. */
+  assert.match(some, /3 threads run through 1 video/);
 });
 
 test("a search that matched nothing is not an empty library", () => {

@@ -65,6 +65,7 @@ import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
+import { rethread, staleThreadUsers } from "./threads.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
 import { compileBrief, shortlistDiff } from "./brief.ts";
@@ -958,7 +959,7 @@ const roomHandler = async (c: Ctx) => {
         q,
         mode,
         meaningUnavailable: mode === "exact" ? false : meaningUnavailable,
-        threadNames: threads.map((t) => t.name),
+        threads: threads.map((t) => ({ name: t.name, moments: t.clip_count })),
         working,
         sources: sources.map((s) => ({
           id: s.id,
@@ -980,7 +981,6 @@ const roomHandler = async (c: Ctx) => {
         counts: {
           sources: sources.length,
           moments: shownCount,
-          threads: threads.length,
           external: externalCount,
         },
       }),
@@ -5930,6 +5930,32 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (added || gone) console.log(`[sweep] meaning index: +${added} -${gone}`);
   } catch (err) {
     console.log(`[sweep] index: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /*
+   * THE THREADS CATCH UP WITH THE LIBRARY.
+   *
+   * Here for the same reason the meaning index is here, one block up: clips
+   * are written in three places and a fourth is coming, and a pass you have
+   * to remember to call is a pass that gets forgotten.
+   *
+   * THREE USERS A SWEEP. Grouping is O(n²) over up to 1,500 moments, which
+   * is milliseconds, but it also embeds every quote — so this is deliberately
+   * a trickle rather than a job that wakes up and re-reads every library on
+   * the platform. Nobody is waiting on it: threads are a reading of an
+   * archive, and an archive that grew ten minutes ago can be read in an hour.
+   */
+  for (const userId of await staleThreadUsers(env.DB).catch(() => [] as string[])) {
+    try {
+      const { threads, moments, unnamed } = await rethread(env, userId);
+      if (threads || unnamed) {
+        console.log(`[sweep] threads: ${threads} over ${moments} moments, ${unnamed} unnamed`);
+      }
+    } catch (err) {
+      /* One user's library must not stop the sweep for everyone else — the
+         same rule the per-user block at the bottom of this function follows. */
+      console.log(`[sweep] threads ${userId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /* Videos that failed because a container slot was busy rather than because

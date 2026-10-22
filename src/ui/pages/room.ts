@@ -24,6 +24,7 @@ import { ACCENT, C, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { composer, workingRow, type WorkingJob } from "./home.ts";
 import { LINE, OUTSIDE_PREFS, PILL, type OutsidePref } from "../../outside.ts";
+import { archiveSentence, countLine } from "../../archive.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
@@ -109,9 +110,22 @@ export interface RoomData {
   }>;
   projects: Array<{ id: string; title: string; kind: string; updated_at: number }>;
   /** Totals for the summary line, counted rather than estimated. */
-  counts: { sources: number; moments: number; threads: number; external: number };
-  /** What the threads are called, for the archive card. */
-  threadNames: string[];
+  /*
+   * ONE PLACE A THREAD COUNT COMES FROM, which is `threads` below.
+   *
+   * It used to be here as well, and "a count that disagrees with its list is
+   * a bug this product has already had twice" — three times, by the time the
+   * Highlights tab was fixed. The number in the title row is now the length
+   * of the list the paragraph names, so the two cannot come apart.
+   */
+  counts: { sources: number; moments: number; external: number };
+  /**
+   * The threads, biggest first, for the archive paragraph.
+   *
+   * Names AND counts: the paragraph says which one is returned to most, and
+   * a list of names alone could not have told it.
+   */
+  threads: Array<{ name: string; moments: number }>;
 }
 
 /**
@@ -196,7 +210,7 @@ function titleRow(d: RoomData): string {
 
   return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
     <span style="flex:none;font-size:${SIZE.body};font-weight:600">Your footage</span>
-    <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(summaryLine(d.counts))}</span>
+    <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(countLine({ sources: d.counts.sources, moments: d.counts.moments, threads: d.threads }))}</span>
     <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};padding:5px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};text-decoration:none">+ Add</a>
     <span style="flex:none;display:flex;gap:2px;align-items:center">
       ${tab("Footage", true)}${tab("Blocks", false)}${tab("Words", false)}${tab("Shorts", false)}
@@ -297,44 +311,36 @@ function direction(attached: string[], ghosts: string[], pref: OutsidePref): str
 }
 
 /**
- * One paragraph on what is in the archive, counted rather than estimated.
+ * WHAT'S IN YOUR ARCHIVE — a paragraph, as the prototype has it.
  *
- * The prototype's line is "N videos read · M moments". A number that cannot
- * be computed honestly is not shown — the same rule the clean-up chips follow
- * — so a library with no threads yet simply does not mention threads.
- */
-function summaryLine(c: RoomData["counts"]): string {
-  const bits = [
-    `${c.sources} video${c.sources === 1 ? "" : "s"} read`,
-    `${c.moments} moment${c.moments === 1 ? "" : "s"}`,
-  ];
-  if (c.threads) bits.push(`${c.threads} thread${c.threads === 1 ? "" : "s"}`);
-  return bits.join(" · ");
-}
-
-/**
- * WHAT'S IN YOUR ARCHIVE — a paragraph, not a count.
+ * It showed a count for as long as the room has existed, which CLAUDE.md
+ * names as one of the three things a night of building from documents and
+ * grepped strings got wrong: "the archive summary was a count where a
+ * paragraph goes."
  *
- * The prototype writes it: "Three vlogs, one question — whether to leave the
- * city for the house. You circle it for two and a half hours across five
- * threads and answer it once, on Sunday at 44:02." That is a READING of the
- * library, and it is the first thing in the centre column.
+ * The sentence itself is in src/archive.ts, with the argument for why it is
+ * not the prototype's exact words and why it is not a model call. The short
+ * version: it says the part that is counted, and the count is still what
+ * comes back for an archive with no topic running through it yet.
  *
- * We cannot write that yet — it needs a pass over every transcript, and
- * inventing a sentence that sounds like one would be the product claiming to
- * have read something it has not. So the card says what IS true: what is in
- * there, counted, and the threads it found. The card exists at the right size
- * in the right place, and gets its paragraph when something can honestly
- * produce one.
+ * data-content, AND WHO CHECKS THE WORDS INSTEAD. The line is assembled from
+ * the person's own thread names and their counts, so it is text the data
+ * wrote and the strings rule cannot match it against a prototype that holds
+ * a different library. That leaves the scaffolding — "threads run through",
+ * "The one you come back to most is" — unchecked by the gate, so it is
+ * pinned by exact string in test/archive.test.ts, which asserts the whole
+ * sentence rather than a fragment of it for exactly this reason.
  */
 function archiveCard(d: RoomData): string {
-  if (!d.counts.sources) return "";
-  const threads = d.threadNames.slice(0, 4);
+  const line = archiveSentence({
+    sources: d.counts.sources,
+    moments: d.counts.moments,
+    threads: d.threads,
+  });
+  if (!line) return "";
   return `<div style="padding:13px 15px;border-radius:${RADIUS.card};background:${C.surface}">
     <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">WHAT'S IN YOUR ARCHIVE</div>
-    <div data-content style="margin-top:7px;font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">${esc(
-      summaryLine(d.counts) + (threads.length ? ` — ${threads.join(", ")}` : "")
-    )}</div>
+    <div data-content style="margin-top:7px;font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">${esc(line)}</div>
   </div>`;
 }
 
