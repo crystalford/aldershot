@@ -32,6 +32,7 @@
  */
 
 import type { Resolved } from "./models.ts";
+import { contentAddress } from "./items.ts";
 
 /**
  * How long a cached answer stands.
@@ -77,29 +78,38 @@ export interface Addressable {
 export const cacheable = (model: Resolved): boolean =>
   model.provider === "workers-ai" && model.temperature === 0;
 
-const enc = new TextEncoder();
-
 /**
  * The address of a call: a hash of everything that decides its answer.
  *
- * Fields are joined with a separator that cannot occur in any of them, so
- * two different calls cannot collide by one field ending where the next
- * begins — "ab" + "c" and "a" + "bc" are the same string and must not be the
- * same key.
+ * THROUGH `contentAddress`, WHICH ALREADY EXISTED. This file first grew its
+ * own hash — positional, one separator, the fields in an array — and that
+ * was a second answer to a question src/items.ts had already answered, for
+ * the idempotency key, with a comment that says in as many words "the same
+ * hash that keys the render cache". Nothing caught the duplication because
+ * both were used.
+ *
+ * Its version is also better in two ways the first one was not. Keys are
+ * SORTED, so a caller assembling the object in a different order gets the
+ * same address rather than a silent miss. And there are two separators, so a
+ * field NAME cannot collide with a value either — `{ab: "c"}` and
+ * `{a: "bc"}` are different addresses there and would have been the same
+ * here.
+ *
+ * What this function keeps is knowing WHICH fields matter for a model call,
+ * which is the part that is specific to a call and the part worth testing
+ * field by field.
  */
 export async function keyFor(a: Addressable): Promise<string> {
-  const parts = [
-    a.capability,
-    a.model.id,
-    a.model.effort ?? "",
-    String(a.model.temperature ?? ""),
-    a.promptVersion,
-    a.system,
-    a.user,
-    a.schema ? JSON.stringify(a.schema) : "",
-  ];
-  const digest = await crypto.subtle.digest("SHA-256", enc.encode(parts.join("\u0000")));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return contentAddress({
+    capability: a.capability,
+    model: a.model.id,
+    effort: a.model.effort ?? null,
+    temperature: a.model.temperature ?? null,
+    promptVersion: a.promptVersion,
+    system: a.system,
+    user: a.user,
+    schema: a.schema ? JSON.stringify(a.schema) : null,
+  });
 }
 
 export interface Hit {

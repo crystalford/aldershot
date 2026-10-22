@@ -135,11 +135,30 @@ test("ACCEPTANCE: every field that changes the answer changes the key", async ()
 });
 
 test("two calls cannot collide by one field ending where the next begins", async () => {
-  /* "ab" + "c" and "a" + "bc" are the same string joined naively, and would
-     be the same key — a different question with the same address. */
+  /*
+   * "ab" + "c" and "a" + "bc" are the same string joined naively, and would
+   * be the same key — a different question at the same address, which is the
+   * one bug here that produces confident wrong answers rather than a crash.
+   *
+   * `keyFor` delegates to `contentAddress`, which was already in
+   * src/items.ts for the idempotency key and already had this property. This
+   * file grew its own hash first; the duplication is recorded in keyFor's
+   * comment rather than quietly removed.
+   */
   const a = await keyFor({ ...base, system: "ab", user: "c" });
   const b = await keyFor({ ...base, system: "a", user: "bc" });
   assert.notEqual(a, b);
+});
+
+test("the caller may build the object in any order", async () => {
+  /*
+   * A property the first version of keyFor did not have: it joined an array,
+   * so order was fixed by position and a caller assembling the fields
+   * differently would have missed every time without knowing.
+   */
+  const a: Addressable = { capability: "judge", model: CF, promptVersion: "v1", system: "s", user: "u" };
+  const b: Addressable = { user: "u", system: "s", promptVersion: "v1", model: CF, capability: "judge" };
+  assert.equal(await keyFor(a), await keyFor(b));
 });
 
 /* ── The row ────────────────────────────────────────────────────────────── */
