@@ -2427,7 +2427,18 @@ async function loadNotifications() {
     if (!res.ok) throw new Error("no");
     const { running, done } = await res.json();
     const rowsHtml = []
-      .concat((running || []).map((j) => notifRow(j.stage_label || j.type, "running", "run", null)))
+      /*
+       * PER-ITEM PROGRESS WHERE THERE IS ANY, and "running" where there is
+       * not. The job's own pct is written by whatever stage is going, so a
+       * stage that reported most of the way and then died leaves a bar
+       * claiming work that never happened; a count of items cannot. Null
+       * means this job is not item-tracked, not that nothing is happening.
+       */
+      .concat(
+        (running || []).map((j) =>
+          notifRow(j.stage_label || j.type, j.items ? j.items.says : "running", "run", null),
+        ),
+      )
       .concat(
         (done || []).map((j) =>
           notifRow(

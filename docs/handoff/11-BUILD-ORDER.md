@@ -320,7 +320,24 @@ A hit is not metered, because charging for a call nobody made breaks the same
 invariant from the other side, and the hits are counted so the saving is a
 number on the owner's cost view rather than a belief.
 
-Still owed in Phase 8: per-item progress, canaries and the SLO dashboard. The item state machine, the completion invariant, the
+**Per-item progress has landed**, and it exists because a job's own `pct` is
+a claim rather than a count. `advance` is trusted to supply measured work, so
+a stage that reported 90% and then died left a job claiming nine tenths of
+work that never happened. `progress()` in `src/items.ts` counts terminal item
+rows instead, which cannot overstate itself, and the bell shows the sentence:
+"3 of 5 pieces done · 1 in hand · 1 failed".
+
+Driven against a job whose stage had written 90 while three of its five items
+were done and one had failed terminally — the number the person now sees is
+60 and the failure is named. A terminal failure counts as done AND is named
+separately, because invariant 7 is the rule that a job which finished with
+failures is not the same thing as a job that finished. A job with no items
+reports zero and says so rather than reading as nothing-to-do: items that
+were never written are the first thing that goes wrong when this machinery is
+wired up.
+
+Still owed in Phase 8: canaries and the SLO dashboard. Both want a deploy to
+mean anything — a canary that never runs is a green tick nobody earned. The item state machine, the completion invariant, the
 DLQ, metering, the spend cap and BYOK blame are all in.
 
 ## Then

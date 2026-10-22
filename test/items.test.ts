@@ -23,6 +23,7 @@ import {
   canMove,
   completion,
   contentAddress,
+  progress,
   fail,
   isTerminal,
   move,
@@ -496,4 +497,84 @@ test("the reconciler has an index to read, not a table to scan", () => {
   const sql = readFileSync(join(import.meta.dirname, "..", "migrations", "schema.sql"), "utf8");
   assert.match(sql, /CREATE INDEX IF NOT EXISTS job_items_owed ON job_items\(status, deadline_at\)/i);
   assert.match(sql, /CREATE INDEX IF NOT EXISTS job_items_by_job ON job_items\(job_id, status\)/i);
+});
+
+/* ── Per-item progress ──────────────────────────────────────────────────── */
+
+const at = (status: ItemStatus, i = 0) => ({ id: `i${i}`, status });
+
+test("ACCEPTANCE: progress is a count of items, which cannot overstate itself", () => {
+  /*
+   * Phase 8's per-item progress, and the reason it is per-item: `jobs.pct`
+   * is written by whatever stage is running, so a stage that reported 90%
+   * and then died left a job claiming nine tenths of work that never
+   * happened. A count of rows cannot say that.
+   */
+  const p = progress([
+    at("succeeded", 1),
+    at("succeeded", 2),
+    at("running", 3),
+    at("pending", 4),
+  ]);
+  assert.equal(p.done, 2);
+  assert.equal(p.total, 4);
+  assert.equal(p.pct, 50);
+  assert.match(p.says, /2 of 4 pieces done/);
+  assert.match(p.says, /1 in hand/);
+});
+
+test("ACCEPTANCE: a terminal failure is counted as done AND named", () => {
+  /*
+   * Invariant 7: a job that finished with three failures is not the same
+   * thing as a job that finished. Folding them into "done" would be exactly
+   * the silent partial success the invariant forbids.
+   */
+  const p = progress([at("succeeded", 1), at("failed_terminal", 2), at("failed_terminal", 3)]);
+  assert.equal(p.done, 3, "a terminal failure is in a state it will not leave");
+  assert.equal(p.failed, 2);
+  assert.match(p.says, /2 failed/);
+});
+
+test("progress never reaches 100 while a job is running", () => {
+  /*
+   * The job's own state says finished; a bar at 100 beside a job still going
+   * is the same lie from the other end. 99 is the ceiling `advance` already
+   * uses, kept so the two cannot disagree about what full looks like.
+   */
+  const nearly = progress([...Array.from({ length: 99 }, (_, i) => at("succeeded", i)), at("running", 99)]);
+  assert.ok(nearly.pct <= 99, `reported ${nearly.pct}`);
+
+  /* Even when every item IS terminal — the job row is what says finished. */
+  const all = progress(Array.from({ length: 4 }, (_, i) => at("succeeded", i)));
+  assert.equal(all.pct, 99);
+  assert.equal(all.done, all.total);
+});
+
+test("a job with no items is zero and says why, rather than cheerfully empty", () => {
+  /*
+   * The same reason `completion` refuses to call it complete: items that
+   * were never written are the first thing that goes wrong when this
+   * machinery is wired up, and "nothing to do" would hide it.
+   */
+  const p = progress([]);
+  assert.deepEqual([p.done, p.total, p.pct], [0, 0, 0]);
+  assert.match(p.says, /nothing has been broken into items/);
+});
+
+test("the sentence is a sentence, with no stray plurals", () => {
+  /* It goes in the bell, where a person reads it. */
+  const one = progress([at("succeeded", 1), at("running", 2)]);
+  assert.match(one.says, /1 of 2 pieces done · 1 in hand/);
+  const singleFail = progress([at("failed_terminal", 1)]);
+  assert.match(singleFail.says, /1 failed\b/);
+  assert.doesNotMatch(singleFail.says, /\(s\)/);
+});
+
+test("skipped-by-user counts as done and is not a failure", () => {
+  /* A person who skipped something chose that, so it is neither owed nor
+     wrong — and `says` must not accuse them of a failure. */
+  const p = progress([at("succeeded", 1), at("skipped_by_user", 2)]);
+  assert.equal(p.done, 2);
+  assert.equal(p.failed, 0);
+  assert.doesNotMatch(p.says, /failed/);
 });

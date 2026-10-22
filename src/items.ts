@@ -331,3 +331,72 @@ export async function contentAddress(parts: Record<string, string | number | boo
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/* ── Per-item progress ──────────────────────────────────────────────────── */
+
+export interface Progress {
+  /** Items in a state they will not leave. */
+  done: number;
+  total: number;
+  /** Terminal failures, counted separately — they are done AND wrong. */
+  failed: number;
+  /**
+   * Terminal items as a percentage, capped below 100 while anything is owed.
+   *
+   * MEASURED BY DEFINITION, which is the point of deriving it from items
+   * rather than writing it from a stage. `jobs.pct` is set by whatever stage
+   * is running, so a stage that reported 90% and then died left a job
+   * claiming nine tenths of work that did not happen. A count of rows cannot
+   * say that.
+   *
+   * A percentage of PROGRESS, not of quality — invariant 3 forbids a score
+   * reaching a person, and "how much of this is finished" is a measurement
+   * of work done rather than an opinion about how good it is.
+   */
+  pct: number;
+  /** What is left, in a sentence. Never a bare number. */
+  says: string;
+}
+
+/** Plural without the "(s)". */
+const n = (count: number, one: string, many = `${one}s`): string =>
+  `${count} ${count === 1 ? one : many}`;
+
+/**
+ * HOW FAR THROUGH A JOB IS, from its items.
+ *
+ * Phase 8 asks for per-item progress, and the reason it is per-item rather
+ * than per-stage is that a stage's own estimate of itself is the thing that
+ * has already been wrong: see `advance`, whose comment asks for measured work
+ * and is trusted to supply it.
+ *
+ * NEVER 100 WHILE ANYTHING IS OWED, and never 100 at all — the job's own
+ * state says finished, and a bar at 100 beside a job still running is the
+ * same lie from the other end. 99 is the ceiling `advance` already uses, kept
+ * so the two cannot disagree about what full looks like.
+ *
+ * A JOB WITH NO ITEMS IS 0 AND SAYS SO, for the same reason `completion`
+ * refuses to call it complete: items that were never written are the first
+ * thing that goes wrong when this machinery is wired up, and a cheerful
+ * "nothing to do" would hide it.
+ */
+export function progress(items: Array<Pick<Item, "id" | "status">>): Progress {
+  const total = items.length;
+  if (!total) {
+    return { done: 0, total: 0, failed: 0, pct: 0, says: "nothing has been broken into items yet" };
+  }
+
+  const done = items.filter((i) => isTerminal(i.status)).length;
+  const failed = items.filter((i) => i.status === "failed_terminal").length;
+  const running = items.filter((i) => i.status === "running").length;
+  const pct = Math.min(99, Math.round((done / total) * 100));
+
+  const parts = [`${done} of ${n(total, "piece")} done`];
+  if (running) parts.push(`${running} in hand`);
+  /* Failures are named rather than folded into "done", because a job that
+     finished with three failures is not the same thing as a job that
+     finished, and invariant 7 is the rule that says so. */
+  if (failed) parts.push(n(failed, "failed"));
+
+  return { done, total, failed, pct, says: parts.join(" · ") };
+}

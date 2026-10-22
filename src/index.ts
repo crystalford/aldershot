@@ -81,6 +81,7 @@ import { emptyNote, offerFor } from "./picture-supply.ts";
 import { hasNoRaster, quoteCard } from "./graphics.ts";
 import { allHealth } from "./breaker.ts";
 import { saved as savedCalls } from "./call-cache.ts";
+import { itemProgress } from "./jobs.ts";
 import {
   MAX_BYTES,
   addDocument,
@@ -4931,7 +4932,25 @@ app.get("/api/notifications", async (c) => {
     activeJobs(c.env.DB, user.id),
     recentlyFinished(c.env.DB, user.id),
   ]);
-  return c.json({ running, done });
+
+  /*
+   * PER-ITEM PROGRESS, where the job has items.
+   *
+   * `pct` is written by whatever stage is running, so a stage that reported
+   * 90% and then died leaves a job claiming nine tenths of work that never
+   * happened. A count of item rows cannot say that, so a job with items
+   * reports the count and the sentence beside it.
+   *
+   * Null for a job this machinery does not track, which the bell reads as
+   * "keep showing what you were showing" rather than as zero.
+   */
+  const withItems = await Promise.all(
+    running.map(async (j) => {
+      const items = await itemProgress(c.env.DB, j.id);
+      return items ? { ...j, items } : j;
+    }),
+  );
+  return c.json({ running: withItems, done });
 });
 
 /*

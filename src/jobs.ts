@@ -9,7 +9,14 @@
  */
 
 import { ulid } from "./id.ts";
-import { ITEM_STATUSES, completion, type Completion, type ItemStatus } from "./items.ts";
+import {
+  ITEM_STATUSES,
+  completion,
+  progress,
+  type Completion,
+  type ItemStatus,
+  type Progress,
+} from "./items.ts";
 import type { JobType } from "./usage.ts";
 
 export type JobState = "queued" | "running" | "ready" | "failed";
@@ -487,6 +494,35 @@ export async function latestJobFor(
     .prepare(`SELECT * FROM jobs WHERE ref_id=? AND user_id=?${filter} ORDER BY created_at DESC LIMIT 1`)
     .bind(refId, userId, ...(types ?? []))
     .first<Job>();
+}
+
+/**
+ * A job's progress, from its items rather than from its own `pct`.
+ *
+ * Phase 8's per-item progress. `jobs.pct` is written by whatever stage is
+ * running, which means a stage that reported 90% and then died left a job
+ * claiming nine tenths of work that never happened. A count of item rows
+ * cannot say that, so where a job HAS items the items are the answer and
+ * `pct` is a fallback rather than the record.
+ *
+ * Null when the job has no items. That is not "no progress" — it is a job
+ * this machinery does not track, and the caller should keep showing `pct`
+ * rather than a bar at zero. ITEM_TRACKED_JOB_TYPES is opt-in for the same
+ * reason.
+ */
+export async function itemProgress(db: D1Database, jobId: string): Promise<Progress | null> {
+  try {
+    const { results } = await db
+      .prepare(`SELECT id, status FROM job_items WHERE job_id=?`)
+      .bind(jobId)
+      .all<{ id: string; status: ItemStatus }>();
+    const items = results ?? [];
+    return items.length ? progress(items) : null;
+  } catch {
+    /* A read failure is "we do not know", not "nothing is happening" — the
+       same rule as the breaker and the spend cap. */
+    return null;
+  }
 }
 
 export async function activeJobs(db: D1Database, userId: string): Promise<Job[]> {
