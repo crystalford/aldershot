@@ -110,6 +110,7 @@ import { wavDurationMs } from "./mp3.ts";
 import { begin } from "./begin.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
 import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
+import { readPref, resolvePress, writePref } from "./outside.ts";
 import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
 import { shouldAlign, timingForProject } from "./align-source.ts";
 import { JUDGE_VERSION } from "./judge.ts";
@@ -809,15 +810,17 @@ const roomHandler = async (c: Ctx) => {
      off. "exact" means they asked for the words, so the notice is not news. */
   const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
 
-  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount] = await Promise.all([
-    listSources(c.env.DB, user.id, "newest"),
-    listProjects(c.env.DB, user.id),
-    listThreads(c.env.DB, user.id),
-    clipCountsBySource(c.env.DB, user.id),
-    countMoments(c.env.DB, user.id),
-    activeJobs(c.env.DB, user.id),
-    countExternal(c.env.DB, user.id),
-  ]);
+  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount, outsidePref] =
+    await Promise.all([
+      listSources(c.env.DB, user.id, "newest"),
+      listProjects(c.env.DB, user.id),
+      listThreads(c.env.DB, user.id),
+      clipCountsBySource(c.env.DB, user.id),
+      countMoments(c.env.DB, user.id),
+      activeJobs(c.env.DB, user.id),
+      countExternal(c.env.DB, user.id),
+      readPref(c.env.DB, user.id),
+    ]);
 
   /*
    * A JOB WITH NOTHING TO NAME IS NOT SHOWN.
@@ -950,6 +953,7 @@ const roomHandler = async (c: Ctx) => {
       { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
       renderRoom({
         tab,
+        outsidePref,
         attached,
         q,
         mode,
@@ -4710,6 +4714,31 @@ app.post("/api/account/name", async (c) => {
   const name = cleanTitle((await body<{ name: string }>(c)).name ?? "").slice(0, 60);
   await c.env.DB.prepare(`UPDATE v2_users SET name=? WHERE id=?`).bind(name || null, user.id).run();
   return c.json({ ok: true, name: name || null });
+});
+
+/**
+ * WHETHER SCOUT MAY GO OUTSIDE — the front door's pill.
+ *
+ * THE CYCLE RUNS SERVER-SIDE. The body says nothing about what the next
+ * state is; it names the state the pill was showing, and the server moves
+ * from there. A client that sent `{pref:"always"}` would otherwise be able
+ * to switch Scout on by asking, which is the one direction of this control
+ * that should never be reachable without a person pressing it.
+ *
+ * `from` is a guard, not an instruction: if it disagrees with what is
+ * stored, the stored value wins and the response carries it, so two tabs
+ * open on the room settle rather than leapfrog.
+ */
+app.post("/api/account/outside", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const sent = (await body<{ from?: string }>(c)).from;
+  const stored = await readPref(c.env.DB, user.id);
+  const { pref, stale } = resolvePress(stored, sent);
+  /* Nothing to write when the press was stale — the stored value is already
+     what the answer says it is. */
+  if (!stale) await writePref(c.env.DB, user.id, pref);
+  return c.json({ ok: true, pref, stale });
 });
 
 /**

@@ -1217,6 +1217,21 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
      is no migration runner and every existing account already has a row. */
   { table: "v2_users", column: "spend_cap_usd", ddl: "ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL" },
 
+  /*
+   * WHETHER SCOUT MAY GO OUTSIDE, which the front door asks and nothing
+   * stored.
+   *
+   * The prototype puts a Scout row in the MAKE column with a pill reading On,
+   * Per project or Off, and the build had Scout only inside a project — so
+   * the one place the preference is set was a place you could only reach by
+   * already having decided. Three values: `always`, `ask`, `never`.
+   *
+   * Null means `ask`, which is the prototype's default and the cautious one:
+   * going outside is a thing somebody opts into per project rather than a
+   * setting they discover has been on.
+   */
+  { table: "v2_users", column: "outside_pref", ddl: "ALTER TABLE v2_users ADD COLUMN outside_pref TEXT" },
+
   /* Where a source's published transcript lives. See scout_sources above. */
   { table: "scout_sources", column: "transcript_url", ddl: "ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT" },
 

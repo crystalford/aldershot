@@ -493,7 +493,7 @@ ${
       `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
         d.feed.length
           ? collapse(d.feed).map(feedRow).join("")
-          : `<div data-content style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
+          : `<div style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
       }</div>`
 }
 ${

@@ -119,7 +119,7 @@ function who(d: EvalData): string {
   const others = d.labellers.filter((n) => n !== d.labeller);
   return `<form method="GET" action="/eval" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <input type="hidden" name="claim" value="${esc(d.claim?.text ?? "")}"/>
-    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45}">Answering as</span>
+    <span style="flex:none;font-size:${SIZE.meta};color:${C.ink45}">Answering as</span>
     <input type="text" name="by" value="${esc(d.labeller)}" autocomplete="off" maxlength="40"
       style="flex:0 1 160px;min-width:110px;padding:6px 10px;border-radius:${RADIUS.button};background:${C.surface};border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);color:${C.ink};font-family:${FONT.mono};font-size:${SIZE.meta}"/>
     <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Switch</button>
@@ -164,15 +164,15 @@ function machine(d: EvalData): string {
   -->
   <div style="margin-top:8px">
     <a href="/api/eval/export" download="set.jsonl" style="font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take the set away &nearr;</a>
-    <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}"> · every answer so far, as the file the runner reads</span>
+    <span style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}"> · every answer so far, as the file the runner reads</span>
   </div>`;
 }
 
 export function renderEval(d: EvalData): string {
   const pct = Math.min(100, Math.round((100 * d.labels) / ENOUGH_LABELS));
 
-  const head = `<div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">What backs what</div>
-  <div data-content style="margin-top:7px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Write a claim, then say whether each moment backs it. Nothing about how well search works means anything until this exists.</div>
+  const head = `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">What backs what</div>
+  <div style="margin-top:7px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Write a claim, then say whether each moment backs it. Nothing about how well search works means anything until this exists.</div>
   <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="flex:1 1 160px;min-width:min(140px,100%);height:4px;border-radius:2px;background:${C.pill};overflow:hidden;display:block"><span style="display:block;width:${pct}%;height:100%;background:${ACCENT.gold}"></span></span>
     <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${d.labels} of ${ENOUGH_LABELS}</span>
@@ -196,12 +196,12 @@ export function renderEval(d: EvalData): string {
        * the "nothing here backs this" case, and a set with none of them
        * cannot teach a threshold to say it.
        */
-      `<div data-content style="margin-top:20px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing came back for that. Write it down anyway — a claim your footage does not back is worth as much to this as one it does.</div>`
+      `<div style="margin-top:20px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing came back for that. Write it down anyway — a claim your footage does not back is worth as much to this as one it does.</div>`
     : `<div style="margin-top:18px;display:flex;flex-direction:column;gap:10px">${d.candidates.map((c) => candidate(c, d.claim!.id)).join("")}</div>`;
 
   return `${head}
   <div data-claim="${esc(d.claim.id)}" style="margin-top:20px;padding:13px 15px;border-radius:${RADIUS.card};background:${C.raised};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-    <div data-content style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">THE CLAIM</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">THE CLAIM</div>
     <div data-content style="margin-top:6px;font-size:${SIZE.body};line-height:1.6">${esc(d.claim.text)}</div>
     ${
       /*
@@ -227,7 +227,7 @@ export function renderEval(d: EvalData): string {
 function claimList(claims: EvalData["claims"]): string {
   if (!claims.length) return "";
   return `<div style="margin-top:28px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.05)">
-    <div data-content style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">CLAIMS SO FAR</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">CLAIMS SO FAR</div>
     <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${claims
       .map(
         (c) => `<a href="/eval?claim=${encodeURIComponent(c.text)}" style="display:flex;gap:10px;align-items:baseline;padding:9px 11px;border-radius:${RADIUS.card};background:${C.surface};text-decoration:none;color:inherit">

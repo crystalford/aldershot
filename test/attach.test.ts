@@ -72,6 +72,7 @@ test("attaching toggles, and survives a page load in the URL", () => {
    */
   const base: RoomData = {
     tab: "videos",
+    outsidePref: "ask",
     attached: [],
   threadNames: [],
   mode: "meaning" as const,

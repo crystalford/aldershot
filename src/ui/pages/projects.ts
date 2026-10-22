@@ -140,7 +140,7 @@ export function renderProjects(projects: ProjectRow[]): string {
   const head = `<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
     <div>
       <span style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.02em">Projects</span>
-      <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px;max-width:600px">Everything you're building — a cut, a reaction, an essay. Clips and shorts aren't projects; those are material, and they live in Footage.</div>
+      <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px;max-width:600px">Everything you're building — a cut, a reaction, an essay. Clips and shorts aren't projects; those are material, and they live in Footage.</div>
     </div>
     <div style="flex:none;display:flex;align-items:center;gap:14px">
       <a href="/" style="font-size:${SIZE.body};font-weight:600;padding:9px 20px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;white-space:nowrap">Start something</a>
@@ -150,8 +150,8 @@ export function renderProjects(projects: ProjectRow[]): string {
   if (!projects.length) {
     return `${head}
     <div style="margin-top:24px;padding:24px;border-radius:${RADIUS.card};background:${C.surface};max-width:620px">
-      <div data-content style="font-size:15.5px;font-weight:600">Nothing on the go</div>
-      <div data-content style="font-size:${SIZE.body};color:${C.ink45};margin-top:6px;line-height:1.6">A project shows up here the moment you ask for a cut, a reaction, or an essay. Ask for clips instead and they'll go straight to Footage without one.</div>
+      <div style="font-size:15.5px;font-weight:600">Nothing on the go</div>
+      <div style="font-size:${SIZE.body};color:${C.ink45};margin-top:6px;line-height:1.6">A project shows up here the moment you ask for a cut, a reaction, or an essay. Ask for clips instead and they'll go straight to Footage without one.</div>
       <div style="margin-top:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
         <a href="/" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 16px;border-radius:${RADIUS.button};background:${C.ink};color:#131316">Start something</a>
         <a href="/editor" style="font-size:${SIZE.secondary};color:rgba(236,236,241,0.4)">or open a blank editor →</a>

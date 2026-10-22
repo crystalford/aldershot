@@ -476,7 +476,7 @@ const GRADE_ACCENT: Record<Grade, keyof typeof ACCENT> = {
 function shortsList(d: CutData): string {
   const lines = d.blocks.filter((b) => b.origin === "footage" && !b.struck && b.text.trim());
   if (!lines.length) {
-    return `<div data-content style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing to cut a short from yet — this cut has no lines in it.</div>`;
+    return `<div style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing to cut a short from yet — this cut has no lines in it.</div>`;
   }
 
   const ORDER: Record<Grade, number> = { strong: 0, worth: 1, long: 2 };
@@ -988,7 +988,7 @@ export function renderBlockSlice(
 function addToCut(d: CutData): string {
   if (!d.addable.length) return "";
   return `<div style="margin-top:14px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-    <span data-content style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">not in this cut</span>
+    <span style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">not in this cut</span>
     ${d.addable
       .map(
         (s) => `<button class="add-source" type="button" data-source="${esc(s.id)}"
@@ -1000,7 +1000,7 @@ function addToCut(d: CutData): string {
 
 function momentsThroughRules(d: CutData): string {
   if (!d.moments.length) {
-    return `<div data-content style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
+    return `<div style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
   }
   /*
    * EVERY ROW IS A BUTTON, because every row's note promises a click.
@@ -1105,7 +1105,7 @@ export function renderCut(d: CutData): string {
 
   if (!d.blocks.length) {
     return `${head}${strip}${failed}
-    <div data-content style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been transcribed yet — give it a minute.</div>`;
+    <div style="margin-top:18px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${C.ink45}">This hasn't been transcribed yet — give it a minute.</div>`;
   }
 
   /*

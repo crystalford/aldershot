@@ -4088,6 +4088,74 @@ document.querySelectorAll(".make-card").forEach((card) => {
   });
 });
 
+/* ── The room: the Scout row ───────────────────────────────────────────
+   Two controls in one row, so the press has to be told apart. The pill
+   cycles the preference; the row seeds the composer with Scout, find
+   so the next thing you do is ask him for something.
+
+   THE WORDS COME FROM THE SERVER. outside.ts holds the pill labels and the
+   three lines, and this file is one String.raw template with no
+   interpolation in it, so restating them here would mean two copies that
+   disagree the day one is reworded. The row carries all three states as
+   data attributes and this reads the one the server names back. */
+const scoutRow = $("#scoutRow");
+if (scoutRow) {
+  const pill = $("#scoutPref");
+  const line = $("#scoutRowLine");
+  const paint = (pref) => {
+    if (!pref) return;
+    const nextPill = scoutRow.getAttribute("data-pill-" + pref);
+    const nextLine = scoutRow.getAttribute("data-line-" + pref);
+    /* An unknown state repaints nothing rather than emptying the row. */
+    if (nextPill === null || nextLine === null) return;
+    pill.setAttribute("data-pref", pref);
+    pill.textContent = nextPill;
+    line.textContent = nextLine;
+  };
+  const cycle = async () => {
+    if (pill.dataset.busy === "1") return;
+    pill.dataset.busy = "1";
+    const from = pill.getAttribute("data-pref");
+    try {
+      const r = await fetch("/api/account/outside", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ from }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error("no");
+      paint(j.pref);
+      /* Somebody else moved it in another tab. The pill now shows the
+         truth; saying so is better than a press that looks ignored. */
+      if (j.stale) window.toast("Scout was already set to " + pill.textContent + ".");
+    } catch {
+      window.toast("That didn't change.");
+    }
+    pill.dataset.busy = "0";
+  };
+  pill.addEventListener("click", (e) => { e.stopPropagation(); cycle(); });
+  pill.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    cycle();
+  });
+  const seed = () => {
+    const brief = $("#brief");
+    if (!brief) return;
+    brief.value = "Scout, find ";
+    brief.focus();
+    brief.setSelectionRange(brief.value.length, brief.value.length);
+    brief.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  scoutRow.addEventListener("click", seed);
+  scoutRow.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    seed();
+  });
+}
+
 /* ── The rules pane: switch one off ───────────────────────────────────
    Invariant 1: a cut is re-produced from rules. So this does not patch the
    document it disagrees with — it tells the server the rule's new state and

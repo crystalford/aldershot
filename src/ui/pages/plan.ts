@@ -116,7 +116,7 @@ export function renderPlan(d: PlanData): string {
     ${
       d.claim
         ? `<div style="margin-top:16px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.raised};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
-             <div data-content style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">THE CLAIM</div>
+             <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">THE CLAIM</div>
              <div data-content style="margin-top:7px;font-size:${SIZE.body};line-height:1.6">${esc(d.claim)}</div>
            </div>`
         : ""

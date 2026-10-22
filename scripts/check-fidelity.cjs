@@ -1152,6 +1152,111 @@ async function checkStrings() {
         "rather than omitting them, since an empty list and an unbuilt " +
         "source look identical and are not.",
     ],
+    /*
+     * ELEVEN STRINGS THAT WERE NEVER CHECKED, because they wore the mark
+     * that means "the user's footage wrote this".
+     *
+     * data-content exempts an element from this rule, for a good reason: a
+     * transcript line, a filename or a model's sentence cannot be in the
+     * prototype and must not be flagged. It had spread by copy-paste onto 46
+     * pieces of STATIC copy, so a whole row could be added to the front door
+     * and paraphrased and this check stayed green — which is what happened
+     * while the Scout row was being built. The mark is off all 46 now, 35 of
+     * them turned out to be the prototype's own words, and these eleven are
+     * the ones that genuinely are not. `content` (below) is the rule that
+     * stops it spreading again.
+     *
+     * All eleven are on two surfaces the prototype does not draw at all: the
+     * record panel after a render, and the two Settings panels about ending
+     * things. Both exist because the product sells and must be leaveable.
+     */
+    [
+      "In the editor",
+      "The nav anchor back to an open project. The prototype has one room " +
+        "and no second place to be, so it has no word for 'where you were' " +
+        "— the build does, because the editor is a route you can navigate " +
+        "away from and come back to.",
+    ],
+    [
+      "Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.",
+      "The Before you post step, which the prototype has no equivalent of " +
+        "(the same gap already signed off for \"Before you post &nearr;\").\n\n" +
+        "The second clause is the load-bearing one and is deliberately not " +
+        "softened: of the seven, some are measured and some cannot be, and a " +
+        "pre-flight that implied it had checked all seven would be the one " +
+        "kind of lie this product cannot tell.",
+    ],
+    [
+      "The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.",
+      "The OTIO escape hatch (doc 11, Phase 7). The prototype shows no " +
+        "export panel at all.\n\n" +
+        "The second sentence is a limit, said before the download rather " +
+        "than discovered in Resolve: OTIO carries the cuts, and the caption " +
+        "burn-in and the ducking are baked into the rendered file. Somebody " +
+        "who opens the timeline expecting their captions would otherwise " +
+        "find out by looking for them.",
+    ],
+    [
+      "Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.",
+      "Invariant 8's paper trail. The prototype's block row has no picture " +
+        "control, so there was nothing to match.\n\n" +
+        "\"already\" is the point: the manifest is written as the cut is " +
+        "made, not generated when somebody asks, so there is no window in " +
+        "which a picture is in the video and absent from the record.",
+    ],
+    [
+      "Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.",
+      "The cue sheet, for the same reason as the line above and with the " +
+        "same clause doing the same work. \"how much of it\" rather than a " +
+        "duration because the question a rights holder asks is proportion, " +
+        "not seconds.",
+    ],
+    [
+      "Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.",
+      "The dispute file (doc 09). Invariant 4 is that every claim keeps its " +
+        "receipt and \"nothing backs this\" must be reachable — so the file " +
+        "has to state its own gaps, and the sentence that says so is the " +
+        "last one rather than a footnote.",
+    ],
+    [
+      "A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.",
+      "The public receipts page, already signed off as a link (\"Receipts " +
+        "for viewers &nearr;\"); this is the sentence under it.\n\n" +
+        "The second sentence is there because the other four links in the " +
+        "panel give the reader a document and this one gives somebody else " +
+        "a page. Nobody should be able to press it and wonder afterwards " +
+        "whether it went out.",
+    ],
+    [
+      "Close this account",
+      "The prototype has no Settings surface and nothing that ends. The " +
+        "right to erasure is not optional for anyone selling into the EU or " +
+        "UK (docs/LAUNCH.md), so the product needs this and the design never " +
+        "drew it.",
+    ],
+    [
+      "Removes every video, edit and export, and the storage they hold. There is no bin behind this one.",
+      "The one place invariant 6 does not hold, said in the plainest words " +
+        "available. Everything else in the product switches off, waits 30 " +
+        "days, or is one undo away; this does not, and the sentence has to " +
+        "be the exception rather than sound like the rest of them.",
+    ],
+    [
+      "Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.",
+      "Invariant 6, stated where somebody acts on it. \"and every render " +
+        "made from it\" is the clause that earns the sign-off: a person " +
+        "purging a source to free space will not guess that the exports " +
+        "they kept go with it, and finding out afterwards is unrecoverable.",
+    ],
+    [
+      "The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.",
+      "The owner-only spend panel. No prototype equivalent — the design has " +
+        "no operator surface.\n\n" +
+        "The second sentence exists because a dashboard of dashes reads as " +
+        "healthy and is also what a stopped writer looks like. Saying which " +
+        "it cannot tell you is the honest version, and it is the same rule " +
+        "the SLO page follows.",
+    ],
     [
       "Receipts for viewers &nearr;",
       "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
@@ -1896,7 +2001,112 @@ function checkSchema() {
   }
 }
 
+/**
+ * CONTENT — the exemption from `strings` may only cover text the data wrote.
+ *
+ * `data-content` tells checkStrings to skip an element, because a transcript
+ * line, a filename, a duration or a model's sentence cannot be in the
+ * prototype and flagging it would make the rule unusable. It is an opt-out
+ * from the strictest check in this file, and it spreads the way opt-outs do:
+ * by being on the card somebody copies.
+ *
+ * MEASURED, NOT FEARED. It had reached 46 pieces of static copy — a quarter
+ * of every marked element in src/ui. The Scout row was added to the front
+ * door carrying it, and paraphrasing the row's heading to "Scout improves
+ * your video" passed the gate green, which is the exact failure the strings
+ * rule was written to make impossible. With the mark removed, 35 of the 46
+ * were the prototype's own words all along and 11 needed sign-off.
+ *
+ * So: the mark is for INTERPOLATED text. An element whose text is a literal
+ * is chrome, and chrome gets checked.
+ */
+/* The terminating `<` is a LOOKAHEAD for the same reason checkStrings makes
+   it one: consuming it eats the next element's bracket, so the scan sees only
+   every other element. */
+const MARKED = /<([a-z]+)([^>]*\bdata-content\b[^>]*)>([^<>]*)(?=<)/g;
+
+/**
+ * Does this marked element's own text come from the source, rather than data?
+ *
+ * A wrapper whose children carry the text is fine — its own text node is
+ * empty, and each child is checked on its own terms.
+ */
+const marksStatic = (text) =>
+  text.trim().length >= 8 && !text.includes('${') && !text.includes('`');
+
+function checkContent() {
+  const rel = (f) => path.relative(ROOT, f);
+
+  /*
+   * ONE SCAN, used on the real files and on a fixture.
+   *
+   * The first version had a predicate with its own positive control beside a
+   * loop that called it, and replacing the call with `continue` — so the rule
+   * looked at 149 elements and decided nothing about any of them — left the
+   * control green and the tally green and the gate passing. A control that
+   * does not go through the same code as the real run proves nothing about
+   * the real run.
+   */
+  const scan = (src, label) => {
+    const out = [];
+    let n = 0;
+    for (const m of src.matchAll(MARKED)) {
+      n += 1;
+      if (!marksStatic(m[3])) continue;
+      out.push(
+        /* m.index, not m.start() — which is not a function, and which meant
+           the first version of this rule crashed the gate the moment it
+           found anything. It was written, run green, and only breaking it on
+           purpose made it find something to report. */
+        `${label}:${src.slice(0, m.index).split('\n').length} — data-content on static copy: ` +
+          `"${m[3].trim().slice(0, 60)}"`,
+      );
+    }
+    return { out, n };
+  };
+
+  /*
+   * THE CONTROL: three marked elements whose verdicts are known. Static copy
+   * is a finding; interpolated text is not; an empty wrapper is not.
+   */
+  const FIXTURE = '<div data-content style="x">A line of static copy here</div>' +
+    '<span data-content>${esc(m.quote)}</span><span data-content></span>';
+  const control = scan(FIXTURE, 'fixture');
+  if (control.n !== 3 || control.out.length !== 1 || !control.out[0].includes('static copy here')) {
+    fail(
+      'content',
+      'This rule cannot tell marked copy from marked data any more, so it is not checking anything.',
+      `its own fixture gave ${control.n} element(s) and ${control.out.length} finding(s) — expected 3 and 1`,
+    );
+    return;
+  }
+
+  const bad = [];
+  let seen = 0;
+  for (const f of walk(path.join(ROOT, 'src/ui')).filter((x) => !x.endsWith('client.ts'))) {
+    const { out, n } = scan(fs.readFileSync(f, 'utf8'), rel(f));
+    bad.push(...out);
+    seen += n;
+  }
+
+  if (bad.length) {
+    fail(
+      'content',
+      'data-content exempts text from the strings rule. It is for text the data wrote; this is copy, and copy gets checked.',
+      bad.join('\n'),
+    );
+  } else if (seen < 100) {
+    /* src/ui carries about 150 of these. A matcher that found a handful
+       found nothing, and would print the same green line as a clean run —
+       which is how `reachable`'s route check never fired once. */
+    fail('content', 'This rule found almost no marked elements, and src/ui has hundreds.', `matched ${seen} — the matcher is broken, not the code`);
+  } else {
+    pass('content', `${seen} data-content elements in src/ui, every one of them text the data wrote`);
+  }
+}
+
 checkTemplate();
+checkContent();
 checkWired();
 checkRoom();
 checkFonts();

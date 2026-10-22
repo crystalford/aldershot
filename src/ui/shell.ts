@@ -583,7 +583,7 @@ function overlays(editing: boolean): string {
          */
         editing
           ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid ${C.hairline}">
-              <div data-content style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">In the editor</div>
+              <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">In the editor</div>
               <div style="margin-top:6px">
                 ${key("Space", "Play or pause")}
                 ${key("← →", "Five seconds")}

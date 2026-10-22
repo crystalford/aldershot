@@ -118,8 +118,8 @@ function account(name: string | null, email: string): string {
        no bin behind it. -->
   <div style="margin-top:8px;padding:14px 18px;border-radius:${RADIUS.card};background:${C.surface};display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <div style="flex:1 1 240px;min-width:min(240px,100%)">
-      <div data-content style="font-size:${SIZE.secondary};color:${C.ink70}">Close this account</div>
-      <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:3px;line-height:1.55">Removes every video, edit and export, and the storage they hold. There is no bin behind this one.</div>
+      <div style="font-size:${SIZE.secondary};color:${C.ink70}">Close this account</div>
+      <div style="font-size:${SIZE.meta};color:${C.ink32};margin-top:3px;line-height:1.55">Removes every video, edit and export, and the storage they hold. There is no bin behind this one.</div>
     </div>
     <button id="closeAccount" data-danger data-email="${esc(email)}" style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:7px 13px;border-radius:${RADIUS.button};background:transparent;color:${ACCENT.red};border:none;cursor:pointer;font-family:${FONT.ui}">Close account</button>
   </div>`;
@@ -240,9 +240,9 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
 
   return `<div style="margin-top:40px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
     <span style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap">What it costs to run</span>
-    <span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold};white-space:nowrap">OWNER ONLY</span>
+    <span style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold};white-space:nowrap">OWNER ONLY</span>
   </div>
-  <div data-content style="margin-top:6px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);line-height:1.55;max-width:620px">Every job writes what it burned — machine time, model tokens, storage, delivery. Real spend, not a plan allowance, so pricing gets set from numbers instead of guesses.</div>
+  <div style="margin-top:6px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.4);line-height:1.55;max-width:620px">Every job writes what it burned — machine time, model tokens, storage, delivery. Real spend, not a plan allowance, so pricing gets set from numbers instead of guesses.</div>
   <div style="margin-top:16px;padding:18px;border-radius:${RADIUS.card};background:${C.surface}">
     <div style="display:flex;gap:20px;flex-wrap:wrap">
       ${heads
@@ -260,7 +260,7 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
     </div>
     ${cacheNote}
     <div style="margin-top:18px;padding-top:16px;border-top:1px solid ${C.hairline};display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-      <span data-content style="flex:1 1 220px;min-width:min(220px,100%);font-size:12px;color:rgba(236,236,241,0.4);line-height:1.5">Priced per source minute — the only unit that moves spend.</span>
+      <span style="flex:1 1 220px;min-width:min(220px,100%);font-size:12px;color:rgba(236,236,241,0.4);line-height:1.5">Priced per source minute — the only unit that moves spend.</span>
       <a href="/api/usage/month" style="font-size:${SIZE.secondary};font-weight:500;padding:7px 14px;border-radius:${RADIUS.button};background:${C.pill};color:rgba(236,236,241,0.8);flex:none;white-space:nowrap">Export the month</a>
     </div>
   </div>`;
@@ -319,9 +319,9 @@ function sloPanel(d: NonNullable<SettingsData["slo"]>): string {
 
   return `<div style="margin-top:48px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
     <span style="font-size:${SIZE.body};font-weight:600;color:${C.ink45};white-space:nowrap">Whether it is working</span>
-    <span data-content style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold};white-space:nowrap">OWNER ONLY</span>
+    <span style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:${accentBg(ACCENT.gold)};color:${ACCENT.gold};white-space:nowrap">OWNER ONLY</span>
   </div>
-  <div data-content style="margin-top:6px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.55;max-width:640px">The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.</div>
+  <div style="margin-top:6px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.55;max-width:640px">The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.</div>
   <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">
     ${line(d.canary)}${line(d.jobs)}${line(d.items)}${line(d.pools)}${pools}
   </div>`;
@@ -360,14 +360,14 @@ function trashBlock(rows: TrashRow[]): string {
   <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
     rows.length
       ? rows.map(row).join("")
-      : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing deleted</div>`
+      : `<div style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing deleted</div>`
   }</div>
-  <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.</div>`;
+  <div style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.</div>`;
 }
 
 export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
-<div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
+<div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
 ${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
 ${trashBlock(d.trash)}

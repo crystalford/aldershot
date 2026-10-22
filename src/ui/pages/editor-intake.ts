@@ -127,13 +127,13 @@ export function renderEditorIntake(d: EditorIntakeData): string {
               row({ posterKey: s.poster_r2_key, title: s.title, meta: sourceMeta(s), action: "Open", sourceId: s.id, menu: itemMenu("sources", s.id, s.title, "video") }),
             )
             .join("")
-        : `<div data-content style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing kept yet — add a clip back.</div>`
+        : `<div style="padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Nothing kept yet — add a clip back.</div>`
     }</div>
   </div>`;
 
   return `<div>
     <div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.02em">Editor</div>
-    <div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px;max-width:520px">Give it a video and say what you want out of it — it cuts, you adjust, nothing renders until you say so.</div>
+    <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:5px;max-width:520px">Give it a video and say what you want out of it — it cuts, you adjust, nothing renders until you say so.</div>
     ${composer}
     <div style="margin-top:32px">${left}</div>
   </div>`;

@@ -657,8 +657,8 @@ function documentsPanel(docs: DocumentCard[]): string {
   const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
   const add = `<div style="margin-top:20px;padding:16px;border-radius:${RADIUS.card};background:${C.surface}">
-    <div data-content style="font-size:${SIZE.body};font-weight:600">Add a document</div>
-    <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.</div>
+    <div style="font-size:${SIZE.body};font-weight:600">Add a document</div>
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.</div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <label style="flex:none;display:flex;align-items:center;gap:6px;font-size:${SIZE.secondary};padding:7px 13px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer">
         <span>Choose a file</span>
@@ -698,8 +698,8 @@ function documentsPanel(docs: DocumentCard[]): string {
 
 function findPanel(): string {
   return `<div style="margin-top:24px;padding:20px;border-radius:11px;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,184,201,0.18)">
-    <div data-content style="font-size:${SIZE.body};font-weight:600">Find a moment in a video you don't have yet</div>
-    <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">Paste a link and we read its public captions — text only, nothing downloaded. Search it in plain language and you get exact timestamps back. Grab those segments yourself, drop them in Footage, and they behave like everything else here.</div>
+    <div style="font-size:${SIZE.body};font-weight:600">Find a moment in a video you don't have yet</div>
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">Paste a link and we read its public captions — text only, nothing downloaded. Search it in plain language and you get exact timestamps back. Grab those segments yourself, drop them in Footage, and they behave like everything else here.</div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
       <input placeholder="https://www.youtube.com/watch?v=…" disabled style="flex:1 1 260px;min-width:min(240px,100%);background:#101014;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};font-family:${FONT.mono};padding:10px 12px;border-radius:6px"/>
       <button type="button" disabled style="font-size:${SIZE.secondary};font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink45};flex:none;white-space:nowrap;border:none;font-family:${FONT.ui}">Read the captions</button>

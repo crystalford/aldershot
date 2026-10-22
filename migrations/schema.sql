@@ -624,6 +624,7 @@ ALTER TABLE rules ADD COLUMN params TEXT;
 ALTER TABLE renders ADD COLUMN lufs REAL;
 ALTER TABLE renders ADD COLUMN true_peak REAL;
 ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;
+ALTER TABLE v2_users ADD COLUMN outside_pref TEXT;
 ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT;
 ALTER TABLE scout_ledger ADD COLUMN verified_at INTEGER;
 

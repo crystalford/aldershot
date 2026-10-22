@@ -23,6 +23,7 @@
 import { ACCENT, C, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { composer, workingRow, type WorkingJob } from "./home.ts";
+import { LINE, OUTSIDE_PREFS, PILL, type OutsidePref } from "../../outside.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
@@ -35,6 +36,14 @@ export type Provenance = "mine" | "external";
 export type Acq = "linked" | "mission" | "verified";
 
 export interface RoomData {
+  /**
+   * Whether Scout may go outside, for the row at the foot of MAKE.
+   *
+   * Read rather than defaulted in the page, because the row's line and its
+   * pill both change with it and a page that guessed would show one state
+   * while the database held another.
+   */
+  outsidePref: OutsidePref;
   tab: RoomTab;
   /** The sources attached so far, by id. A cut started now is scoped to them. */
   attached: string[];
@@ -186,7 +195,7 @@ function titleRow(d: RoomData): string {
     `<span data-content style="font-size:${SIZE.secondary};font-weight:${on ? 600 : 500};padding:4px 11px;border-radius:${RADIUS.button};background:${on ? C.raised : "transparent"};color:${on ? C.ink : C.ink32}">${name}</span>`;
 
   return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Your footage</span>
+    <span style="flex:none;font-size:${SIZE.body};font-weight:600">Your footage</span>
     <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(summaryLine(d.counts))}</span>
     <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};padding:5px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};text-decoration:none">+ Add</a>
     <span style="flex:none;display:flex;gap:2px;align-items:center">
@@ -223,13 +232,66 @@ function verbCard(v: { tag: string; name: string; what: string; say: string }, a
  * your own words, and splitting them put the menu and the way to order from
  * it on opposite halves of the screen.
  */
-function direction(attached: string[], ghosts: string[]): string {
+/**
+ * THE SCOUT ROW — the front door's own question about going outside.
+ *
+ * The prototype puts this at the foot of the MAKE column, and the build had
+ * Scout only inside a project: the one place the preference could be set was
+ * a place you reached by having already decided. The Manual puts him in the
+ * second paragraph of what the product is — "Scout is how the video gets
+ * better than your footage alone" — and a front door that never mentions him
+ * is a product that is quieter about its second half than it means to be.
+ *
+ * THE LINE CHANGES WITH THE PILL, which is the prototype's behaviour and the
+ * reason it matters: a line reading "bring him into a project" under a pill
+ * reading Off is the interface disagreeing with itself.
+ *
+ * NO data-content ON EITHER LINE, and that is the point of the attribute.
+ * It marks text the user's own footage produced — a transcript line, a
+ * filename, a reason a model wrote — which cannot be in the prototype and
+ * must not be flagged. Both of these are chrome, and the first version
+ * carried the mark by copying the card above it: the strings rule skipped
+ * the whole row, and paraphrasing the heading to "Scout improves your
+ * video" passed the gate green. Every word here is in the prototype, so
+ * every word here is checked.
+ *
+ * THE THREE STATES TRAVEL WITH THE ROW. src/ui/client.ts is one String.raw
+ * template with no interpolation in it, so a client that changed the pill
+ * would have to restate "On" and "Per project" and all three lines in a
+ * second place — and the day one of them is reworded, the two disagree
+ * depending on whether you pressed anything. The row carries every state as
+ * a data attribute and the client reads the one the server named; outside.ts
+ * stays the only file the words live in.
+ *
+ * NO GLYPH, AND THAT IS DELIBERATE. The prototype draws a Scout character
+ * here through its own component, and src/ui/icons.ts holds ten shapes that
+ * all match the design. Inventing an eleventh — a binocular, a magnifier —
+ * is exactly the defensible substitution the fidelity checks exist to catch:
+ * "a missing feature is obvious in review; a swapped icon set is invisible."
+ * The row works without it and the art is a thing to ask the designer for.
+ */
+function scoutRow(pref: OutsidePref): string {
+  const states = OUTSIDE_PREFS.map(
+    (p) => `data-pill-${p}="${esc(PILL[p])}" data-line-${p}="${esc(LINE[p])}"`,
+  ).join(" ");
+  return `<div id="scoutRow" tabindex="0" role="button" ${states} title="Scout is how a video gets better than your footage alone: he reads the cut, sees what it&rsquo;s missing, and goes looking &mdash; links, never downloads."
+    style="margin-top:16px;display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;background:#121216;box-shadow:inset 0 0 0 1px rgba(94,184,201,0.22);cursor:pointer">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:${SIZE.secondary};font-weight:600">Scout makes it better</div>
+      <div id="scoutRowLine" style="margin-top:1px;font-size:${SIZE.meta};color:${C.ink45};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(LINE[pref])}</div>
+    </div>
+    <span id="scoutPref" role="button" tabindex="0" data-pref="${esc(pref)}" style="flex:none;font-size:${SIZE.pill};font-weight:600;padding:3px 8px;border-radius:4px;background:rgba(94,184,201,0.14);color:${ACCENT.cyan};white-space:nowrap;cursor:pointer">${esc(PILL[pref])}</span>
+  </div>`;
+}
+
+function direction(attached: string[], ghosts: string[], pref: OutsidePref): string {
   return `<div style="flex:0 0 360px;max-width:100%;display:flex;flex-direction:column;gap:8px">
-    <div data-content style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">Pick what to make, or attach footage on the right and say it. Either way this becomes the project — its read, its rules, every change with Undo.</div>
+    <div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">Pick what to make, or attach footage on the right and say it. Either way this becomes the project — its read, its rules, every change with Undo.</div>
     <div style="margin-top:6px">${label("MAKE")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${VERBS.map((v) => verbCard(v, v.accent)).join("")}</div>
     <div style="margin-top:8px">${label("AS YOUR ARCHIVE GROWS")}</div>
     <div style="display:flex;flex-direction:column;gap:5px">${GROW.map((v) => verbCard(v)).join("")}</div>
+    ${scoutRow(pref)}
     ${composer(attached, { room: true, ghosts })}
   </div>`;
 }
@@ -269,7 +331,7 @@ function archiveCard(d: RoomData): string {
   if (!d.counts.sources) return "";
   const threads = d.threadNames.slice(0, 4);
   return `<div style="padding:13px 15px;border-radius:${RADIUS.card};background:${C.surface}">
-    <div data-content style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">WHAT'S IN YOUR ARCHIVE</div>
+    <div style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:${C.ink45}">WHAT'S IN YOUR ARCHIVE</div>
     <div data-content style="margin-top:7px;font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70}">${esc(
       summaryLine(d.counts) + (threads.length ? ` — ${threads.join(", ")}` : "")
     )}</div>
@@ -324,7 +386,7 @@ function searchBar(q: string, unavailable: boolean, mode: "meaning" | "exact"): 
     </span>
     ${
       unavailable
-        ? `<div data-content style="flex:1 1 100%;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
+        ? `<div style="flex:1 1 100%;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45}">Searching the words that were said. Meaning search isn't switched on yet.</div>`
         : ""
     }
   </form>`;
@@ -629,7 +691,7 @@ function footage(d: RoomData): string {
     <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
       ${tabs(d.tab, d.counts, d.projects.length)}
       ${d.tab === "highlights" ? whoFilter(st, d.counts.external) : ""}
-      <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.meta};color:${C.ink32}">Click a moment to attach it, then say what to make — or pick a type on the left.</span>
+      <span style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.meta};color:${C.ink32}">Click a moment to attach it, then say what to make — or pick a type on the left.</span>
       <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 12px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};text-decoration:none;white-space:nowrap">+ Add footage</a>
     </div>
     ${archiveCard(d)}
@@ -651,7 +713,7 @@ export function renderRoom(d: RoomData): string {
   return `${titleRow(d)}
   ${d.working.length ? workingRow(d.working) : ""}
   <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;margin-top:20px">
-    ${direction(d.attached, d.ext)}
+    ${direction(d.attached, d.ext, d.outsidePref)}
     ${footage(d)}
   </div>`;
 }

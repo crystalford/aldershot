@@ -58,7 +58,7 @@ export function exportPanel(projectId: string, plan: string): string {
     </div>
     <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
-      <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
+      <span style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
     </div>
     <!--
       THE CHECKLIST, first of the three because it is the one read first.
@@ -68,7 +68,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/before-post" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Before you post &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.</span>
     </div>
     <!--
       THE WAY OUT, beside the way to a finished file.
@@ -79,7 +79,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
     </div>
     <!--
       THE CUE SHEET, which goes out whether anybody opens it or not.
@@ -91,7 +91,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/cuesheet" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The cue sheet &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.</span>
     </div>
     <!--
       THE DISPUTE FILE. Same shape, different question: the cue sheet is about
@@ -102,7 +102,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/dispute" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The dispute file &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.</span>
     </div>
     <!--
       THE MANIFEST. The only one of the four written for a machine as much as
@@ -112,7 +112,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/manifest" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The whole record &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.</span>
     </div>
     <!--
       THE ONE THAT FACES OUTWARD, and the only control in this product that
@@ -123,7 +123,7 @@ export function exportPanel(projectId: string, plan: string): string {
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/receipts" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Receipts for viewers &nearr;</a>
-      <span data-content style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.</span>
     </div>
   </form>`;
 }
