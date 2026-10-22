@@ -45,7 +45,6 @@ const base: CutData = {
   runtimeMs: 0,
   cleanups: { fillers: { found: 0, savedMs: 0 }, pauses: { found: 0, savedMs: 0 } },
   renders: [],
-  cameFrom: ["Your footage", "/"],
   job: null,
   passes: [],
   rules: [],

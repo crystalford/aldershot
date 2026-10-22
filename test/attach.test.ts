@@ -89,6 +89,7 @@ test("attaching toggles, and survives a page load in the URL", () => {
     ],
     moments: [],
     projects: [],
+    switch: [],
     counts: { sources: 2, moments: 9, external: 0 },
   };
 

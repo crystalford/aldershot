@@ -28,6 +28,7 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { GRADE_NAME, grade, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
+import { switcher, type SwitchItem } from "../switcher.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -67,6 +68,13 @@ export interface CutData {
   projectId: string;
   /** Which reading. Defaults to blocks everywhere it is not asked for. */
   view?: CutView;
+  /**
+   * Every project, for the switcher beside the title. Optional so a caller
+   * that predates it renders the title with an empty list rather than
+   * failing to compile — the panel then offers only the way back to the
+   * room, which is still true.
+   */
+  projects?: SwitchItem[];
   /**
    * How much the assistant decides — the composer's dial (src/decide.ts).
    *
@@ -111,7 +119,6 @@ export interface CutData {
   };
   /** The inserted blocks, for the "what still needs you" line in the footer. */
   beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown }>;
-  cameFrom: [string, string];
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /**
@@ -1090,7 +1097,6 @@ function momentsThroughRules(d: CutData): string {
 }
 
 export function renderCut(d: CutData): string {
-  const [backLabel] = d.cameFrom;
 
   /*
    * ONE ROW, which is what the prototype has.
@@ -1113,7 +1119,7 @@ export function renderCut(d: CutData): string {
        remain because the client retotals by id and a second display that
        could disagree is worse than none. -->
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <div data-content title="${esc(backLabel)}" style="font-size:${SIZE.body};font-weight:600;letter-spacing:-0.012em">${esc(d.title)}</div>
+    ${switcher(d.title, d.projects ?? [], d.projectId)}
     <!--
       TWO READINGS OF THE SAME EDIT.
 

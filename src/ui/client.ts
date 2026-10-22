@@ -2357,6 +2357,55 @@ for (const el of [palette, keysheet]) {
  * there now too.
  */
 
+/* ── The project switcher ─────────────────────────────────────────────
+   The caret beside the title. Rows are links, so this only opens and closes
+   the panel — navigation works with the client switched off entirely, and a
+   middle click opens a project in a new tab the way a person expects. */
+const switcherBtn = $("#switcher");
+const switcherPanel = $("#switcherPanel");
+if (switcherBtn && switcherPanel) {
+  const shut = () => {
+    switcherPanel.hidden = true;
+    switcherBtn.style.background = "";
+  };
+  const open = () => {
+    switcherPanel.hidden = false;
+    /* The prototype lights the trigger while the panel is down, which is
+       the only thing on screen saying which control opened it. */
+    switcherBtn.style.background = "#1C1C22";
+  };
+  switcherBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (switcherPanel.hidden) open(); else shut();
+  });
+  switcherBtn.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    if (switcherPanel.hidden) open(); else shut();
+  });
+  /* Anywhere else, and Escape. A panel that can only be closed by the
+     control that opened it is one people click around. */
+  document.addEventListener("click", (e) => {
+    if (switcherPanel.hidden) return;
+    if (switcherPanel.contains(e.target)) return;
+    shut();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") shut();
+  });
+  /*
+   * AND ON A ROW, because one of them leads where you already are.
+   *
+   * Most rows navigate and take the panel with them. The row for the
+   * project you are IN, and "Your footage" while you are in the room, do
+   * not — the browser loads the same page or nothing at all, and the panel
+   * sits open over the title it came out of.
+   */
+  for (const row of switcherPanel.querySelectorAll(".switch-row, .switch-room")) {
+    row.addEventListener("click", shut);
+  }
+}
+
 /*
  * THE MARK CYCLES, one colour per visit.
  *

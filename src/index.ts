@@ -1012,6 +1012,13 @@ const roomHandler = async (c: Ctx) => {
           kind: p.kind,
           updated_at: p.updated_at,
         })),
+        switch: projects.map((p) => ({
+          id: p.id,
+          title: p.title,
+          runtime_s: p.runtime_s,
+          poster_r2_key: p.poster_r2_key,
+          updated_at: p.updated_at,
+        })),
         counts: {
           sources: sources.length,
           moments: shownCount,
@@ -1200,28 +1207,15 @@ async function requireUser(c: Ctx) {
   });
 }
 
-/**
- * Where the user came in from, as [label, href].
+/*
+ * `cameFrom` was here, and is gone with the back link it fed.
  *
- * The prototype keeps this as `cameFrom` state and renders "← " + its label,
- * so the editor sends you back where you actually were. Server-rendered there
- * is no such state, so the Referer carries it — and when it is absent or
- * off-site the answer is Home, which is the prototype's own default.
+ * It read the Referer to work out what "← " should say, because the
+ * prototype keeps that as state and the server has none. One Take has no
+ * back link in the editor: the WORDMARK closes the project, and its title
+ * says so. A link that guesses where you came from, beside a mark that
+ * knows where you are going, is two answers to one question.
  */
-function cameFrom(referer: string | undefined): [string, string] {
-  const path = (() => {
-    try {
-      return new URL(referer ?? "").pathname;
-    } catch {
-      return "";
-    }
-  })();
-
-  if (path.startsWith("/footage") || path.startsWith("/sources/")) return ["Footage", "/footage?tab=sources"];
-  if (path.startsWith("/clipping")) return ["Clipping", "/clipping"];
-  if (path.startsWith("/projects")) return ["Projects", "/projects"];
-  return ["Home", "/"];
-}
 
 /**
  * Opening a video.
@@ -1639,6 +1633,15 @@ app.get("/p/:id/:stagePath", async (c) => {
       { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", email: user.email },
       renderCut({
         projectId: project.id,
+        /* Every project, for the switcher beside the title — the caret the
+           prototype puts there, which the build had no control for. */
+        projects: (await listProjects(c.env.DB, user.id)).map((p) => ({
+          id: p.id,
+          title: p.title,
+          runtime_s: p.runtime_s,
+          poster_r2_key: p.poster_r2_key,
+          updated_at: p.updated_at,
+        })),
         askMode: await readMode(c.env.DB, user.id),
         title: project.title,
         sourceId: source?.id ?? null,
@@ -1703,7 +1706,6 @@ app.get("/p/:id/:stagePath", async (c) => {
         runtimeMs: runtimeMs(blocks, cuts),
         keptCount: blocks.filter((b: Block) => !b.struck).length,
         plan: user.plan,
-        cameFrom: cameFrom(c.req.header("referer")),
         job,
         passes,
         /*

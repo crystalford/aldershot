@@ -26,6 +26,7 @@ import { composer, workingRow, type FinishedJob, type WorkingJob } from "./home.
 import { LINE, OUTSIDE_PREFS, PILL, type OutsidePref } from "../../outside.ts";
 import { archiveSentence, countLine } from "../../archive.ts";
 import { type AskMode } from "../../decide.ts";
+import { switcher, type SwitchItem } from "../switcher.ts";
 
 export type RoomTab = "videos" | "highlights" | "projects";
 
@@ -114,6 +115,8 @@ export interface RoomData {
     attached?: boolean;
   }>;
   projects: Array<{ id: string; title: string; kind: string; updated_at: number }>;
+  /** The same projects, as the switcher beside the title wants them. */
+  switch: SwitchItem[];
   /** Totals for the summary line, counted rather than estimated. */
   /*
    * ONE PLACE A THREAD COUNT COMES FROM, which is `threads` below.
@@ -214,7 +217,10 @@ function titleRow(d: RoomData): string {
     `<span data-content style="font-size:${SIZE.secondary};font-weight:${on ? 600 : 500};padding:4px 11px;border-radius:${RADIUS.button};background:${on ? C.raised : "transparent"};color:${on ? C.ink : C.ink32}">${name}</span>`;
 
   return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span style="flex:none;font-size:${SIZE.body};font-weight:600">Your footage</span>
+    <!-- The prototype's title is a SWITCHER, not a label: "Your footage ▾"
+         here and the project's name inside one, with the same list behind
+         both. -->
+    ${switcher("Your footage", d.switch, null)}
     <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(countLine({ sources: d.counts.sources, moments: d.counts.moments, threads: d.threads }))}</span>
     <a href="/?tab=videos" style="flex:none;font-size:${SIZE.meta};padding:5px 11px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};text-decoration:none">+ Add</a>
     <span style="flex:none;display:flex;gap:2px;align-items:center">

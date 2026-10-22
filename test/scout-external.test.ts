@@ -250,6 +250,7 @@ const base: RoomData = {
   sources: [],
   moments: [],
   projects: [],
+  switch: [],
   counts: { sources: 0, moments: 0, external: 0 },
 };
 
