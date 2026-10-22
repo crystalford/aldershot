@@ -32,6 +32,7 @@ import type { Env } from "./env.ts";
 import { QuotaLedger, d1QuotaStore, runSearches, type ScoutAdapter, type SearchRequest } from "./scout-adapters.ts";
 import { decompose } from "./scout-decompose.ts";
 import { scanSource } from "./scout-scan-run.ts";
+import { verifyRun } from "./scout-verify-run.ts";
 import { expandQueries, type Term } from "./scout-expand.ts";
 import { podcastAdapter } from "./scout-podcast.ts";
 import { youtubeAdapter } from "./scout-youtube.ts";
@@ -198,10 +199,34 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
       return { ...job, snowballed: false };
     }
 
+    case "verify": {
+      /*
+       * CHECKING THE SCAN'S CLAIMS AGAINST THE RECORDING.
+       *
+       * The comment below used to say this phase "needs the scan above to
+       * have written something". It had been written to — the scan writes
+       * every find with `verify: 'rejected'` because nothing has looked yet
+       * — and the phase was still never reached, because the planner's
+       * count of unchecked finds was looking at the wrong table and was
+       * therefore always zero. So every quote Scout found was stored as a
+       * rejection, permanently, and nothing could reach the board.
+       *
+       * Deterministic end to end: no model is called here. Spec 18 §3.6 —
+       * the step that checks the model cannot be a model call, or there is
+       * nothing underneath it.
+       */
+      const out = await verifyRun(env, { runId: job.runId });
+      console.log(
+        `[scout] verify: ${out.checked} checked — ${out.verified} verified, ` +
+          `${out.paraphrase} paraphrase, ${out.rejected} rejected` +
+          `${out.unreadable.length ? ` — ${out.unreadable.length} source(s) unreadable, rows left for a retry` : ""}`,
+      );
+      return { ...job, snowballed: false };
+    }
+
     /*
-     * THE PHASES THAT NEED WHAT V0 HAS NOT GOT. Triage needs the harvested
-     * vocabulary; verify needs the scan above to have written something.
-     * Both are built and tested.
+     * THE PHASE THAT NEEDS WHAT V0 HAS NOT GOT. Triage needs the harvested
+     * vocabulary.
      *
      * Returning null ENDS the chain rather than looping. A job that
      * re-dispatched itself into a phase it cannot perform is a message that

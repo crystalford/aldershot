@@ -356,6 +356,119 @@ export async function writeLedger(db: D1Database, rows: LedgerIn[], now = Date.n
   return ids;
 }
 
+export interface Unverified {
+  id: string;
+  sourceId: string;
+  quoteExact: string;
+  /** The window the scan read, and the hint it is allowed to give. */
+  hintWordIndex: number;
+  transcriptUrl: string;
+}
+
+/**
+ * Finds nobody has checked, with the address of the recording to check against.
+ *
+ * GROUPED BY SOURCE BY THE ORDER, not by the caller: rows from one source
+ * share one transcript, and a fetch per row would pull the same megabyte of
+ * VTT down once for every quote found in it. The verify phase relies on this
+ * ordering to fetch once and reuse.
+ *
+ * A row whose source has lost its transcript url is left alone rather than
+ * rejected. It cannot be checked, and "we could not look" is not the same
+ * answer as "it is not there" — invariant 4's reachable "nothing backs this"
+ * has to mean the second one.
+ */
+export async function rowsToVerify(db: D1Database, runId: string, limit = 50): Promise<Unverified[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT l.id, l.source_id, l.quote_exact, l.word_span_json, s.transcript_url
+         FROM scout_ledger l
+         JOIN scout_sources s ON s.id = l.source_id
+        WHERE l.run_id = ? AND l.verified_at IS NULL
+          AND s.transcript_url IS NOT NULL AND s.transcript_url != ''
+        ORDER BY l.source_id, l.id
+        LIMIT ?`,
+    )
+    .bind(runId, limit)
+    .all<{
+      id: string;
+      source_id: string;
+      quote_exact: string;
+      word_span_json: string;
+      transcript_url: string;
+    }>();
+  return (results ?? []).map((r) => {
+    let hint = 0;
+    try {
+      hint = Number((JSON.parse(r.word_span_json) as { startWord?: unknown }).startWord) || 0;
+    } catch {
+      /* A span that will not parse is a hint we do not have, which costs the
+         fuzzy pass its narrowing and costs the exact pass nothing. */
+    }
+    return {
+      id: r.id,
+      sourceId: r.source_id,
+      quoteExact: r.quote_exact,
+      hintWordIndex: hint,
+      transcriptUrl: r.transcript_url,
+    };
+  });
+}
+
+/**
+ * The verifier's answer, written where the scan's guess was.
+ *
+ * THE SPAN AND THE TIMES ARE REPLACED, which is invariant 2 landing in a
+ * column. The scan recorded the window it read and the model's hint; what
+ * goes in here is the span that actually matched and the times read off
+ * those words. A rejected row keeps the scan's window, because there is no
+ * matched span to replace it with and blanking it would lose what was read.
+ *
+ * `verified_at` is set on every outcome including rejection. That is what
+ * stops the phase re-reading the same hallucination every round, and it is
+ * the timestamp the rejection rate is measured at.
+ */
+export async function setVerification(
+  db: D1Database,
+  id: string,
+  v: {
+    verify: Verdict;
+    matchScore: number;
+    span: { startWord: number; endWord: number } | null;
+    tStartS: number | null;
+    tEndS: number | null;
+    contextBefore?: string | null;
+    contextAfter?: string | null;
+  },
+  now = Date.now(),
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE scout_ledger
+          SET verify = ?,
+              match_score = ?,
+              word_span_json = COALESCE(?, word_span_json),
+              t_start_s = COALESCE(?, t_start_s),
+              t_end_s = COALESCE(?, t_end_s),
+              context_before = COALESCE(?, context_before),
+              context_after = COALESCE(?, context_after),
+              verified_at = ?
+        WHERE id = ?`,
+    )
+    .bind(
+      v.verify,
+      v.matchScore,
+      v.span ? JSON.stringify(v.span) : null,
+      v.tStartS,
+      v.tEndS,
+      v.contextBefore ?? null,
+      v.contextAfter ?? null,
+      now,
+      id,
+    )
+    .run();
+}
+
 /** Links a copy to the original it came from, once a trace seed finds it. */
 export async function setOriginalOf(db: D1Database, ledgerId: string, originalId: string): Promise<void> {
   await db.prepare("UPDATE scout_ledger SET original_of = ? WHERE id = ?").bind(originalId, ledgerId).run();
@@ -411,12 +524,22 @@ export async function snapshot(
     queriesPending: extra.queriesPending,
     candidatesUntriaged: untriaged,
     sourcesUnscanned: unscanned,
-    /* A scan that answered QUOTE and has no ledger row yet. The scan writes
-       its answer and the verifier writes the row, so the gap between them is
-       exactly this count. */
+    /*
+     * A FIND NOBODY HAS CHECKED. This counted something else and was
+     * therefore always zero, so the planner never once asked for verify.
+     *
+     * It read: a source scanned with a yield that has NO ledger row — which
+     * assumed the VERIFIER writes the row. The scan writes it, unverified,
+     * and it is right to: a find that existed only after verification would
+     * be lost entirely by a worker that died between the two, and invariant
+     * 7 is the rule that a half-finished job must not look finished. So the
+     * row appears the moment it is found, saying nothing has checked it.
+     *
+     * Which makes the gap between scanning and checking a property of the
+     * ROW, not of the source, and `verified_at IS NULL` is where it lives.
+     */
     scansUnverified: await one(
-      "SELECT COUNT(*) AS n FROM scout_sources WHERE run_id = ? AND scanned = 1 AND yield_n > 0 " +
-        "AND NOT EXISTS (SELECT 1 FROM scout_ledger l WHERE l.source_id = scout_sources.id)",
+      "SELECT COUNT(*) AS n FROM scout_ledger WHERE run_id = ? AND verified_at IS NULL",
     ),
     verifiedRows,
     reduced: reduced > 0 && (await one("SELECT COUNT(*) AS n FROM scout_runs WHERE id = ? AND status IN ('done','stopped')")) > 0,

@@ -461,10 +461,26 @@ CREATE TABLE IF NOT EXISTS scout_ledger (
     original_of TEXT REFERENCES scout_ledger(id),
     is_compilation_only INTEGER NOT NULL DEFAULT 0,
     model_version TEXT,
+    /*
+     * WHEN THE VERIFIER LOOKED, and null when it has not.
+     *
+     * Every row is written by the scan with verify 'rejected', because
+     * nothing has checked it and 'rejected' is the only verdict nobody has
+     * asserted. That made a checked-and-genuinely-rejected row
+     * indistinguishable from an unchecked one, so the verify phase would
+     * have re-read the same hallucination every round for ever.
+     *
+     * A timestamp rather than a boolean: the rejection rate is per model
+     * and prompt version and WHEN it was measured is half of what makes
+     * two rates comparable.
+     */
+    verified_at INTEGER,
     created_at INTEGER NOT NULL
   );
 
 CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify);
+
+CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at);
 
 CREATE TABLE IF NOT EXISTS scout_crowd (
     id TEXT PRIMARY KEY,
