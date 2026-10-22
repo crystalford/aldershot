@@ -61,6 +61,45 @@ and the build order should start from them rather than from zero:
 One correction to the same document: `src/essay.ts` outlines **four** acts
 (Setup · Development · Turn · Resolution), not five.
 
+## Where the build order stands
+
+Every phase of `docs/handoff/11-BUILD-ORDER.md` is built. What remains needs
+something this repo cannot supply itself:
+
+- **Phase 0's labelled set** — ~200 claims over ~10 of the owner's own videos,
+  with two labellers. The runner, the four numbers and the labelling surface
+  all exist; the set is footage and judgement, not code. `npm run eval:set`
+  prints the acceptance the moment it exists, which is also Phase 4's
+  remaining acceptance.
+- **An export opened in Resolve.** `npm run check:otio` proves the file parses
+  and carries its credits and ghosts; opening it in Resolve itself needs
+  Resolve.
+- **The render container, run once.** Its ffmpeg commands are measured
+  individually — `check:duck`, `check:loudness`, `check:graphics`, and the
+  card encode and concat were driven by hand — but the image has never been
+  built, because no environment used to develop this has had a docker daemon.
+  `librsvg2-bin`, the woff2→TTF font conversion and the generated-picture
+  branch are written and unrun.
+
+Everything else in `12-DEFERRED.md` is deliberate and post-launch.
+
+## The checks that cost money or need a tool
+
+`npm run check` is the gate and runs on every commit. Four more exist because
+they need something the gate cannot assume, and each says so rather than
+passing quietly when its tool is missing:
+
+| | what it measures | needs |
+|---|---|---|
+| `npm run check:duck` | the bed is down where the words are, and stays down across a short gap | ffmpeg |
+| `npm run check:loudness` | three mixes land within ±1 LU of target | ffmpeg |
+| `npm run check:graphics` | a generated picture carries its words in five fonts | Chromium |
+| `npm run eval:model` | the judge against `eval/adversarial.jsonl` | a dev server, and it spends money |
+
+A gate rule that silently passes when its dependency is absent is the failure
+this repo keeps catching, which is why these are separate commands rather than
+skipped steps.
+
 ## Why the fidelity checks exist
 
 A previous build of this product passed every feature test and still shipped a

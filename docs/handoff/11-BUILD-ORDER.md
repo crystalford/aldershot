@@ -100,9 +100,19 @@ ordering and the coverage, never the beat.
 six moments for any beat with words in it, so the old count measured whether
 the search box worked rather than whether the beat has an argument under it.
 
-Still owed here: search in the conversation — and the acceptance itself,
-which is numbers over a Phase 0 set that does not exist yet.
-`npm run eval:set` prints all four the moment it does.
+**Search in the conversation has landed**, and it is the Manual's front-door
+sentence rather than a search box: "ask it anything about your footage and it
+answers with the lines, timed". `src/ask.ts` runs the same retrieve-and-judge
+pipeline `beat-find.ts` does and keeps what a beat throws away — the line and
+its timestamp. No prose is generated: the answer IS the lines, because a
+question about your own footage has an answer only if somebody said it. Four
+replies, and two of them are easy to confuse and worst to confuse — "nothing
+in your footage says that" and "we could not check" send a person to do
+different things.
+
+Still owed here is the acceptance itself, which is numbers over a Phase 0 set
+that does not exist yet. `npm run eval:set` prints all four the moment it
+does.
 
 - **Accept:** on the Phase 0 set, recall@5 and false-support rate meet the targets you set from the first run and never regress in CI; "nothing here backs this" is returned on the known-none claims at the calibrated threshold; every result shows the backing line; the thread chips come from parent labels; a model swap is blocked if it fails the gate.
 
