@@ -16,6 +16,7 @@ import { FRAME_MS, frameAccurate } from "./align.ts";
 import { timingForProject } from "./align-source.ts";
 import { sidecarWanted } from "./captions.ts";
 import { loudnessVerdict, parseLoudnorm } from "./loudness.ts";
+import { plan as duckPlan } from "./ducking.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
 import { loadRules } from "./rule-store.ts";
@@ -475,13 +476,35 @@ export async function runRender(
     if (plan.cuts.some((c, i) => c.voiceKey && !voiceUrls[i])) {
       return void (await fail("Couldn't give the encoder a way to read your recording."));
     }
+    /*
+     * THE DUCKING ENVELOPE IS COMPUTED HERE, not in the container.
+     *
+     * The container is a standalone process that cannot import src/, so the
+     * alternative would be the same constants and the same anti-pump rule
+     * written twice — and the one that drifted would be the one that ships.
+     * The Worker owns the rule, the container applies the expression, which
+     * is the same split as everywhere else here.
+     *
+     * A cut with no word timings gets no expression and keeps the
+     * sidechain: see src/ducking.ts' `plan`, where "we do not know where
+     * the speech is" is a different answer from "there is no speech".
+     */
     const withUrls = {
       ...plan,
-      cuts: plan.cuts.map((c, i) => ({
-        ...c,
-        url: urls[i] as string,
-        ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
-      })),
+      cuts: plan.cuts.map((c, i) => {
+        const duck = c.voiceWords?.length
+          ? duckPlan(c.voiceWords, Math.max(0, c.end_s - c.start_s))
+          : null;
+        if (c.voiceKey) {
+          console.log(`[render] duck ${c.key}: ${duck ? duck.why : "no word timings for this take"}`);
+        }
+        return {
+          ...c,
+          url: urls[i] as string,
+          ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
+          ...(duck?.expr ? { duckExpr: duck.expr } : {}),
+        };
+      }),
     };
 
     /* The output length is known from the plan, so it is recorded before the

@@ -197,9 +197,30 @@ diffusion model cannot draw a word, so a line set as type is the one
 generated picture that is exactly what was said. Offered on every line of a
 cut, and refused over a claim or its proof, which is most of the moves.
 
-Still owed in Phase 5: the sound rules (duck by word timings), and
-rasterising an SVG inside the container so a generated picture reaches a
-render rather than only a browser.
+**The sound rules have landed.** `src/ducking.ts` ducks the bed by WORD
+TIMINGS rather than by a compressor, which the container was doing because it
+did not know where the words were. A take is force-aligned, so it does:
+`beats.take_words` carries every word's span through the EDL, the Worker
+builds one ffmpeg `volume` expression, and the container applies it. The
+sidechain stays as the fallback for a take whose alignment failed — "we do
+not know where the speech is" is a different answer from "there is no
+speech".
+
+Three things a compressor cannot do, and this does: it does not duck for a
+cough, it DOES duck for a quiet word, and it does not pump in the
+half-second between sentences. The anti-pump gap is the one number the file
+turns on, and it must exceed lead + tail or adjacent shoulders overlap and
+the bed over-ducks — asserted rather than left as arithmetic a later tweak
+could break.
+
+`npm run check:duck` proves it on real audio rather than on a string: the
+bed measures −21 dB in the gaps, −33 under the words, and **−33 across the
+0.2s gap between two words**, which is the anti-pump rule as a measurement.
+Not in `npm run check` because it needs ffmpeg on PATH, same rule as
+`check:loudness`.
+
+Still owed in Phase 5: rasterising an SVG inside the container, so a
+generated picture reaches a render rather than only a browser.
 
 ## Phase 6 — Before you post and export
 

@@ -39,6 +39,8 @@ export interface EdlCut {
    * every cut.
    */
   voiceKey?: string;
+  /** Where the words are in that take, for the ducking envelope. */
+  voiceWords?: Array<{ s: number; e: number }>;
   start_ms: number;
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
@@ -172,6 +174,7 @@ export function buildEdl(
         sourceKey: block.mediaKey || sourceKey,
         previewKey: block.previewKey || previewKey || block.mediaKey || sourceKey,
         ...(block.voiceKey ? { voiceKey: block.voiceKey } : {}),
+        ...(block.voiceWords?.length ? { voiceWords: block.voiceWords } : {}),
         start_ms: range.start_ms,
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),
@@ -302,6 +305,8 @@ export interface RenderPlan {
     start_s: number;
     end_s: number;
     voiceKey?: string;
+  /** Where the words are in that take, for the ducking envelope. */
+  voiceWords?: Array<{ s: number; e: number }>;
     /** Drawn over the picture, perceivable at first exposure. See src/cuesheet.ts. */
     label?: string;
     audioOnly?: boolean;
@@ -351,6 +356,9 @@ export function buildRenderPlan(
       /* The KEY, not a url — runRender presigns it, exactly as it does the
          footage. Nothing here ever holds a credential. */
       ...(c.voiceKey ? { voiceKey: c.voiceKey } : {}),
+      /* Spans, not a key: nothing to presign, and the container needs them
+         to build the volume expression rather than to fetch anything. */
+      ...(c.voiceWords?.length ? { voiceWords: c.voiceWords } : {}),
       ...(c.label ? { label: c.label } : {}),
       ...(c.audioOnly ? { audioOnly: true } : {}),
     })),

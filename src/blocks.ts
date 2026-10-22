@@ -92,6 +92,14 @@ export interface Block {
    * both a picture and a voice.
    */
   voiceKey: string | null;
+  /**
+   * Where the words are in that recording, for the ducking envelope.
+   *
+   * Empty when the take was never aligned — which is not "no ducking", it
+   * is "we do not know where the speech is", and the container's sidechain
+   * is the honest answer to that case. See src/ducking.ts' `plan`.
+   */
+  voiceWords?: Array<{ s: number; e: number }>;
   posterKey: string | null;
 }
 
@@ -121,6 +129,15 @@ export interface BeatLike {
    */
   take_verdict?: string | null;
   take_reason?: string | null;
+  /**
+   * The take's words with their spans, as stored JSON (seconds).
+   *
+   * Carried through to the render because it is what DUCKS the bed: the bed
+   * drops where the words are rather than where the signal is loud. See
+   * src/ducking.ts for why a compressor is the wrong instrument when you
+   * know where the speech is.
+   */
+  take_words?: string | null;
   clip_id: string | null;
   /** Set when this beat is a clip pulled from a DIFFERENT video. */
   pulled?: PulledClip;
@@ -264,8 +281,31 @@ export function buildBlocks(opts: {
     previewKey: p.previewKey || p.sourceKey,
     /* The clip's picture, your voice over it. */
     voiceKey: b.media_r2_key ?? null,
+    ...(takeWords(b.take_words).length ? { voiceWords: takeWords(b.take_words) } : {}),
     posterKey: p.frameKey || posterKey,
   });
+
+/**
+ * The take's word spans, as stored.
+ *
+ * Tolerant on the way in because this column has been written by one code
+ * path and read by none until now: a null, a legacy shape or malformed JSON
+ * all mean the same thing here — we do not know where the words are — and
+ * that is a case `src/ducking.ts` handles rather than a reason to fail a
+ * render.
+ */
+function takeWords(json: string | null | undefined): Array<{ s: number; e: number }> {
+  if (!json) return [];
+  try {
+    const rows = JSON.parse(json) as Array<{ s?: unknown; e?: unknown }>;
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .map((r) => ({ s: Number(r.s), e: Number(r.e) }))
+      .filter((r) => Number.isFinite(r.s) && Number.isFinite(r.e) && r.e > r.s);
+  } catch {
+    return [];
+  }
+}
 
   const fromBeat = (b: BeatLike): Block => ({
     id: beatId(b.id),

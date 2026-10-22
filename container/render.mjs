@@ -470,11 +470,31 @@ function render(plan, res) {
             "-filter_complex",
             "[0:v]" + held + "[v];" +
               "[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[base];" +
-              "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
-              // threshold/ratio chosen so speech pulls the bed well down but
-              // does not gate it out entirely — the clip should still be
-              // audible underneath, just clearly behind.
-              "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];" +
+              // DUCK BY WORD TIMINGS WHERE WE HAVE THEM.
+              //
+              // The take is force-aligned, so the Worker knows where every
+              // word is and sends one volume expression (src/ducking.ts).
+              // The bed then drops where the SPEECH is rather than where
+              // the signal is loud — so it does not duck for a cough, it
+              // does duck for a quiet word, and it does not pump in the
+              // half-second between sentences.
+              //
+              // Computed in the Worker rather than here because this
+              // process cannot import src/, and the same anti-pump rule
+              // written twice is one rule that drifts.
+              //
+              // The sidechain stays as the fallback, for a take whose
+              // alignment failed: "we do not know where the speech is" is
+              // a different answer from "there is no speech", and a bed at
+              // full level under somebody talking is worse than a
+              // compressor. threshold/ratio chosen so speech pulls the bed
+              // well down but does not gate it out — the clip should still
+              // be audible underneath, just clearly behind.
+              (cut.duckExpr
+                ? "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[voice];" +
+                  "[base]volume=volume='" + cut.duckExpr + "':eval=frame[ducked];"
+                : "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
+                  "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];") +
               "[ducked][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[a]",
             "-map", "[v]", "-map", "[a]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
