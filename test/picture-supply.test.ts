@@ -29,6 +29,7 @@ const TABLES = [
   "sources",
   "v2_projects",
   "v2_clips",
+  "documents",
   "v2_threads",
   "v2_clip_threads",
   "renders",
@@ -138,12 +139,16 @@ test("ACCEPTANCE: an unverified find is not offered at all", async () => {
   assert.ok(o.empty.includes("world"));
 });
 
-test("ACCEPTANCE: the two unbuilt sources are named, not omitted", async () => {
+test("ACCEPTANCE: a source with nothing in it is named, not omitted", async () => {
   /*
    * An empty list and an absent source look identical and are not. A person
-   * wondering why no document was suggested is owed "no documents added
-   * yet" — the same discipline as invariant 4's reachable "nothing backs
-   * this".
+   * wondering why no document was suggested is owed a sentence — the same
+   * discipline as invariant 4's reachable "nothing backs this".
+   *
+   * `documents` was in this list as UNBUILT until it had a supply. It is
+   * named for a different reason now: nothing the maker has added is about
+   * this line, which is a fact about their library rather than about the
+   * product. `generated` is still the unbuilt one.
    */
   const d = db();
   const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
@@ -152,8 +157,100 @@ test("ACCEPTANCE: the two unbuilt sources are named, not omitted", async () => {
   const note = emptyNote(o.empty);
   /* Case-insensitive: the note capitalises whichever clause lands first, so
      pinning the capital would pin the ORDER rather than the content. */
-  assert.match(note, /no documents added yet/i);
+  assert.match(note, /no document you have added is about this line/i);
   assert.match(note, /graphics are not built yet/);
+});
+
+/** A document in the library, with or without the maker's marking. */
+function doc(d: DatabaseSync, id: string, title: string, note: string | null) {
+  d.prepare(
+    "INSERT INTO documents (id,user_id,title,note,filename,media_type,r2_key,bytes,created_at) " +
+      "VALUES (?,'u1',?,?,?,'application/pdf',?,1024,1)",
+  ).run(id, title, note, `${id}.pdf`, `u/u1/documents/${id}`);
+}
+
+test("ACCEPTANCE: a marked document is probative; an unmarked one is not", async () => {
+  /*
+   * Doc 08 wants "the proof itself — the document with its line marked", and
+   * nothing in this codebase reads a PDF to find the line. So the marking is
+   * the maker's own sentence about what it shows — invariant 10 — and
+   * without one the document is still a document, still above the open
+   * world, and NOT proof: "with its line marked" is the half missing.
+   */
+  const d = db();
+  doc(d, "d1", "Launch review memo", "The review was dated after the launch went out.");
+  doc(d, "d2", "Launch review memo scan", null);
+
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
+  const marked = o.considered.find((c) => c.id === "d1");
+  const bare = o.considered.find((c) => c.id === "d2");
+
+  assert.ok(marked, "a marked document about this line was not offered");
+  assert.equal(marked.source, "documents");
+  assert.equal(marked.probative, true);
+
+  assert.ok(bare, "an unmarked document about this line was not offered at all");
+  assert.notEqual(bare.probative, true);
+});
+
+test("ACCEPTANCE: an unmarked document cannot carry evidence", async () => {
+  /*
+   * The consequence, end to end: `allowed()` refuses a candidate on an
+   * EVIDENCE line when probative is explicitly FALSE, which is what the
+   * supply says about a document nobody has marked.
+   *
+   * NOT "nothing is placed" — own footage is legitimately allowed on an
+   * evidence line, because doc 08's source order for EVIDENCE is "own
+   * footage → user's documents" and we do not claim to know whether a
+   * moment is probative. Asserting null here passed for the wrong reason
+   * the first time and then failed for the right one.
+   */
+  const d = db();
+  doc(d, "d2", "Launch review memo scan", null);
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "evidence" });
+
+  const no = o.placed.refused.find((r) => r.id === "d2");
+  assert.ok(no, `the unmarked document was not refused: ${JSON.stringify(o.placed)}`);
+  assert.match(no.reason, /about the subject rather than evidence of it/);
+  assert.notEqual(o.placed.picture?.id, "d2", "an unmarked document was placed as proof");
+});
+
+test("and a marked one can", async () => {
+  /* The other direction, or the test above passes for a document that could
+     never win regardless of its marking. */
+  const d = db();
+  doc(d, "d1", "Launch review memo", "The review was dated after the launch went out.");
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "evidence" });
+  assert.ok(
+    !o.placed.refused.some((r) => r.id === "d1"),
+    `a marked document was refused as proof: ${JSON.stringify(o.placed.refused)}`,
+  );
+});
+
+test("a document that is not about the line is not offered", async () => {
+  /* Word overlap, measured — the house rule. A library is tens of items, so
+     the alternative to a measurement here would be a model call per line to
+     answer a question a set intersection answers. */
+  const d = db();
+  doc(d, "d3", "Parking permit", "The permit for the yard, renewed in June.");
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
+  assert.equal(o.considered.filter((c) => c.source === "documents").length, 0);
+  assert.ok(o.empty.includes("documents"));
+});
+
+test("a document put away stops being offered, and is not deleted", async () => {
+  /* Invariant 6. The row stays, the file stays, the offer stops. */
+  const d = db();
+  doc(d, "d1", "Launch review memo", "The review was dated after the launch went out.");
+  d.prepare("UPDATE documents SET removed_at = 1 WHERE id = 'd1'").run();
+
+  const o = await offerFor(env(d), "u1", { line: "the launch moved before the review", move: "context" });
+  assert.equal(o.considered.filter((c) => c.source === "documents").length, 0);
+  assert.equal(
+    (d.prepare("SELECT COUNT(*) AS n FROM documents WHERE id = 'd1'").get() as { n: number }).n,
+    1,
+    "the row was deleted",
+  );
 });
 
 test("a query that matched nothing is not a suggestion", async () => {

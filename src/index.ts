@@ -78,6 +78,15 @@ import { captionCues } from "./edl.ts";
 import { loudnessVerdict } from "./loudness.ts";
 import { answerLead, ask } from "./ask.ts";
 import { emptyNote, offerFor } from "./picture-supply.ts";
+import {
+  MAX_BYTES,
+  addDocument,
+  getDocument,
+  isDocumentType,
+  listDocuments,
+  markDocument,
+  removeDocument,
+} from "./documents.ts";
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
@@ -1003,6 +1012,7 @@ app.get("/footage", async (c) => {
     : t === "edits" ? "edits"
     : t === "exports" ? "exports"
     : t === "find" ? "find"
+    : t === "documents" ? "documents"
     : "sources";
   /*
    * Default to what actually works.
@@ -1082,6 +1092,9 @@ app.get("/footage", async (c) => {
      the tab bar shows the number and a count that disagrees with its list is
      worse than no count. */
   const edits = await editRows(c.env.DB, user.id);
+  /* Same rule again: the count on whatever tab you are on, the list only
+     where it is shown. */
+  const docs = await listDocuments(c.env.DB, user.id);
 
   return c.html(
     surface(
@@ -1090,6 +1103,18 @@ app.get("/footage", async (c) => {
       "Footage — Aldershot",
       renderFootageFull({
         tab,
+        documentCount: docs.length,
+        ...(tab === "documents"
+          ? {
+              documents: docs.map((d) => ({
+                id: d.id,
+                title: d.title,
+                note: d.note,
+                mediaType: d.mediaType,
+                bytes: d.bytes,
+              })),
+            }
+          : {}),
         exports: finished.map((r) => ({
           id: r.id, r2_key: r.r2_key, duration_s: r.duration_s, bytes: r.bytes,
           format: r.format, aspect: r.aspect, created_at: r.created_at,
@@ -4740,6 +4765,102 @@ app.post("/api/ask", async (c) => {
 
   const answer = await ask(c.env, user.id, q);
   return c.json({ ...answer, lead: answerLead(answer) });
+});
+
+/*
+ * DOCUMENTS — invariant 8's second tier, which had no supply.
+ *
+ * One request through the worker rather than the multipart dance a video
+ * needs: a scan of a letter is kilobytes, and a route sized for that is
+ * simpler than making it pretend to be footage.
+ *
+ * The title and the note arrive as headers because the body is the file.
+ * `x-note` is what the document SHOWS, in the maker's words, and it is what
+ * makes the document proof — doc 08 wants "the document with its line
+ * marked" and nothing here reads a PDF to find the line. Optional on the
+ * way in: a scan you have not described yet is a normal state, and the
+ * offer says why it is not being suggested as proof.
+ */
+app.post("/api/documents", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const mediaType = (c.req.header("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!isDocumentType(mediaType)) {
+    return c.json({ error: "a PDF or an image — PNG, JPEG or WebP" }, 415);
+  }
+
+  const body = await c.req.arrayBuffer();
+  if (!body.byteLength) return c.json({ error: "that file is empty" }, 400);
+  if (body.byteLength > MAX_BYTES) {
+    return c.json({ error: `that is over ${Math.round(MAX_BYTES / 1024 / 1024)}MB — compress it first` }, 413);
+  }
+
+  const filename = (c.req.header("x-filename") || "").slice(0, 200) || null;
+  /* A title, or the filename, or something rather than an empty card. */
+  const title = (c.req.header("x-title") || "").slice(0, 200).trim() || filename || "Untitled document";
+  const note = (c.req.header("x-note") || "").slice(0, 600);
+
+  const doc = await addDocument(c.env.DB, user.id, {
+    title,
+    note,
+    filename,
+    mediaType,
+    bytes: body.byteLength,
+  });
+  await c.env.MEDIA.put(doc.r2Key, body, { httpMetadata: { contentType: mediaType } });
+  return c.json({ document: doc });
+});
+
+/** What the maker has added. The picture supply reads the same list. */
+app.get("/api/documents", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ documents: await listDocuments(c.env.DB, user.id) });
+});
+
+/** Say what it shows, or change what you said. The marking, after the fact. */
+app.post("/api/documents/:id/mark", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const body = await c.req.json<{ note?: string }>().catch(() => null);
+  const note = (body?.note ?? "").slice(0, 600);
+  const ok = await markDocument(c.env.DB, c.req.param("id"), user.id, note);
+  return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+});
+
+/**
+ * Put one away.
+ *
+ * NOT a delete — invariant 6. The row stays and the file stays; it stops
+ * being offered. A document removed because it was the wrong scan is one
+ * somebody may want back when they find out it was the right one.
+ */
+app.post("/api/documents/:id/remove", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const ok = await removeDocument(c.env.DB, c.req.param("id"), user.id);
+  return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+});
+
+/** The file itself, for looking at. Owner only, like all media here. */
+app.get("/api/documents/:id/file", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const doc = await getDocument(c.env.DB, c.req.param("id"), user.id);
+  if (!doc) return c.json({ error: "not found" }, 404);
+
+  const obj = await c.env.MEDIA.get(doc.r2Key);
+  if (!obj) return c.json({ error: "the file is gone" }, 404);
+  return new Response(obj.body, {
+    headers: {
+      "content-type": doc.mediaType,
+      /* Inline: this is a thing to look at, and a download prompt for a
+         scan you are checking is a download prompt you did not ask for. */
+      "content-disposition": `inline; filename="${(doc.filename ?? doc.title).replace(/[^\w. -]/g, "_")}"`,
+      "cache-control": "private, max-age=3600",
+    },
+  });
 });
 
 /** What the bell knows: what is running, and what finished while you were away. */

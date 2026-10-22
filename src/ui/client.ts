@@ -3702,6 +3702,94 @@ document.querySelectorAll(".short-line").forEach((btn) => {
    A job, so this starts it and leaves; the bell and the page's own reload
    are where it is watched, the same as every other long thing here. */
 /*
+ * DOCUMENTS — invariant 8's second tier.
+ *
+ * One PUT with the file as the body and the title and note as headers: a
+ * scan of a letter is kilobytes, so the multipart dance a video needs would
+ * be ceremony. The note is what the document SHOWS, and it is what makes it
+ * proof — doc 08 wants "the document with its line marked" and nothing here
+ * reads a PDF to find the line.
+ *
+ * No backticks: this file is one String.raw template.
+ */
+{
+  const docPick = document.getElementById("docPick");
+  const docNote = document.getElementById("docNote");
+  const docState = document.getElementById("docState");
+
+  if (docPick) {
+    docPick.addEventListener("change", async () => {
+      const file = docPick.files && docPick.files[0];
+      if (!file) return;
+      if (docState) docState.textContent = "Adding…";
+      try {
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          headers: {
+            "content-type": file.type || "application/octet-stream",
+            "x-filename": encodeURIComponent(file.name).replace(/%20/g, " "),
+            "x-title": encodeURIComponent(file.name.replace(/\.[^.]+$/, "")).replace(/%20/g, " "),
+            "x-note": encodeURIComponent(docNote ? docNote.value : "").replace(/%20/g, " "),
+          },
+          body: file,
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (docState) docState.textContent = "";
+          window.toast(d.error || "That could not be added.");
+          return;
+        }
+        location.reload();
+      } catch {
+        if (docState) docState.textContent = "";
+        window.toast("That could not be added.");
+      }
+    });
+  }
+
+  document.addEventListener("click", async (e) => {
+    const mark = e.target.closest(".doc-mark");
+    const put = e.target.closest(".doc-remove");
+    if (!mark && !put) return;
+
+    if (mark) {
+      const row = mark.closest(".doc-row");
+      const now = row ? row.querySelector("div > div").textContent : "";
+      const said = window.prompt("What does this document show?", /Not marked yet/.test(now) ? "" : now);
+      /* Cancel is null and must not clear the note; an empty string is a
+         deliberate "I do not want to claim anything for it" and does. */
+      if (said === null) return;
+      try {
+        const res = await fetch("/api/documents/" + encodeURIComponent(mark.getAttribute("data-doc")) + "/mark", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: said }),
+        });
+        if (!res.ok) throw new Error("no");
+        location.reload();
+      } catch {
+        window.toast("That could not be saved.");
+      }
+      return;
+    }
+
+    /* Put away, not deleted — invariant 6. The row and the file stay; it
+       stops being offered. So the confirm says that rather than warning
+       about something irreversible, which it is not. */
+    if (!window.confirm("Put this document away? It stops being offered; nothing is deleted.")) return;
+    try {
+      const res = await fetch("/api/documents/" + encodeURIComponent(put.getAttribute("data-doc")) + "/remove", {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("no");
+      location.reload();
+    } catch {
+      window.toast("That could not be put away.");
+    }
+  });
+}
+
+/*
  * ASK IT ANYTHING ABOUT YOUR FOOTAGE.
  *
  * The composer's text is a sentence about your footage either way; Ask sends

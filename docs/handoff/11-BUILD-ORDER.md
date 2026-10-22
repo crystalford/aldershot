@@ -160,8 +160,26 @@ score is the only honest signal that happened. A take is never rejected;
 the editor says what it turned out to be, and only when that is not what
 was written.
 
-Still owed in Phase 5: the picture supply (documents, generated layers) and
-the sound rules.
+**The picture supply has landed for three of the four sources.**
+`src/picture-supply.ts` turns real rows into candidates, and "What goes
+here" on every line of a cut opens what was chosen and why, what was refused
+and why, and which sources have nothing behind them. Documents are a tier
+with a table and an upload now (`src/documents.ts`, the Documents tab in
+Footage), and what makes one PROOF is the maker's own sentence about what it
+shows — doc 08 wants "the document with its line marked" and nothing here
+reads a PDF to find the line, so the marking is theirs. Unmarked is
+explicitly not probative and cannot carry an EVIDENCE line.
+
+Two findings came out of driving it rather than reading it. A verified Scout
+find was being refused on every evidence line, because `world` conflates
+stock footage with a checked quote and doc 08 forbids stock; the gate is now
+what a candidate IS, and doc 08 carries the change. And a marked document
+always lost to whatever clip retrieval returned from the maker's own
+library, because the probative bonus could never close the gap between
+tiers — on EVIDENCE, the one move defined by being proof, it now does.
+
+Still owed in Phase 5: the generated layer — a chart or card drawn in code,
+which `lintChart` already gates — and the sound rules.
 
 ## Phase 6 — Before you post and export
 

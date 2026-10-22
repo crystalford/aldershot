@@ -263,6 +263,16 @@ export interface Placed {
 export const SEEN_PENALTY = 0.15;
 
 /**
+ * WHAT BEING THE PROOF IS WORTH, on the one move that is defined by it.
+ *
+ * Enough to clear the whole gap between `own` and `world` (0.5), so a
+ * verified recording or a marked document outranks an unmarked clip of the
+ * maker's own on an EVIDENCE line — and no more, so two probative
+ * candidates still fall back to invariant 8's order.
+ */
+export const PROOF_ON_EVIDENCE = 0.6;
+
+/**
  * WHAT GOES ON THIS LINE.
  *
  * Probative first, then the move's own source order, then novelty — doc
@@ -300,7 +310,27 @@ export function place(
     /* A reprise is deliberate on a TURN, which is the one move that means
        "this, again, differently". */
     const old = c.subject && seen.has(c.subject) && move !== "turn" ? SEEN_PENALTY : 0;
-    return SOURCE_WEIGHT[c.source] + (c.probative ? 0.1 : 0) - old;
+    /*
+     * ON AN EVIDENCE LINE, BEING THE PROOF BEATS BEING YOURS.
+     *
+     * The bonus was a flat 0.1, which could never close the 0.2 between own
+     * and documents — so a marked document that IS the proof always lost to
+     * any clip retrieval happened to return from the maker's own library.
+     * Found by driving it: an evidence line about a dated memo was given a
+     * clip saying "I don't like who I am here", with the document sitting
+     * underneath it marked and ignored.
+     *
+     * Doc 08's own column for this move is "probative — the proof itself",
+     * so this is reading its definition rather than overriding its order.
+     * The order still holds everywhere it is a preference; on the one move
+     * whose whole job is proof, the thing that is proof wins.
+     *
+     * Only on EVIDENCE, and only over a candidate that is not probative:
+     * two probative candidates fall back to the source order, which is
+     * where "own footage → documents" belongs.
+     */
+    const proof = c.probative ? (move === "evidence" ? PROOF_ON_EVIDENCE : 0.1) : 0;
+    return SOURCE_WEIGHT[c.source] + proof - old;
   };
 
   /* Ties keep the caller's order, which is the order they were found in. */

@@ -443,6 +443,22 @@ CREATE TABLE IF NOT EXISTS scout_sources (
 
 CREATE INDEX IF NOT EXISTS scout_sources_by_run ON scout_sources(run_id, triage_score);
 
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES v2_users(id),
+    title TEXT NOT NULL,
+    /* What it shows, in the maker's words. Null until they say. */
+    note TEXT,
+    filename TEXT,
+    media_type TEXT NOT NULL,
+    r2_key TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    removed_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at);
+
 CREATE TABLE IF NOT EXISTS scout_ledger (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES scout_runs(id),

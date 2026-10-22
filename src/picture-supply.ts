@@ -34,6 +34,7 @@
 import type { Env } from "./env.ts";
 import { findMaterial } from "./assemble.ts";
 import { externalMoments } from "./scout-external.ts";
+import { listDocuments, matchDocuments } from "./documents.ts";
 import { place, type Candidate, type Move, type Placed, type Source } from "./pictures.ts";
 import { clock } from "./assemble.ts";
 
@@ -128,9 +129,52 @@ export async function offerFor(
   }
 
   /* ── documents ─────────────────────────────────────────────────────────
-     Invariant 8's second tier and there is no supply: nothing in the product
-     takes a PDF or a photograph yet. Named rather than skipped. */
-  empty.push("documents");
+   *
+   * Invariant 8's second tier, matched by measurement rather than a model:
+   * word overlap between the line and the document's own words. A document
+   * library is tens of items and hand-made, so there is nothing here that
+   * needs an index.
+   *
+   * PROBATIVE ONLY WHEN THE MAKER MARKED IT. Doc 08 wants "the proof itself
+   * — the document with its line marked", and nothing in this codebase reads
+   * a PDF to find the line. The marking is the note: what this document
+   * shows, in their words. Without one it is still a document and still
+   * outranks the open world, and it cannot carry an EVIDENCE line, because
+   * "with its line marked" is the half that is missing. Invariant 10 — the
+   * user's own words win where they exist, and where they do not exist we do
+   * not invent them.
+   */
+  const docs = line ? matchDocuments(line, await listDocuments(env.DB, userId)) : [];
+  for (const d of docs) {
+    considered.push({
+      id: d.id,
+      source: "documents",
+      kind: "evidence",
+      /*
+       * THREE STATES, AND THIS ONE IS NOT "UNKNOWN".
+       *
+       * `probative` is true / false / absent, and `allowed()` refuses a
+       * candidate on an EVIDENCE line only when it is explicitly FALSE —
+       * absent means nobody checked. For a document we know: without the
+       * maker's marking it is not the proof, because "the document with its
+       * line marked" is exactly the half missing. So this says false rather
+       * than saying nothing, and the refusal actually fires.
+       *
+       * Own footage above is absent for the opposite reason: there we
+       * genuinely do not know, and claiming false would block the maker's
+       * own footage from evidence lines, which doc 08's source order puts
+       * first.
+       */
+      probative: d.note ? true : false,
+      /* The file, like every other subject here: the novelty penalty is
+         about having shown this thing already. */
+      subject: d.r2Key,
+      label: d.note ? `${d.title} — ${d.note}` : d.title,
+      at: "",
+      href: `/api/documents/${encodeURIComponent(d.id)}/file`,
+    });
+  }
+  if (!docs.length) empty.push("documents");
 
   /* ── world ─────────────────────────────────────────────────────────────
    *
@@ -183,7 +227,7 @@ export async function offerFor(
 export function emptyNote(empty: readonly Source[]): string {
   const said: string[] = [];
   if (empty.includes("own")) said.push("nothing in your own footage matches this line");
-  if (empty.includes("documents")) said.push("no documents added yet");
+  if (empty.includes("documents")) said.push("no document you have added is about this line");
   if (empty.includes("world")) said.push("Scout has not verified anything outside your footage");
   if (empty.includes("generated")) said.push("graphics are not built yet");
   if (!said.length) return "";

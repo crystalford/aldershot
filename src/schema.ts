@@ -652,6 +652,44 @@ const STATEMENTS: string[] = [
    * unfair, and the only moment the surrounding words are cheap to keep is
    * the moment the window was already open.
    */
+  /*
+   * DOCUMENTS — invariant 8's second tier, which had no supply.
+   *
+   * "own footage → user's documents → open world → generated", and nothing
+   * in the product took a PDF or a photograph, so `documents` was a source
+   * the framework ranked and nobody could fill.
+   *
+   * SMALL FILES, STRAIGHT THROUGH. The video path is multipart because a
+   * video is gigabytes; a scan of a letter is kilobytes and a second route
+   * sized for it is simpler than making it pretend to be a video.
+   *
+   * `note` IS WHAT MAKES IT PROOF. Doc 08 wants "the proof itself — the
+   * document with its line marked", and nothing here can read a PDF to find
+   * the line. The maker marks it: they say what the document shows, in their
+   * own words, and that sentence is what a line is matched against and what
+   * the receipt records them having asserted. Invariant 10 — the user's own
+   * words win where they exist. A document with no note is still a document
+   * and is NOT probative, so it cannot carry an EVIDENCE line: "with its
+   * line marked" is the half that would be missing.
+   *
+   * Nothing is deleted (invariant 6): `removed_at` hides one from the offer
+   * and the file and the row stay.
+   */
+  `CREATE TABLE IF NOT EXISTS documents (
+     id TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL REFERENCES v2_users(id),
+     title TEXT NOT NULL,
+     /* What it shows, in the maker's words. Null until they say. */
+     note TEXT,
+     filename TEXT,
+     media_type TEXT NOT NULL,
+     r2_key TEXT NOT NULL,
+     bytes INTEGER NOT NULL,
+     removed_at INTEGER,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at)`,
+
   `CREATE TABLE IF NOT EXISTS scout_ledger (
      id TEXT PRIMARY KEY,
      run_id TEXT NOT NULL REFERENCES scout_runs(id),

@@ -330,3 +330,50 @@ test("the new door is only open on evidence", () => {
   const onClaim = allowed("claim", { id: "L1", source: "world", kind: "evidence", probative: true });
   assert.ok(onClaim.reason, "a claim admitted an outside recording");
 });
+
+/*
+ * ── On an EVIDENCE line, being the proof beats being yours ───────────────
+ *
+ * The bonus for probative was a flat 0.1, which can never close the 0.2
+ * between `own` and `documents` — so a marked document that IS the proof
+ * always lost to whatever clip retrieval returned from the maker's own
+ * library. Found by driving it: an evidence line about a dated memo was
+ * given a clip saying "I don't like who I am here", with the document
+ * sitting underneath it marked and ignored.
+ */
+
+test("ACCEPTANCE: a marked document outranks an unmarked own clip on evidence", () => {
+  const mine = { id: "own", source: "own", kind: "illustration" } as const;
+  const memo = { id: "doc", source: "documents", kind: "evidence", probative: true } as const;
+  assert.equal(place("evidence", [mine, memo]).picture?.id, "doc");
+});
+
+test("ACCEPTANCE: and a verified outside recording does too", () => {
+  /* `world` is 0.5 against own's 1, the widest gap the bonus has to clear —
+     which is why it is sized to clear it. */
+  const mine = { id: "own", source: "own", kind: "illustration" } as const;
+  const found = { id: "L1", source: "world", kind: "evidence", probative: true } as const;
+  assert.equal(place("evidence", [mine, found]).picture?.id, "L1");
+});
+
+test("two probative candidates fall back to invariant 8's order", () => {
+  /* The bonus decides proof against not-proof. It must not flatten the
+     source order between two things that are both proof: own footage of the
+     thing still comes before a document of it. */
+  const mine = { id: "own", source: "own", kind: "evidence", probative: true } as const;
+  const memo = { id: "doc", source: "documents", kind: "evidence", probative: true } as const;
+  const found = { id: "L1", source: "world", kind: "evidence", probative: true } as const;
+  assert.equal(place("evidence", [memo, found, mine]).picture?.id, "own");
+  assert.equal(place("evidence", [found, memo]).picture?.id, "doc");
+});
+
+test("the bonus does not reorder any other move", () => {
+  /*
+   * CONTEXT wants own → world → generated, and a probative world candidate
+   * must not jump the maker's own footage there: only EVIDENCE is defined by
+   * being proof. Broken by making the bonus unconditional, this fails.
+   */
+  const mine = { id: "own", source: "own", kind: "illustration" } as const;
+  const found = { id: "L1", source: "world", kind: "evidence", probative: true } as const;
+  assert.equal(place("context", [found, mine]).picture?.id, "own");
+});
