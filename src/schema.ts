@@ -687,8 +687,10 @@ const STATEMENTS: string[] = [
      created_at INTEGER NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify)`,
-  /* The verify phase's own lookup: this run's unchecked rows, oldest first. */
-  `CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at)`,
+  /* The verify phase's own lookup lives in ADDED_INDEXES, not here: this
+     batch runs before the ALTERs, so an index over `verified_at` would be
+     asked for before the column exists on any database that already has
+     the table. */
 
   /*
    * Where fans already indexed the moment. lag_corrected_t_s is the comment
@@ -1103,6 +1105,32 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
 
   /* Where a source's published transcript lives. See scout_sources above. */
   { table: "scout_sources", column: "transcript_url", ddl: "ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT" },
+
+  /*
+   * WHEN THE VERIFIER LOOKED. See scout_ledger above for what it is for.
+   *
+   * Here as well because `CREATE TABLE IF NOT EXISTS` adds nothing to a table
+   * that already exists, which is the whole reason this list is here — and it
+   * is worth saying that adding the column to the CREATE alone was enough to
+   *500 every page on a database that had the table. Not a subtle failure, but
+   * only because the index below referenced it; a plain column would have
+   * been missing silently until the first query that wanted it.
+   */
+  { table: "scout_ledger", column: "verified_at", ddl: "ALTER TABLE scout_ledger ADD COLUMN verified_at INTEGER" },
+];
+
+/**
+ * Indexes over columns that arrived after their table did.
+ *
+ * THESE CANNOT GO IN `STATEMENTS`, which is the ordering bug that cost an
+ * afternoon: that batch runs BEFORE the ALTERs, so an index naming a
+ * newly-added column is asked for while the column does not exist yet. On a
+ * fresh database it works, on every existing one it throws, and the failure
+ * arrives as a 500 on every route because `ensureV2Schema` runs in the
+ * request path.
+ */
+const ADDED_INDEXES: string[] = [
+  "CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at)",
 ];
 
 let ensured = false;
@@ -1122,6 +1150,9 @@ export async function ensureV2Schema(db: D1Database): Promise<void> {
       await db.prepare(ddl).run();
     }
   }
+
+  /* AFTER the columns exist, and not before. See ADDED_INDEXES. */
+  await db.batch(ADDED_INDEXES.map((s) => db.prepare(s)));
 
   ensured = true;
 }

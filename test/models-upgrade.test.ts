@@ -10,7 +10,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveModel, REASON, REASON_UPGRADE, UPGRADES } from "../src/models.ts";
+import { CAPABILITIES, resolveFor, resolveModel, REASON, REASON_UPGRADE, UPGRADES } from "../src/models.ts";
+import type { Capability } from "../src/models.ts";
 
 test("the reasoning upgrade is a different model, with no external key", () => {
   const base = resolveModel("reason", {});
@@ -40,4 +41,58 @@ test("a configured Anthropic key still wins", () => {
 
 test("the offer no longer claims to need a key it does not need", () => {
   assert.equal(UPGRADES.reason.requiresKey, null);
+});
+
+/*
+ * ── Temperature, which only one provider accepts ────────────────────────
+ *
+ * Nothing in this product set one, so the judge was nondeterministic — the
+ * same model over the same 40 adversarial judgements returned 0.0% false
+ * support and then 11.1% an hour later. A verdict that flickers is a receipt
+ * that is under a claim today and gone tomorrow.
+ *
+ * Fixing that means pinning the capabilities whose answer is a decision, and
+ * Anthropic will not be pinned: Opus 5.5, Opus 5, Sonnet 5.5 and the Fable
+ * line all return a 400 for `temperature`. src/llm.ts throws rather than
+ * send one there, which is right and is total — the capability goes dark
+ * instead of degrading — so the thing to catch is the resolve, not the call.
+ */
+
+const CAPS = Object.keys(CAPABILITIES) as Capability[];
+
+test("ACCEPTANCE: no capability resolves to Anthropic with a temperature", () => {
+  /*
+   * THE BREAK THAT FAILED NOTHING. Adding `...temp(spec)` to the Anthropic
+   * branch of resolveFor passed every test in the suite; only a live call
+   * would have found it, as a 400 with a remote cause.
+   */
+  for (const cap of CAPS) {
+    const r = resolveFor(cap, { ANTHROPIC_API_KEY: "sk-ant-aaaaaaaa" });
+    if (r.provider !== "anthropic") continue;
+    assert.equal(
+      r.temperature,
+      undefined,
+      `${cap} resolved to ${r.id} carrying temperature ${r.temperature} — that request is a 400`,
+    );
+  }
+});
+
+test("a pinned capability keeps its temperature on Workers AI", () => {
+  /* And the other direction: the pin has to survive the resolve, or the
+     table in CAPABILITIES is documentation of something that never happens. */
+  const pinned = CAPS.filter((c) => CAPABILITIES[c].temperature !== null);
+  assert.ok(pinned.length, "no capability is pinned, so this test asserts nothing");
+  for (const cap of pinned) {
+    const r = resolveFor(cap, {});
+    assert.equal(r.provider, "workers-ai");
+    assert.equal(r.temperature, CAPABILITIES[cap].temperature, `${cap} lost its temperature`);
+  }
+});
+
+test("a prose capability carries none, rather than zero", () => {
+  const loose = CAPS.filter((c) => CAPABILITIES[c].temperature === null);
+  assert.ok(loose.length, "every capability is pinned, so this test asserts nothing");
+  for (const cap of loose) {
+    assert.equal(resolveFor(cap, {}).temperature, undefined, `${cap} was pinned by accident`);
+  }
 });

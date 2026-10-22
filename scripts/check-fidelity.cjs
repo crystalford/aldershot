@@ -1627,9 +1627,28 @@ function checkSchema() {
 
   const live = new Map();
   for (const f of walk(path.join(ROOT, 'src'))) {
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/`(CREATE (?:TABLE|(?:UNIQUE )?INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
-      const n = name(m[1]);
-      if (n) live.set(n, flat(m[1]));
+    /*
+     * EITHER QUOTE STYLE. The DDL in STATEMENTS is in backticks and the
+     * entries in ADDED_INDEXES are in double quotes, because they are a
+     * plain string array rather than a template — and this regex matched
+     * only backticks, so the one index created after the ALTERs read as
+     * "in the schema document and created by nothing". The check was right
+     * to complain; it just could not see the creation.
+     */
+    const text = fs.readFileSync(f, 'utf8');
+    /*
+     * MATCHING DELIMITERS, via the backreference. Written first as
+     * `[`"]...[`"]`, which let a statement open on a backtick and close on
+     * the first double quote INSIDE it — so every multi-line DDL containing
+     * a quoted default came back truncated and v2_users and rules read as
+     * "the code and the document disagree about its shape". A widened
+     * matcher that silently shortens what it matches is worse than the
+     * narrow one it replaced.
+     */
+    const ddl = /([`"])(CREATE (?:TABLE|(?:UNIQUE )?INDEX) IF NOT EXISTS [\s\S]*?)\1/g;
+    for (const m of text.matchAll(ddl)) {
+      const n = name(m[2]);
+      if (n) live.set(n, flat(m[2]));
     }
   }
 

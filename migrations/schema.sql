@@ -480,8 +480,6 @@ CREATE TABLE IF NOT EXISTS scout_ledger (
 
 CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify);
 
-CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at);
-
 CREATE TABLE IF NOT EXISTS scout_crowd (
     id TEXT PRIMARY KEY,
     source_id TEXT NOT NULL REFERENCES scout_sources(id),
@@ -578,3 +576,7 @@ ALTER TABLE renders ADD COLUMN lufs REAL;
 ALTER TABLE renders ADD COLUMN true_peak REAL;
 ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;
 ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT;
+ALTER TABLE scout_ledger ADD COLUMN verified_at INTEGER;
+
+-- Indexes over those columns (ADDED_INDEXES; created after the ALTERs).
+CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at);

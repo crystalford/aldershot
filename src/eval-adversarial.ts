@@ -48,6 +48,23 @@ export const NEAR_MISSES = [
   "half",
   "topical",
   "self-correction",
+  /*
+   * THE SECOND NINE WERE NOT ENOUGH. The shipping judge scored 25 of 25 on
+   * the categories above, and a set nothing gets wrong cannot say which of
+   * two models is wrong less often — which is the only thing it is for.
+   *
+   * These seven are what remained once a judge could already handle denial,
+   * tense, attribution, subject, place, time, self-correction, half-claims,
+   * topical overlap and qualification. Each is a way a sentence can share
+   * almost every word with a claim and still not be it.
+   */
+  "scope",
+  "agency",
+  "strength",
+  "role-swap",
+  "magnitude",
+  "correlation",
+  "aggregate",
 ] as const;
 
 export type NearMiss = (typeof NEAR_MISSES)[number];
@@ -67,6 +84,15 @@ export const CATEGORIES: Record<Category, string> = {
   half: "Supports one clause of a two-clause claim and is silent on the other.",
   topical: "Heavy word overlap with the claim and no entailment at all.",
   "self-correction": "Said, then corrected to something else in the same breath.",
+  scope: "Some, where the claim says all. The quantifier is the whole difference.",
+  agency: "The act happened and the clip does not say who did it; the claim names someone.",
+  strength: "A weaker verb than the claim's. Reluctance is not refusal.",
+  "role-swap": "The claim's own words with the doer and the done-to exchanged.",
+  magnitude: "The right act at the wrong size. A number that is not the claim's number.",
+  correlation: "Two things in one sentence, and the claim says one caused the other.",
+  aggregate:
+    "Two clips that together would cover the claim, neither of which does alone — " +
+    "shown side by side, so the test is whether the other half promotes either one.",
   backs: "Genuine support. Without these the set measures only one direction.",
 };
 

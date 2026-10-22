@@ -11,6 +11,14 @@
  *   npm run eval:model -- --model @cf/cloudflare/clairic  a candidate
  *   npm run eval:model -- --model X --against Y           two of them
  *   npm run eval:model -- --model X --sweep               X at every effort
+ *   npm run eval:model -- --runs 3                        three runs, as a range
+ *
+ * A SINGLE RUN IS NOT A RESULT, which this file learned the hard way. The
+ * shipping judge over the same 40 judgements returned 0.0% false support and
+ * then 11.1% an hour later, because nothing in the product set a sampling
+ * temperature. Pinning the deciding capabilities to 0 narrowed that and did
+ * NOT remove it — two pinned runs still differed by one verdict — so the
+ * honest output is a range over several runs, and `--runs` is how to get it.
  *
  * EFFORT IS A CANDIDATE, NOT A SETTING. "Which model" and "how hard it
  * thinks" are two axes, and the second is the cheaper to route on — a second
@@ -238,8 +246,50 @@ async function main() {
     return;
   }
 
+  const runs = Math.max(1, Number(arg('runs') ?? 1) || 1);
+  const label = model ? `${model}${effort ? ` @ ${effort}` : ''}` : 'the shipping judge';
+
+  if (runs > 1) {
+    /*
+     * THE RANGE, because the point estimate was never the result. Each run
+     * is reported in full — a reader who wants to know WHICH claim moved
+     * needs the per-claim lines — and then the spread, which is the number
+     * that says whether a difference between two models could mean
+     * anything at all.
+     */
+    const rates = [];
+    const refused = [];
+    for (let i = 0; i < runs; i += 1) {
+      const r = await score(model, claims, cookie, effort);
+      rates.push(report(`${label} — run ${i + 1} of ${runs}`, r.predictions, r.reasked));
+      const real = r.predictions.filter((p) => p.truth === 'backs');
+      refused.push(`${real.filter((p) => p.said !== 'backs').length} of ${real.length}`);
+    }
+    const known = rates.filter((r) => r !== null);
+    const lo = known.length ? Math.min(...known) : null;
+    const hi = known.length ? Math.max(...known) : null;
+    console.log(`\n${BOLD}over ${runs} runs${OFF}`);
+    console.log(`  false support: ${pct(lo)} to ${pct(hi)}`);
+    console.log(`  real support refused: ${refused.join(', ')}`);
+    if (lo !== null && hi !== null && hi > lo) {
+      console.log(
+        `\n  ${RED}this model disagrees with itself${OFF} across ${(hi - lo) * 100 >= 1 ? `${((hi - lo) * 100).toFixed(1)} points` : 'under a point'}` +
+          ` of false support.\n  A model swap has to beat that spread before the difference means anything.`,
+      );
+    } else {
+      console.log(`\n${DIM}  Stable across these runs, which is what makes a comparison worth running.${OFF}`);
+    }
+    return;
+  }
+
   const a = await score(model, claims, cookie, effort);
-  const rateA = report(model ? `${model}${effort ? ` @ ${effort}` : ''}` : 'the shipping judge', a.predictions, a.reasked);
+  const rateA = report(label, a.predictions, a.reasked);
+  if (!against) {
+    console.log(
+      `\n${DIM}One run. This judge has been measured disagreeing with itself between runs —\n` +
+        `use --runs 3 before taking any number here as a property of the model.${OFF}`,
+    );
+  }
 
   if (against) {
     const b = await score(against, claims, cookie, effort);

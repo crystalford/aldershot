@@ -94,9 +94,22 @@ for (const f of walk(path.join(ROOT, 'src'))) {
 }
 
 const added = [];
+/*
+ * Indexes over columns that arrived after their table did. They live in
+ * ADDED_INDEXES rather than STATEMENTS because that batch runs before the
+ * ALTERs — and they were missing from this file entirely for one commit,
+ * which is the whole failure this file exists to stop: migrations/schema.sql
+ * is meant to BE the current shape, and an index it does not mention is one
+ * nobody reading it knows about.
+ */
+const addedIndexes = [];
 for (const f of walk(path.join(ROOT, 'src'))) {
-  for (const m of fs.readFileSync(f, 'utf8').matchAll(/ddl:\s*"(ALTER TABLE [^"]+)"/g)) {
+  const text = fs.readFileSync(f, 'utf8');
+  for (const m of text.matchAll(/ddl:\s*"(ALTER TABLE [^"]+)"/g)) {
     added.push(m[1]);
+  }
+  for (const m of text.matchAll(/"(CREATE INDEX IF NOT EXISTS [^"]+)"/g)) {
+    addedIndexes.push(m[1]);
   }
 }
 
@@ -113,6 +126,13 @@ if (added.length) {
   body += '-- Added after the fact (ADDED_COLUMNS; applied only where missing).\n';
   body += added.map((a) => a + ';').join('\n') + '\n';
 }
+if (addedIndexes.length) {
+  body += '\n-- Indexes over those columns (ADDED_INDEXES; created after the ALTERs).\n';
+  body += addedIndexes.map((a) => a + ';').join('\n') + '\n';
+}
 
 fs.writeFileSync(OUT, HEADER + body);
-console.log(`migrations/schema.sql — ${statements.length} statements, ${added.length} added columns`);
+console.log(
+  `migrations/schema.sql — ${statements.length} statements, ${added.length} added columns, ` +
+    `${addedIndexes.length} added index(es)`,
+);

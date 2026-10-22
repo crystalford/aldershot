@@ -361,6 +361,21 @@ export async function callReason(
     }
 
     const ttl = opts.cacheTtl ?? "5m";
+    /*
+     * A TEMPERATURE MUST NOT REACH THIS WIRE. Anthropic removed the sampling
+     * parameters on every current model — Opus 5.5, Opus 5, Sonnet 5.5 and
+     * the Fable line all answer a 400 — so one leaking through would take
+     * the whole capability dark rather than degrade it. resolveFor does not
+     * put one on an Anthropic result; this is the assertion that it never
+     * starts to, because the failure would be total and the cause remote.
+     */
+    if (model.temperature !== undefined) {
+      throw new ModelCallFailed({
+        blame: "ours",
+        says: "That model does not take a temperature.",
+        retryable: false,
+      });
+    }
     try {
       const out = await callAnthropic(key, model.id, call, key === userKey, ttl, model.effort);
       return { ...out, model: model.id, provider: "anthropic", onUserKey: key === userKey };
@@ -387,6 +402,20 @@ export async function callReason(
     ],
     ...(call.schema ? { response_format: { type: "json_schema", json_schema: call.schema } } : {}),
     max_tokens: call.maxTokens,
+    /*
+     * PINNED WHERE THE ANSWER IS A DECISION, and absent otherwise.
+     *
+     * Nothing in this product set a temperature, so every call ran at the
+     * provider's default. The adversarial set measured what that cost: the
+     * same model over the same 40 judgements returned 0.0% false support and
+     * then 11.1% on two runs an hour apart. A judge that disagrees with
+     * itself by more than a model swap would is a receipt that appears under
+     * a claim today and is gone tomorrow.
+     *
+     * The level per capability is in CAPABILITIES with the reason beside it.
+     * Only this branch sends it: see callAnthropic, which cannot.
+     */
+    ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
   });
   reportRoom(`callReason ${model.id}`, usageTokens(raw).tokensOut, call.maxTokens);
   /* Workers AI has no prompt cache to report on. Zeroes rather than nulls:

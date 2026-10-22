@@ -75,7 +75,57 @@ The categories are in `src/eval-adversarial.ts` with a sentence each, and
 fifth. That check caught its own author on the first draft: three controls in
 seventeen claims.
 
-### It is saturated, which is a result and not a pass
+### A single run was never a result
+
+**Read this before trusting any number below.** The shipping judge was run
+twice over the same 40 judgements, an hour apart, nothing changed in between:
+
+| | false support | real support refused |
+|---|---|---|
+| run A | 0.0% | 2 of 16 |
+| run B | 11.1% | 0 of 16 |
+
+That is one model disagreeing with itself by more than any model swap would
+need to show. Nothing in this product set a sampling `temperature`, so every
+call ran at the provider's default and the judge was never deterministic.
+Every single-run figure reported before this was one sample of a noisy
+quantity — including two "0.0% false support" results that read as clean
+sheets.
+
+Two problems, and the eval is the smaller one. A verdict that flickers is a
+receipt that sits under a claim today and is gone tomorrow, which is invariant
+4 failing in the direction nobody checks: "every claim keeps its receipt"
+means it keeps the *same* receipt.
+
+The fix, in `src/models.ts`: a capability whose answer is a decision is pinned
+to temperature 0 — `judge`, `classify`, `arrange` — while `direct` and `name`
+write prose and stay sampled. `read` has no eval set, so it was left alone
+rather than changed on a hunch.
+
+**It narrowed the spread and did not close it.** Two runs with the judge
+pinned:
+
+| | false support | real support refused | said "backs" |
+|---|---|---|---|
+| pinned run 1 | 0.0% | 1 of 16 | 15 |
+| pinned run 2 | 0.0% | 0 of 16 | 16 |
+
+Better than 0.0%-to-11.1%, and still not the same answer twice. Temperature 0
+is a request, not a guarantee: the serving stack has its own
+nondeterminism, and the re-ask path adds a second call on any claim the first
+answer did not cover. So the conclusion holds with the fix in place — a point
+estimate from one run is not a property of the model. `npm run eval:model --
+--runs 3` prints the range, and a one-run figure now comes with a line saying
+so.
+
+**That fix does not reach Claude.** Opus 5.5, Opus 5, Sonnet 5.5 and the Fable
+line all return a 400 for `temperature`, so an Anthropic judge cannot be
+pinned at all and `src/llm.ts` refuses to put one on that wire. Its variance
+has to be measured instead of removed: score it over several runs and compare
+ranges, never two single runs. A model-swap decision taken from one run of
+each is a coin toss with a table around it.
+
+### It was saturated, which is a result and not a pass
 
 As of 21 Oct 2026 the shipping judge gets all 25 right: 0.0% false support,
 nothing refused, nothing unanswered. That is **not** the set working. A set
@@ -96,10 +146,31 @@ caution. The other three were real over-caution: the prompt's one line
 "judge what was SAID, not what the speaker probably meant" was killing
 paraphrase along with the hypotheticals it was written for.
 
-So the next thing this file needs is harder cases, not more of these: near
-misses that survive a judge which already handles denial, tense, attribution,
-subject, place, time and self-correction. Until it has them, a green run here
-licenses nothing.
+So the next thing this file needed was harder cases, and it has them: seven
+categories chosen to survive a judge that already handled denial, tense,
+attribution, subject, place, time, self-correction, half-claims, topical
+overlap and qualification.
+
+| | the difference |
+|---|---|
+| `scope` | some, where the claim says all — the quantifier is the only change |
+| `agency` | the act happened and the clip says nobody knows who did it |
+| `strength` | a weaker verb: reluctance is not refusal |
+| `role-swap` | the claim's own words with doer and done-to exchanged |
+| `magnitude` | the right act at the wrong size |
+| `correlation` | two facts in one sentence, and the claim says one caused the other |
+| `aggregate` | two clips that together cover the claim, neither alone — shown side by side, so the test is whether the other half promotes either one |
+
+29 claims and 40 judgements now, 8 of them controls (27.6%). Three of the new
+controls are deliberately hard: a universal established by what everyone
+assumed, support that is two dates and a subtraction, and — the set had none
+before — a claim whose content is an *absence*.
+
+**The new categories did not add the discrimination.** The judge scored 0
+wrong on all seven at the first attempt. What stopped the set being saturated
+was the control side and the variance above, which is a different finding from
+the one these cases were written to produce, and worth saying plainly rather
+than claiming the credit.
 
 ### When a model's disagreement may change a label
 

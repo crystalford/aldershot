@@ -263,6 +263,34 @@ export interface CapabilitySpec {
    * `npm run eval:model -- --effort` is what will turn them into numbers.
    */
   effort: Effort;
+  /**
+   * HOW MUCH THE ANSWER MAY WANDER, and nothing here was setting it.
+   *
+   * Every model call in this product ran at the provider's default sampling
+   * temperature, which is not zero. So the judge was nondeterministic, and
+   * the adversarial set caught it: the SAME model over the SAME 40
+   * judgements, twice in one evening, returned 0.0% false support and then
+   * 11.1%. Not two models differing. One model disagreeing with itself by
+   * more than any swap would need to show.
+   *
+   * That is two problems and the eval is the smaller one. A verdict that
+   * flickers is a receipt that sits under a claim today and is gone
+   * tomorrow — invariant 4 failing in the direction nobody checks, because
+   * "every claim keeps its receipt" means it keeps the same one.
+   *
+   * A CAPABILITY WHOSE ANSWER IS A DECISION GETS ZERO. judge, classify and
+   * arrange return a choice from a fixed set and there is no reading of
+   * "creative" that applies to them. `direct` and `name` write prose, where
+   * sampling is the point, and `read` has no eval set to justify a change.
+   *
+   * WORKERS AI ONLY, and null means "do not send it". Anthropic removed the
+   * sampling parameters on the current models — Opus 5.5, Opus 5, Sonnet
+   * 5.5 and the Fable line all 400 on `temperature` — so a Claude judge
+   * cannot be pinned this way and its variance has to be handled by running
+   * the set more than once instead. src/llm.ts refuses to put it on that
+   * wire at all.
+   */
+  temperature: number | null;
 }
 
 export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
@@ -274,6 +302,9 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
        worst thing this product can do, and the near-miss separation it is
        asked for is the hardest reading in it. */
     effort: "xhigh",
+    /* A receipt that changes its mind between two runs is worse than no
+       receipt, and this answer IS invariant 4. */
+    temperature: 0,
   },
   classify: {
     why: "Decides what job a line's picture has, which decides whether a generated picture may sit over a claim. Invariant 8.",
@@ -283,6 +314,8 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
        rather than a reading. `high` is the floor for anything an invariant
        rests on; the depth above that buys nothing on a choice this narrow. */
     effort: "high",
+    /* Five fixed kinds, and invariant 8 turns on which one comes back. */
+    temperature: 0,
   },
   direct: {
     why: "Decides what the video says: the claim, the beats, the order. Wrong here and the cut argues something nobody meant.",
@@ -291,6 +324,9 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
     /* Open-ended and consequential: there is no schema that catches a claim
        nobody meant, only a person reading it afterwards. */
     effort: "xhigh",
+    /* Prose, and the one capability where a second opinion is worth having:
+       a claim and its beats are a draft a person then edits. */
+    temperature: null,
   },
   read: {
     why: "Reads a whole transcript and says which moments carry the subject. Wants the whole thing in one window more than it wants raw power.",
@@ -301,6 +337,10 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
        left to look like an oversight. Reading a transcript for subject is
        breadth, not depth. */
     effort: "medium",
+    /* Which moments carry the subject is a judgement over a long transcript
+       rather than a fixed choice. Left at the provider's default until
+       something measures it — there is no eval set for `read`. */
+    temperature: null,
   },
   arrange: {
     why: "Puts kept moments in an order. A deterministic solver places; this only suggests.",
@@ -310,6 +350,10 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
        repairs whatever comes back. Depth here is paid for an answer that is
        then validated anyway. */
     effort: "low",
+    /* An order is a decision. permutationOf repairs it either way, but a cut
+       that arranges itself differently on two identical runs is a cut nobody
+       can reason about — invariant 1 says it is re-produced from rules. */
+    temperature: 0,
   },
   name: {
     why: "Titles and short labels, with somebody waiting on the result. Latency is the quality that matters here.",
@@ -319,6 +363,8 @@ export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
        product. The one place where the lowest setting is the RIGHT one
        rather than the cheap one. */
     effort: "low",
+    /* A title is prose, written once and then stored. */
+    temperature: null,
   },
 };
 
@@ -338,11 +384,18 @@ export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string })
   const spec = CAPABILITIES[cap];
 
   if (spec.longContext) {
-    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
   }
 
   if (spec.loadBearing) {
     if (env.ANTHROPIC_API_KEY) {
+      /*
+       * NO TEMPERATURE ON THIS BRANCH, however much the capability wants
+       * one. Opus 5.5, Opus 5, Sonnet 5.5 and the Fable line all return a
+       * 400 for `temperature`, so pinning a Claude judge is not available
+       * and its run-to-run variance has to be measured rather than removed.
+       * See eval/README.md.
+       */
       return {
         provider: "anthropic",
         id: ANTHROPIC_BEST,
@@ -352,7 +405,7 @@ export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string })
         effort: spec.effort,
       };
     }
-    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
   }
 
   if (cap === "name") {
@@ -368,11 +421,14 @@ export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string })
        no eval set for `name`, which is why this is a comment and not a
        change: the one lesson of the judge is that an unmeasured swap is a
        guess with a changelog entry. */
-    return { provider: "workers-ai", id: REASON.id, context: REASON.context, jsonSchema: true, diarizes: false };
+    return { provider: "workers-ai", id: REASON.id, context: REASON.context, jsonSchema: true, diarizes: false, ...temp(spec) };
   }
 
-  return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false };
+  return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
 }
+
+/** The capability's temperature, or nothing at all when it has none. */
+const temp = (spec: CapabilitySpec) => (spec.temperature === null ? {} : { temperature: spec.temperature });
 
 /**
  * The reasoning upgrade WITHOUT an external account.
@@ -409,6 +465,15 @@ export interface Resolved {
    * would be a setting nobody applies that everybody can see.
    */
   effort?: Effort;
+  /**
+   * Sampling temperature, where the provider accepts one.
+   *
+   * ABSENT RATHER THAN DEFAULTED, and absent for two different reasons:
+   * a capability that writes prose does not want it pinned, and Anthropic
+   * rejects the parameter outright on every current model. Either way the
+   * field is missing and src/llm.ts sends nothing.
+   */
+  temperature?: number;
 }
 
 /**

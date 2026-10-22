@@ -345,3 +345,60 @@ test("the effort survives the fall back from a user's key to ours", () => {
     }
   });
 });
+
+/*
+ * ── Temperature ─────────────────────────────────────────────────────────
+ *
+ * Nothing in this product set one, so every call ran at the provider's
+ * default. The adversarial set measured the cost: the same model over the
+ * same 40 judgements returned 0.0% false support and then 11.1% on two runs
+ * an hour apart. A judge that disagrees with itself by more than a model
+ * swap would is a receipt that appears under a claim today and is gone
+ * tomorrow — invariant 4 failing in the direction nobody checks.
+ */
+
+test("ACCEPTANCE: a pinned capability sends its temperature to Workers AI", () => {
+  const { env, asked } = fakeEnv();
+  const input: Array<Record<string, unknown>> = [];
+  (env.AI as { run: unknown }).run = async (_m: string, i: Record<string, unknown>) => {
+    input.push(i);
+    return { response: "{}" };
+  };
+  return (async () => {
+    await callReason(env as never, { ...CF, temperature: 0 }, CALL);
+    assert.equal(input.length, 1);
+    assert.equal(input[0].temperature, 0);
+    void asked;
+  })();
+});
+
+test("a capability with no temperature sends no temperature", () => {
+  /* Absent, not zero. A prose capability pinned to zero by accident is a
+     silent quality change, and `0` is a value the provider would honour. */
+  const { env } = fakeEnv();
+  const input: Array<Record<string, unknown>> = [];
+  (env.AI as { run: unknown }).run = async (_m: string, i: Record<string, unknown>) => {
+    input.push(i);
+    return { response: "{}" };
+  };
+  return (async () => {
+    await callReason(env as never, CF, CALL);
+    assert.ok(!("temperature" in input[0]), `sent ${JSON.stringify(input[0].temperature)}`);
+  })();
+});
+
+test("ACCEPTANCE: a temperature never reaches Anthropic, which 400s on it", () => {
+  /*
+   * Opus 5.5, Opus 5, Sonnet 5.5 and the Fable line all reject the sampling
+   * parameters. A leak would not degrade the capability, it would take it
+   * dark — so this fails loudly on our side rather than remotely.
+   */
+  const { env } = fakeEnv({ ANTHROPIC_API_KEY: "sk-platform-aaaaaaaa" });
+  return withFetch({ status: 200, body: { content: [] } }, async (seen) => {
+    await assert.rejects(
+      () => callReason(env as never, { ...CLAUDE, temperature: 0 }, CALL),
+      /does not take a temperature/,
+    );
+    assert.equal(seen.length, 0, "the request went out anyway");
+  });
+});
