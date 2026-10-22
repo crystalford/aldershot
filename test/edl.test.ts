@@ -9,7 +9,14 @@
  */
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { buildEdl, buildRenderPlan, buildSrt, captionCues } from "../src/edl.ts";
+import {
+  CARD_MIN_MS,
+  CARD_WORDS_PER_S,
+  buildEdl,
+  buildRenderPlan,
+  buildSrt,
+  captionCues,
+} from "../src/edl.ts";
 import { buildBlocks, type Block } from "../src/blocks.ts";
 import { toggleSegment, toggleWord } from "../src/cuts.ts";
 
@@ -251,4 +258,71 @@ test("a pulled clip is not trimmed by this transcript's cuts", () => {
   const pulled = { ...carried("footage", 0, null), start_ms: 0, end_ms: 5000, mediaKey: "other.mp4" };
   const edl = buildEdl(KEY, [pulled], cuts);
   assert.equal(edl.cuts[0].end_ms, 5000);
+});
+
+/*
+ * ── A generated picture reaches the render ───────────────────────────────
+ *
+ * `if (!block.mediaKey) continue` dropped every non-footage block with no
+ * file — so a generated card somebody inserted appeared in the editor, held
+ * its place in the runtime, and was simply absent from the export, with
+ * nothing said about it. Invariant 7's shape of failure in the one place a
+ * person cannot check it until the file comes back.
+ */
+
+test("ACCEPTANCE: a generated card is in the EDL, carrying its words", () => {
+  const card = carried("generated", 0, null, "Fine — yes, we moved the launch.");
+  const edl = buildEdl(KEY, [card], []);
+  const cut = edl.cuts.find((c) => c.card);
+  assert.ok(cut, `the card was dropped: ${JSON.stringify(edl.cuts)}`);
+  assert.equal(cut.card, "Fine — yes, we moved the launch.");
+  /* No file to read. The container draws this one. */
+  assert.equal(cut.sourceKey, "");
+  assert.ok(cut.end_ms > 0, "a card with no duration would be a zero-length part");
+});
+
+test("a generated block with no words is still dropped", () => {
+  /* There is nothing to set, and a blank frame in somebody's cut is worse
+     than a beat that never made it. */
+  const blank = carried("generated", 3000, null, "   ");
+  assert.equal(buildEdl(KEY, [blank], []).cuts.length, 0);
+});
+
+test("a voice block with no media is still dropped, as before", () => {
+  /* Only `generated` gained this path. A recording with no recording is not
+     a card — there is nothing to draw and nothing to play. */
+  const ghost = carried("voice", 3000, null, "Something I meant to record.");
+  assert.equal(buildEdl(KEY, [ghost], []).cuts.length, 0);
+});
+
+test("the maker's own duration wins over the reading time", () => {
+  /* cardMs is a FALLBACK — invariant 10's shape in a number. A beat whose
+     length somebody set keeps it. */
+  const theirs = carried("generated", 7000, null, "Two words");
+  assert.equal(buildEdl(KEY, [theirs], []).cuts[0].end_ms, 7000);
+});
+
+test("a card with no duration holds long enough to read", () => {
+  const short = carried("generated", 0, null, "Three short words");
+  const long = carried("generated", 0, null, Array.from({ length: 40 }, () => "word").join(" "));
+
+  const a = buildEdl(KEY, [short], []).cuts[0].end_ms;
+  const b = buildEdl(KEY, [long], []).cuts[0].end_ms;
+
+  assert.equal(a, CARD_MIN_MS, "a three-word card should sit on the floor, not below it");
+  assert.ok(b > a, "forty words should hold longer than three");
+  /* At the stated reading speed, not an arbitrary multiple. */
+  assert.equal(b, Math.round((40 / CARD_WORDS_PER_S) * 1000));
+});
+
+test("a card and a clip can be in the same cut, in order", () => {
+  /* The concat joins them as a stream copy, so the ordering here is the
+     ordering in the file. */
+  const clip = carried("voice", 2000, "u/1/takes/a.webm", "Said out loud");
+  const card = carried("generated", 0, null, "And then written down");
+  const edl = buildEdl(KEY, [{ ...clip, id: "b:1" }, { ...card, id: "b:2" }], []);
+  assert.deepEqual(
+    edl.cuts.map((c) => (c.card ? "card" : "media")),
+    ["media", "card"],
+  );
 });

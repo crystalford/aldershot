@@ -41,6 +41,14 @@ export interface EdlCut {
   voiceKey?: string;
   /** Where the words are in that take, for the ducking envelope. */
   voiceWords?: Array<{ s: number; e: number }>;
+  /**
+   * The words to SET AS TYPE, for a generated picture that has no file.
+   *
+   * The container draws this one — src/graphics.ts builds the SVG and
+   * rsvg-convert rasterises it — so there is no key to presign and nothing
+   * to fetch.
+   */
+  card?: string;
   start_ms: number;
   end_ms: number;
   /** What is said over this range, for captions and the SRT. */
@@ -100,6 +108,30 @@ export interface Edl {
  * also fixes captions: `captionCues` gets one cue per line instead of one cue
  * holding minutes of joined text.
  */
+/** Words a reader gets through in a second, at the size a card sets them. */
+export const CARD_WORDS_PER_S = 2.8;
+
+/** The least time a card holds, however short it is. */
+export const CARD_MIN_MS = 2200;
+
+/**
+ * HOW LONG A CARD HOLDS, when nothing has said.
+ *
+ * A generated beat has no recording, so `dur_ms` is whatever the editor
+ * happened to store — usually nothing. A card is read rather than watched,
+ * so the length is a reading time: the words at a reading speed, floored so
+ * a three-word card is still legible rather than a flash.
+ *
+ * The maker's own duration wins where it exists. This is the fallback, not
+ * an override — invariant 10's shape, in a number.
+ */
+export function cardMs(block: { text?: string | null; start_ms: number; end_ms: number }): number {
+  const own = Math.max(0, block.end_ms - block.start_ms);
+  if (own > 0) return own;
+  const words = (block.text ?? "").trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(CARD_MIN_MS, Math.round((words / CARD_WORDS_PER_S) * 1000));
+}
+
 export function buildEdl(
   /*
    * The project's OWN video, when it has one. Only ever a fallback — a block
@@ -136,7 +168,36 @@ export function buildEdl(
        * range of the source, and is deliberately NOT affected by transcript
        * cuts — striking a word in the source should not shorten a voiceover.
        */
-      if (!block.mediaKey) continue;
+      /*
+       * A GENERATED PICTURE HAS NO MEDIA AND IS NOT NOTHING.
+       *
+       * `if (!block.mediaKey) continue` dropped it, silently — so a card
+       * somebody inserted appeared in the editor, held its place in the
+       * runtime, and was simply absent from the export, with nothing said.
+       * That is invariant 7's shape of failure in the one place a person
+       * cannot check it until the file comes back.
+       *
+       * It carries its WORDS instead of a file. src/graphics.ts draws them
+       * as type — "graphics are code, never pixels", and a diffusion model
+       * cannot draw a word — and the container rasterises that. A generated
+       * block with no words is still dropped, because there is nothing to
+       * set and a blank frame in somebody's cut is worse than a beat that
+       * never made it.
+       */
+      if (!block.mediaKey) {
+        if (block.origin !== "generated" || !block.text?.trim()) continue;
+        out.push({
+          /* No file. The container draws this one. */
+          sourceKey: "",
+          previewKey: "",
+          start_ms: 0,
+          end_ms: cardMs(block),
+          text: block.text,
+          card: block.text.trim(),
+          ...(block.label ? { label: block.label } : {}),
+        });
+        continue;
+      }
       const audioOnly = block.origin === "voice";
       out.push({
         sourceKey: block.mediaKey,
@@ -307,6 +368,14 @@ export interface RenderPlan {
     voiceKey?: string;
   /** Where the words are in that take, for the ducking envelope. */
   voiceWords?: Array<{ s: number; e: number }>;
+  /**
+   * The words to SET AS TYPE, for a generated picture that has no file.
+   *
+   * The container draws this one — src/graphics.ts builds the SVG and
+   * rsvg-convert rasterises it — so there is no key to presign and nothing
+   * to fetch.
+   */
+  card?: string;
     /** Drawn over the picture, perceivable at first exposure. See src/cuesheet.ts. */
     label?: string;
     audioOnly?: boolean;
@@ -359,6 +428,8 @@ export function buildRenderPlan(
       /* Spans, not a key: nothing to presign, and the container needs them
          to build the volume expression rather than to fetch anything. */
       ...(c.voiceWords?.length ? { voiceWords: c.voiceWords } : {}),
+      /* The words, not a key — the container draws this one. */
+      ...(c.card ? { card: c.card } : {}),
       ...(c.label ? { label: c.label } : {}),
       ...(c.audioOnly ? { audioOnly: true } : {}),
     })),

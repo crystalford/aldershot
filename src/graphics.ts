@@ -31,6 +31,15 @@ import { KIND_LABEL, chartIsRenderable, lintChart, type ChartSpec, type Lint } f
 export const W = 1920;
 export const H = 1080;
 
+/**
+ * The longest line a quote card sets, in characters.
+ *
+ * Measured rather than judged: see `quoteCard`. A Worker has no font
+ * metrics, so the wrap counts characters and the ceiling is chosen by
+ * rasterising the result and looking at where the ink ends.
+ */
+export const WRAP_CHARS = 36;
+
 /* Room for the receipt line and the label, which are not optional furniture. */
 const PAD = { top: 150, right: 120, bottom: 230, left: 160 } as const;
 
@@ -223,13 +232,31 @@ export function quoteCard(q: { quote: string; said?: string | null; source?: str
     return { svg: null, refused: [{ kind: "provenance", reason: "there is no quote to set" }] };
   }
 
-  /* Wrapped by measurement, not by a text engine we do not have: a 44px line
-     at this width holds about 42 characters. Breaking on words only, because
-     a quote broken mid-word is a quote nobody can read back. */
+  /*
+   * WRAPPED BY CHARACTER COUNT, AND THE CEILING IS MEASURED.
+   *
+   * There is no font metric available here — this runs in a Worker — so the
+   * wrap counts characters, and the only honest way to choose the number is
+   * to rasterise and look. It was 42, chosen as "about right for a 44px
+   * line", and measured in Chromium a 42-character line at 72px reached
+   * 1739px in DejaVu Sans against a 1920 frame: inside it, and outside the
+   * 160px right margin the rest of the picture keeps.
+   *
+   * THE FONT IS THE REASON THIS MATTERS. The two the design names are not in
+   * the render container, so the text is laid out by whatever fontconfig
+   * falls back to — and a quote whose last word runs off the frame is a
+   * quote the picture did not carry, which is the one thing this picture
+   * exists to do.
+   *
+   * 36 leaves room for a wider fallback than any measured here.
+   * scripts/check-graphics.cjs rasterises across several and fails on any
+   * overflow, so the number has a measurement behind it rather than an
+   * adjective.
+   */
   const lines: string[] = [];
   let line = "";
   for (const w of words.split(/\s+/)) {
-    if (line && `${line} ${w}`.length > 42) {
+    if (line && `${line} ${w}`.length > WRAP_CHARS) {
       lines.push(line);
       line = w;
     } else {
@@ -277,8 +304,15 @@ function frame(inner: string): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">` +
     `<rect width="${W}" height="${H}" fill="${C.canvas}"/>` +
     inner +
-    `<rect x="${W - 260}" y="64" width="${196}" height="52" rx="26" fill="${ACCENT.violet}" fill-opacity="0.18"/>` +
-    `<text x="${W - 162}" y="98" text-anchor="middle" font-family="${FONT.mono}" font-size="26" fill="${ACCENT.violet}">${esc(KIND_LABEL.synthetic)}</text>` +
+    /*
+     * NAMED, like the bars, so a check can tell the picture's CONTENT from
+     * its furniture. The badge sits in the corner on purpose and reaches
+     * nearer the edge than any body text is allowed to — measured against a
+     * body-text margin it failed ten rasterisations, all of them for the
+     * same reason and none of them a bug.
+     */
+    `<rect class="label" x="${W - 260}" y="64" width="${196}" height="52" rx="26" fill="${ACCENT.violet}" fill-opacity="0.18"/>` +
+    `<text class="label" x="${W - 162}" y="98" text-anchor="middle" font-family="${FONT.mono}" font-size="26" fill="${ACCENT.violet}">${esc(KIND_LABEL.synthetic)}</text>` +
     `</svg>`
   );
 }

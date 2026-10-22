@@ -501,6 +501,48 @@ function render(plan, res) {
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-avoid_negative_ts", "make_zero", "-y", out,
           ]);
+        } else if (cut.svg) {
+          // A GENERATED PICTURE: words set as type, no file.
+          //
+          // "Graphics are code, never pixels" (invariant 8), so the Worker
+          // sends an SVG that src/graphics.ts drew from the design tokens and
+          // rsvg-convert turns it into one frame. No diffusion model draws a
+          // word or a number, which is why this tier is a rasteriser and not
+          // an image API.
+          //
+          // THE BEAT USED TO VANISH. src/edl.ts dropped any non-footage block
+          // with no mediaKey, so a card somebody inserted held its place in
+          // the editor and the runtime and was simply absent from the export,
+          // with nothing said about it.
+          //
+          // Encoded to match every other part — same size, same codec, same
+          // audio format — because the concat below is a stream copy and will
+          // not join parts that differ. Silent, because a card has no
+          // recording: anullsrc rather than no audio stream at all, for the
+          // same reason.
+          const svgPath = `${dir}/card-${String(i).padStart(4, "0")}.svg`;
+          const pngPath = `${dir}/card-${String(i).padStart(4, "0")}.png`;
+          writeFileSync(svgPath, cut.svg);
+          const rs = spawn("rsvg-convert", ["-w", String(w), "-h", String(h), "-o", pngPath, svgPath]);
+          await new Promise((resolve, reject) => {
+            let err = "";
+            rs.stderr.on("data", (d) => { err += d; });
+            rs.on("error", reject);
+            rs.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`rsvg-convert: ${err}`))));
+          });
+          if (!existsSync(pngPath) || statSync(pngPath).size === 0) {
+            throw new Error("rsvg-convert produced nothing — the picture would be a blank frame");
+          }
+
+          const holdS = Math.max(0.1, cut.end_s - cut.start_s);
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS),
+            "-loop", "1", "-framerate", "30", "-t", holdS.toFixed(3), "-i", pngPath,
+            "-f", "lavfi", "-t", holdS.toFixed(3), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-shortest", "-avoid_negative_ts", "make_zero", "-y", out,
+          ]);
         } else if (cut.audioOnly) {
           // A VOICEOVER: sound, no picture.
           //

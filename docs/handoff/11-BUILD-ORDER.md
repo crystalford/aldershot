@@ -219,8 +219,39 @@ bed measures −21 dB in the gaps, −33 under the words, and **−33 across the
 Not in `npm run check` because it needs ffmpeg on PATH, same rule as
 `check:loudness`.
 
-Still owed in Phase 5: rasterising an SVG inside the container, so a
-generated picture reaches a render rather than only a browser.
+**A generated picture reaches the render now, and the hole was worse than a
+missing rasteriser.** `src/edl.ts` dropped every non-footage block with no
+file — `if (!block.mediaKey) continue` — so a card somebody inserted appeared
+in the editor, held its place in the runtime, and was simply absent from the
+export with nothing said about it. Invariant 7's shape of failure in the one
+place a person cannot check until the file comes back.
+
+A generated block carries its WORDS instead of a file. The Worker draws the
+SVG (`src/graphics.ts`, so the shared frame and the Generated label come with
+it), the container rasterises with `rsvg-convert` and encodes a silent still
+to match every other part, and the duration falls back to a reading time when
+nobody set one — the maker's own length always wins.
+
+**The fonts were the real finding.** Neither face the design names is in a
+debian-slim image, so the text would be laid out by whatever fontconfig falls
+back to — and doc 08 calls the generated still "the approval checkpoint", so
+a picture approved in Instrument Sans and rendered in DejaVu is not the
+picture that was approved. The container now installs the same woff2 the app
+serves, decompressed to TTF at build time; `npm run fonts` keeps the build
+context in step and the `fonts` gate rule fails when it drifts, byte for
+byte. The wrap ceiling came down from 42 characters to 36 because a 42-char
+line measured 1739px of a 1920 frame in a fallback face — outside the margin
+the rest of the picture keeps.
+
+Measured as far as this machine allows: `npm run check:graphics` rasterises
+both pictures across five fonts in Chromium and fails on any overflow or
+missing ink, and the container's exact ffmpeg encode was run on a real card
+and concatenated between two footage parts — 7.47s joined, the card's words
+present at t=3.0. What is NOT verified is the image build itself; there is no
+docker daemon here, so `librsvg2-bin`, the font conversion and the render
+path are written and unrun.
+
+Phase 5 is otherwise complete.
 
 ## Phase 6 — Before you post and export
 

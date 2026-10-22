@@ -17,6 +17,7 @@ import { timingForProject } from "./align-source.ts";
 import { sidecarWanted } from "./captions.ts";
 import { loudnessVerdict, parseLoudnorm } from "./loudness.ts";
 import { plan as duckPlan } from "./ducking.ts";
+import { quoteCard } from "./graphics.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
 import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
 import { loadRules } from "./rule-store.ts";
@@ -463,14 +464,21 @@ export async function runRender(
       (await presignGet(env, key, 7200)) ??
       (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${key}` : null);
 
-    const urls = await Promise.all(plan.cuts.map((c) => sign(c.key)));
+    /*
+     * A CARD HAS NO KEY, so it is not presigned and must not be checked.
+     *
+     * The guard below refuses the render when any url is missing, which is
+     * right for footage and would have failed every export containing a
+     * generated picture — the beat has no file at all, which is the point.
+     */
+    const urls = await Promise.all(plan.cuts.map((c) => (c.card ? null : sign(c.key))));
     /* And the voice over it, where there is one. B-roll with narration: the
        container mixes it over the picture with the picture's own audio ducked
        underneath, which it has been able to do since that branch was written
        and had never been given one to do it with. */
     const voiceUrls = await Promise.all(plan.cuts.map((c) => (c.voiceKey ? sign(c.voiceKey) : null)));
 
-    if (urls.some((u) => !u)) {
+    if (plan.cuts.some((c, i) => !c.card && !urls[i])) {
       return void (await fail("Couldn't give the encoder a way to read your footage."));
     }
     if (plan.cuts.some((c, i) => c.voiceKey && !voiceUrls[i])) {
@@ -498,11 +506,28 @@ export async function runRender(
         if (c.voiceKey) {
           console.log(`[render] duck ${c.key}: ${duck ? duck.why : "no word timings for this take"}`);
         }
+        /*
+         * A CARD CARRIES ITS SVG, not a url.
+         *
+         * Drawn here rather than in the container for the same reason the
+         * duck expression is: the container cannot import src/, and
+         * src/graphics.ts is where "graphics are code, never pixels" lives
+         * — the shared frame that draws the Generated label, the refusals,
+         * the tokens. A second copy over there is a second answer to what a
+         * generated picture looks like.
+         */
+        const card = c.card ? quoteCard({ quote: c.card }) : null;
+        if (c.card && !card?.svg) {
+          /* A card that cannot be drawn is a beat that would arrive as a
+             blank frame. Said out loud rather than shipped. */
+          console.warn(`[render] card for ${c.card.slice(0, 40)} could not be drawn`);
+        }
         return {
           ...c,
-          url: urls[i] as string,
+          ...(urls[i] ? { url: urls[i] as string } : {}),
           ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
           ...(duck?.expr ? { duckExpr: duck.expr } : {}),
+          ...(card?.svg ? { svg: card.svg } : {}),
         };
       }),
     };

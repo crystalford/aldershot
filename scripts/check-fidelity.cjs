@@ -292,6 +292,64 @@ function checkRoom() {
   }
 }
 
+/**
+ * FONTS — the container renders in the same faces the browser approved in.
+ *
+ * src/ui/fonts is the one source of truth and container/fonts is a copy,
+ * because wrangler builds the image with the Dockerfile's own directory as
+ * the build context and COPY cannot reach outside it. A symlink does not
+ * help — Docker copies the link, not its target.
+ *
+ * So the copy can fall behind, and this is what stops it. Doc 08 calls the
+ * generated still "the approval checkpoint": a picture approved in Instrument
+ * Sans and rendered in whatever fontconfig falls back to is not the picture
+ * that was approved, and nothing about that failure is visible until somebody
+ * compares an export with its preview.
+ *
+ * Byte-for-byte, not by name: a face replaced upstream keeps its filename.
+ */
+function checkFonts() {
+  const bad = [];
+  const from = path.join(ROOT, 'src/ui/fonts');
+  const to = path.join(ROOT, 'container/fonts');
+
+  const woff2 = (dir) =>
+    fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.woff2')).sort() : [];
+  const want = woff2(from);
+  const have = woff2(to);
+
+  if (!want.length) {
+    fail('fonts', 'src/ui/fonts has no faces in it, which cannot be right.', 'nothing to compare');
+    return;
+  }
+
+  for (const f of want) {
+    if (!have.includes(f)) {
+      bad.push(`${f} — the app serves it and the container has never seen it`);
+      continue;
+    }
+    if (!fs.readFileSync(path.join(from, f)).equals(fs.readFileSync(path.join(to, f)))) {
+      bad.push(`${f} — the app's copy and the container's differ`);
+    }
+  }
+  for (const f of have) {
+    if (!want.includes(f)) bad.push(`${f} — in container/fonts and served by nothing`);
+  }
+
+  /* And the Dockerfile has to actually install them, or the copy is a
+     directory nobody reads. */
+  const docker = fs.readFileSync(path.join(ROOT, 'container/Dockerfile'), 'utf8');
+  if (!/COPY\s+fonts\//.test(docker)) bad.push('container/Dockerfile never copies fonts/ in');
+  if (!/fc-cache/.test(docker)) bad.push('container/Dockerfile never runs fc-cache, so fontconfig will not see them');
+  if (!/librsvg2-bin/.test(docker)) bad.push('container/Dockerfile has no SVG rasteriser, so a generated picture cannot be drawn');
+
+  if (bad.length) {
+    fail('fonts', 'The render would set its type in a different face from the one approved. `npm run fonts`.', bad.join('\n'));
+  } else {
+    pass('fonts', `${want.length} faces shared with the container, byte for byte`);
+  }
+}
+
 /** Every .ts/.cjs/.mjs under a directory. */
 function walkAny(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -1773,6 +1831,7 @@ function checkSchema() {
 checkTemplate();
 checkWired();
 checkRoom();
+checkFonts();
 checkConventions();
 checkReachable();
 checkSchema();
