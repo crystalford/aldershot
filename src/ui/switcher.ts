@@ -16,7 +16,7 @@
  * only opens and closes the panel.
  */
 
-import { C, FONT, RADIUS, SIZE, ACCENT } from "./tokens.ts";
+import { C, FONT, RADIUS, SIZE, ACCENT, accentBg } from "./tokens.ts";
 import { esc } from "./shell.ts";
 
 export interface SwitchItem {
@@ -114,4 +114,54 @@ export function switcher(label: string, items: SwitchItem[], openId: string | nu
       </a>
     </div>
   </span>`;
+}
+
+/**
+ * THE SOURCE CHIPS — a lettered square per video the cut is made of.
+ *
+ * One Take puts them in the title row, right of the name: A, B, C, each
+ * coloured, each carrying the video's name and length in its title. They
+ * are how a person follows "which video is this line from" down a page of
+ * blocks without reading a filename on every one.
+ *
+ * POSITIONAL, NOT INITIALS. The prototype's keys are A/B/C in the order the
+ * cut uses them, and that is better than a first letter: two videos called
+ * "Tuesday" would both read T, and the letter is meant to tell them apart.
+ *
+ * The colours are the accents in the prototype's own order for A, B and C —
+ * cyan, green, violet — then the two it does not get to. Past five it
+ * starts again, which is the honest limit of a one-letter label.
+ */
+export const CHIP_COLOURS = [ACCENT.cyan, ACCENT.green, ACCENT.violet, ACCENT.gold, ACCENT.red] as const;
+
+/** A, B, C … and AA after Z, because a cut of 27 videos is not impossible. */
+export function letterFor(i: number): string {
+  let n = i;
+  let out = "";
+  do {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return out;
+}
+
+export interface ChipSource {
+  id: string;
+  title: string;
+  duration_s: number | null;
+}
+
+/** "Tuesday · kitchen · 41:06", or just the name when the length is unknown. */
+export function chipTitle(s: ChipSource): string {
+  return s.duration_s ? `${s.title} · ${clock(s.duration_s)}` : s.title;
+}
+
+export function sourceChips(sources: ChipSource[]): string {
+  if (!sources.length) return "";
+  return `<span style="flex:none;display:flex;align-items:center;gap:5px">${sources
+    .map((s, i) => {
+      const colour = CHIP_COLOURS[i % CHIP_COLOURS.length];
+      return `<a href="/sources/${esc(s.id)}" title="${esc(chipTitle(s))}" style="flex:none;width:20px;height:20px;border-radius:5px;background:${accentBg(colour)};color:${colour};font-size:${SIZE.pill};font-weight:600;font-family:${FONT.mono};display:flex;align-items:center;justify-content:center;text-decoration:none">${letterFor(i)}</a>`;
+    })
+    .join("")}</span>`;
 }

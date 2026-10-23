@@ -771,3 +771,50 @@ export async function getBeats(db: D1Database, projectId: string): Promise<Beat[
     .all<Beat>();
   return results ?? [];
 }
+
+/**
+ * THE VIDEOS THIS CUT IS MADE OF, in the order it first uses them.
+ *
+ * One Take's title row carries a small lettered square per video — A, B, C
+ * — coloured, with the video's name and length in its title. They are
+ * positional labels, not initials: A is the first video you hear.
+ *
+ * FIRST USE, which is why it is MIN(idx) rather than a name or a date. Two
+ * videos called "Tuesday" would be indistinguishable by title, and the
+ * letter has to mean something a person can follow down the page.
+ *
+ * A cut of one recording has no clip beats at all — it is segments of its
+ * own source — so the caller passes that source id and gets the one chip.
+ */
+export interface CutSource {
+  id: string;
+  title: string;
+  duration_s: number | null;
+}
+
+export async function sourcesInCut(
+  db: D1Database,
+  projectId: string,
+  ownSourceId: string | null,
+): Promise<CutSource[]> {
+  if (ownSourceId) {
+    const own = await db
+      .prepare(`SELECT id, title, duration_s FROM sources WHERE id = ?`)
+      .bind(ownSourceId)
+      .first<CutSource>();
+    return own ? [own] : [];
+  }
+  const { results } = await db
+    .prepare(
+      `SELECT s.id AS id, s.title AS title, s.duration_s AS duration_s
+         FROM beats b
+         JOIN v2_clips c ON c.id = b.clip_id
+         JOIN sources s ON s.id = c.source_id
+        WHERE b.project_id = ?
+        GROUP BY s.id
+        ORDER BY MIN(b.idx)`,
+    )
+    .bind(projectId)
+    .all<CutSource>();
+  return results ?? [];
+}

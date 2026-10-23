@@ -120,3 +120,63 @@ test("the client only opens and closes it", () => {
   assert.match(mine, /querySelectorAll\("\.switch-row, \.switch-room"\)/);
   assert.match(mine, /row\.addEventListener\("click", shut\);/);
 });
+
+/**
+ * THE SOURCE CHIPS — a lettered square per video the cut is made of.
+ *
+ * One Take puts them in the title row. They are how a person follows "which
+ * video is this line from" down a page of blocks without a filename on
+ * every one.
+ */
+import { CHIP_COLOURS, chipTitle, letterFor, sourceChips } from "../src/ui/switcher.ts";
+
+const src = (id: string, title: string, duration_s: number | null = 2466) => ({ id, title, duration_s });
+
+test("the letters are positional, not initials", () => {
+  /*
+   * Two videos called "Tuesday" would both read T, and the letter exists to
+   * tell them apart. A is the first video the cut uses.
+   */
+  const html = sourceChips([src("s1", "Tuesday · kitchen"), src("s2", "Tuesday · the drive")]);
+  const letters = [...html.matchAll(/>([A-Z]+)<\/a>/g)].map((m) => m[1]);
+  assert.deepEqual(letters, ["A", "B"]);
+});
+
+test("a chip names its video and how long it is", () => {
+  assert.equal(chipTitle(src("s1", "Tuesday · kitchen", 2466)), "Tuesday · kitchen · 41:06");
+  /* A video whose length is not known yet does not claim one. */
+  assert.equal(chipTitle(src("s1", "Tuesday · kitchen", null)), "Tuesday · kitchen");
+  assert.equal(chipTitle(src("s1", "Tuesday · kitchen", 0)), "Tuesday · kitchen");
+});
+
+test("each chip goes to its video", () => {
+  const html = sourceChips([src("abc", "Tuesday")]);
+  assert.match(html, /<a href="\/sources\/abc"/);
+});
+
+test("no videos, no chips — not an empty row", () => {
+  assert.equal(sourceChips([]), "");
+});
+
+test("the colours are the design's, and they run out honestly", () => {
+  /* Past five one-letter labels stop being distinguishable by colour, so it
+     starts again rather than inventing a sixth accent — src/ui/icons.ts
+     makes the same argument about shapes. */
+  assert.equal(CHIP_COLOURS.length, 5);
+  const html = sourceChips(Array.from({ length: 6 }, (_, i) => src(`s${i}`, `v${i}`)));
+  const colours = [...html.matchAll(/;color:(#[0-9A-Fa-f]{6});/g)].map((m) => m[1]);
+  assert.equal(colours.length, 6);
+  assert.equal(colours[0], colours[5], "the sixth starts the palette again");
+  assert.equal(new Set(colours.slice(0, 5)).size, 5, "the first five are all different");
+});
+
+test("the letters keep going past Z", () => {
+  /* A cut of twenty-seven videos is not impossible, and "A" twice would be
+     worse than "AA". */
+  assert.equal(letterFor(0), "A");
+  assert.equal(letterFor(25), "Z");
+  assert.equal(letterFor(26), "AA");
+  assert.equal(letterFor(27), "AB");
+  const many = Array.from({ length: 30 }, (_, i) => letterFor(i));
+  assert.equal(new Set(many).size, 30, "no two videos share a letter");
+});

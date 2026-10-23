@@ -28,7 +28,7 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { GRADE_NAME, grade, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
-import { switcher, type SwitchItem } from "../switcher.ts";
+import { sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -75,6 +75,13 @@ export interface CutData {
    * room, which is still true.
    */
   projects?: SwitchItem[];
+  /**
+   * The videos this cut draws on, in the order it first uses them — the
+   * lettered chips in the title row. Optional for the same reason
+   * `projects` is: a caller that predates it renders no chips, which is
+   * true of a cut nothing has been assembled into.
+   */
+  sources?: ChipSource[];
   /**
    * How much the assistant decides — the composer's dial (src/decide.ts).
    *
@@ -1120,6 +1127,9 @@ export function renderCut(d: CutData): string {
        could disagree is worse than none. -->
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     ${switcher(d.title, d.projects ?? [], d.projectId)}
+    <!-- The videos this cut is made of, lettered in the order it uses them.
+         One Take puts them here, beside the name. -->
+    ${sourceChips(d.sources ?? [])}
     <!--
       TWO READINGS OF THE SAME EDIT.
 
