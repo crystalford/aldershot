@@ -263,3 +263,64 @@ test("every moment row is pressable, because every row's note promises it", () =
   assert.match(html, /data-moment="m2" data-in="0"/, "and each carries which way it would go");
   assert.match(html, /data-moment="m1" data-in="1"/);
 });
+
+/**
+ * THE TITLE ROW CARRIES EXPORT, AND THERE IS NO BOTTOM BAR.
+ *
+ * One Take is a 100vh shell whose second row never scrolls away, with
+ * Export at its right end labelled with what you would get. The build had a
+ * sticky strip across the bottom of the page holding Export, the kept
+ * count, the saved note and what was outstanding — a bar the design does
+ * not have, competing with the composer for the bottom of the screen.
+ */
+test("Export is in the title row, labelled with the runtime", () => {
+  const html = renderCut({ ...base, runtimeMs: 359_000 });
+  const head = html.slice(0, html.indexOf("THE RULES"));
+  assert.match(head, /class="export-open"/, "Export is above the fold, not below it");
+  assert.match(head, /Export <span id="cut-runtime" data-content>5:59<\/span>/);
+  /* "Export as" was the old label. The runtime is the thing you are about
+     to commit to, and it used to be two inches away in another bar. */
+  assert.ok(!/Export as/.test(html));
+});
+
+test("there is no bar across the bottom", () => {
+  /*
+   * The thing it held is all in the title row now. A second sticky strip at
+   * the foot of the page was also 55px the editor's left column did not
+   * have — the conversation was being crushed to 125px and the composer had
+   * ended up underneath this very bar.
+   */
+  const html = renderCut(base);
+  assert.ok(!/position:sticky;bottom:0/.test(html), "nothing is pinned to the bottom");
+});
+
+test("the title row does not scroll away", () => {
+  /*
+   * Which is what makes moving Export there safe. The prototype's row is in
+   * a fixed-height shell and never moves; the build's page scrolls the
+   * document, so a row that scrolled would put Export further out of reach
+   * than the bar it replaced. 52px is the nav's own height.
+   */
+  const html = renderCut(base);
+  assert.match(html, /position:sticky;top:52px/);
+});
+
+test("the two numbers are two elements, and both are named", () => {
+  /*
+   * They were one string — "5 kept · 0:20" — in one span, and the client
+   * split it apart with a regex to retotal after a strike. The kept count
+   * is a mono note in the title row and the runtime is inside the Export
+   * button's label, so there is nothing to parse.
+   */
+  const html = renderCut({ ...base, keptCount: 7, runtimeMs: 125_000 });
+  assert.match(html, /id="cut-kept"[^>]*>7 kept</);
+  assert.match(html, /id="cut-runtime"[^>]*>2:05</);
+
+  const client = readFileSync(join(import.meta.dirname, "..", "src", "ui", "client.ts"), "utf8");
+  assert.match(client, /if \(footKept\) footKept\.textContent = keptTotal \+ " kept";/);
+  assert.match(client, /if \(footRuntime\) footRuntime\.textContent = clock\(ms\);/);
+  assert.ok(
+    !/footRuntime\?\.textContent \|\| ""\)\.split\("kept"\)/.test(client),
+    "nothing parses the two numbers back out of one string",
+  );
+});

@@ -1125,7 +1125,16 @@ export function renderCut(d: CutData): string {
        with you as you scroll, so it is the one that keeps them. The ids
        remain because the client retotals by id and a second display that
        could disagree is worse than none. -->
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <!--
+    STICKY UNDER THE NAV, which is what makes moving Export here safe.
+    
+    One Take is a 100vh shell whose second row never scrolls away; the
+    build's page scrolls the document, so a title row that scrolled would
+    take Export with it and leave the control further out of reach than the
+    bottom bar it replaced. 52px is the nav's height — the row sits
+    directly under it.
+  -->
+  <div style="position:sticky;top:52px;z-index:4;margin:0 -4px;padding:10px 4px;background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     ${switcher(d.title, d.projects ?? [], d.projectId)}
     <!-- The videos this cut is made of, lettered in the order it uses them.
          One Take puts them here, beside the name. -->
@@ -1150,6 +1159,43 @@ export function renderCut(d: CutData): string {
     <!-- Rename, duplicate, delete. It was on the back-link row that this
          replaced; it is a control and had to come with it. -->
     <span style="flex:none">${itemMenu("projects", d.projectId, d.title, "cut")}</span>
+    <!--
+      EXPORT IS HERE, which is where One Take has it: top right of the title
+      row, labelled with what you would get. The build had a sticky bar
+      glued to the bottom of the page carrying it, and the prototype has no
+      bottom bar at all — it is a 100vh shell whose second row never scrolls
+      away, so the control is always to hand without a bar to hold it.
+
+      The label is the prototype's shape, "Export 5:59", rather than "Export
+      as": the runtime is the thing you are about to commit to and it was
+      previously two inches away in a different bar.
+    -->
+    <button class="export-open" data-project="${esc(d.projectId)}" style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:7px 15px;border-radius:5px;background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export <span id="cut-runtime" data-content>${hms(d.runtimeMs / 1000)}</span></button>
+  </div>
+  <!--
+    WHAT THE CUT IS AND WHETHER IT SAVED, in the prototype's own slots.
+    
+    One Take's title row carries two quiet mono notes after the name, and
+    this is what the build has to put in them: how much is kept, whether
+    the last gesture landed, and what is still outstanding. They were in
+    the bottom bar with Export; the bar is gone and they are not.
+
+    (No backticks in here. This is an HTML comment inside a template
+    literal, so it is text to the parser, and one backtick ends the
+    literal — which is what the template rule in check-fidelity.cjs was
+    written for, and what just happened writing this very comment.)
+  -->
+  <div style="margin-top:6px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-family:${FONT.mono};font-size:${SIZE.meta}">
+    <span id="cut-kept" data-content style="flex:none;color:${C.ink45}">${d.keptCount} kept</span>
+    <span id="saved-state" data-content hidden style="flex:none;color:${C.ink32};white-space:nowrap"></span>
+    ${
+      /* Only when something IS outstanding. "every beat is filled." on a cut
+         with nothing in it is noise, and on a finished one it is a pat on the
+         back nobody asked for. */
+      d.beats.length && buildSummary(d.beats) !== "every beat is filled."
+        ? `<span data-content style="flex:none;color:${ACCENT.gold};white-space:nowrap">${esc(buildSummary(d.beats))}</span>`
+        : ""
+    }
   </div>`;
 
   /*
@@ -1354,20 +1400,18 @@ export function renderCut(d: CutData): string {
     -->
     <div class="editor-player">${player}${sourceLine}</div>
   </div>
-  <div style="position:sticky;bottom:0;margin-top:18px;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:${RADIUS.card};background:rgba(16,16,19,0.92);backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);flex-wrap:wrap">
-    <span id="cut-runtime" data-content style="font-size:${SIZE.secondary};color:${C.ink70};font-family:${FONT.mono}">${d.keptCount} kept · ${hms(d.runtimeMs / 1000)}</span>
-    <!-- Every gesture writes immediately and the page never said so, on a
-         product where each click alters a video. Quiet until there is
-         something true to report. -->
-    <span id="saved-state" data-content hidden style="font-size:${SIZE.meta};color:${C.ink32};white-space:nowrap"></span>
-    ${
-      /* Only when something IS outstanding. "every beat is filled." on a cut
-         with nothing in it is noise, and on a finished one it is a pat on the
-         back nobody asked for. */
-      d.beats.length && buildSummary(d.beats) !== "every beat is filled."
-        ? `<span data-content style="font-size:${SIZE.secondary};color:${ACCENT.gold};white-space:nowrap">${esc(buildSummary(d.beats))}</span>`
-        : ""
-    }
-    <button class="export-open" data-project="${esc(d.projectId)}" style="margin-left:auto;flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Export as</button>
-  </div>`;
+  <!--
+    THE EXPORT BAR WAS HERE, and One Take has no such thing.
+    
+    It was a sticky strip across the bottom holding the kept count, the
+    saved note, what was outstanding and Export. Every one of those is in
+    the title row now, where the prototype puts them — and the row is
+    sticky, so they are to hand at any scroll position without a second bar
+    competing with the composer for the bottom of the screen.
+    
+    It was also 55px that the editor's left column did not have: the
+    conversation pane was being crushed to 125px, which check-editor.cjs
+    calls not even one exchange, and the composer had ended up underneath
+    this very bar.
+  -->`;
 }

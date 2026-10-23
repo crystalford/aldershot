@@ -895,7 +895,11 @@ if (blocksEl) {
      a moment from THIS video is already a block and only wants moving. */
   const sourceId = blocksEl.getAttribute("data-source");
   const video = document.querySelector("#cut-video");
+  /* Two spans now, not one. The kept count sits in the title row's mono
+     note and the runtime is inside the Export button's own label — "Export
+     0:20" — which is where One Take puts it. */
   const footRuntime = document.querySelector("#cut-runtime");
+  const footKept = document.querySelector("#cut-kept");
 
   /*
    * Paint each block its own frame.
@@ -1236,10 +1240,10 @@ if (blocksEl) {
    * The server's own figure is authoritative and comes back with every cut;
    * the local step is optimistic and gets corrected a moment later.
    */
-  /* Seeded from the bar, which is now the only place these numbers are
-     shown. They used to be in the header too — the same two figures twice on
-     one screen — and this read the header's copy. */
-  let keptTotal = Number((footRuntime?.textContent || "").split("kept")[0].replace(/[^0-9]/g, "")) || 0;
+  /* Seeded from the title row's kept note. It used to be seeded from a bar
+     that carried both numbers in one string and had to be split apart; they
+     are two elements now, so there is nothing to parse. */
+  let keptTotal = Number((footKept?.textContent || "").replace(/[^0-9]/g, "")) || 0;
 
   const retotal = (afterS, keptFromServer) => {
     if (typeof keptFromServer === "number") keptTotal = keptFromServer;
@@ -1248,7 +1252,8 @@ if (blocksEl) {
       : [...blocksEl.querySelectorAll(".blk")]
           .filter((el) => el.dataset.struck !== "1")
           .reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
-    if (footRuntime) footRuntime.textContent = keptTotal + " kept · " + clock(ms);
+    if (footKept) footKept.textContent = keptTotal + " kept";
+    if (footRuntime) footRuntime.textContent = clock(ms);
   };
 
   /*
@@ -4194,10 +4199,14 @@ function clockOf(secs) {
  */
 const aside = $(".asst");
 if (aside) {
-  const bar = $("#cut-runtime") && $("#cut-runtime").closest("div");
+  /*
+   * NO BAR ANY MORE. It used to stop above the sticky export bar; the bar
+   * is gone — One Take has no such thing and its Export is in the title row
+   * — so the column simply runs to the bottom of the window. That is 55px
+   * the conversation did not have, which is most of what it was short of.
+   */
   let fitted = "";
   const fitAside = () => {
-    if (!bar) return;
     /*
      * WHERE THE COLUMN STARTS RIGHT NOW, not where it starts at the top of
      * the page.
@@ -4208,10 +4217,9 @@ if (aside) {
      * room is what the conversation is short of.
      */
     const startsAt = Math.max(0, aside.getBoundingClientRect().top);
-    const barHigh = bar.getBoundingClientRect().height || 56;
     /* 360 is the floor shell.ts already sets: below that the conversation
        has no room and a scrollbar is the better answer than a crush. */
-    const room = Math.max(360, window.innerHeight - startsAt - barHigh);
+    const room = Math.max(360, window.innerHeight - startsAt);
     const want = room + "px";
     /* Only when it actually changes. The observer below watches the page,
        and the page contains this column — writing the same height back

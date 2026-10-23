@@ -408,52 +408,22 @@ async function main() {
   );
 
   /*
-   * THE COMPOSER IS NEVER UNDER THE EXPORT BAR.
+   * THE EXPORT BAR IS GONE, and these two assertions with it.
    *
-   * The bar is sticky-bottom and paints over whatever is beneath it, and the
-   * assistant column is sticky-top — whose offset only applies once the page
-   * has scrolled. Sized from the nav alone, the composer sat under the bar at
-   * the top of the page and was unusable until you scrolled. Checked in both
-   * states because they are genuinely different geometries.
+   * They checked that the composer never ended up underneath a sticky strip
+   * across the bottom of the page — and they were right to: it had, by two
+   * pixels at the top of the page, and the measurement they printed is what
+   * found it. But One Take has no bottom bar at all. Its Export is in the
+   * title row, which never scrolls away, and the build's is there now too.
+   *
+   * What they were protecting is still protected. "the composer is visible
+   * without opening anything" above asserts the control is on screen, and
+   * "the conversation has room for two exchanges" asserts that the column
+   * above it has not been crushed to make space. Keeping a check about the
+   * geometry of a bar that does not exist would be a green tick measuring
+   * nothing, which is the failure this file's own header is about.
    */
-  for (const where of ["at the top", "scrolled"]) {
-    if (where === "scrolled") {
-      await page.evaluate(() => window.scrollTo(0, 600));
-      await page.waitForTimeout(250);
-    }
-    /* THE NUMBERS, NOT JUST THE CROSS. This failed once and said only that
-       it had; working out BY HOW MUCH, and from where, took a separate
-       script and three rounds of guessing. A geometry assertion that cannot
-       say what it measured is an assertion you have to re-measure by hand. */
-    const geo = await $(() => {
-      const foot = document.querySelector(".asst-foot");
-      const bar = document.querySelector("#cut-runtime").closest("div");
-      if (!foot || !bar) return null;
-      const a = document.querySelector(".asst");
-      return {
-        foot: Math.round(foot.getBoundingClientRect().bottom),
-        bar: Math.round(bar.getBoundingClientRect().top),
-        y: Math.round(window.scrollY),
-        /* The column and its children, because knowing the overlap without
-           knowing WHICH child is too tall took three rounds of guessing and
-           a separate script. */
-        dbg: a
-          ? (a.style.height || "unset") +
-            " top=" + Math.round(a.getBoundingClientRect().top) +
-            " barH=" + Math.round(bar.getBoundingClientRect().height) +
-            " ih=" + window.innerHeight +
-            " kids=" + [...a.children].map((c) => c.className + ":" + Math.round(c.getBoundingClientRect().height)).join(",")
-          : "no aside",
-      };
-    });
-    say(
-      !!geo && geo.foot <= geo.bar + 1,
-      "the composer clears the export bar (" + where + ")",
-      geo && geo.foot > geo.bar + 1
-        ? "composer ends at " + geo.foot + ", bar starts at " + geo.bar + " (scrollY " + geo.y + "; " + geo.dbg + ")"
-        : undefined,
-    );
-  }
+
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(250);
 
