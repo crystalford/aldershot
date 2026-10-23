@@ -757,15 +757,45 @@ function rulesPanel(rules: CutData["rules"]): string {
     return i < 0 ? "" : String(i + 1).padStart(2, "0");
   };
 
+  /*
+   * A RULE IS A CARD WITH A SWITCH, which is what One Take has and what the
+   * build did not.
+   *
+   * It was a flat row that was itself a button: number, text, effect. You
+   * could press it and the text would strike through, and that strike was
+   * the only thing on screen saying what state it was in. Invariant 1 is
+   * that the rules ARE the cut — "a cut is re-produced from rules, never
+   * stored as an outcome" — so switching one off is the central gesture of
+   * the product, and it was a control you could not see the state of
+   * without reading.
+   *
+   * The card, the ring, the switch and its knob are the prototype's own
+   * values. The toggle is the button; the card is not, because a card you
+   * cannot click anywhere on is a card whose hit area matches its meaning.
+   */
   const rows = (list: CutData["rules"]) => list
     .map(
-      (r) => `<button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
-        style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;width:100%;text-align:left;
-        background:none;border:none;padding:3px 0;cursor:pointer;font-family:inherit;color:inherit">
-        <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${number(r)}</span>
-        <span data-content style="flex:1 1 150px;min-width:min(140px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,${r.on ? "0.8" : "0.38"});line-height:1.5;${r.on ? "" : "text-decoration:line-through;text-decoration-color:rgba(236,236,241,0.3)"}">${esc(r.text)}</span>
-        <span data-content style="flex:none;font-size:${SIZE.meta};color:${r.on ? ACCENT.gold : C.ink32}">${esc(r.effect)}</span>
-      </button>`,
+      (r) => `<div class="rule-card" style="display:flex;gap:12px;align-items:flex-start;padding:12px 13px;border-radius:9px;background:#15151A;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);transition:background .14s,box-shadow .14s">
+        <span data-content style="flex:none;width:16px;padding-top:2px;font-size:${SIZE.pill};font-family:${FONT.mono};color:${C.ink32};white-space:nowrap">${number(r)}</span>
+        <span style="flex:1;min-width:0">
+          <span data-content style="display:block;font-size:${SIZE.body};line-height:1.55;color:${
+            r.on ? C.ink : C.ink45
+          };${r.on ? "" : "text-decoration:line-through;"}text-wrap:pretty">${esc(r.text)}</span>
+          <span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};line-height:1.5;color:${
+            r.on ? "rgba(236,236,241,0.5)" : C.ink32
+          }">${esc(r.effect)}</span>
+        </span>
+        <button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
+          title="${r.on ? "Turn this rule off" : "Turn it back on"}"
+          aria-pressed="${r.on ? "true" : "false"}"
+          style="flex:none;position:relative;width:27px;height:15px;margin-top:2px;border-radius:99px;border:none;padding:0;background:${
+            r.on ? ACCENT.green : "#2E2E36"
+          };cursor:pointer;transition:background .14s">
+          <span style="position:absolute;top:2.5px;left:${r.on ? "14px" : "2.5px"};width:10px;height:10px;border-radius:99px;background:${
+            r.on ? C.canvas : C.ink45
+          };transition:left .14s"></span>
+        </button>
+      </div>`,
     )
     .join("");
 
@@ -924,13 +954,24 @@ function assistant(d: CutData, player: string): string {
       is the composer, and the composer ended two pixels under the export
       bar the moment the dial went in beside the mic.
 
-      So it is a flex BASIS with a zero floor: 190 when there is room, less
-      when the only other option is a control nobody can press. The thing
-      it was protecting from is bounded separately — .asst-top carries
-      max-height:50% — and the two-exchange assertion in check-editor.cjs
-      is what says whether that is still enough.
+      So it is a flex basis of 190 that NEVER SHRINKS — flex-shrink 0 — and
+      grows when there is room. It used to be a hard min-height, which is
+      the same number with a worse failure: a child that cannot shrink and
+      has no say in the layout does not win the space, it pushes whatever
+      comes after it out of the column, and what came after it was the
+      composer.
+      
+      With shrink at zero the deficit falls entirely on .asst-top, which is
+      the right one to give: it has max-height:50%, min-height:0 and its own
+      scrollbar, and it is a LIST — the rules — where this is a conversation.
+      That is what the original note here argued for and what the hard floor
+      was not able to do.
+      
+      check-editor.cjs's two-exchange assertion is what says whether 190 is
+      still enough, and it caught this twice: once when the dial went into
+      the composer, and once when every rule became a card with a switch.
     -->
-    <div class="asst-talk" style="flex:1 1 190px;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+    <div class="asst-talk" style="flex:1 0 190px;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
       ${talk}
     </div>
 

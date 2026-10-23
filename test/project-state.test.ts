@@ -120,12 +120,22 @@ test("rules are numbered, and a hand decision does not take a number", () => {
      words — which is what the first version of this sliced from. */
   const pane = html.slice(html.indexOf(">THE RULES<"), html.indexOf("asst-talk"));
 
-  assert.match(pane, /01[\s\S]{0,160}Keep the parts where/);
-  assert.match(pane, /02[\s\S]{0,160}Take out the hellos/);
-  assert.match(pane, /03[\s\S]{0,160}Keep it under 2 minutes/);
-  assert.ok(!/04/.test(pane), "the hand rule must not be numbered 04");
-  /* The gap is the whole button's markup — a style block alone is 300
-     characters — so the window has to allow for it. */
+  /*
+   * PER CARD, not within N characters of each other.
+   *
+   * These were proximity assertions — the number within 160 characters of
+   * its text — which is a proxy for "they belong to the same rule" that
+   * breaks the moment the markup between them grows. It did: a rule became
+   * a card with a switch in it. Splitting on the card is the claim itself,
+   * and it cannot be broken by styling.
+   */
+  const cards = pane.split('class="rule-card"').slice(1);
+  const numbered = (n: string, text: string) =>
+    cards.some((c) => new RegExp(`>${n}</span>`).test(c) && c.includes(text));
+  assert.ok(numbered("01", "Keep the parts where"), "rule 01 is the first rule");
+  assert.ok(numbered("02", "Take out the hellos"));
+  assert.ok(numbered("03", "Keep it under 2 minutes"));
+  assert.ok(!/>04</.test(pane), "the hand rule must not be numbered 04");
   assert.match(pane, /&gt;by hand|>by hand</, "a section of its own");
   assert.match(pane, /by hand[\s\S]{0,900}Keep this one whatever/, "and the hand rule is in it");
 });
@@ -153,8 +163,11 @@ test("a moment's rule number is the pane's rule number", () => {
   }
   /* The rule each note names must exist in the pane at that number. */
   const pane = html.slice(html.indexOf(">THE RULES<"), html.indexOf("asst-talk"));
-  assert.match(pane, /01[\s\S]{0,160}Keep the parts where/);
-  assert.match(pane, /02[\s\S]{0,160}Take out the hellos/);
+  const cards2 = pane.split('class="rule-card"').slice(1);
+  const at = (n: string, text: string) =>
+    cards2.some((c) => new RegExp(`>${n}</span>`).test(c) && c.includes(text));
+  assert.ok(at("01", "Keep the parts where"), "the note says rule 01, and 01 is that rule");
+  assert.ok(at("02", "Take out the hellos"), "and the note that says 02 points at that one");
 });
 
 test("the centre has the four tabs One Take names", () => {
@@ -416,4 +429,72 @@ test("the line that caused it is on the block beside the word", () => {
   });
   assert.match(html, />Strong</);
   assert.match(html, />rule 01</);
+});
+
+/**
+ * A RULE IS A CARD WITH A SWITCH.
+ *
+ * Invariant 1: "Rules are the source of truth; a cut is re-produced from
+ * rules + moments, never stored as an outcome." Switching one off is the
+ * central gesture of the product — and it was a flat row that was itself a
+ * button, whose only indication of state was whether the text was struck
+ * through. One Take gives each rule a card and a real switch.
+ */
+/*
+ * AN OFF RULE, which the shared fixture does not have.
+ *
+ * Every rule in RULES is on, so until this existed the off path — the
+ * strike-through, the grey text, the knob on the left — was never rendered
+ * by any test in this file. The assertion that said so is the one that
+ * found it.
+ */
+const RULES_WITH_OFF = [...RULES.slice(0, 3), { ...RULES[1], id: "r-off", on: false }];
+
+test("every rule has a switch that shows its state", () => {
+  const html = renderCut({ ...base, rules: RULES_WITH_OFF });
+  const cards = html.split('class="rule-card"').slice(1);
+  assert.equal(cards.length, RULES_WITH_OFF.length, "one card per rule");
+
+  for (const c of cards) {
+    assert.match(c, /class="rule-toggle"[^>]*aria-pressed="(true|false)"/, "the switch says its state");
+  }
+  const on = cards.find((c) => /data-on="1"/.test(c));
+  const off = cards.find((c) => /data-on="0"/.test(c));
+  assert.ok(on && off, "the fixture needs one of each for this to measure anything");
+
+  /* The knob moves and the track changes colour — the two things that make a
+     switch readable without reading. */
+  assert.match(on, /left:14px/);
+  assert.match(off, /left:2\.5px/);
+  assert.match(on, /background:#5EC98F/, "on is the design's green");
+  assert.match(off, /background:#2E2E36/);
+  /* And it says what pressing it would do. */
+  assert.match(on, /title="Turn this rule off"/);
+  assert.match(off, /title="Turn it back on"/);
+});
+
+test("a rule that is off reads as off in the text too", () => {
+  /* The strike-through was the ONLY signal before the switch existed. It is
+     still right — a rule you have turned off is one you decided against —
+     but it is no longer carrying the whole state on its own. */
+  const html = renderCut({ ...base, rules: RULES_WITH_OFF });
+  const off = html.split('class="rule-card"').slice(1).find((c) => /data-on="0"/.test(c));
+  assert.ok(off);
+  assert.match(off, /text-decoration:line-through/);
+});
+
+test("the card is not the button", () => {
+  /*
+   * The whole row used to be the control, so a click anywhere on a rule —
+   * reading its effect line, selecting its text — toggled it. The hit area
+   * is the switch now, which is the only part that means "change this".
+   */
+  const html = renderCut({ ...base, rules: RULES });
+  const card = html.split('class="rule-card"')[1];
+  assert.ok(!/^[^<]*<button/.test(card), "the card does not open with a button");
+  /* Cut at the switch's own <button, not at its class attribute — slicing
+     to the class leaves the "<button " that opens it inside the window, and
+     the assertion failed on the thing it was looking for. */
+  const beforeToggle = card.slice(0, card.indexOf('<button class="rule-toggle"'));
+  assert.ok(!/<button/.test(beforeToggle), "nothing before the switch is a button");
 });
