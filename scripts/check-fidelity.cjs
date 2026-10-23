@@ -1571,6 +1571,37 @@ function checkConventions() {
       bad.push(rel(file) + ': score ?? 0 renders an unscored item as a verdict of zero');
     }
 
+    /*
+     * A SCORE ON SCREEN. Invariant 3.
+     *
+     *   "Reasons, not scores. No percentage reaches a user. Strong / Worth
+     *    a look / Long shot, with the line that caused it."
+     *
+     * The editor rendered a bare 70 in a green badge on every judged block
+     * for as long as blocks have had scores, with an invariant forbidding
+     * it in CLAUDE.md the whole time. Prose does not stop the next one.
+     *
+     * Interpolating a score into markup is the mechanical shape of it:
+     * `${b.score}` inside a template. Reading one to DECIDE something —
+     * gradeForScore, a sort, a filter — is not, which is why this looks for
+     * the interpolation and not the word.
+     */
+    /*
+     * THE EXPRESSION ITSELF MUST BE THE SCORE, not merely contain one.
+     *
+     * The first version matched any interpolation with "score" in it and
+     * flagged `${b.score != null ? ... : "none"}` — a score deciding a
+     * border, which is reading it rather than printing it. gradeForScore
+     * and a sort would have gone the same way. So this is a bare member
+     * expression: `${b.score}`, `${s?.score}`, `${m.score ?? 0}`. Anything
+     * with a call, a comparison or a ternary in it is a decision.
+     */
+    for (const m of src.matchAll(/\$\{\s*[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*\.score\s*(?:\?\?\s*\d+\s*)?\}/g)) {
+      bad.push(
+        rel(file) + ': ' + m[0] + ' puts a score on screen — invariant 3 wants Strong / Worth a look / Long shot',
+      );
+    }
+
     /* A control that is disabled in the markup itself can never become
        enabled — it is a promise the product cannot keep. Disabled by a
        condition is fine; that is a control with a reason. */
@@ -1583,7 +1614,7 @@ function checkConventions() {
   }
 
   if (bad.length) fail('conventions', 'A rule this codebase already states, broken again.', [...new Set(bad)].join('\n'));
-  else pass('conventions', 'no native players, empty grid tracks, zero-scores or permanently disabled controls');
+  else pass('conventions', 'no native players, empty grid tracks, scores on screen or permanently disabled controls');
 }
 
 /*

@@ -38,6 +38,40 @@ export const GRADE_NAME: Record<Grade, string> = {
 };
 
 /**
+ * THE MODEL'S OPINION OF A MOMENT, AS A WORD. Invariant 3.
+ *
+ *   "Reasons, not scores. No percentage reaches a user. Strong / Worth a
+ *    look / Long shot, with the line that caused it."
+ *
+ * The editor rendered `b.score` — a bare 70 in a green badge on every judged
+ * block — for as long as blocks have had scores. It is the same three words
+ * the shorts list already uses, so it is the same vocabulary rather than a
+ * second one, and the line that caused it is already on the block: the rule
+ * chip that says which rule put it in the cut, and the reason the scorer
+ * wrote.
+ *
+ * THE BANDS ARE THE ONES ALREADY BEING READ. scripts/read-labels.ts prints
+ * the scorer's own behaviour in 90-100, 80-89, 60-79 and below, and treats
+ * 80 and up as "the top score band" — so Strong is 80+, Worth a look is
+ * 60-79, and everything under is a Long shot. They are not tuned, and the
+ * honest way to tune them is that script: a flag rate that does not fall as
+ * the band rises means the score is not measuring what it says.
+ *
+ * A score of 0 is the ABSENCE of a verdict rather than a bad one — saveClips
+ * writes it for anything unrated — so an unjudged block has no word at all,
+ * which is what the conventions rule about `score ?? 0` is also about.
+ */
+export const STRONG_AT = 80;
+export const WORTH_AT = 60;
+
+export function gradeForScore(score: number | null | undefined): Grade | null {
+  if (typeof score !== "number" || !Number.isFinite(score) || score <= 0) return null;
+  if (score >= STRONG_AT) return "strong";
+  if (score >= WORTH_AT) return "worth";
+  return "long";
+}
+
+/**
  * THE TWO THE ACCEPTANCE NAMES ARE HARD; the rest are soft.
  *
  * A clip that ends mid-sentence or opens on a word pointing at something

@@ -25,7 +25,7 @@ import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
-import { GRADE_NAME, grade, type Grade } from "../../shorts.ts";
+import { GRADE_NAME, grade, gradeForScore, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
 import { sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
@@ -234,16 +234,35 @@ function blockRow(
             struck ? "text-decoration:line-through;" : ""
           }">${esc(b.text ?? "")}</textarea>`;
 
-  /* The model's opinion, when it has one. Absent is absent — an unjudged block
-     shows nothing rather than a zero, which would read as "bad". */
-  /* A zero is not a verdict, it is the absence of one. saveClips writes
-     score: 0 for anything the model did not rate, and rendering that as a
-     green badge told the user their line scored nothing — the comment below
-     has always said absent should look absent, and 0 slipped through it. */
-  const judged =
-    b.score != null && b.score > 0
-      ? `<span data-content style="flex:none;font-size:${SIZE.pill};font-weight:600;font-family:${FONT.mono};padding:2px 6px;border-radius:4px;background:${accentBg(ACCENT.green)};color:${ACCENT.green}">${b.score}</span>`
-      : "";
+  /*
+   * THE MODEL'S OPINION, AS A WORD. Invariant 3: "Reasons, not scores. No
+   * percentage reaches a user. Strong / Worth a look / Long shot, with the
+   * line that caused it."
+   *
+   * This was `${b.score}` — a bare 70 in a green badge, on every judged
+   * block, for as long as blocks have had scores. A number is exactly what
+   * the invariant forbids: it reads as precision the scorer does not have,
+   * and it gives a person nothing to disagree with. The word is the same
+   * one the shorts list uses, so there is one vocabulary; the line that
+   * caused it is already here, in the rule chip and the reason under the
+   * text.
+   *
+   * Absent is still absent. A score of 0 is the absence of a verdict rather
+   * than a bad one — saveClips writes it for anything unrated — so an
+   * unjudged block shows no word, which is what gradeForScore returns null
+   * for.
+   */
+  const verdict = gradeForScore(b.score);
+  const GRADE_INK: Record<string, string> = {
+    strong: ACCENT.green,
+    worth: C.ink70,
+    long: C.ink45,
+  };
+  const judged = verdict
+    ? `<span data-content style="flex:none;font-size:${SIZE.pill};font-weight:600;padding:2px 6px;border-radius:4px;background:${
+        verdict === "strong" ? accentBg(ACCENT.green) : C.pill
+      };color:${GRADE_INK[verdict]};white-space:nowrap">${GRADE_NAME[verdict]}</span>`
+    : "";
 
   const originTag =
     b.origin === "footage"

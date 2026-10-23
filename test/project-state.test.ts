@@ -12,12 +12,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderCut, type CutData } from "../src/ui/pages/cut.ts";
+import { GRADE_NAME, gradeForScore } from "../src/shorts.ts";
+import type { Block } from "../src/blocks.ts";
 
 /* A cut with nothing in it returns an empty state and no columns — correct,
    and the reason the first version of these tests saw none. */
+/*
+ * `origin: "segment"` IS NOT A BlockOrigin, and the cast was hiding it.
+ *
+ * The three are footage, voice and generated. This fixture said "segment"
+ * — a word from the block ID scheme, not the origin one — and `as never`
+ * meant nothing checked. blockRow branches on `origin === "footage"` for
+ * the frame, the short control and the origin tag, so every assertion in
+ * this file has been exercising the NOT-footage path while describing a
+ * cut of somebody's own video.
+ */
 const BLOCK = {
   id: "s:0",
-  origin: "segment",
+  origin: "footage" as const,
   start_ms: 0,
   end_ms: 20_000,
   text: "the first four weeks are about showing up",
@@ -27,7 +39,17 @@ const BLOCK = {
   why: null,
   label: null,
   mediaKey: null,
-} as never;
+  previewKey: null,
+  voiceKey: null,
+  posterKey: null,
+  /*
+   * TYPED, NOT `as never`. It was cast away, which meant `{...BLOCK, score}`
+   * would not compile — the spread of a `never` is not an object — and the
+   * tests that vary one field had nothing to vary. Typing it is also what
+   * makes a field renamed in Block break these rather than silently stop
+   * being set.
+   */
+} satisfies Block;
 
 const base: CutData = {
   projectId: "p1",
@@ -323,4 +345,75 @@ test("the two numbers are two elements, and both are named", () => {
     !/footRuntime\?\.textContent \|\| ""\)\.split\("kept"\)/.test(client),
     "nothing parses the two numbers back out of one string",
   );
+});
+
+/**
+ * INVARIANT 3, ON THE BLOCK.
+ *
+ *   "Reasons, not scores. No percentage reaches a user. Strong / Worth a
+ *    look / Long shot, with the line that caused it."
+ *
+ * The editor rendered `b.score` — a bare 70 in a green badge — on every
+ * judged block, for as long as blocks have had scores, with that invariant
+ * written down the whole time. Found by putting the prototype's project
+ * state beside the build's: the prototype's block carries "rule 01" and no
+ * number at all.
+ */
+test("a block says a word, never a number", () => {
+  const scored = (score: number | null) =>
+    renderCut({ ...base, blocks: [{ ...BLOCK, score }] });
+
+  assert.match(scored(92), />Strong</);
+  assert.match(scored(70), />Worth a look</);
+  assert.match(scored(30), />Long shot</);
+  for (const n of [92, 70, 30]) {
+    assert.ok(!new RegExp(`>${n}<`).test(scored(n)), `${n} must not reach the screen`);
+  }
+});
+
+test("absent is absent, and zero is absent too", () => {
+  /* saveClips writes score 0 for anything the model did not rate, so a zero
+     is the absence of a verdict rather than a bad one. A block with no word
+     is a block nobody judged. */
+  for (const none of [null, 0]) {
+    const html = renderCut({ ...base, blocks: [{ ...BLOCK, score: none }] });
+    for (const word of ["Strong", "Worth a look", "Long shot"]) {
+      assert.ok(!html.includes(`>${word}<`), `${none} must not read as ${word}`);
+    }
+  }
+});
+
+test("the bands are the ones already being read", () => {
+  /*
+   * scripts/read-labels.ts prints the scorer's own behaviour in 90-100,
+   * 80-89, 60-79 and below, and treats 80 and up as the top band. Strong is
+   * that band; Worth a look is 60-79. They are not tuned, and that script
+   * is how they get tuned — a flag rate that does not fall as the band
+   * rises means the score is not measuring what it says.
+   */
+  assert.equal(gradeForScore(80), "strong");
+  assert.equal(gradeForScore(79), "worth");
+  assert.equal(gradeForScore(60), "worth");
+  assert.equal(gradeForScore(59), "long");
+  assert.equal(gradeForScore(1), "long");
+  assert.equal(gradeForScore(0), null);
+  assert.equal(gradeForScore(null), null);
+  assert.equal(gradeForScore(undefined), null);
+  assert.equal(gradeForScore(Number.NaN), null);
+  /* One vocabulary, not two: the words are the shorts list's own. */
+  assert.equal(GRADE_NAME.strong, "Strong");
+  assert.equal(GRADE_NAME.worth, "Worth a look");
+  assert.equal(GRADE_NAME.long, "Long shot");
+});
+
+test("the line that caused it is on the block beside the word", () => {
+  /* The invariant is not "say a word instead" — it is "reasons, with the
+     line that caused it". The rule chip is that line. */
+  const html = renderCut({
+    ...base,
+    blocks: [{ ...BLOCK, score: 92 }],
+    blockRule: { [BLOCK.id]: "rule 01" },
+  });
+  assert.match(html, />Strong</);
+  assert.match(html, />rule 01</);
 });
