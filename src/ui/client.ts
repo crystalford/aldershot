@@ -4309,6 +4309,54 @@ if (roomComposer) {
    NOT routed through doUndoable. A toggle is its own inverse and is already
    reversible by pressing it again; an undo entry would be a second way to say
    the same thing that could disagree with the first. */
+/*
+ * CHOOSING A DIFFERENT ORDER, which is the one rule that is a choice of
+ * three rather than a yes/no.
+ *
+ * Same shape as the toggle below and for the same reason: an order rule
+ * changes which moments open the cut and in what sequence, so the page is
+ * re-produced from the rules rather than patched. A partial DOM update
+ * would be a second, drifting answer to what the cut is — invariant 1.
+ *
+ * The chip you are already on does nothing. The server says so too
+ * (unchanged: true), but a press that reloads the page to show you the
+ * same page is a press that looks broken.
+ */
+document.querySelectorAll(".rule-order").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const card = btn.closest(".rule-card");
+    const current = card && card.querySelector(".rule-order[data-current]");
+    if (current === btn) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ order: btn.getAttribute("data-order") }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".rule-toggle").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;

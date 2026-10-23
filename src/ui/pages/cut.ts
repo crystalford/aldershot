@@ -24,6 +24,7 @@ import { iconArrowDown, iconArrowUp, iconPause, iconPlay, iconPlus, iconSearch }
 import { hms, tc } from "./footage.ts";
 import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
+import { ORDERS, type Order } from "../../rules.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { GRADE_NAME, grade, gradeForScore, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
@@ -164,7 +165,23 @@ export interface CutData {
    * Empty for every edit that began with a video, because those are still the
    * staged editor's and have no rule set. An assembled cut has one.
    */
-  rules: Array<{ id: string; text: string; on: boolean; effect: string; hand: boolean }>;
+  /**
+   * The rules, as the pane shows them.
+   *
+   * `kind` and `order` are here for the one rule that has alternatives: an
+   * order rule offers the other two orders, which is a choice you make by
+   * pressing rather than by typing a sentence that parses to the same
+   * thing. Optional, because every other kind has neither.
+   */
+  rules: Array<{
+    id: string;
+    text: string;
+    on: boolean;
+    effect: string;
+    hand: boolean;
+    kind?: string;
+    order?: Order;
+  }>;
 }
 
 /**
@@ -773,6 +790,37 @@ function rulesPanel(rules: CutData["rules"]): string {
    * values. The toggle is the button; the card is not, because a card you
    * cannot click anywhere on is a card whose hit area matches its meaning.
    */
+  /*
+   * THE ONE RULE WITH ALTERNATIVES.
+   *
+   * An order rule is not a yes/no — it is a choice of three, and the other
+   * two are a press away. The prototype shows them as chips under the rule
+   * with the chosen one lit, and a line underneath saying why you would
+   * want the one you are on.
+   *
+   * Only when the rule is ON. Offering to re-order a cut by a rule that is
+   * switched off is a control that would have to switch it back on to mean
+   * anything, which is two decisions behind one press.
+   *
+   * The names and the whys are ported from design/one-take/footage.js (see
+   * ORDERS in src/rules.ts), not written here.
+   */
+  const alternatives = (r: CutData["rules"][number]): string => {
+    if (r.kind !== "order" || !r.on) return "";
+    const chosen = r.order ?? "strand";
+    const chips = (Object.keys(ORDERS) as Order[])
+      .map((o) => {
+        const here = o === chosen;
+        return `<button class="rule-order" data-rule="${esc(r.id)}" data-order="${esc(o)}"${here ? " data-current" : ""} title="${esc(ORDERS[o].why)}"
+          style="font-size:${SIZE.meta};padding:4px 9px;border-radius:4px;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap;background:${
+            here ? "rgba(236,236,241,0.16)" : "rgba(236,236,241,0.06)"
+          };color:${here ? C.ink : "rgba(236,236,241,0.55)"}">${esc(ORDERS[o].name)}</button>`;
+      })
+      .join("");
+    return `<span style="display:block;margin-top:9px;display:flex;gap:5px;flex-wrap:wrap">${chips}</span>
+      <span data-content style="display:block;margin-top:7px;font-size:${SIZE.meta};line-height:1.5;color:${C.ink45};text-wrap:pretty">${esc(ORDERS[chosen].why)}</span>`;
+  };
+
   const rows = (list: CutData["rules"]) => list
     .map(
       (r) => `<div class="rule-card" style="display:flex;gap:12px;align-items:flex-start;padding:12px 13px;border-radius:9px;background:#15151A;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);transition:background .14s,box-shadow .14s">
@@ -784,6 +832,7 @@ function rulesPanel(rules: CutData["rules"]): string {
           <span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};line-height:1.5;color:${
             r.on ? "rgba(236,236,241,0.5)" : C.ink32
           }">${esc(r.effect)}</span>
+          ${alternatives(r)}
         </span>
         <button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
           title="${r.on ? "Turn this rule off" : "Turn it back on"}"

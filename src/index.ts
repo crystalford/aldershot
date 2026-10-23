@@ -99,7 +99,7 @@ import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
 import { receiptsHtml, receiptsPage } from "./receipts.ts";
-import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
+import { applyRule, compute, effectLine, fmt as fmtSecs, isOrder, orderText, ruleKey, toFootageSet, type Order, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { requeueTransientReads } from "./ingest.ts";
@@ -1797,6 +1797,10 @@ app.get("/p/:id/:stagePath", async (c) => {
               on: r.on,
               hand: Boolean(r.hand),
               effect: effectLine(stored, r, { set }),
+              /* For the one kind with alternatives — an order rule offers
+                 the other two orders as chips. */
+              kind: r.kind,
+              order: r.order,
             })),
             moments: judged.map((m) => ({
               id: String(m.id),
@@ -2505,11 +2509,47 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ on: boolean }>(c);
+  const b = await body<{ on?: boolean; order?: string }>(c);
   const ruleId = c.req.param("ruleId");
   const rules = await loadRules(c.env.DB, project.id);
   const rule = rules.find((r) => String(r.id) === ruleId);
   if (!rule) return c.json({ error: "no such rule" }, 404);
+
+  /*
+   * TWO THINGS YOU CAN DO TO A RULE: switch it, or — for the one kind that
+   * has alternatives — choose a different one of them.
+   *
+   * An order rule is a choice of three rather than a yes/no, and the pane
+   * offers the other two as chips. The sentence changes with the choice,
+   * because the rule IS the sentence (the comment on Rule.text says so), and
+   * it comes from orderText so a rule made by pressing a chip and one made
+   * by typing "run it as it happened" are the same rule.
+   */
+  if (b.order !== undefined) {
+    if (rule.kind !== "order") return c.json({ error: "that rule has no order" }, 422);
+    if (!isOrder(b.order)) return c.json({ error: "no such order" }, 422);
+    if (rule.order === b.order) return c.json({ ok: true, unchanged: true });
+
+    const reordered = rules.map((r) =>
+      String(r.id) === ruleId ? { ...r, order: b.order as Order, text: orderText(b.order as Order) } : r,
+    );
+    const done = await recomputeFromRules(c.env, {
+      userId: user.id,
+      projectId: project.id,
+      rules: reordered,
+      scope: scopeOf(project),
+    });
+    if (!done) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, reordered);
+    await recordPass(c.env.DB, {
+      projectId: project.id,
+      sourceId: null,
+      instruction: orderText(b.order as Order),
+      result: `${done.kept} moment${done.kept === 1 ? "" : "s"} · ${fmtSecs(done.secs)}`,
+      firstChange: null,
+    }).catch(() => {});
+    return c.json({ ok: true, kept: done.kept, secs: done.secs });
+  }
 
   const on = Boolean(b.on);
   if (rule.on === on) return c.json({ ok: true, unchanged: true });

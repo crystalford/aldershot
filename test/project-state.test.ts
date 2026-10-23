@@ -14,6 +14,8 @@ import { join } from "node:path";
 import { renderCut, type CutData } from "../src/ui/pages/cut.ts";
 import { GRADE_NAME, gradeForScore } from "../src/shorts.ts";
 import type { Block } from "../src/blocks.ts";
+import { isOrder, orderText } from "../src/rules.ts";
+import { parseRules } from "../src/rule-parse.ts";
 
 /* A cut with nothing in it returns an empty state and no columns — correct,
    and the reason the first version of these tests saw none. */
@@ -497,4 +499,95 @@ test("the card is not the button", () => {
      the assertion failed on the thing it was looking for. */
   const beforeToggle = card.slice(0, card.indexOf('<button class="rule-toggle"'));
   assert.ok(!/<button/.test(beforeToggle), "nothing before the switch is a button");
+});
+
+/**
+ * THE ONE RULE WITH ALTERNATIVES.
+ *
+ * An order rule is not a yes/no — it is a choice of three, and the other
+ * two are a press away. The prototype shows them as chips under the rule
+ * with the chosen one lit and a line underneath saying why you would want
+ * the one you are on. The build had the toggle and nothing else, so
+ * changing the order meant typing a sentence that happened to parse.
+ */
+const ORDER_RULE = {
+  id: "r-order",
+  text: "Run it one thread at a time.",
+  on: true,
+  hand: false,
+  effect: "the cut runs one thread at a time",
+  kind: "order",
+  order: "strand" as const,
+};
+
+test("an order rule offers the other two orders", () => {
+  const html = renderCut({ ...base, rules: [ORDER_RULE] });
+  const chips = [...html.matchAll(/class="rule-order"[^>]*data-order="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(chips.sort(), ["open", "strand", "time"]);
+  /* The one you are on is marked, and it is the one the rule names. */
+  assert.match(html, /data-order="strand" data-current/);
+  assert.equal((html.match(/data-current/g) ?? []).length, 1, "exactly one is current");
+});
+
+test("each order says why you would want it", () => {
+  /*
+   * The names were already in the build, inline in orderName. The whys were
+   * not, and they are the half that makes three chips a choice rather than
+   * three words. Ported from footage.js, which CLAUDE.md says to port.
+   */
+  const html = renderCut({ ...base, rules: [ORDER_RULE] });
+  assert.match(html, /title="Each question gets asked and answered before the next one starts\."/);
+  assert.match(html, /title="Tuesday, Thursday, Sunday — you watch the decision arrive\."/);
+  assert.match(html, /title="Start on the line that hurts, then earn it\."/);
+  /* And the one you are on has its why in the open, under the chips. */
+  assert.match(html, />Each question gets asked and answered before the next one starts\.</);
+});
+
+test("a rule that is off offers nothing to re-order", () => {
+  /* Offering to re-order a cut by a rule that is switched off is a control
+     that would have to switch it back on to mean anything — two decisions
+     behind one press. */
+  const html = renderCut({ ...base, rules: [{ ...ORDER_RULE, on: false }] });
+  assert.ok(!/class="rule-order"/.test(html));
+});
+
+test("only an order rule has alternatives", () => {
+  const html = renderCut({ ...base, rules: RULES });
+  assert.ok(!/class="rule-order"/.test(html), "a keep, a drop and a cap have no second option");
+});
+
+test("the sentence and the order are produced from one place", () => {
+  /*
+   * The rule IS the sentence, so changing the order has to change the text.
+   * Those three strings were written out in rule-parse.ts AND produced by
+   * orderName in rules.ts — two copies, about to become three when the pane
+   * started offering them. A rule made by pressing a chip and one made by
+   * typing "run it as it happened" are the same rule now.
+   */
+  assert.equal(orderText("time"), "Run it as it happened.");
+  assert.equal(orderText("strand"), "Run it one thread at a time.");
+  assert.equal(orderText("open"), "Start on the sharpest line.");
+  for (const o of ["time", "strand", "open"] as const) {
+    assert.equal(parseRules(orderText(o)).rules.find((r) => r.kind === "order")?.order, o,
+      `${orderText(o)} must parse back to ${o}`);
+  }
+  const parser = readFileSync(join(import.meta.dirname, "..", "src", "rule-parse.ts"), "utf8");
+  assert.ok(!/"Run it as it happened\."/.test(parser), "the parser must not carry its own copy");
+});
+
+test("an order the engine does not know is refused, not defaulted", () => {
+  /*
+   * The route takes an order from a client. A rule carrying a word compute()
+   * does not know would fall through to the default silently — a cut in an
+   * order nobody chose, with the pane saying otherwise.
+   */
+  assert.equal(isOrder("strand"), true);
+  assert.equal(isOrder("time"), true);
+  assert.equal(isOrder("open"), true);
+  for (const junk of ["", "STRAND", "chronological", "toString", null, 7]) {
+    assert.equal(isOrder(junk), false, `${JSON.stringify(junk)} is not an order`);
+  }
+  const index = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  assert.match(index, /if \(!isOrder\(b\.order\)\) return c\.json\(\{ error: "no such order" \}, 422\);/);
+  assert.match(index, /if \(rule\.kind !== "order"\) return c\.json\(\{ error: "that rule has no order" \}, 422\);/);
 });

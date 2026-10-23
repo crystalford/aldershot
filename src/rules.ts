@@ -747,8 +747,55 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
  * at a time" tells nobody anything.
  */
 /** What an order rule reads as, in the words the prototype uses. */
-const orderName = (o?: Order): string =>
-  o === "time" ? "as it happened" : o === "open" ? "sharpest line first" : "one thread at a time";
+/**
+ * THE THREE ORDERS, AND WHY YOU WOULD WANT EACH.
+ *
+ * Ported from design/one-take/footage.js rather than reinvented, which is
+ * what CLAUDE.md asks for:
+ *
+ *   strand: { name: "one thread at a time", why: "Each question gets asked
+ *             and answered before the next one starts." }
+ *   time:   { name: "as it happened", why: "Tuesday, Thursday, Sunday — you
+ *             watch the decision arrive." }
+ *   open:   { name: "sharpest line first", why: "Start on the line that
+ *             hurts, then earn it." }
+ *
+ * The names were already here, inline in `orderName`; the whys were not, and
+ * they are the half that makes the alternatives a choice rather than three
+ * words. The prototype shows them under an order rule that is on — press one
+ * and the cut re-runs in that order.
+ */
+export const ORDERS: Record<Order, { name: string; why: string }> = {
+  strand: {
+    name: "one thread at a time",
+    why: "Each question gets asked and answered before the next one starts.",
+  },
+  time: {
+    name: "as it happened",
+    why: "Tuesday, Thursday, Sunday — you watch the decision arrive.",
+  },
+  open: {
+    name: "sharpest line first",
+    why: "Start on the line that hurts, then earn it.",
+  },
+};
+
+/**
+ * Is this one of the three?
+ *
+ * The route takes an order from a client, and a rule carrying a word the
+ * engine does not know would fall through compute() to the default silently
+ * — a cut in an order nobody chose, with the pane saying otherwise.
+ */
+export const isOrder = (v: unknown): v is Order =>
+  typeof v === "string" && Object.prototype.hasOwnProperty.call(ORDERS, v);
+
+/** The order a rule names. Anything unrecognised is the engine's own default. */
+export const orderName = (o?: Order): string => ORDERS[o ?? "strand"]?.name ?? ORDERS.strand.name;
+
+/** "Run it one thread at a time." — the sentence the rule IS, per order. */
+export const orderText = (o: Order): string =>
+  o === "open" ? "Start on the sharpest line." : `Run it ${ORDERS[o].name}.`;
 
 export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof compute>[1]): string {
   if (!rule.on) return "off — footage as shot";

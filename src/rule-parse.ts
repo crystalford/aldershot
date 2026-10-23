@@ -27,6 +27,7 @@
  * reply listing what works, never a silent no-op.
  */
 
+import { orderText } from "./rules.ts";
 import type { Rule, Order } from "./rules.ts";
 import { targetFromBrief } from "./assemble.ts";
 
@@ -63,10 +64,20 @@ const TAG_PHRASES: Array<[RegExp, string]> = [
   [/\b(the )?(core|substance|where (you'?re|i'?m) working (it|something) out)\b/i, "core"],
 ];
 
-const ORDER_PHRASES: Array<[RegExp, Order, string]> = [
-  [/\bas it happened\b|\bchronologic(al|ally)\b|\bin order\b/i, "time", "Run it as it happened."],
-  [/\bone (thread|strand|topic) at a time\b|\bby (thread|strand|topic)\b|\bgroup(ed)? by (thread|topic)\b/i, "strand", "Run it one thread at a time."],
-  [/\bstart on the (sharpest|hardest|best) line\b|\bsharpest line first\b|\bopen on the (sharpest|hardest|best)\b|\blead with the (sharpest|hardest|best)\b/i, "open", "Start on the sharpest line."],
+/*
+ * THE SENTENCE COMES FROM ONE PLACE.
+ *
+ * These three labels were written out here AND produced by `orderName` in
+ * src/rules.ts, which is two copies of the same three strings — and the
+ * rules pane now offers them as alternatives you can press, so a third
+ * copy was about to exist. orderText is the one, and a rule made by
+ * parsing a sentence and a rule made by pressing a chip are now
+ * character-for-character the same rule.
+ */
+const ORDER_PHRASES: Array<[RegExp, Order]> = [
+  [/\bas it happened\b|\bchronologic(al|ally)\b|\bin order\b/i, "time"],
+  [/\bone (thread|strand|topic) at a time\b|\bby (thread|strand|topic)\b|\bgroup(ed)? by (thread|topic)\b/i, "strand"],
+  [/\bstart on the (sharpest|hardest|best) line\b|\bsharpest line first\b|\bopen on the (sharpest|hardest|best)\b|\blead with the (sharpest|hardest|best)\b/i, "open"],
 ];
 
 /*
@@ -145,9 +156,9 @@ export function parseRules(sentence: string): Parsed {
     });
   }
 
-  for (const [re, order, label] of ORDER_PHRASES) {
+  for (const [re, order] of ORDER_PHRASES) {
     if (re.test(text)) {
-      rules.push({ kind: "order", order, on: true, text: label });
+      rules.push({ kind: "order", order, on: true, text: orderText(order) });
       break;
     }
   }
