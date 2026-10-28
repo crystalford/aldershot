@@ -689,6 +689,27 @@ async function checkStrings() {
         "starts. Says what is absent and claims nothing.",
     ],
     [
+      "Make the short",
+      "The Shorts workbench's render control. The prototype's pair is " +
+        "\"Skip it\" and \"Add it to the cut\", and the second does not apply " +
+        "here: its shorts are pulled from the library, while this shortlist " +
+        "IS the cut's own lines, so every one of them is already in it. " +
+        "Adding would do nothing, which is the class of control this build " +
+        "keeps removing. What there is to do is render it, at the shape and " +
+        "with the captions chosen above — which is also what makes those " +
+        "chips controls rather than decoration.",
+    ],
+    [
+      "No hashtags: nothing here measures what people are searching for, and a tag is a guess at that.",
+      "The same refusal src/shorts.ts makes about Trend, said where the post " +
+        "copy is. The prototype shows \"#vlog #deciding #landing\"; a tag is a " +
+        "claim about what people are looking for and nothing in this product " +
+        "measures that. Worse than Trend, because a hashtag is pasted " +
+        "straight into a post. The first draft did invent them, from " +
+        "subjectWord — which exists to diagnose an opening, not to name a " +
+        "subject — and it produced \"#so\".",
+    ],
+    [
       "Save the cap",
       "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
         "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +

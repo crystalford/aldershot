@@ -1696,6 +1696,10 @@ app.get("/p/:id/:stagePath", async (c) => {
           updated_at: p.updated_at,
         })),
         askMode: await readMode(c.env.DB, user.id),
+        /* Which short the workbench is showing. A URL rather than client
+           state: the back button works, a link to one short is a link to one
+           short, and the crawl can reach it. */
+        shortId: c.req.query("short") ?? null,
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,

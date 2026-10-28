@@ -4383,6 +4383,124 @@ document.querySelectorAll(".rule-order").forEach((btn) => {
  * the rules and half the page depends on the answer.
  */
 /*
+ * THE SHORTS WORKBENCH.
+ *
+ * Four controls on the short in front of you, and one rule between them: none
+ * of this touches the cut. Trimming a short, choosing its shape and choosing
+ * its captions are decisions about one clip for one platform; the video it
+ * came from is a different piece of work. The only control here that changes
+ * the cut says so on its face ("Add it to the cut").
+ */
+
+/* The short's own struck words, kept per short id. Separate from the cut's
+   strikes on purpose — see above. */
+const shortStruck = {};
+
+document.querySelectorAll(".sw").forEach((w) => {
+  w.addEventListener("click", () => {
+    const id = w.getAttribute("data-short");
+    const i = w.getAttribute("data-word");
+    const set = (shortStruck[id] = shortStruck[id] || {});
+    set[i] = !set[i];
+    w.style.textDecoration = set[i] ? "line-through" : "";
+    w.style.color = set[i] ? "rgba(236,236,241,0.28)" : "";
+
+    /*
+     * THE DURATION FOLLOWS THE WORDS.
+     *
+     * A short whose stated length does not change when you cut two seconds
+     * out of it is lying about what it will post as. Proportional to the
+     * words struck, which is what the render does to it: the words carry
+     * their own timings and the surviving ranges are what gets cut.
+     */
+    const panel = w.closest(".short-focus");
+    if (!panel) return;
+    const all = panel.querySelectorAll(".sw");
+    const gone = Object.keys(set).filter((k) => set[k]).length;
+    const full = Number(panel.getAttribute("data-ms")) || 0;
+    const left = all.length ? Math.round((full * (all.length - gone)) / all.length) : full;
+    const out = panel.querySelector("[data-short-dur]");
+    if (out) out.textContent = window.hms ? window.hms(left / 1000) : Math.round(left / 1000) + "s";
+  });
+});
+
+/* Shape and captions: one chosen at a time, and the choice is on the element
+   so the render request can read it without a second source of truth. */
+const pickOne = (cls) =>
+  document.querySelectorAll("." + cls).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.parentElement;
+      if (!row) return;
+      row.querySelectorAll("." + cls).forEach((b) => {
+        const on = b === btn;
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.style.background = on ? "#2E2E36" : "transparent";
+        b.style.color = on ? "#ECECF1" : "rgba(236,236,241,0.45)";
+      });
+    });
+  });
+pickOne("short-aspect");
+pickOne("short-caption");
+
+/* Skipping is a decision about the shortlist, not a deletion: nothing is
+   removed, the card says it was skipped, and it can be taken back. */
+document.querySelectorAll(".short-skip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const panel = btn.closest(".short-focus");
+    if (!panel) return;
+    const badge = panel.querySelector("[data-short-state]");
+    const skipped = btn.getAttribute("data-skipped") === "1";
+    btn.setAttribute("data-skipped", skipped ? "0" : "1");
+    btn.textContent = skipped ? "Skip it" : "Keep it";
+    if (badge) {
+      badge.textContent = skipped ? "KEEPING" : "SKIPPED";
+      badge.style.color = skipped ? "#5EC98F" : "rgba(236,236,241,0.45)";
+      badge.style.background = skipped ? "rgba(94,201,143,0.14)" : "rgba(236,236,241,0.08)";
+    }
+  });
+});
+
+/*
+ * MAKE THE SHORT, at the shape and with the captions chosen above.
+ *
+ * This is what makes those two rows of chips controls rather than decoration:
+ * the values are read off the pressed buttons at the moment of the request,
+ * so there is no second copy of the choice to drift from what is on screen.
+ */
+document.querySelectorAll(".short-make").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const panel = btn.closest(".short-focus");
+    const chosen = (cls, fallback) => {
+      const on = panel && panel.querySelector("." + cls + '[aria-pressed="true"]');
+      return on ? on.getAttribute("data-value") : fallback;
+    };
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/blocks/short", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          block: btn.getAttribute("data-block"),
+          aspect: chosen("short-aspect", "9:16"),
+          captionStyle: chosen("short-caption", "Bold"),
+        }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That short didn't render.");
+        btn.disabled = false;
+        return;
+      }
+      window.toast("Making it. It lands in Footage, under Exports.");
+      btn.disabled = false;
+    } catch {
+      window.toast("That short didn't render.");
+      btn.disabled = false;
+    }
+  });
+});
+
+/*
  * SAVE THE SPEND CAP.
  *
  * The one meter in Settings a person can change. Everything else there is a

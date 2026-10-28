@@ -26,7 +26,17 @@ import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { ORDERS, type Order } from "../../rules.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
-import { DIMENSION_NAME, GRADE_NAME, grade, gradeForScore, reads, type Grade } from "../../shorts.ts";
+import {
+  DIMENSION_NAME,
+  GRADE_NAME,
+  grade,
+  gradeForScore,
+  opening,
+  reads,
+  type Grade,
+  type Graded,
+} from "../../shorts.ts";
+import { ASPECTS, CAPTION_STYLES } from "../../render-job.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
 import { blockStrip, CHIP_COLOURS, keyHints, letterFor, sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
@@ -188,6 +198,13 @@ export interface CutData {
    * this is what keeps.
    */
   blockContested?: Record<string, true>;
+  /**
+   * Which short is in front of you, from ?short=.
+   *
+   * A URL rather than client state so the back button works, a link to one
+   * short is a link to one short, and a crawl can reach the workbench at all.
+   */
+  shortId?: string | null;
   /** "2:04 · 3 blocks · from 2 videos · one thread at a time". */
   cutLine: string;
   /** Every instruction given to the model on this cut, and what came of it. */
@@ -318,6 +335,28 @@ function wordsLegend(): string {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
+/**
+ * WHICH VIDEO A BLOCK CAME FROM, as a letter, a colour and a time.
+ *
+ * Shared by the Words gutter and the Shorts credit line, because both say the
+ * same fact and a page where one says B and the other says C about the same
+ * recording is worse than one that says neither. Same ordered list, same
+ * letterFor, same CHIP_COLOURS as the chips beside the title.
+ */
+function sourceIndex(d: CutData): Map<string, number> {
+  return new Map((d.sources ?? []).map((sc, i) => [sc.id, i]));
+}
+
+function markOf(d: CutData, order: Map<string, number>, b: Block): { letter: string; colour: string; idx: number | undefined } {
+  const sid = (d.blockSource ?? {})[b.id] ?? d.sourceId ?? "";
+  const idx = order.get(sid);
+  return {
+    letter: idx === undefined || (d.sources ?? []).length < 2 ? "" : letterFor(idx),
+    colour: idx === undefined ? C.ink45 : CHIP_COLOURS[idx % CHIP_COLOURS.length],
+    idx,
+  };
+}
+
 /**
  * WHAT THE GUTTER SAYS, in Words.
  *
@@ -794,6 +833,24 @@ function shortsList(d: CutData): string {
     .join("");
 
   const strong = graded.filter((x) => x.g.grade === "strong").length;
+
+  /*
+   * THE ONE IN FRONT OF YOU.
+   *
+   * Everything above is the shortlist, which the build has had and which is
+   * only half of it: a list tells you what stands on its own and gives you
+   * nowhere to work. The prototype puts ONE short at the top with its picture,
+   * its reasons, its words and the four decisions you make about it, and the
+   * list underneath is how you move between them.
+   *
+   * Chosen by ?short=, so it is a URL — which means a crawl can reach it, the
+   * back button works, and a link to one short is a link to one short. The
+   * default is the first the engine rates strongest, because that is the one
+   * worth looking at first.
+   */
+  const focused = graded.find((x) => x.b.id === d.shortId) ?? graded[0];
+  const order = sourceIndex(d);
+
   return `<div>
     <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
       <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Shorts</span>
@@ -801,7 +858,195 @@ function shortsList(d: CutData): string {
     </div>
     ${said}
     ${briefBox(d.projectId)}
+    ${focused ? focusedShort(d, focused, graded.length, graded.indexOf(focused) + 1, order) : ""}
     <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+  </div>`;
+}
+
+/**
+ * ONE SHORT, AND EVERYTHING YOU DECIDE ABOUT IT.
+ *
+ * The workbench half. Its shape is the prototype's: the vertical preview with
+ * the hook burned in on the left, the reasons and the words on the right, the
+ * controls under them, and the post copy last.
+ *
+ * WHAT IS DELIBERATELY NOT HERE:
+ *
+ * REFRAME. The prototype offers "Follow the speaker" / "Centered" / "Split
+ * screen". Subject tracking does not exist anywhere in src/ or container/,
+ * and neither does a two-up composite — so two of the three are promises
+ * nothing can keep, and a control where one option works is worse than no
+ * control. Shape (9:16, 1:1, 4:5) is real and offered instead; it is the one
+ * ASPECTS already validates.
+ *
+ * TREND. src/shorts.ts refuses it in as many words, and it is right: nothing
+ * in this product measures what travels. Hook, Flow and Value are measured.
+ */
+function focusedShort(
+  d: CutData,
+  item: { b: Block; g: Graded },
+  total: number,
+  position: number,
+  order: Map<string, number>,
+): string {
+  const b = item.b;
+  const ms = b.end_ms - b.start_ms;
+  const accent = ACCENT[GRADE_ACCENT[item.g.grade]];
+  const hook = opening(b.text);
+  const { letter, colour } = markOf(d, order, b);
+
+  /* "C 44:02 · Sunday" — where this came from, in the words the chips and
+     the Words gutter use. */
+  const credit = [letter ? `${letter} ${hms(b.start_ms / 1000)}` : hms(b.start_ms / 1000), d.sourceTitle ?? ""]
+    .filter(Boolean)
+    .join(" · ");
+
+  const preview = `<div style="position:relative;flex:none;width:148px;aspect-ratio:9/16;border-radius:${RADIUS.card};overflow:hidden;background:${C.canvas}">
+    ${
+      b.posterKey
+        ? `<img loading="lazy" src="/media/${esc(b.posterKey)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.55"/>`
+        : ""
+    }
+    <span data-content style="position:absolute;top:8px;left:8px;font-size:10px;font-weight:600;padding:2px 6px;border-radius:3px;background:${accentBg(
+      accent,
+    )};color:${accent}">${esc(GRADE_NAME[item.g.grade])}</span>
+    <!-- data-short-dur: the client retotals this as words are struck, because
+         a short whose stated length does not move when you cut two seconds
+         out of it is lying about what it will post as. -->
+    <span data-short-dur data-content style="position:absolute;top:8px;right:8px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink70}">${esc(
+      hms(ms / 1000),
+    )}</span>
+    <!-- The hook, drawn as it would be burned in. Not a caption preview: it
+         is the first thing a viewer sees and the reason the short works. -->
+    <span data-content style="position:absolute;left:12px;right:12px;bottom:34px;font-size:17px;font-weight:600;line-height:1.25;text-wrap:pretty;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">${esc(
+      hook,
+    )}</span>
+    <span data-content style="position:absolute;left:12px;right:12px;bottom:10px;font-size:10px;font-family:${FONT.mono};color:${
+      colour
+    };white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(credit)}</span>
+  </div>`;
+
+  /* The reasons, as cards rather than chips: each one is a sentence and a
+     chip crops it to a word. */
+  const cards = reads({ text: b.text, durationMs: ms }, b.score)
+    .map((rd) => {
+      const ink = ACCENT[GRADE_ACCENT[rd.band]];
+      return `<div style="flex:1 1 180px;min-width:min(180px,100%);padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface}">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span data-content style="flex:1;font-size:${SIZE.secondary};color:${C.ink70}">${esc(DIMENSION_NAME[rd.dimension])}</span>
+          <span data-content style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ink}">${esc(GRADE_NAME[rd.band].toLowerCase())}</span>
+        </div>
+        <div data-content style="margin-top:4px;font-size:${SIZE.meta};line-height:1.5;color:${C.ink45};text-wrap:pretty">${esc(rd.reason)}</div>
+      </div>`;
+    })
+    .join("");
+
+  /*
+   * TRIM BY WORDS, in the short's OWN strike set.
+   *
+   * data-short carries the block id and the client keeps the struck words
+   * under it, separate from the cut's. Trimming a short must not edit the
+   * cut: they are two different pieces of work on the same words, and a
+   * person tidying a short for TikTok is not asking to change the video it
+   * came from.
+   */
+  const words = (b.words.length ? b.words : (b.displayWords ?? []))
+    .map(
+      (w, i) =>
+        `<span class="sw" data-short="${esc(b.id)}" data-word="${i}" style="cursor:pointer;border-radius:2px">${esc(w.w)}</span>`,
+    )
+    .join(" ");
+
+  const chips = (name: string, cls: string, values: readonly string[], chosen: string) =>
+    `<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+      <span data-content style="flex:none;width:68px;font-size:${SIZE.meta};color:${C.ink45}">${esc(name)}</span>
+      ${values
+        .map(
+          (v) =>
+            `<button type="button" class="${cls}" data-value="${esc(v)}" aria-pressed="${v === chosen ? "true" : "false"}"
+              style="font-size:${SIZE.meta};font-weight:500;padding:5px 11px;border-radius:5px;border:none;cursor:pointer;font-family:inherit;background:${
+                v === chosen ? C.active : "transparent"
+              };color:${v === chosen ? C.ink : C.ink45}"><span data-content>${esc(v)}</span></button>`,
+        )
+        .join("")}
+    </div>`;
+
+  /*
+   * POST COPY, written from the short and from nothing else.
+   *
+   * No model call: the title is the hook, the body is what was said plus
+   * where it came from, and the tags are the subject word. A model asked to
+   * write post copy produces copy about the subject in general, which is how
+   * a caption ends up claiming something the clip does not show.
+   */
+  /*
+   * NO HASHTAGS, and that is the same refusal Trend is.
+   *
+   * The prototype shows "#vlog #deciding #landing" — plausible tags, and
+   * exactly the kind of thing a model invents. A tag is a claim about what
+   * people are looking for, and nothing in this product measures that;
+   * src/shorts.ts refuses to grade Trend for precisely this reason and
+   * putting the same guess back under another name would be worse, because
+   * a hashtag is pasted straight into a post.
+   *
+   * The first draft of this file did invent them, from subjectWord — which
+   * exists to diagnose an opening problem, not to describe a subject. It
+   * produced "#so".
+   */
+
+  /*
+   * MAKE IT, rather than the prototype's "Add it to the cut".
+   *
+   * Its shorts are pulled from the library, so adding one is a real action
+   * there. Here the shortlist IS the cut's own lines — every one is already
+   * in it — so that button would do nothing, which is the class of control
+   * this build keeps taking out. What there is to do is RENDER it, at the
+   * shape and with the captions chosen above, which is also what makes those
+   * chips controls rather than decoration.
+   *
+   * A JS comment and not an HTML one: an HTML comment inside this template
+   * SHIPS. The first version of this explanation went over the wire on every
+   * request, and put the words "Add it to the cut" into a page that
+   * deliberately has no such control.
+   */
+  return `<div class="short-focus" data-short="${esc(b.id)}" data-ms="${ms}" style="margin-bottom:16px;padding:14px;border-radius:${RADIUS.card};background:${C.raised}">
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      ${preview}
+      <div style="flex:1 1 320px;min-width:min(320px,100%)">
+        <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
+          <span data-short-state data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${accentBg(
+            ACCENT.green,
+          )};color:${ACCENT.green}">KEEPING</span>
+          <span data-content style="font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${position} of ${total} shortlisted</span>
+        </div>
+        <div data-content style="margin-top:8px;font-size:${SIZE.quote};font-weight:600;line-height:1.35;text-wrap:pretty">${esc(b.text)}</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">${cards}</div>
+
+        <div style="margin-top:14px;font-size:10px;font-weight:600;letter-spacing:.06em;color:${C.ink32}">TRIM BY WORDS · click a word to cut it</div>
+        <div class="short-words" style="margin-top:6px;font-size:${SIZE.body};line-height:1.7;color:${C.ink70};text-wrap:pretty">${words}</div>
+
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+          ${chips("Shape", "short-aspect", ASPECTS, "9:16")}
+          ${chips("Captions", "short-caption", CAPTION_STYLES, "Bold")}
+        </div>
+
+        <div style="margin-top:14px;padding:12px 13px;border-radius:${RADIUS.card};background:${C.surface}">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;color:${C.ink32}">POST COPY · written from the short</div>
+          <div data-content style="margin-top:6px;font-size:${SIZE.secondary};font-weight:600;line-height:1.4">${esc(hook)}</div>
+          <div data-content style="margin-top:5px;font-size:${SIZE.meta};line-height:1.55;color:${C.ink45};text-wrap:pretty">${esc(
+            b.text,
+          )}${d.sourceTitle ? ` — from ${esc(d.sourceTitle)}.` : ""}</div>
+          <div style="margin-top:7px;font-size:${SIZE.meta};line-height:1.5;color:${C.ink32}">No hashtags: nothing here measures what people are searching for, and a tag is a guess at that.</div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="short-skip" data-short="${esc(b.id)}"
+            style="font-size:${SIZE.meta};font-weight:600;padding:6px 13px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Skip it</button>
+          <button type="button" class="short-make" data-project="${esc(d.projectId)}" data-block="${esc(b.id)}"
+            style="font-size:${SIZE.meta};font-weight:600;padding:6px 13px;border-radius:${RADIUS.button};background:${C.active};color:${C.ink};border:none;cursor:pointer;font-family:inherit">Make the short</button>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1746,18 +1991,16 @@ export function renderCut(d: CutData): string {
    * The timestamp is the block's start, which comes from word ids like every
    * other time in this product.
    */
-  const order = new Map((d.sources ?? []).map((sc, i) => [sc.id, i]));
+  const order = sourceIndex(d);
   const gutterFor = (b: Block): Gutter | null => {
     if (view !== "script") return null;
     /* A line you record has no source and no timecode — it is you, now. */
     if (b.origin !== "footage") return { text: "you", color: ACCENT.gold };
-    const sid = (d.blockSource ?? {})[b.id] ?? d.sourceId ?? "";
-    const idx = order.get(sid);
     /* One video needs no letter: "A" on every line of a single-source cut is
        a column of the same character. The prototype shows the letter because
        its cut draws on three. */
-    const letter = idx === undefined || (d.sources ?? []).length < 2 ? "" : letterFor(idx) + " ";
-    const colour = idx === undefined ? C.ink45 : CHIP_COLOURS[idx % CHIP_COLOURS.length];
+    const { letter: lt, colour } = markOf(d, order, b);
+    const letter = lt ? lt + " " : "";
     /*
      * hms, NOT tc, and the difference is visible in a column.
      *
