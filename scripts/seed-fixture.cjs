@@ -207,6 +207,237 @@ async function main() {
              ${DURATION_S},100,${now},${now},NULL);`,
   );
 
+  /*
+   * ── A WORKED ACCOUNT, not just a transcribed one ─────────────────────
+   *
+   * Everything above makes a transcript and a project. That was enough to
+   * drive the editor, and it left every surface that depends on a cut
+   * somebody has ACTUALLY WORKED ON renderable only in its empty state —
+   * which is how the whole rules pane, the conflicts panel, the cut notes,
+   * the Footage tab's verdict badges, Shorts' Value band and the entire
+   * Scout board came to be crawled, walked and screenshotted with nothing in
+   * them.
+   *
+   * So the fixture now also carries scored moments, four rules that argue
+   * with each other on purpose, a conversation, an unrecorded voice beat and
+   * a finished Scout run. All hand-written, for the same reason the
+   * transcript is: the real versions cost money, and a fixture nobody can
+   * afford to run is a fixture nobody runs.
+   */
+
+  /*
+   * MOMENTS, with the scorer's opinion on most of them.
+   *
+   * One unscored on purpose. `reads()` in src/shorts.ts omits the Value
+   * dimension entirely when a moment was never rated — "absent rather than
+   * guessed" — and that branch had nothing to render it from.
+   */
+  const MOMENTS = [
+    { seg: 3, score: 88, why: "the admission the whole thing turns on", heat: 3 },
+    { seg: 6, score: 81, why: "names the mistake plainly", heat: 2 },
+    { seg: 5, score: 74, why: "the turn from excuse to fact", heat: 2 },
+    { seg: 10, score: 62, why: "funny, and it carries the point", heat: 1 },
+    { seg: 12, score: 55, why: "useful but it restates", heat: 1 },
+    /* Never rated. Shorts must show Hook and Flow and NO Value for this one. */
+    { seg: 13, score: null, why: null, heat: null },
+  ];
+
+  for (const m of MOMENTS) {
+    const seg = SEGMENTS[m.seg];
+    sql.push(
+      `INSERT OR REPLACE INTO v2_clips
+         (id,user_id,source_id,start_ms,end_ms,quote,why,score,heat,frame_r2_key,kept,origin,used_count,created_at,deleted_at)
+       VALUES (${q("fix-clip-" + m.seg)},${q(userId)},${q(SOURCE_ID)},${seg.start_ms},${seg.end_ms},
+               ${q(seg.text)},${m.why === null ? "NULL" : q(m.why)},${m.score === null ? "NULL" : m.score},
+               ${m.heat === null ? "NULL" : m.heat},
+               ${q(`u/${userId}/frames/${SOURCE_ID}/${m.seg}.jpg`)},1,${q("editor")},0,${now + m.seg},NULL);`,
+    );
+  }
+
+  /*
+   * FOUR RULES, AND TWO OF THEM DISAGREE ON PURPOSE.
+   *
+   * src/rules.ts records a `contest` whenever a keep rule and a drop rule
+   * both match a moment, and until this fixture existed nothing had ever
+   * rendered one: the conflicts panel, the gold edge on a contested block and
+   * the "2 judgement calls" note were all built and tested against unit
+   * fixtures alone.
+   *
+   * 01 keeps five of the six moments. 02 takes out the two that mention a
+   * kettle. Both match by WORDS, which is the matcher's `saysAny` path, so
+   * the overlap is a property of the transcript rather than of a list of ids
+   * that would drift the moment the transcript changed.
+   *
+   * 04 is switched off, because an off rule renders struck through with its
+   * knob to the left and that path had never been rendered by a crawl either.
+   */
+  const RULES = [
+    {
+      key: "r-keep",
+      kind: "keep",
+      on: 1,
+      text: "Keep the parts where you are working something out.",
+      params: { words: ["kettle", "boxes", "passport", "lesson", "temporary"] },
+    },
+    {
+      key: "r-drop",
+      kind: "drop",
+      on: 1,
+      text: "Take out the bits that only restate the kettle.",
+      params: { words: ["kettle"] },
+    },
+    { key: "r-order", kind: "order", on: 1, text: "Run it one thread at a time.", ord: "strand" },
+    {
+      key: "r-off",
+      kind: "drop",
+      on: 0,
+      text: "Lose the hedging.",
+      params: { words: ["maybe", "sort of"] },
+    },
+  ];
+
+  RULES.forEach((r, i) => {
+    sql.push(
+      `INSERT OR REPLACE INTO rules (id,project_id,key,idx,kind,on_,text,tag,clip_ids,ord,secs,params,hand,wins,created_at)
+       VALUES (${q("fix-rule-" + r.key)},${q(PROJECT_ID)},${q(r.key)},${i},${q(r.kind)},${r.on},
+               ${q(r.text)},NULL,NULL,${r.ord ? q(r.ord) : "NULL"},NULL,
+               ${r.params ? q(JSON.stringify(r.params)) : "NULL"},0,0,${now});`,
+    );
+  });
+
+  /* The conversation. Two turns, so the rail is not an empty box and the
+     Show me / Undo controls have something to sit on. */
+  const PASSES = [
+    ["keep the parts where I'm working something out", "6 of 14 moments · 0:24 · one thread at a time · from 1 video"],
+    ["take out the bits that only restate the kettle", "4 of 14 moments · 0:16 — 2 judgement calls"],
+  ];
+  PASSES.forEach(([instruction, result], i) => {
+    sql.push(
+      `INSERT OR REPLACE INTO passes (id,project_id,source_id,n,instruction,result,model,tokens_in,tokens_out,created_at)
+       VALUES (${q("fix-pass-" + i)},${q(PROJECT_ID)},NULL,${i + 1},${q(instruction)},${q(result)},NULL,NULL,NULL,${now + i});`,
+    );
+  });
+
+  /*
+   * ONE BEAT TO CAMERA, UNRECORDED.
+   *
+   * So "0 of 1 recorded — next: …" renders — the cut note that counts what
+   * you still owe — and so the recorder bar appears on a block at all. Both
+   * were built and neither had ever been drawn by a crawl, because no fixture
+   * had a voice beat in it.
+   */
+  sql.push(
+    `INSERT OR REPLACE INTO beats (id,project_id,idx,kind,act,clip_id,text,struck,dur_ms,media_r2_key,recorded_at)
+     VALUES (${q("fix-beat-vo")},${q(PROJECT_ID)},99,${q("vo")},NULL,NULL,
+             ${q("What the eleven days actually cost — twelve seconds, you, to camera.")},NULL,12000,NULL,NULL);`,
+  );
+
+  /*
+   * ── A FINISHED SCOUT RUN ──────────────────────────────────────────────
+   *
+   * src/ui/pages/board.ts is 510 lines and NOTHING HAS EVER RENDERED IT WITH
+   * ROWS IN IT. It was tested as a function, it answered at an /api/ URL no
+   * crawl reached until this week, and the only state anybody has ever seen
+   * is its empty one — because a real run needs YouTube quota and a string of
+   * model calls, which a fixture cannot spend.
+   *
+   * So the rows are written the way the transcript is. This does NOT prove an
+   * adapter works or that the run loop terminates; the tests do that. What it
+   * buys is that the board can finally be LOOKED AT, which is the only thing
+   * that has ever found a defect on a surface in this repo.
+   *
+   * THE THREE VERDICTS ARE ALL PRESENT ON PURPOSE. A verified quote, a
+   * paraphrase and a rejection have to read as three different things —
+   * invariant 4 is that "nothing backs this" stays reachable — and a fixture
+   * carrying only successes would make the board look right while hiding the
+   * state that matters most.
+   */
+  const RUN_ID = "fix-scout-run";
+  sql.push(
+    `INSERT OR REPLACE INTO scout_runs (id,project_id,trigger,brief,status,stop_reason,rounds,spend_usd,model_versions_json,created_at,finished_at)
+     VALUES (${q(RUN_ID)},${q(PROJECT_ID)},${q("ask")},${q("what moving house actually costs people")},
+             ${q("done")},${q("knee_and_coverage")},2,0.42,NULL,${now - 3600_000},${now - 1800_000});`,
+  );
+
+  /* Three beats: one covered, one thin, one an honest gap. The board leads
+     with the gaps, so a fixture with none of them would hide its first
+     section. */
+  const SBEATS = [
+    { idx: 0, role: "subject", name: "The kettle in the wrong box", behaviour: "Says the kettle was in a box marked books", status: "covered", need: 2 },
+    { idx: 1, role: "counter", name: "Moving is just logistics", behaviour: "Someone saying a move was genuinely nothing", status: "thin", need: 1 },
+    { idx: 2, role: "outside", name: "The person who carried the boxes", behaviour: "A helper describing the day from outside it", status: "gap", need: 1 },
+  ];
+  for (const b of SBEATS) {
+    sql.push(
+      `INSERT OR REPLACE INTO scout_beats (id,run_id,project_id,plan_beat_id,idx,role,name,behaviour,inverts,need_min,counter_gap,status,queries_tried_json)
+       VALUES (${q(RUN_ID + ":" + b.idx)},${q(RUN_ID)},${q(PROJECT_ID)},NULL,${b.idx},${q(b.role)},${q(b.name)},
+               ${q(b.behaviour)},NULL,${b.need},0,${q(b.status)},NULL);`,
+    );
+  }
+
+  /* Searches, including one REFUSED. "ok with results_n 0" and "we never
+     looked" are completely different sentences to put in front of a person,
+     and the quota row is the only thing that tells them apart. */
+  const SEARCHES = [
+    { beat: 0, family: "direct", query: "kettle box marked books moving", n: 6, outcome: "ok", fail: null },
+    { beat: 0, family: "crowd", query: "moving house kettle reddit", n: 3, outcome: "ok", fail: null },
+    { beat: 1, family: "counter", query: "moving house was easy no stress", n: 1, outcome: "ok", fail: null },
+    { beat: 2, family: "direct", query: "helped a friend move interview", n: 0, outcome: "quota_exhausted", fail: "out of units for today" },
+  ];
+  SEARCHES.forEach((x, i) => {
+    sql.push(
+      `INSERT OR REPLACE INTO scout_searches (id,run_id,beat_id,family,adapter,query,hyde,issued_at,results_n,new_verified_n,quota_units,cost_usd,outcome,fail_reason)
+       VALUES (${q("fix-search-" + i)},${q(RUN_ID)},${q(RUN_ID + ":" + x.beat)},${q(x.family)},${q("youtube")},
+               ${q(x.query)},NULL,${now - 3000_000 + i * 1000},${x.n},0,100,0.105,${q(x.outcome)},
+               ${x.fail === null ? "NULL" : q(x.fail)});`,
+    );
+  });
+
+  /* Two sources found. One read, one link-only — invariant 9 is that Scout
+     finds and LINKS, and the board has to show the difference. */
+  const SSOURCES = [
+    { id: "fix-ssrc-1", ext: "vid_moving_1", title: "We moved house and it broke us", channel: "Two Rooms", transcript: "native", scanned: 1, yield: 2 },
+    { id: "fix-ssrc-2", ext: "vid_moving_2", title: "Moving day, start to finish", channel: "Quiet Hours", transcript: "none", scanned: 0, yield: 0 },
+  ];
+  for (const x of SSOURCES) {
+    sql.push(
+      `INSERT OR REPLACE INTO scout_sources (id,run_id,adapter,external_id,url,title,channel,published_at,duration_s,kind,transcript,transcript_url,licence,triage_score,scanned,yield_n,dead_end,fetched_at,expires_at)
+       VALUES (${q(x.id)},${q(RUN_ID)},${q("youtube")},${q(x.ext)},${q("https://www.youtube.com/watch?v=" + x.ext)},
+               ${q(x.title)},${q(x.channel)},${now - 90 * 86400_000},1840,${q("video")},${q(x.transcript)},NULL,NULL,0.82,
+               ${x.scanned},${x.yield},0,${now - 2900_000},NULL);`,
+    );
+  }
+
+  /*
+   * THE LEDGER: one verified, one paraphrase, one rejection.
+   *
+   * verified_at is set on all three, because the column means "the verifier
+   * LOOKED" and not "the verifier agreed" — a rejected row that has been
+   * checked and one that has not are different states, and conflating them is
+   * the bug that made every Scout find a permanent rejection.
+   */
+  const LEDGER = [
+    { id: "fix-led-1", beat: 0, verify: "verified", score: 1.0, quote: "the kettle was in the box marked books, obviously", t: 412 },
+    { id: "fix-led-2", beat: 0, verify: "paraphrase", score: 0.71, quote: "the kettle ended up with the books somehow", t: 905 },
+    { id: "fix-led-3", beat: 1, verify: "rejected", score: 0.12, quote: "moving was the easiest week of my life", t: 61 },
+  ];
+  for (const x of LEDGER) {
+    sql.push(
+      `INSERT OR REPLACE INTO scout_ledger (id,run_id,beat_id,role,source_id,quote_exact,quote_norm,word_span_json,t_start_s,t_end_s,context_before,context_after,found_by_family,verify,match_score,crowd_signals_n,original_of,is_compilation_only,model_version,verified_at,created_at)
+       VALUES (${q(x.id)},${q(RUN_ID)},${q(RUN_ID + ":" + x.beat)},${q(x.beat === 1 ? "counter" : "subject")},
+               ${q("fix-ssrc-1")},${q(x.quote)},${q(x.quote.toLowerCase())},${q(JSON.stringify({ startWord: 40, endWord: 48 }))},
+               ${x.t},${x.t + 6},NULL,NULL,NULL,${q(x.verify)},${x.score},
+               ${x.verify === "verified" ? 2 : 0},NULL,0,NULL,${now - 2000_000},${now - 2100_000});`,
+    );
+  }
+
+  /* Where viewers already pointed at it. The lag correction is the point:
+     somebody types the time they NOTICED, which is after it happened. */
+  sql.push(
+    `INSERT OR REPLACE INTO scout_crowd (id,source_id,kind,t_s,lag_corrected_t_s,weight,text)
+     VALUES (${q("fix-crowd-1")},${q("fix-ssrc-1")},${q("comment")},418,409,1.0,${q("6:58 the box marked books 😭")});`,
+  );
+
   d1(sql.join("\n"));
   console.log("  seeded " + SEGMENTS.length + " lines, " + SEGMENTS.reduce((n, s) => n + s.words.length, 0) + " words");
 
@@ -223,6 +454,47 @@ async function main() {
   console.log((ok ? "  ✓ " : "  ✗ ") + PROJECT_ID + " renders " + words + " words (check-editor needs > 40)");
   if (!ok) {
     console.log("    The rows are in but the cut page does not show them — read the page, not this script.");
+    process.exit(1);
+  }
+
+  /*
+   * AND THE WORKED-ON HALF, each proved through a PAGE.
+   *
+   * Reading these back out of D1 would prove the INSERTs ran. What has to be
+   * true is that the product renders them — which is the whole reason this
+   * fixture exists, and which is how the first version of it discovered that
+   * a named project did not appear in Projects at all.
+   */
+  const cut = await (await fetch(BASE + "/p/" + PROJECT_ID + "/cut")).text();
+  const want = [
+    ["the rules pane is numbered", /THE RULES/],
+    ["four rules render", /rule-toggle/],
+    ["two rules disagree, and it says so", /disagree on 2 moments/],
+    ["the contested blocks carry the mark", /data-contested="1"/],
+    ["the cut counts the judgement calls", /2 judgement calls/],
+    ["a beat is still to record", /0 of 1 recorded/],
+    ["the conversation has turns", /class="turn"/],
+  ];
+  let bad = 0;
+  for (const [name, re] of want) {
+    const ok = re.test(cut);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+
+  const board = await (await fetch(BASE + "/p/" + PROJECT_ID + "/scout")).text();
+  for (const [name, re] of [
+    ["the Scout board has rows", /the box marked books/],
+    ["and shows the gap it did not fill", /gap|Gap/],
+  ]) {
+    const ok = re.test(board);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+
+  if (bad) {
+    console.log("\n    " + bad + " of the worked-on fixture did not reach the page.");
+    console.log("    Read the page, not this script.");
     process.exit(1);
   }
 
