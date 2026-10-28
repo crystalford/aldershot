@@ -779,7 +779,7 @@ function scoutPanel(projectId: string): string {
     `<form method="post" action="/api/projects/${esc(projectId)}/scout/runs" style="margin:0;flex:none">` +
     `<button type="submit" style="padding:5px 11px;border:0;border-radius:${RADIUS.button};background:${C.ink};` +
     `color:${C.canvas};font:600 ${SIZE.meta} ${FONT.ui};cursor:pointer">Send Scout</button></form>` +
-    `<a href="/api/projects/${esc(projectId)}/scout/board" style="flex:none;padding:5px 11px;border-radius:${RADIUS.button};` +
+    `<a href="/p/${esc(projectId)}/scout" style="flex:none;padding:5px 11px;border-radius:${RADIUS.button};` +
     `background:${C.pill};color:${C.ink70};font:600 ${SIZE.meta} ${FONT.ui};text-decoration:none">The board</a>` +
     `</section>`
   );

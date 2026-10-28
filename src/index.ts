@@ -53,7 +53,7 @@ const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { draftPlan, findForBeats } from "./plan.ts";
 import { readIntent } from "./intent.ts";
-import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
+import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
@@ -1522,15 +1522,36 @@ app.get("/api/projects/:id/scout/runs/:rid", async (c) => {
   return c.json({ run, diligence: await diligence(c.env.DB, String(run.id)) });
 });
 
-app.get("/api/projects/:id/scout/board", async (c) => {
+/**
+ * THE SCOUT BOARD, at a URL a person can be at.
+ *
+ * It lived at /api/projects/:id/scout/board and returned a full HTML document,
+ * which is why nothing ever looked at it: 510 lines of surface, tested as a
+ * function, never once rendered in a browser by any check. Every crawl in this
+ * repo skips /api/ — correctly, because everything else under it answers with
+ * JSON — so putting a page there put it outside the only thing that would have
+ * noticed. Not a cosmetic problem: a page at a machine URL is a page with no
+ * checks, which is exactly the condition every defect found this month shared.
+ *
+ * scripts/check-fidelity.cjs has a `page-url` rule now so this cannot recur.
+ */
+const scoutBoard = async (c: Ctx) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project) return c.json({ error: "not found" }, 404);
+  /* A standalone handler is not typed to its own path, so the param is
+     string | undefined here where an inline one would be string. */
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return c.notFound();
 
   const data = await boardFor(c.env.DB, project.id);
   return c.html(page({ title: "Scout", view: "room", screenLabel: "Scout", email: user.email }, renderBoard(data)));
-});
+};
+
+app.get("/p/:id/scout", scoutBoard);
+
+/* The old address, which cut.ts linked to and anybody's history may hold. 303
+   rather than serving both: two URLs for one page is how the crawl missed it. */
+app.get("/api/projects/:id/scout/board", (c) => c.redirect(`/p/${c.req.param("id") ?? ""}/scout`, 303));
 
 /*
  * CLIPPING IS GONE.
@@ -1583,6 +1604,21 @@ const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts", "foota
  * src/blocks.ts, which is the single place that says what a cut IS — so this
  * and the renderer cannot disagree about it.
  */
+/*
+ * BEFORE THE CATCH-ALL, and that ordering is the whole route.
+ *
+ * /p/:id/:stagePath matches /p/<id>/receipts too, and `receipts` is not in
+ * EDITOR_PATHS, so it answered c.notFound(). Registered after it, this page
+ * 404'd on every request — found by scripts/walk.cjs the first time it walked
+ * the surface list it now derives, which is exactly the class of defect a
+ * walk catches and a unit test does not. /p/:id/scout escaped it only because
+ * it happened to be registered further up the file.
+ *
+ * The handler itself is receiptsAdmin, defined with the receipts endpoints
+ * further down; this is only where it is mounted.
+ */
+app.get("/p/:id/receipts", (c) => receiptsAdmin(c));
+
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -3240,6 +3276,21 @@ app.post("/api/plans", async (c) => {
   return c.json({ planId, claim: draft.claim, beats: draft.beats.length });
 });
 
+/**
+ * The plans this person has started.
+ *
+ * Added because nothing listed them: a plan you walked away from was still in
+ * the database, still unfinished, and reachable only by the URL you no longer
+ * had. See listPlans. It is also what lets scripts/surfaces.cjs reach
+ * /plan/:id, which no crawl could before — a page the product could not list
+ * is a page no check can find either.
+ */
+app.get("/api/plans", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ plans: await listPlans(c.env.DB, user.id) });
+});
+
 /** Keep or cut one beat — the answer to the stop, beat by beat. */
 app.post("/api/plans/:id/beats/:beatId", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -3772,10 +3823,23 @@ app.post("/api/projects/:id/receipts", async (c) => {
  * the only control in this product that puts something on the public web and
  * it should be somewhere a person arrives on purpose.
  */
-app.get("/api/projects/:id/receipts", async (c) => {
+/*
+ * AT /p/:id/receipts, FOR THE REASON THE COMMENT ABOVE ALREADY GIVES.
+ *
+ * "A small page of its own ... somewhere a person arrives on purpose" — and it
+ * answered at /api/projects/:id/receipts, which is not somewhere a person
+ * arrives at all. Second one found the same day as the Scout board, by the
+ * same derived inventory, for the same reason: every crawl in this repo skips
+ * /api/, so a page there has no checks on it.
+ *
+ * The POST stays under /api/: publishing and revoking are actions, and that
+ * is where actions belong. Only the page moved.
+ */
+const receiptsAdmin = async (c: Ctx) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  /* string | undefined on a standalone handler, string on an inline one. */
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
   const row = await c.env.DB
@@ -3822,7 +3886,10 @@ ${
 }
 </main></body></html>`;
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
-});
+};
+
+/* The old address, which export.ts linked to. 303, like the Scout board's. */
+app.get("/api/projects/:id/receipts", (c) => c.redirect(`/p/${c.req.param("id") ?? ""}/receipts`, 303));
 
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);

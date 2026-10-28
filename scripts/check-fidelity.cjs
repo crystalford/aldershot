@@ -538,7 +538,21 @@ async function checkStrings() {
    * this noticing. It has its own prototype (design/Landing.dc.html) and the
    * check already reads it; only the route was missing.
    */
-  const ROUTES = ['/', '/landing', '/projects', '/footage', '/footage?tab=sources', '/footage?tab=exports', '/clipping', '/editor', '/settings'];
+  /*
+   * THE SURFACES, DERIVED. See scripts/surfaces.cjs.
+   *
+   * This was nine route literals — and '/projects' and '/clipping' among them,
+   * both of which are redirects, so two of the nine checked the same page
+   * twice under a URL nobody uses. Between that list and walk.cjs's six, TEN
+   * surfaces had never been crawled by anything: Words, Shorts, five of
+   * Footage's seven tabs, /eval, /plan/:id, /r/:token, the Scout board, /home
+   * and /sources/:id. Every defect the prototype comparison found this month
+   * was on a page one of those lists had simply never mentioned.
+   *
+   * A hand-kept list goes stale the first time somebody adds a route and does
+   * not think of it, so the list is now read out of src/index.ts.
+   */
+  const SURFACES = require('./surfaces.cjs');
 
   let up = false;
   try {
@@ -674,6 +688,120 @@ async function checkStrings() {
         "transcribed project with no clips, which is where every account " +
         "starts. Says what is absent and claims nothing.",
     ],
+    /*
+     * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.
+     *
+     * Two things had to be fixed to even see these four strings: the page
+     * answered at /api/projects/:id/receipts, where no crawl goes, and when
+     * it moved to /p/:id/receipts it was registered AFTER /p/:id/:stagePath,
+     * which matched first and returned 404. So the surface that puts
+     * something on the public web had never been read by anything.
+     *
+     * No prototype draws it. One Take's export panel has the LINK to it —
+     * "Receipts for viewers ↗", which is signed off separately — and no
+     * screen behind it. The words carry the one promise that matters on a
+     * control like this: nothing is public until you press it.
+     */
+    ...[
+      "Receipts for viewers",
+      "Publish a page your viewers can read: every clip in this cut that came from somebody else, the words, the link to the original, and whether it was checked. It does not list your own footage, your rules or anything you cut.",
+      "Publish it",
+      "Nothing is public until you press this.",
+    ].map((t) => [
+      t,
+      "The receipts admin page. It is the only control in this product that " +
+        "puts something on the public web, and no prototype draws the screen " +
+        "— One Take has the link to it and nothing behind it. The copy says " +
+        "what the published page does and does not contain, and that nothing " +
+        "is public until the press.",
+    ]),
+    /*
+     * FIVE SURFACES NO PROTOTYPE DRAWS, signed off on 28 Oct 2026 — the first
+     * day anything crawled them.
+     *
+     * scripts/surfaces.cjs replaced a nine-route literal with the routes
+     * derived from src/index.ts, and these surfaced immediately: Documents,
+     * Find, the Scout board, the brief compiler's control and the labelling
+     * page had never been compared with anything. Each is checked against
+     * `design/` and is genuinely absent from all of it, for a reason per
+     * surface rather than one blanket excuse.
+     *
+     * DOCUMENTS and FIND are Footage tabs the One Take prototype does not
+     * have: it draws Videos, Highlights and Projects. Both are specified in
+     * the handoff instead (a document can stand as the proof on a line that
+     * claims it), so there are no drawn words to copy and these are the first.
+     * The Find tab's second string is a refusal — captions from a link are not
+     * built — and an honest refusal is exactly what belongs there.
+     */
+    ...[
+      "Add a document",
+      "A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.",
+      "Choose a file",
+      "No documents yet — add one and it can stand as the proof on a line that claims it.",
+      "Read the captions",
+      "Reading captions from a link isn't switched on yet.",
+    ].map((t) => [
+      t,
+      "A Footage tab the One Take prototype does not draw — it has Videos, " +
+        "Highlights and Projects. Specified in the handoff rather than drawn, " +
+        "so there are no prototype words to copy. Crawled for the first time " +
+        "on 28 Oct 2026, when the surface list stopped being nine literals.",
+    ]),
+    /*
+     * THE SCOUT BOARD. There is a `design/one-take/Scout.dc.html`, and it does
+     * not contain these strings: the board was built from
+     * docs/handoff/18-SCOUT-BUILD-SPEC.md, which specifies what it must show
+     * (gaps first, the balance meter, then the verified rows) and not what it
+     * must say. It had never been rendered by any check before 28 Oct, because
+     * it answered at /api/projects/:id/scout/board and every crawl skips /api/.
+     */
+    ...[
+      "The Scout board",
+      "no brief run yet",
+      "Nothing yet. Scout turns the brief into things a viewer could point to on camera — never a diagnosis — then searches for each, and for its opposite.",
+    ].map((t) => [
+      t,
+      "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
+        "show rather than by what it must say. design/one-take/Scout.dc.html " +
+        "does not draw this screen. The third string is the empty state and " +
+        "carries the refusal the spec insists on: Scout looks for observable " +
+        "behaviour, never a diagnosis.",
+    ]),
+    [
+      "Make it rules",
+      "The brief compiler's one control: paste a brief and it becomes rules " +
+        "you can see and switch off. The prototype has no brief box at all — " +
+        "its rules arrive from sentences in the conversation — so there is " +
+        "nothing drawn to copy. The words say what pressing it does, which is " +
+        "the whole promise of the feature: not 'apply', but that a brief " +
+        "BECOMES rules.",
+    ],
+    /*
+     * /eval, WHICH IS NOT IN ANY PROTOTYPE BY DESIGN.
+     *
+     * It is the labelling surface for Phase 0's set — two labellers answering
+     * whether a moment backs a claim — and it is a tool for building the
+     * evidence this product's retrieval is measured against, not part of the
+     * product a user buys. No prototype draws it because no user sees it.
+     * Signed off as a set rather than individually: the whole page is in this
+     * category and splitting it would imply some of it was drawn.
+     */
+    ...[
+      "What backs what",
+      "Write a claim, then say whether each moment backs it. Nothing about how well search works means anything until this exists.",
+      "Answering as",
+      "Ask the judge",
+      "Take the set away &nearr;",
+      "· every answer so far, as the file the runner reads",
+      "Find moments",
+      "CLAIMS SO FAR",
+    ].map((t) => [
+      t,
+      "The labelling surface at /eval. It builds the ~200-claim set that " +
+        "Phase 0's acceptance measures retrieval against; it is a tool for " +
+        "the people making the evidence, not part of the product a user buys, " +
+        "and no prototype draws it because no user sees it.",
+    ]),
     ...[
       "As recorded",
       "Clean it up",
@@ -1378,27 +1506,56 @@ async function checkStrings() {
    * routes are discovered rather than hardcoded. Leaving them out would put a
    * blind spot over the surfaces with the most copy on them.
    */
-  const routes = [...ROUTES];
-  try {
-    const { sources } = await (await fetch(BASE + '/api/sources')).json();
-    if (sources?.[0]) routes.push('/sources/' + sources[0].id);
-  } catch {}
-  try {
-    const { projects } = await (await fetch(BASE + '/api/projects')).json();
-    if (projects?.[0]) {
-      // One editor, one URL. The four stage paths are aliases of it, so
-      // crawling all four checked the same HTML four times.
-      routes.push('/p/' + projects[0].id + '/cut');
-      /*
-       * And the Footage tab, which is NOT an alias — it renders a different
-       * centre column, with the most consequential copy in the editor on it:
-       * every moment's verdict and the rule that reached it. It was outside
-       * the crawl entirely, which is how "click to keep" shipped on a plain
-       * div and no check saw the promise at all.
-       */
-      routes.push('/p/' + projects[0].id + '/footage');
-    }
-  } catch {}
+  const inventory = await SURFACES.expand({
+    base: BASE,
+    fetchJson: async (u) => (await fetch(u)).json(),
+  });
+  const routes = inventory.urls;
+
+  /*
+   * EVERY SURFACE REACHED, OR SAID TO BE OUT OF REACH AND WHY.
+   *
+   * The point of deriving the list is that a page cannot go missing from it
+   * silently. So a declared surface with no URL to visit is a FINDING unless
+   * surfaces.cjs says why — and the two that say why are both genuine:
+   * /auth/callback needs a one-time token and visiting it spends somebody's
+   * link, and /r/:token needs a published receipt token, which exists only
+   * once a person has published one and is deliberately not listed anywhere.
+   */
+  const REACH_OK = new Set([
+    'needs a one-time sign-in token, and visiting it spends one',
+    'a receipt page needs a published token; pass receiptToken to include it',
+  ]);
+  for (const sf of inventory.surfaces) {
+    if (sf.urls.length) continue;
+    if (sf.why && REACH_OK.has(sf.why)) continue;
+    suspect.push(
+      'coverage: ' + sf.route + ' renders a page and the crawl could not reach it' +
+        (sf.why ? ' — ' + sf.why : ''),
+    );
+  }
+
+  /*
+   * AND NO PAGE AT A MACHINE URL. This is where the Scout board (510 lines,
+   * never once rendered by a check) and the receipts admin page both hid: the
+   * crawl skips /api/ because everything else under it answers with JSON, so a
+   * page there has no checks on it at all. Both moved to /p/:id/... on 28 Oct;
+   * this is what stops the next one.
+   */
+  for (const route of inventory.htmlUnderApi) {
+    suspect.push('page-url: ' + route + ' returns a document from an /api/ path, where no crawl reaches it');
+  }
+
+  /*
+   * NO SIGNED-OUT PASS, AND IT WOULD PROVE NOTHING HERE.
+   *
+   * The dev server needs DEV_LOGIN_EMAIL or every page is a 302, and
+   * currentUser returns that user whatever cookie it is sent — so clearing
+   * the cookie locally does not produce a signed-out visitor, it produces the
+   * same signed-in one. What a stranger actually sees is `/landing`, which is
+   * the branch homeHandler takes when there is no visitor, and that is in the
+   * list above and checked like everything else.
+   */
 
   await scanPromises(routes);
 

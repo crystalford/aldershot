@@ -172,14 +172,32 @@ const EXPECTED_OFF = ['Move earlier', 'Move later', 'Remove \u201Cum\u201D and \
     if (p) editorSurfaces.push([label, `/p/${p.id}/cut`]);
   }
 
-  const surfaces = [...editorSurfaces, 
-    ['Home', '/'],
-    ['Editor', '/editor'],
-    ['Footage', '/footage'],
-    ['Footage · Clips', '/footage?tab=moments'],
-    ['Projects', '/projects'],
-    ['Settings', '/settings'],
-  ];
+  /*
+   * EVERY SURFACE, DERIVED. See scripts/surfaces.cjs.
+   *
+   * This was six entries, and two of them — '/projects' and the Clips tab's
+   * sibling — were a redirect and an alias, while ten real surfaces were
+   * missing: Words, Shorts, five of Footage's seven tabs, /eval, /plan/:id,
+   * the Scout board and /home. A walk that never visits a page cannot report
+   * a dead control on it, which is most of why the controls on those pages
+   * had never been pressed by anything.
+   *
+   * The editor's own cuts stay in front, because the two of them are the
+   * surfaces with the most behaviour and the walk reads top-down.
+   */
+  const inventory = await require('./surfaces.cjs').expand({
+    base: BASE,
+    fetchJson: async (u) => (await page.evaluate((url) => fetch(url).then((r) => r.json()), u)),
+  });
+  const derived = inventory.urls
+    /* The editor list below already covers these two, with better labels. */
+    .filter((u) => !editorSurfaces.some(([, p]) => p === u))
+    .map((u) => [u, u]);
+
+  const surfaces = [...editorSurfaces, ...derived];
+  for (const sf of inventory.surfaces) {
+    if (!sf.urls.length) console.log(`   (not walked: ${sf.route} — ${sf.why || 'no URL'})`);
+  }
   const seen = [];
   for (const [label, path] of surfaces) {
     await go(path);
@@ -324,6 +342,44 @@ const EXPECTED_OFF = ['Move earlier', 'Move later', 'Remove \u201Cum\u201D and \
     console.log(`   ${label.padEnd(16)} ${String(d.controls.length).padStart(3)} controls`);
   }
 
-  console.log('\n── errors: ' + (errors.length ? '\n   ' + errors.join('\n   ') : 'none'));
+  /*
+   * ONE LINE PER DISTINCT ERROR, with a count.
+   *
+   * The first walk of the full surface list reported the same missing media
+   * object twenty-two times — the fixture's video has an r2_key and no bytes
+   * behind it, and every page that draws a player asks for it. Twenty-two
+   * identical lines buried the one finding that mattered (a real 404 on
+   * /p/:id/receipts, from a route registered after the catch-all that
+   * swallowed it). A report that hides its own findings in repetition is the
+   * report nobody reads to the end.
+   */
+  const counted = new Map();
+  for (const e of errors) counted.set(e, (counted.get(e) ?? 0) + 1);
+  const lines = [...counted].map(([e, n]) => (n > 1 ? `${e}   ×${n}` : e));
+  console.log('\n── errors: ' + (lines.length ? '\n   ' + lines.join('\n   ') : 'none'));
   await browser.close();
+
+  /*
+   * AND NOW IT HAS AN EXIT CODE, so check.sh can hold it.
+   *
+   * This file has reported for weeks and asserted nothing, which was right
+   * while it was six pages — "looks the same is not a report". Now that it
+   * walks every surface the product has, a page that throws or answers 4xx is
+   * a defect it should be able to fail on, and it found one the first time:
+   * /p/:id/receipts answered 404 because it was registered after the route
+   * that swallows it.
+   *
+   * MEDIA IS THE ONE EXEMPTION, and a narrow one: a seeded fixture has an
+   * r2_key with no bytes behind it, so every page drawing a player asks for a
+   * file that is not there. That is the FIXTURE being thin, not the product
+   * being broken, and failing on it would make this red on every machine
+   * until somebody uploads a video — which is how a check becomes one people
+   * learn to skip. Everything else counts.
+   */
+  const real = [...counted.keys()].filter((e) => !/^404 GET \/media\//.test(e));
+  if (real.length) {
+    console.log('\n✘ walk — ' + real.length + ' error(s) that are not a fixture missing its bytes');
+    process.exit(1);
+  }
+  console.log('\n✔ walk — every surface answered, nothing threw');
 })();

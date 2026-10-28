@@ -122,7 +122,7 @@ export function exportPanel(projectId: string, plan: string): string {
       to a page with a button on it.
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-      <a href="/api/projects/${esc(projectId)}/receipts" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Receipts for viewers &nearr;</a>
+      <a href="/p/${esc(projectId)}/receipts" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Receipts for viewers &nearr;</a>
       <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.</span>
     </div>
   </form>`;

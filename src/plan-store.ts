@@ -145,3 +145,38 @@ export async function setFound(
 export async function setPlanProject(db: D1Database, planId: string, projectId: string): Promise<void> {
   await db.prepare(`UPDATE plans SET state='cut', project_id=? WHERE id=?`).bind(projectId, planId).run();
 }
+
+/**
+ * EVERY PLAN THIS PERSON HAS STARTED, newest first.
+ *
+ * Nothing listed plans. A plan is the one stop — the claim and the beats, held
+ * before anything is searched or cut — and the only way back to one was the
+ * URL you happened to be on when you stopped reading it. Start a plan, close
+ * the tab, and it was gone: still in the database, still unfinished, and
+ * unreachable by any route through the product. The same shape of defect as
+ * /plan/:id having no inbound link at all, one level down.
+ *
+ * `project_id` is what makes a row answerable: null means the plan has not
+ * been cut yet and is still waiting on you, and set means it became that cut
+ * and the cut is where the work now is.
+ */
+export async function listPlans(
+  db: D1Database,
+  userId: string,
+): Promise<Array<{ id: string; topic: string; claim: string | null; state: string; projectId: string | null; createdAt: number }>> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, topic, claim, state, project_id, created_at FROM plans
+        WHERE user_id=? ORDER BY created_at DESC`,
+    )
+    .bind(userId)
+    .all<{ id: string; topic: string; claim: string | null; state: string; project_id: string | null; created_at: number }>();
+  return (results ?? []).map((r) => ({
+    id: r.id,
+    topic: r.topic,
+    claim: r.claim,
+    state: r.state,
+    projectId: r.project_id,
+    createdAt: Number(r.created_at),
+  }));
+}

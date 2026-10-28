@@ -69,6 +69,15 @@ stage editor node scripts/check-editor.cjs
 echo "── fidelity"
 stage fidelity node scripts/check-fidelity.cjs
 
+# Every surface the product has, visited in a real browser, with every control
+# counted and every console error and 4xx reported. It reported and asserted
+# nothing for weeks — right while it was six pages, and wrong once it walks all
+# of them: the first full walk found /p/:id/receipts answering 404 because it
+# was registered after the route that swallows it. Needs a dev server, so it
+# skips like the two above.
+echo "── walk"
+stage walk node scripts/check-walk.cjs
+
 echo
 if [ -n "$SKIPPED" ]; then
   echo "ALL CHECKS PASSED (SKIPPED:$SKIPPED)"

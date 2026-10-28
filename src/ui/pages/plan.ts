@@ -132,11 +132,20 @@ export function renderPlan(d: PlanData): string {
          * Showing both would offer to cut a plan that has found nothing, and
          * a control that cannot act is the thing the conventions check exists
          * to stop.
+         *
+         * THE WORDS ARE THE PROTOTYPE'S. "Looks right — go find it" read
+         * "Find the footage" until the crawl reached this page for the first
+         * time on 28 Oct and asked the prototype for it. A label is not a
+         * detail: the prototype's version is the user AGREEING to the beats,
+         * which is what pressing it means, and "Find the footage" is an
+         * instruction to the machine. "Cut it" beside it was already the
+         * prototype's own word, which is how one paraphrase sat next to one
+         * verbatim label for weeks with nothing able to tell them apart.
          */
         d.projectId
           ? `<a href="/p/${esc(d.projectId)}/cut" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;text-decoration:none">Open the cut</a>`
           : d.state === "beats"
-            ? `<button class="plan-find" type="button" data-plan="${esc(d.id)}" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Find the footage</button>`
+            ? `<button class="plan-find" type="button" data-plan="${esc(d.id)}" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Looks right — go find it</button>`
             : `<button class="plan-cut" type="button" data-plan="${esc(d.id)}" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Cut it</button>`
       }
     </div>

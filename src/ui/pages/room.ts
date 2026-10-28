@@ -630,9 +630,19 @@ function momentCard(m: RoomData["moments"][number], st: RoomState): string {
    */
   const picture = m.frame_r2_key
     ? `<img loading="lazy" src="/media/${esc(m.frame_r2_key)}" alt="" style="width:100%;height:100%;object-fit:cover"/>`
-    : `<span data-content style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:${FONT.mono};color:${C.ink32}">` +
-      `<span style="font-size:${SIZE.secondary}">${esc(m.host || (isExt ? "outside" : m.source_title))}</span>` +
-      (m.at_s === undefined ? "" : `<span style="font-size:${SIZE.meta}">at ${esc(clock(m.at_s))}</span>`) +
+    : /*
+       * MARKED ON THE SPANS THAT HOLD THE DATA, not on the box around them.
+       *
+       * data-content was on the wrapper, which is a flex container with no
+       * text of its own, and the two spans inside it — a video's title and a
+       * timestamp — carried nothing. The strings rule reads text nodes, so it
+       * read "Tuesday — the kitchen one" as UI copy and asked the prototype
+       * for it. A mark on a parent exempts nothing; it has to sit where the
+       * interpolation is.
+       */
+      `<span style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:${FONT.mono};color:${C.ink32}">` +
+      `<span data-content style="font-size:${SIZE.secondary}">${esc(m.host || (isExt ? "outside" : m.source_title))}</span>` +
+      (m.at_s === undefined ? "" : `<span data-content style="font-size:${SIZE.meta}">at ${esc(clock(m.at_s))}</span>`) +
       `</span>`;
   return `<a data-moment="${esc(m.id)}" href="${esc(isExt ? extHref(st, m.id) : attachHref(st, m.id))}" title="${m.attached ? "Detach" : "Attach"}" style="display:flex;flex-direction:column;border-radius:${RADIUS.card};background:${C.surface};overflow:hidden;${ring}text-decoration:none;color:inherit">
     <span style="position:relative;aspect-ratio:16/9;background:${C.canvas};display:block">${picture}${
