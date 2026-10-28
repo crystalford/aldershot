@@ -255,6 +255,58 @@ async function main() {
   }
 
   /*
+   * TWO THREADS, NAMED IN THE SPEAKER'S OWN WORDS.
+   *
+   * Invariant 10 and src/threads.ts: a thread's name comes from the quotes,
+   * not from a genre word. These are the two things this transcript is
+   * actually about, and nothing had ever seeded one — so the archive
+   * paragraph ("the threads running through the footage, and which one you
+   * keep coming back to") had never rendered. The room fell back to the
+   * COUNT, which is the exact failure CLAUDE.md names by name: "the archive
+   * summary was a count where a paragraph goes".
+   *
+   * It also lights the thread chips above the project's Footage tab, which
+   * only appear when there is more than one thread to choose between.
+   */
+  const THREADS = [
+    /* Not the same size, on purpose: archiveSentence names the thread you
+       come back to most only when one STRICTLY beats the second, and a tie
+       would have left that clause — the one the paragraph exists for —
+       unrendered again. */
+    { key: "fix-thread-kettle", name: "the kettle", clips: [3, 5, 12, 13] },
+    { key: "fix-thread-house", name: "whether to go back", clips: [6, 10] },
+  ];
+  /*
+   * THE ONE TABLE INSERT OR REPLACE CANNOT KEEP IDEMPOTENT.
+   *
+   * v2_clip_threads is keyed on (clip_id, thread_id), so moving a clip from
+   * one thread to another ADDS a row rather than replacing one, and the old
+   * membership survives every re-run. It happened the first time this seed
+   * was edited: a clip moved to "the kettle" and stayed in "whether to go
+   * back" too, and the archive paragraph said 4 where the project's chip
+   * said 3 — a count disagreeing with its list, which is the bug this file
+   * exists to catch rather than cause.
+   *
+   * Scoped to the fixture's own clips, because the rule for everything here
+   * is that a re-run touches nothing it does not own.
+   */
+  sql.push(
+    `DELETE FROM v2_clip_threads WHERE thread_id IN (${THREADS.map((t) => q(t.key)).join(",")});`,
+  );
+  for (const t of THREADS) {
+    sql.push(
+      `INSERT OR REPLACE INTO v2_threads (id,user_id,name,summary,clip_count,created_at)
+       VALUES (${q(t.key)},${q(userId)},${q(t.name)},NULL,${t.clips.length},${now});`,
+    );
+    for (const seg of t.clips) {
+      sql.push(
+        `INSERT OR REPLACE INTO v2_clip_threads (clip_id,thread_id,confidence)
+         VALUES (${q("fix-clip-" + seg)},${q(t.key)},0.9);`,
+      );
+    }
+  }
+
+  /*
    * FOUR RULES, AND TWO OF THEM DISAGREE ON PURPOSE.
    *
    * src/rules.ts records a `contest` whenever a keep rule and a drop rule
@@ -525,9 +577,25 @@ async function main() {
    * keep" — the same capability, offered on one row and not the other.
    */
   const footage = await (await fetch(BASE + "/p/" + PROJECT_ID + "/footage")).text();
+  const room = await (await fetch(BASE + "/?tab=highlights")).text();
+  const roomWant = [
+    [
+      "the archive is a paragraph, not a count",
+      /2 threads run through 2 videos — the kettle and whether to go back\./,
+    ],
+    /*
+     * AND THE TWO SURFACES AGREE ABOUT IT. The room says the kettle is in 4
+     * moments and the project's chip says "the kettle 4". They are counted in
+     * different places from different queries, and a stale row in
+     * v2_clip_threads made them disagree once already.
+     */
+    ["and it names the one you come back to most", /come back to most is the kettle, in 4 moments/],
+  ];
+
   const footWant = [
     ["a moment nothing keeps still offers the hand", /no rule keeps it · click to keep/],
     ["the moments say where in the recording", /font-family:'IBM Plex Mono',monospace;color:[^"]*">0:\d\d</],
+    ["the threads are chips with counts", />the kettle 4</],
   ];
   let bad = 0;
   for (const [name, re] of want) {
@@ -537,6 +605,11 @@ async function main() {
   }
   for (const [name, re] of footWant) {
     const ok = re.test(footage);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+  for (const [name, re] of roomWant) {
+    const ok = re.test(room);
     if (!ok) bad += 1;
     console.log((ok ? "  ✓ " : "  ✗ ") + name);
   }
