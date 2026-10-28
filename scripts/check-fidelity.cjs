@@ -714,6 +714,73 @@ async function checkStrings() {
         "text file first. The file is still there, because a checklist you " +
         "can hand to somebody else is worth having.",
     ]),
+    /*
+     * THE SCOUT BOARD'S OWN COPY, signed off 28 Oct 2026 — the first day
+     * anything rendered this surface with rows in it.
+     *
+     * 510 lines that had never been drawn populated: it answered at an /api/
+     * URL no crawl reached until this week, and a real run costs YouTube
+     * quota and a string of model calls a fixture cannot spend. It is
+     * specified by docs/handoff/18-SCOUT-BUILD-SPEC.md, which says what the
+     * board must SHOW — gaps first, the balance meter, then the verified rows
+     * — and not what it must say. design/one-take/Scout.dc.html does not draw
+     * this screen.
+     */
+    ...[
+      /* Entities, not curly quotes: SIGNED_OFF is matched on the RAW rendered
+         text, which is what the page actually emits. */
+      "what's missing comes first — it's the next thing to do. Each says what was tried, so you can tell &ldquo;doesn't exist&rdquo; from &ldquo;not found yet&rdquo;.",
+      "Try an interview",
+      "Bring the capture",
+      "Make it a mission",
+      "AUTO · open feed",
+      "COUNTERPOINT",
+      "sources &nearr; &nbsp; the ledger &nearr;",
+    ].map((t) => [
+      t,
+      "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
+        "show rather than by what it must say, and drawn by no prototype. " +
+        "The three controls are the three things a person can do about a gap, " +
+        "and the first sentence is the board's whole argument: what is " +
+        "missing comes first, and each gap says what was tried so " +
+        "\"doesn't exist\" can be told from \"not found yet\".",
+    ]),
+    [
+      "NOT IN THE SOURCE",
+      "The chip a rejected find wears. It used to draw as a CROWD row — the " +
+        "words on screen with a timestamp, a credit line and a button " +
+        "offering to go and capture a quote the verifier had already searched " +
+        "for and failed to find. It is still SHOWN rather than filtered, " +
+        "because invariant 4 says \"nothing backs this\" must be reachable and " +
+        "because the rejection rate is the measured hallucination rate this " +
+        "product gates model swaps on. It just says what it is.",
+    ],
+    /*
+     * THE ORDER CHIPS, and these are the prototype's own words — they are
+     * just never ALONE in its source.
+     *
+     * The prototype builds the three chips at runtime from the same
+     * vocabulary the rule sentences use, so the file carries "Run it one
+     * thread at a time." and "so it runs one thread at a time." and never the
+     * bare label. The rendered prototype shows exactly these three chips; a
+     * check that reads the file cannot see that, and the honest answer is to
+     * say so here rather than to reword a label the design does have.
+     *
+     * "as it happened" needs no entry: it happens to appear standalone
+     * elsewhere in the same file.
+     */
+    ...[
+      "one thread at a time",
+      "sharpest line first",
+    ].map((t) => [
+      t,
+      "An order chip. The prototype RENDERS these three labels and its source " +
+        "only ever contains them inside a sentence (\"Run it one thread at a " +
+        "time.\"), because it builds the chips at runtime from the same " +
+        "vocabulary — so a check that reads the file cannot match the bare " +
+        "label. The words are the design's own; src/rules.ts ORDERS is a " +
+        "verbatim port of them.",
+    ]),
     [
       "Make the short",
       "The Shorts workbench's render control. The prototype's pair is " +

@@ -63,11 +63,31 @@ export const ACQ_CHIP: Record<AcqState, Chip> = {
   verified: { label: "ACQUIRED · VERIFIED", color: ACCENT.green, bg: accentBg(ACCENT.green) },
 };
 
-/** A row the crowd points at that Scout could not read. */
-export type CrowdKind = "crowd" | "trace";
+/**
+ * A row the crowd points at that Scout could not read — and one that was
+ * checked and is NOT THERE.
+ *
+ * `unbacked` exists because the board used to draw a rejection as a CROWD
+ * row: the verifier had looked for the quote in the source, failed to find
+ * it, and the board showed the words anyway with a timestamp, a credit line
+ * and a "Make it a mission" button. A fabricated quote offered as something
+ * to go and capture.
+ *
+ * Found the first time a fixture carried all three verdicts — which was also
+ * the first time this board had ever been rendered with any rows in it at
+ * all.
+ *
+ * It is SHOWN rather than filtered out, because invariant 4 says "nothing
+ * backs this" has to be a reachable answer: a rejection quietly dropped is a
+ * model's miss that nobody can audit, and the rejection rate is the measured
+ * hallucination rate this product gates model swaps on. So it stays, and it
+ * says what it is.
+ */
+export type CrowdKind = "crowd" | "trace" | "unbacked";
 export const CROWD_CHIP: Record<CrowdKind, Chip> = {
   crowd: { label: "CROWD", color: ACCENT.cyan, bg: accentBg(ACCENT.cyan) },
   trace: { label: "TRACE", color: ACCENT.gold, bg: accentBg(ACCENT.gold) },
+  unbacked: { label: "NOT IN THE SOURCE", color: ACCENT.red, bg: accentBg(ACCENT.red) },
 };
 
 /** How the footage would arrive, which is a different question from where it is now. */
@@ -115,6 +135,8 @@ export interface BoardBeat {
   rows: BoardRow[];
   /** What was tried, so a gap can say "not found yet" rather than "doesn't exist". */
   queriesTried: number;
+  /** How many of the five query families were used. Absent when unknown. */
+  familiesTried?: number;
 }
 
 export interface BoardData {
@@ -186,7 +208,17 @@ export function sourcedMeter(beats: BoardBeat[]): Meter {
     label: "SOURCED",
     pct: total ? Math.round((inHand / total) * 100) : 0,
     pending: total ? Math.round((inFlight / total) * 100) : 0,
-    text: total ? `${inHand} of ${total} verified` : "—",
+    /*
+     * "IN HAND", NOT "VERIFIED".
+     *
+     * This meter counts rows whose ACQUISITION state is owned or matched —
+     * whether you have the footage. The subhead beside it counts rows whose
+     * VERDICT is verified — whether the quote is real. Both said "verified",
+     * so the board rendered "0 of 3 verified" directly beside "1 verified
+     * moment" and no reader could reconcile them. ACQ_CHIP already takes
+     * care over this: its own label is "ACQUIRED · VERIFIED".
+     */
+    text: total ? `${inHand} of ${total} in hand` : "—",
     color: ACCENT.green,
   };
 }
@@ -234,6 +266,13 @@ export interface Gap {
  *
  * ONLY ONCE THE RUN HAS STOPPED. A short beat mid-run is being worked.
  */
+/** "1 query tried", "6 queries tried across 3 families". */
+function tried(b: BoardBeat): string {
+  const n = b.queriesTried;
+  const head = `${n} quer${n === 1 ? "y" : "ies"} tried`;
+  return b.familiesTried && b.familiesTried > 1 ? `${head} across ${b.familiesTried} families` : head;
+}
+
 export function gapsOf(d: BoardData): Gap[] {
   if (!d.stopped) return [];
   const out: Gap[] = [];
@@ -244,11 +283,25 @@ export function gapsOf(d: BoardData): Gap[] {
     out.push({
       beatId: b.id,
       name: b.name,
+      /*
+       * COUNTED, NOT ASSERTED, and both halves of that were wrong here.
+       *
+       * "1 queries tried" — there was no singular, and a gap sentence is
+       * exactly where somebody is reading carefully.
+       *
+       * "across three families" was a hardcoded number beside a computed one.
+       * FAMILIES in src/scout-adapters.ts has FIVE — direct, vocab, crowd,
+       * counter, seed — so the sentence told a person a fact about their own
+       * run that was not true of it. It says how many were actually tried
+       * now, and says nothing when the count is unknown.
+       *
+       * Both found the first time this board was rendered with rows in it.
+       */
       why: verified
-        ? `Only ${verified} verified; wanted ${b.needMin}. ${b.queriesTried} queries tried across three families.`
+        ? `Only ${verified} verified; wanted ${b.needMin}. ${tried(b)}.`
         : crowd
           ? `Nothing verified — the crowd points at ${crowd} stretch${crowd === 1 ? "" : "es"} on sources Scout can't read. Bring the capture and it'll verify them.`
-          : `${b.queriesTried} queries tried, nothing verified. Either it doesn't exist or it isn't where these families look — try an interview, or ask a long-time viewer.`,
+          : `${tried(b)}, nothing verified. Either it doesn't exist or it isn't where these families look — try an interview, or ask a long-time viewer.`,
     });
   }
   return out;
@@ -292,7 +345,7 @@ function renderMeter(m: Meter): string {
     /* In flight, dimmer: neither in hand nor a dead end. */
     (m.pending ? `<div style="height:100%;width:${m.pending}%;background:${accentBg(m.color)}"></div>` : "") +
     `</div>` +
-    `<span style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink70}">${esc(m.text)}</span></div>`
+    `<span data-content style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink70}">${esc(m.text)}</span></div>`
   );
 }
 
@@ -310,10 +363,10 @@ function renderGaps(gaps: Gap[]): string {
     .map(
       (g) =>
         `<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0">` +
-        `<span style="font:500 ${SIZE.meta} ${FONT.mono};color:${C.ink45};flex:none;width:22px">${esc(g.beatId)}</span>` +
+        `<span data-content style="font:500 ${SIZE.meta} ${FONT.mono};color:${C.ink45};flex:none;width:22px">${esc(g.beatId)}</span>` +
         `<div style="flex:1;min-width:0">` +
-        `<div style="font:600 ${SIZE.body} ${FONT.ui};color:${C.ink}">${esc(g.name)}</div>` +
-        `<div style="font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70};margin-top:2px">${esc(g.why)}</div></div>` +
+        `<div data-content style="font:600 ${SIZE.body} ${FONT.ui};color:${C.ink}">${esc(g.name)}</div>` +
+        `<div data-content style="font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70};margin-top:2px">${esc(g.why)}</div></div>` +
         `<div style="display:flex;gap:6px;flex:none">` +
         ["Try an interview", "Bring the capture", "Your voice"]
           .map(
@@ -358,14 +411,14 @@ function renderRow(r: BoardRow): string {
     `background:${isVerified ? C.raised : C.surface};margin-bottom:6px">` +
     `<span style="flex:none">${chip(kindChip)}</span>` +
     `<div style="flex:1;min-width:0">` +
-    `<div style="font:400 ${SIZE.body} ${FONT.ui};color:${isVerified ? C.ink : C.ink70};` +
+    `<div data-content style="font:400 ${SIZE.body} ${FONT.ui};color:${isVerified ? C.ink : C.ink70};` +
     `${isVerified ? "" : "font-style:italic"}">${quote}</div>` +
     context +
-    `<div style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink45};margin-top:5px">` +
+    `<div data-content style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink45};margin-top:5px">` +
     `${esc(r.sourceName)} · ${atTime(r.tS)}${r.host ? ` &nbsp;${esc(r.host)}` : ""}` +
     `${r.crowdSignals ? ` · ${r.crowdSignals} crowd timestamps` : ""}</div>` +
     `<div style="margin-top:5px">${chip(route)}</div>` +
-    `<div style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink32};margin-top:4px">${esc(r.credit)}</div>` +
+    `<div data-content style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink32};margin-top:4px">${esc(r.credit)}</div>` +
     `</div>` +
     `<div style="display:flex;gap:6px;flex:none;align-items:flex-start">` +
     `<button type="button" style="padding:4px 9px;border:0;border-radius:${RADIUS.pill};background:${C.pill};` +
@@ -387,12 +440,12 @@ function renderBeat(b: BoardBeat, d: BoardData, gap: Gap | undefined): string {
   return (
     `<section style="margin-bottom:16px">` +
     `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px">` +
-    `<span style="font:500 ${SIZE.meta} ${FONT.mono};color:${C.ink45}">${esc(b.id)}</span>` +
-    `<span style="font:600 ${SIZE.body} ${FONT.ui};color:${C.ink}">${esc(b.name)}</span>` +
+    `<span data-content style="font:500 ${SIZE.meta} ${FONT.mono};color:${C.ink45}">${esc(b.id)}</span>` +
+    `<span data-content style="font:600 ${SIZE.body} ${FONT.ui};color:${C.ink}">${esc(b.name)}</span>` +
     chip(role) +
     `<span style="font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink45};flex:1;min-width:0;` +
-    `overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.behaviour)}</span>` +
-    `<span style="font:500 ${SIZE.meta} ${FONT.mono};color:${status.color};flex:none">${esc(status.text)}</span>` +
+    `overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-content>${esc(b.behaviour)}</span>` +
+    `<span data-content style="font:500 ${SIZE.meta} ${FONT.mono};color:${status.color};flex:none">${esc(status.text)}</span>` +
     `</div>` +
     b.rows.map(renderRow).join("") +
     /* The gap again, under its own beat. The block at the top is the list of
@@ -401,7 +454,7 @@ function renderBeat(b: BoardBeat, d: BoardData, gap: Gap | undefined): string {
     (gap
       ? `<div style="display:flex;gap:8px;align-items:baseline;padding:8px 12px;border-radius:${RADIUS.card};` +
         `background:${accentBg(ACCENT.red)}">${chip({ label: "GAP", color: ACCENT.red, bg: accentBg(ACCENT.red) })}` +
-        `<span style="font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70}">${esc(gap.why)}</span></div>`
+        `<span data-content style="font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70}">${esc(gap.why)}</span></div>`
       : "") +
     `</section>`
   );
@@ -442,7 +495,7 @@ function renderGhosts(d: BoardData): string {
     .map(
       (g) =>
         `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid ${C.hairline}">` +
-        `<span style="flex:1;min-width:0;font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70}">${esc(g.quote.slice(0, 120))}</span>` +
+        `<span data-content style="flex:1;min-width:0;font:400 ${SIZE.secondary} ${FONT.ui};color:${C.ink70}">${esc(g.quote.slice(0, 120))}</span>` +
         (g.url
           ? `<a href="${esc(g.url)}" target="_blank" rel="noopener noreferrer" style="flex:none;font:600 ${SIZE.meta} ${FONT.mono};color:${ACCENT.gold};text-decoration:none">open at ${esc(atClock(g.inS))} &nearr;</a>`
           : `<span style="flex:none;font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink32}">no link</span>`) +
@@ -474,7 +527,7 @@ export function renderBoard(d: BoardData): string {
     `<div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:14px">` +
     `<div style="flex:1;min-width:0">` +
     `<div style="font:600 ${SIZE.pageTitle} ${FONT.ui};color:${C.ink}">The Scout board</div>` +
-    `<div style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink45};margin-top:2px">${esc(meta)}</div></div>` +
+    `<div data-content style="font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink45};margin-top:2px">${esc(meta)}</div></div>` +
     `<div style="display:flex;gap:18px;flex:none;padding-top:4px">` +
     renderMeter(sourcedMeter(d.beats)) +
     renderMeter(balanceMeter(d.beats)) +
@@ -500,8 +553,13 @@ export function renderBoard(d: BoardData): string {
   const footer =
     `<div style="display:flex;gap:10px;justify-content:space-between;padding-top:10px;` +
     `border-top:1px solid ${C.hairline};font:400 ${SIZE.meta} ${FONT.mono};color:${C.ink32}">` +
-    `<span>Searched: ${d.sourcesRead} source${d.sourcesRead === 1 ? "" : "s"} read · ` +
-    `${d.sourcesLinkOnly} link only · ${d.candidatesScanned} candidates scanned, ${d.verifiedMoments} verified</span>` +
+    /* Every count here plurals. `sourcesRead` already did and the other two
+       did not, which is the kind of inconsistency that only shows when a run
+       is small — and a run with one of something is the one a person reads
+       most carefully. */
+    `<span data-content>Searched: ${d.sourcesRead} source${d.sourcesRead === 1 ? "" : "s"} read · ` +
+    `${d.sourcesLinkOnly} link only · ${d.candidatesScanned} candidate${d.candidatesScanned === 1 ? "" : "s"} scanned, ` +
+    `${d.verifiedMoments} verified</span>` +
     `<span>sources &nearr; &nbsp; the ledger &nearr;</span></div>`;
 
   return (
