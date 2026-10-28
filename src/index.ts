@@ -1972,6 +1972,21 @@ app.get("/p/:id/:stagePath", async (c) => {
                */
               byRule: m.in && m.byId !== null && !isHand(m.byId) ? String(m.byId) : null,
               dropRule: !m.in && m.dropId !== null && !isHand(m.dropId) ? String(m.dropId) : null,
+              /* Which recording, where in it, how long, and what thread —
+                 the row's identity. The engine's Moment carries ts/dur as
+                 text; the POOL has the milliseconds these are formatted
+                 from, which is the same source the Words gutter reads. */
+              ...(() => {
+                const r = rangeOf.get(String(m.id));
+                return r
+                  ? {
+                      sourceId: r.source_id,
+                      startMs: r.start_ms,
+                      durMs: r.end_ms - r.start_ms,
+                      thread: r.thread_name,
+                    }
+                  : {};
+              })(),
               note: m.in
                 ? m.byId === null
                   ? "in · kept by hand"
@@ -1979,7 +1994,12 @@ app.get("/p/:id/:stagePath", async (c) => {
                     ? "in · kept by hand"
                     : `in · rule ${numberOf(m.byId)}`
                 : m.dropId === null
-                  ? "out · no rule keeps it"
+                  /* THE PROMISE WAS MISSING ON THE ONE ROW THAT MOST NEEDED
+                     IT. A moment no rule keeps can still be kept by hand —
+                     a hand decision overrides every rule above it — and this
+                     said so for a moment a rule dropped and not for one
+                     nothing claimed. The prototype offers it on both. */
+                  ? "out · no rule keeps it · click to keep"
                   : isHand(m.dropId)
                     ? "out · by hand · click to keep"
                     : `out · rule ${numberOf(m.dropId)} · click to keep`,

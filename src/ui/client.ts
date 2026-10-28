@@ -4600,6 +4600,35 @@ document.querySelectorAll(".show-contested").forEach((btn) => {
  * off the control; these are sentences. A later query for "the switch on
  * rule 02" would find three elements.
  */
+/*
+ * NARROW THE MOMENTS TO ONE THREAD.
+ *
+ * The prototype's chips above the grid, with their counts. Client-side and
+ * no fetch: the rows are already on the page, every one of them carries its
+ * thread, and a reload to hide half a list is a round trip for a filter.
+ *
+ * Pressing the chip you are on goes back to Everything, so the control never
+ * becomes a state you cannot leave.
+ */
+document.querySelectorAll(".thread-chip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const want = btn.getAttribute("data-thread") || "";
+    const already = btn.hasAttribute("data-current");
+    const next = already ? "" : want;
+    document.querySelectorAll(".thread-chip").forEach((c) => {
+      const mine = (c.getAttribute("data-thread") || "") === next;
+      if (mine) c.setAttribute("data-current", "");
+      else c.removeAttribute("data-current");
+      c.style.background = mine ? "#2E2E36" : "#15151A";
+      c.style.color = mine ? "#ECECF1" : "rgba(236,236,241,0.7)";
+    });
+    document.querySelectorAll(".moment-hand").forEach((row) => {
+      const mine = !next || (row.getAttribute("data-thread") || "") === next;
+      row.style.display = mine ? "flex" : "none";
+    });
+  });
+});
+
 document.querySelectorAll(".rule-off").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;

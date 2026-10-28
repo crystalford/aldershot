@@ -120,6 +120,22 @@ nobody can check.
   counted in any explanation of why a moment is where it is. Signed off in
   `check-fidelity.cjs` with this reasoning.
 
+- **Videos / Highlights / Projects inside a project.** The prototype's Footage
+  surface keeps its three tabs whether or not a project is open: in a project
+  Videos shows each source with "3 of 5 moments in this cut" and an "Only
+  this" scope control, Projects shows the other cuts, and Highlights is the
+  moment list the build renders today. The build has two separate surfaces —
+  the room's `/footage` with the tabs, and a project's Footage tab without
+  them — so scoping a cut to one of its sources, which the engine supports
+  (`scopeOf`), has no control in a project. What it needs: the three tabs on
+  `/p/:id/footage`, per-source counts through the current rules, and the
+  scope control posting the project's scope.
+
+- **The frame on a moment row.** The prototype's rows carry a 78px thumbnail.
+  The build renders the letter, the position and the duration instead, which
+  is the identity; the picture needs `frame_r2_key` served per moment and is
+  the same media the walk already reports absent in the fixture.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.

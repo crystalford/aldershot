@@ -188,6 +188,25 @@ export interface CutData {
      */
     byRule?: string | null;
     dropRule?: string | null;
+    /**
+     * WHICH RECORDING, WHERE IN IT, AND HOW LONG — the row's identity.
+     *
+     * The tab was a list of sentences with a verdict beside each. The
+     * prototype's row is a moment: the source's letter in the source's own
+     * colour, the position in that recording, the duration. Without them two
+     * similar lines from two videos are indistinguishable, and there is no
+     * way to tell a four-second aside from a forty-second argument.
+     *
+     * `sourceId` rather than a letter, because the letter comes from the
+     * project's ordered source list — the same `letterFor` the chips beside
+     * the title and the Words gutter use. Three places saying B about one
+     * recording is the point.
+     */
+    sourceId?: string | null;
+    startMs?: number;
+    durMs?: number;
+    /** The thread it was filed under, for the chips above the list. */
+    thread?: string | null;
   }>;
   /**
    * Videos this cut is NOT drawing on, and could.
@@ -1958,6 +1977,7 @@ function momentsThroughRules(d: CutData): string {
   if (!d.moments.length) {
     return `<div style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
   }
+
   /*
    * EVERY ROW IS A BUTTON, because every row's note promises a click.
    *
@@ -1970,15 +1990,69 @@ function momentsThroughRules(d: CutData): string {
    * overrides every rule above it (step 6 of the engine), so keeping a moment
    * the cap dropped is one press, and the cut is re-produced around it.
    */
-  return `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${d.moments
-    .map(
-      (m) => `<button class="moment-hand" type="button" data-moment="${esc(m.id)}" data-in="${m.in ? 1 : 0}"
+  const order = sourceIndex(d);
+  const many = (d.sources ?? []).length > 1;
+
+  /*
+   * THE THREADS, WITH THEIR COUNTS.
+   *
+   * The prototype puts "Everything · 14" and one chip per thread above the
+   * grid, and pressing one narrows it. A library of a hundred moments with
+   * no way to say "just the money ones" is a scroll, not a tab.
+   *
+   * Only when there is more than one thread to choose between: a single
+   * chip beside Everything is a control whose two states show the same
+   * list.
+   */
+  const threads = new Map<string, number>();
+  for (const m of d.moments) if (m.thread) threads.set(m.thread, (threads.get(m.thread) ?? 0) + 1);
+  const chip = (key: string, name: string, n: number, on: boolean) =>
+    `<button class="thread-chip" type="button" data-thread="${esc(key)}"${on ? " data-current" : ""}
+      style="font-size:${SIZE.meta};padding:4px 10px;border-radius:4px;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap;background:${
+        on ? "#2E2E36" : C.surface
+      };color:${on ? C.ink : C.ink70}"><span data-content>${esc(name)} ${n}</span></button>`;
+  const chips =
+    threads.size > 1
+      ? `<div style="margin-top:12px;display:flex;gap:5px;flex-wrap:wrap">${
+          chip("", "Everything", d.moments.length, true) +
+          [...threads].map(([name, n]) => chip(name, name, n, false)).join("")
+        }</div>`
+      : "";
+
+  const rows = d.moments
+    .map((m) => {
+      const idx = m.sourceId === undefined || m.sourceId === null ? undefined : order.get(m.sourceId);
+      /* One video needs no letter: "A" down a single-source list is a column
+         of the same character. Same rule as the Words gutter. */
+      const letter = idx === undefined || !many ? "" : letterFor(idx) + " ";
+      const colour = idx === undefined ? C.ink45 : CHIP_COLOURS[idx % CHIP_COLOURS.length];
+      const at = m.startMs === undefined ? "" : `${letter}${hms(m.startMs / 1000)}`;
+      const dur = m.durMs === undefined ? "" : hms(m.durMs / 1000);
+      return `<button class="moment-hand" type="button" data-moment="${esc(m.id)}" data-in="${m.in ? 1 : 0}"
+        data-thread="${esc(m.thread ?? "")}"
         style="display:flex;gap:12px;align-items:baseline;padding:10px 12px;border-radius:${RADIUS.card};background:${C.surface};opacity:${m.in ? "1" : ".62"};width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit">
+        ${
+          at
+            ? `<span data-content style="flex:none;min-width:52px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${colour}">${esc(at)}</span>`
+            : ""
+        }
         <span data-content style="flex:1 1 200px;min-width:min(180px,100%);font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70}">${esc(m.quote.slice(0, 120))}</span>
+        ${
+          dur
+            ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(dur)}</span>`
+            : ""
+        }
         <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${m.in ? ACCENT.green : C.ink45}">${esc(m.note)}</span>
-      </button>`,
-    )
-    .join("")}</div>`;
+      </button>`;
+    })
+    .join("");
+
+  /* What the tab is for, said once at the top — the prototype's own
+     sentence. Two different gestures live on these rows and neither is
+     guessable from a row that looks like every other row. */
+  return `<div style="margin-top:14px;font-size:${SIZE.secondary};line-height:1.55;color:${C.ink45};max-width:620px;text-wrap:pretty">Every moment, through this project's rules. Click one that's out to keep it by hand; click one that's in to go to it.</div>
+    ${chips}
+    <div class="moment-list" style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
 }
 
 export function renderCut(d: CutData): string {

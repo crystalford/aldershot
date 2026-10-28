@@ -743,3 +743,76 @@ test("one fix is one fix", () => {
   });
   assert.match(p, /and 1 fix by hand/);
 });
+
+/* ── The project's Footage tab, rendered ────────────────────────────────── */
+
+/**
+ * A LIST OF SENTENCES IS NOT A LIST OF MOMENTS.
+ *
+ * The tab rendered each moment as its text and a verdict. The prototype's row
+ * is the moment itself: where in which recording, how long, and then the
+ * verdict. Without those, two similar lines from two videos are the same row,
+ * and a four-second aside looks like a forty-second argument.
+ */
+const foot = (d: Partial<CutData>) =>
+  renderCut({ ...base, view: "footage", rules: RULES, ...d } as CutData);
+
+test("a moment says where in which recording, and how long", () => {
+  const html = foot({
+    sources: [
+      { id: "s-a", title: "Tuesday", duration_s: 600 },
+      { id: "s-b", title: "Thursday", duration_s: 600 },
+    ],
+    moments: [
+      {
+        id: "m1",
+        quote: "the kettle",
+        source_title: "Thursday",
+        in: true,
+        note: "in · rule 01",
+        sourceId: "s-b",
+        startMs: 400_000,
+        durMs: 44_000,
+      },
+    ],
+  });
+  /* "B 6:40" — the letter from the project's ordered sources, the same
+     letterFor the chips beside the title and the Words gutter use, and the
+     time unpadded the way footage.js writes every moment's time. */
+  assert.match(html, />B 6:40</);
+  assert.match(html, />0:44</, "and how long it runs");
+});
+
+test("one video needs no letter", () => {
+  /* "A" down every row of a single-source list is a column of the same
+     character. Same rule the Words gutter follows. */
+  const html = foot({
+    sources: [{ id: "s-a", title: "Tuesday", duration_s: 600 }],
+    moments: [
+      { id: "m1", quote: "x", source_title: "Tuesday", in: true, note: "in · rule 01", sourceId: "s-a", startMs: 61_000, durMs: 4000 },
+    ],
+  });
+  assert.match(html, />1:01</);
+  assert.doesNotMatch(html, />A 1:01</);
+});
+
+test("the threads are chips with counts, and only when there is a choice", () => {
+  const two = foot({
+    moments: [
+      { id: "m1", quote: "a", source_title: "T", in: true, note: "in · rule 01", thread: "money" },
+      { id: "m2", quote: "b", source_title: "T", in: true, note: "in · rule 01", thread: "money" },
+      { id: "m3", quote: "c", source_title: "T", in: false, note: "out · rule 02 · click to keep", thread: "the house" },
+    ],
+  });
+  assert.match(two, /class="thread-chip"[^>]*data-thread=""[^>]*data-current/, "Everything is where you start");
+  assert.match(two, />Everything 3</);
+  assert.match(two, />money 2</);
+  assert.match(two, />the house 1</);
+
+  /* One thread beside Everything is a control whose two states show the
+     same list. */
+  const one = foot({
+    moments: [{ id: "m1", quote: "a", source_title: "T", in: true, note: "in · rule 01", thread: "money" }],
+  });
+  assert.doesNotMatch(one, /thread-chip/);
+});

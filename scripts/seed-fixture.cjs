@@ -514,9 +514,29 @@ async function main() {
     ["the hand fix is folded, not numbered", /and 1 fix by hand/],
     ["and it can be undone", /class="fix-undo"[^>]*data-moment="fix-clip-10"/],
   ];
+
+  /*
+   * THE FOOTAGE TAB IS A SECOND PAGE, so it is a second fetch.
+   *
+   * Its rows are built by the same route and a different view, and the one
+   * thing worth proving from outside is the sentence a unit test cannot see:
+   * a moment nothing claims still offers the hand. It read "out · no rule
+   * keeps it" and stopped, while the identical row above it said "click to
+   * keep" — the same capability, offered on one row and not the other.
+   */
+  const footage = await (await fetch(BASE + "/p/" + PROJECT_ID + "/footage")).text();
+  const footWant = [
+    ["a moment nothing keeps still offers the hand", /no rule keeps it · click to keep/],
+    ["the moments say where in the recording", /font-family:'IBM Plex Mono',monospace;color:[^"]*">0:\d\d</],
+  ];
   let bad = 0;
   for (const [name, re] of want) {
     const ok = re.test(cut);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+  for (const [name, re] of footWant) {
+    const ok = re.test(footage);
     if (!ok) bad += 1;
     console.log((ok ? "  ✓ " : "  ✗ ") + name);
   }
