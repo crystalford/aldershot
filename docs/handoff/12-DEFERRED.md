@@ -42,6 +42,33 @@ nobody can check.
   an absent estimate makes a run stop at the knee instead of looking longer.
   It cannot stop a run early for a reason that is not true.
 
+- **Reframe, and the vision dependency behind it.** The prototype's Shorts
+  workbench offers "Follow the speaker", "Centered" and "Split screen".
+  Subject tracking exists nowhere in `src/` or `container/`, and neither does
+  a two-up composite — so two of the three are promises nothing can keep, and
+  a control where one option works is worse than no control. The build ships
+  **Shape** (9:16 / 1:1 / 4:5) instead, which `ASPECTS` already validates and
+  the render route already takes.
+  This is a CAPABILITY decision and not just a parked feature: it determines
+  whether the render container ever grows a vision dependency (face or subject
+  detection per frame, then a pan solved over the shot). That is a different
+  class of thing from everything in the container today, which is ffmpeg
+  filters over known ranges.
+
+- **Word-by-word captions.** The prototype names the caption styles "Word by
+  word" and "Two lines". `container/render.mjs` draws its two styles from the
+  SAME cues — `cuesFromWords` chunks words into wrapped phrases — and they
+  differ only in font size, weight and outline. Nothing is word-by-word. The
+  build keeps **Bold / Clean / None**, which describe what actually differs.
+  Karaoke timing would mean emitting one cue per word with per-word highlight
+  spans in the ASS file, which is real work and not a rename.
+
+- **A short's kept/skipped state, persisted.** Skip it / Keep it on the
+  workbench is a decision held in the page. Persisting it means a row per
+  short per project, and the question of what a "short" IS as a stored object
+  — today it is a line of the cut, graded on the fly, with no identity of its
+  own beyond its block id. Worth doing with the export fan, not before it.
+
 - **Footage-hours, generated seconds, and the plan set.** A PRICING decision,
   and the owner's: the design and the build denominate differently and neither
   contradicts itself.

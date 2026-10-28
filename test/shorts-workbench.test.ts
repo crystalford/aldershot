@@ -191,3 +191,73 @@ test("a cut with no line to cut from says so instead of drawing an empty workben
      into every page, so the bare name is there whatever is rendered. */
   assert.ok(!html.includes('class="short-focus"'));
 });
+
+/* ── The list, filtered ─────────────────────────────────────────────────── */
+
+const long = (id: string, text: string, ms: number) =>
+  line(id, text, { start_ms: 0, end_ms: ms });
+
+test("what is not a short is separated, with the measurement that says so", () => {
+  /*
+   * problems() has produced this fact since shorts landed and nothing showed
+   * it: a line too short or too long sat low in the list with a band. "This
+   * is not a short and here is why" is a different sentence from "this is a
+   * weak short", and only the first one can be argued with.
+   */
+  const html = shorts({
+    blocks: [
+      long("s:0", "A line that is a perfectly good length for a short to be.", 30_000),
+      long("s:1", "Too quick.", 2_000),
+      long("s:2", "Far too long to be a short by any measure at all.", 120_000),
+    ],
+  });
+  assert.match(html, /NOT SHORTS/);
+  assert.match(html, /it is over before a viewer has arrived/);
+  assert.match(html, /it is longer than a short/);
+  assert.match(html, /Use it anyway/, "a measurement is a reason, not a veto");
+});
+
+test("the length bands filter what is shown and do not re-grade anything", () => {
+  const blocks = [
+    long("s:0", "A line of about twenty-five seconds, which is squarely a short.", 25_000),
+    long("s:1", "A line of about seventy seconds, which is a longer one.", 70_000),
+  ];
+  const narrow = shorts({ blocks, shortLen: "15–35s" } as Partial<CutData>);
+  assert.match(narrow, /about twenty-five seconds/);
+  assert.doesNotMatch(narrow.slice(narrow.indexOf("NOT SHORTS") >= 0 ? 0 : 0, narrow.length), /seventy seconds[\s\S]*seventy seconds/);
+
+  const wide = shorts({ blocks, shortLen: "40–90s" } as Partial<CutData>);
+  assert.match(wide, /about seventy seconds/);
+
+  /* The bands are a view. A line's grade is what it is whichever band is on,
+     because how long something is and whether it stands on its own are two
+     questions. */
+  for (const html of [narrow, wide]) assert.match(html, /Bands and reasons, not scores/);
+});
+
+test("best N takes the top N, in the order the engine put them", () => {
+  /*
+   * COUNTED, not sampled. The first version asserted that each list contained
+   * something, which was true whether or not the count did anything at all —
+   * removing the slice failed nothing. The claim is "N rows", so it counts
+   * rows.
+   */
+  const blocks = Array.from({ length: 6 }, (_, i) =>
+    long(`s:${i}`, `A line number ${i} that stands on its own perfectly well.`, 25_000),
+  );
+  const rows = (html: string) => (html.match(/class="short-line"/g) || []).length;
+
+  assert.equal(rows(shorts({ blocks })), 6, "all of them with no count set");
+  assert.equal(rows(shorts({ blocks, shortCount: 4 } as Partial<CutData>)), 4, "best 4 is four");
+
+  /* And it is the TOP four — the engine's order, strongest first. */
+  const four = shorts({ blocks, shortCount: 4 } as Partial<CutData>);
+  assert.ok(four.includes("A line number 0"), "the first the engine ranked is in");
+});
+
+test("the stats line sums what is on screen, and names what was set aside", () => {
+  const html = shorts({
+    blocks: [long("s:0", "A perfectly good length for a short.", 30_000), long("s:1", "Too quick.", 2_000)],
+  });
+  assert.match(html, /1 short · 0:30 to post · 1 not shorts/);
+});

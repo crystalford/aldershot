@@ -688,6 +688,18 @@ async function checkStrings() {
         "transcribed project with no clips, which is where every account " +
         "starts. Says what is absent and claims nothing.",
     ],
+    ...[
+      "NOT SHORTS",
+      "Use it anyway",
+    ].map((t) => [
+      t,
+      "The lines problems() measured out of the shortlist — too short, too " +
+        "long — with the measurement that did it, and a press to force one " +
+        "in. The prototype has the section; these two labels are the build's. " +
+        "A measurement is a reason and not a veto: \"this is not a short and " +
+        "here is why\" is a different sentence from \"this is a weak short\", " +
+        "and the first one can be argued with.",
+    ]),
     [
       "Make the short",
       "The Shorts workbench's render control. The prototype's pair is " +

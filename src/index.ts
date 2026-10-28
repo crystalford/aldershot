@@ -1700,6 +1700,8 @@ app.get("/p/:id/:stagePath", async (c) => {
            state: the back button works, a link to one short is a link to one
            short, and the crawl can reach it. */
         shortId: c.req.query("short") ?? null,
+        shortLen: c.req.query("len") ?? null,
+        shortCount: Number(c.req.query("count")) || null,
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,

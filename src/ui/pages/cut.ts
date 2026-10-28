@@ -205,6 +205,9 @@ export interface CutData {
    * short is a link to one short, and a crawl can reach the workbench at all.
    */
   shortId?: string | null;
+  /** The length band and the count, from ?len= and ?count=. */
+  shortLen?: string | null;
+  shortCount?: number | null;
   /** "2:04 · 3 blocks · from 2 videos · one thread at a time". */
   cutLine: string;
   /** Every instruction given to the model on this cut, and what came of it. */
@@ -782,6 +785,21 @@ function shortsList(d: CutData): string {
   }
 
   const ORDER: Record<Grade, number> = { strong: 0, worth: 1, long: 2 };
+
+  /*
+   * THE THREE LENGTHS A PLATFORM ACTUALLY WANTS, and a count.
+   *
+   * These are the prototype's own bands. They filter what is shown; they do
+   * not re-grade anything, because how long a line is and whether it stands
+   * on its own are different questions and a filter that quietly changed the
+   * second would make the bands mean something else per view.
+   */
+  const LENGTHS: Array<[string, number, number]> = [
+    ["15–35s", 15_000, 35_000],
+    ["20–60s", 20_000, 60_000],
+    ["40–90s", 40_000, 90_000],
+  ];
+  const COUNTS = [4, 6, 10];
   /*
    * THE RULE, SAID OUT LOUD, where the judgements are.
    *
@@ -797,7 +815,89 @@ function shortsList(d: CutData): string {
     .map((b, i) => ({ b, i, g: grade({ text: b.text, durationMs: b.end_ms - b.start_ms }) }))
     .sort((x, y) => ORDER[x.g.grade] - ORDER[y.g.grade] || x.i - y.i);
 
-  const rows = graded
+  /*
+   * WHAT IS NOT A SHORT, AND THE MEASUREMENT THAT SAYS SO.
+   *
+   * problems() has produced the fact since shorts landed and nothing showed
+   * it: a line too short, too long, or opening on a word nobody heard simply
+   * sat low in the list with a band. The prototype separates them, because
+   * "this is not a short and here is why" is a different sentence from "this
+   * is a weak short" — and the first one can be argued with. Every one can
+   * still be forced in: the measurement is a reason, not a veto.
+   */
+  const notShorts = graded.filter((x) =>
+    x.g.problems.some((pr) => pr.kind === "too-short" || pr.kind === "too-long"),
+  );
+  const eligible = graded.filter((x) => !notShorts.includes(x));
+
+  const chosenLen = LENGTHS.find(([name]) => name === d.shortLen);
+  const chosenCount = COUNTS.includes(Number(d.shortCount)) ? Number(d.shortCount) : null;
+  const shown = (() => {
+    let out = eligible;
+    if (chosenLen) out = out.filter((x) => {
+      const ms = x.b.end_ms - x.b.start_ms;
+      return ms >= chosenLen[1] && ms <= chosenLen[2];
+    });
+    return chosenCount ? out.slice(0, chosenCount) : out;
+  })();
+
+  const here = (over: Record<string, string>) => {
+    const q = new URLSearchParams();
+    if (d.shortLen && over.len === undefined) q.set("len", d.shortLen);
+    if (d.shortCount && over.count === undefined) q.set("count", String(d.shortCount));
+    for (const [k, v] of Object.entries(over)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return `/p/${esc(d.projectId)}/shorts${qs ? "?" + qs : ""}`;
+  };
+
+  const filterChip = (label: string, on: boolean, href: string) =>
+    `<a href="${href}" style="font-size:${SIZE.meta};font-weight:500;padding:5px 11px;border-radius:5px;text-decoration:none;background:${
+      on ? C.active : "transparent"
+    };color:${on ? C.ink : C.ink45}"><span data-content>${esc(label)}</span></a>`;
+
+  const filters = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+    ${LENGTHS.map(([name]) => filterChip(name, d.shortLen === name, here({ len: d.shortLen === name ? "" : name }))).join("")}
+    <span style="flex:none;width:10px"></span>
+    ${COUNTS.map((n) =>
+      filterChip(`best ${n}`, chosenCount === n, here({ count: chosenCount === n ? "" : String(n) })),
+    ).join("")}
+  </div>`;
+
+  /* What it adds up to. Minutes to post is the one number a person planning a
+     week actually wants, and it is a sum of what is on screen. */
+  const totalMs = shown.reduce((n, x) => n + (x.b.end_ms - x.b.start_ms), 0);
+  const stats = `<div data-content style="margin-bottom:10px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${
+    shown.length
+  } short${shown.length === 1 ? "" : "s"} · ${hms(totalMs / 1000)} to post${
+    notShorts.length ? ` · ${notShorts.length} not shorts` : ""
+  }</div>`;
+
+  const notShortRows = notShorts.length
+    ? `<div style="margin-top:16px">
+        <div style="font-size:10px;font-weight:600;letter-spacing:.06em;color:${C.ink32}">NOT SHORTS</div>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">${notShorts
+          .map(({ b, g }) => {
+            const why = g.problems.find((pr) => pr.kind === "too-short" || pr.kind === "too-long");
+            const letter = markOf(d, sourceIndex(d), b).letter;
+            const where = [letter ? `${letter} ${hms(b.start_ms / 1000)}` : hms(b.start_ms / 1000), hms((b.end_ms - b.start_ms) / 1000)]
+              .filter(Boolean)
+              .join(" · ");
+            return `<div style="display:flex;gap:12px;align-items:baseline;padding:9px 12px;border-radius:${RADIUS.card};background:${C.surface}">
+              <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32};white-space:nowrap">${esc(where)}</span>
+              <span style="flex:1 1 200px;min-width:min(200px,100%)">
+                <span data-content style="display:block;font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70}">${esc(b.text)}</span>
+                <span data-content style="display:block;margin-top:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(
+                  why?.reason ?? "",
+                )}</span>
+              </span>
+              <a href="${here({ short: b.id })}" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};text-decoration:none">Use it anyway</a>
+            </div>`;
+          })
+          .join("")}</div>
+      </div>`
+    : "";
+
+  const rows = shown
     .map(({ b, g }) => {
       const accent = ACCENT[GRADE_ACCENT[g.grade]];
       /* The segment index is in the block id — "s:12" — and it is what
@@ -848,7 +948,7 @@ function shortsList(d: CutData): string {
    * default is the first the engine rates strongest, because that is the one
    * worth looking at first.
    */
-  const focused = graded.find((x) => x.b.id === d.shortId) ?? graded[0];
+  const focused = graded.find((x) => x.b.id === d.shortId) ?? shown[0] ?? eligible[0];
   const order = sourceIndex(d);
 
   return `<div>
@@ -858,8 +958,11 @@ function shortsList(d: CutData): string {
     </div>
     ${said}
     ${briefBox(d.projectId)}
-    ${focused ? focusedShort(d, focused, graded.length, graded.indexOf(focused) + 1, order) : ""}
+    ${focused ? focusedShort(d, focused, eligible.length, eligible.indexOf(focused) + 1, order) : ""}
+    ${filters}
+    ${stats}
     <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+    ${notShortRows}
   </div>`;
 }
 
