@@ -2362,6 +2362,17 @@ for (const el of [palette, keysheet]) {
  * there now too.
  */
 
+/* ── The strip under the player ───────────────────────────────────────
+   A segment per block, its width its duration and its colour the video it
+   came from. Pressing one goes there — goToBlock is the editor's own, so
+   this and the find panel can never disagree about what "go there" means. */
+document.querySelectorAll(".strip-seg").forEach((seg) => {
+  seg.addEventListener("click", async () => {
+    const found = await window.goToBlock(seg.getAttribute("data-block"));
+    if (!found) toast("That line isn't in this cut any more.");
+  });
+});
+
 /* ── The project switcher ─────────────────────────────────────────────
    The caret beside the title. Rows are links, so this only opens and closes
    the panel — navigation works with the client switched off entirely, and a

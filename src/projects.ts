@@ -818,3 +818,30 @@ export async function sourcesInCut(
     .all<CutSource>();
   return results ?? [];
 }
+
+
+/**
+ * WHICH VIDEO EACH BLOCK COMES FROM, keyed by block id.
+ *
+ * The strip under the player draws one segment per block, coloured by its
+ * source, and the lettered chips beside the title use the same colours in
+ * the same order — so a person can see that the third segment is from video
+ * B without reading anything. That only works if both read the same list.
+ *
+ * Beats only. A cut of one recording is segments of its own source and has
+ * no beats at all; the caller handles that case with the project's own
+ * source id, exactly as `sourcesInCut` does.
+ */
+export async function blockSources(db: D1Database, projectId: string): Promise<Record<string, string>> {
+  const { results } = await db
+    .prepare(
+      `SELECT b.id AS beat_id, c.source_id AS source_id
+         FROM beats b JOIN v2_clips c ON c.id = b.clip_id
+        WHERE b.project_id = ?`,
+    )
+    .bind(projectId)
+    .all<{ beat_id: string; source_id: string }>();
+  const out: Record<string, string> = {};
+  for (const r of results ?? []) out[`b:${r.beat_id}`] = r.source_id;
+  return out;
+}

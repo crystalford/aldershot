@@ -180,3 +180,87 @@ test("the letters keep going past Z", () => {
   const many = Array.from({ length: 30 }, (_, i) => letterFor(i));
   assert.equal(new Set(many).size, 30, "no two videos share a letter");
 });
+
+/**
+ * THE STRIP UNDER THE PLAYER — the shape of the cut, in one line.
+ *
+ * It is the only place in the product where the SHAPE of a cut is visible:
+ * that it opens with ninety seconds of one video and then alternates, or
+ * that one block is twice as long as everything around it.
+ */
+import { blockStrip, keyHints, type StripBlock } from "../src/ui/switcher.ts";
+
+const blk = (over: Partial<StripBlock> = {}): StripBlock => ({
+  id: "b:1",
+  ms: 10_000,
+  sourceId: "s1",
+  struck: false,
+  label: "0:00 · a line",
+  ...over,
+});
+
+test("a segment is as wide as its block is long", () => {
+  const html = blockStrip(
+    [blk({ id: "b:1", ms: 10_000 }), blk({ id: "b:2", ms: 30_000 })],
+    [src("s1", "Tuesday")],
+  );
+  const flex = [...html.matchAll(/flex:(\d+)/g)].map((m) => Number(m[1]));
+  assert.equal(flex.length, 2);
+  assert.equal(flex[1] / flex[0], 3, "three times as long is three times as wide");
+});
+
+test("the strip and the chips agree about which video is which", () => {
+  /*
+   * THE WHOLE POINT OF IT. The third segment being green and the chip for
+   * video B being green is how a person reads the strip without a legend.
+   * Both index into the same ordered list of sources.
+   */
+  const sources = [src("s1", "Tuesday"), src("s2", "Thursday"), src("s3", "Sunday")];
+  const strip = blockStrip(
+    [blk({ id: "b:1", sourceId: "s2" }), blk({ id: "b:2", sourceId: "s1" })],
+    sources,
+  );
+  const chips = sourceChips(sources);
+  const chipColour = (letter: string) =>
+    (chips.match(new RegExp(`;color:(#[0-9A-Fa-f]{6})[^<]*>${letter}</a>`)) ?? [])[1];
+  const segColours = [...strip.matchAll(/background:(#[0-9A-Fa-f]{6})/g)].map((m) => m[1]);
+  assert.equal(segColours[0], chipColour("B"), "a block from the second video is the second colour");
+  assert.equal(segColours[1], chipColour("A"));
+});
+
+test("a voice beat is gold, because it is not footage yet", () => {
+  /* It is a space you have left for yourself. Colouring it as a source
+     would say it had been shot. */
+  const html = blockStrip([blk({ sourceId: null }), blk({ id: "b:2" })], [src("s1", "T")]);
+  assert.match(html, /background:#D9B36A/);
+});
+
+test("a struck block is still drawn, quietly", () => {
+  /* Nothing vanishes — invariant 6 — but the shape you see has to be the
+     shape that renders, so a struck block is faint rather than absent. */
+  const html = blockStrip([blk({ struck: true }), blk({ id: "b:2" })], [src("s1", "T")]);
+  const ops = [...html.matchAll(/opacity:([\d.]+)/g)].map((m) => Number(m[1]));
+  assert.equal(ops.length, 2, "both are drawn");
+  assert.ok(ops[0] < ops[1], "the struck one is fainter");
+});
+
+test("a zero-length block has no width to be", () => {
+  const html = blockStrip([blk({ ms: 0 }), blk({ id: "b:2" }), blk({ id: "b:3" })], [src("s1", "T")]);
+  assert.equal((html.match(/class="strip-seg"/g) ?? []).length, 2);
+});
+
+test("one block is not a shape", () => {
+  /* A strip of one segment says nothing about the shape of anything — it is
+     a full-width bar that looks like a progress meter and is not one. */
+  assert.equal(blockStrip([blk()], [src("s1", "T")]), "");
+  assert.equal(blockStrip([], [src("s1", "T")]), "");
+});
+
+test("the keys are said where the control is", () => {
+  /* They are in the shortcut sheet too, which is a thing you have to know
+     to open. */
+  const html = keyHints();
+  assert.match(html, /space play/);
+  assert.match(html, /block/);
+  assert.match(html, /undo/);
+});

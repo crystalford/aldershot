@@ -27,7 +27,7 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, sourcesInCut, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
+import { blockSources, blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, sourcesInCut, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
@@ -1637,6 +1637,9 @@ app.get("/p/:id/:stagePath", async (c) => {
            title. A cut of one recording is that recording; an assembled one
            is whatever its beats pull from, in the order it uses them. */
         sources: await sourcesInCut(c.env.DB, project.id, project.source_id),
+        /* Which video each block is from, for the strip under the player —
+           the same ordered list the chips colour by, so the two agree. */
+        blockSource: await blockSources(c.env.DB, project.id),
         /* Every project, for the switcher beside the title — the caret the
            prototype puts there, which the build had no control for. */
         projects: (await listProjects(c.env.DB, user.id)).map((p) => ({

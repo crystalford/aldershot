@@ -165,3 +165,65 @@ export function sourceChips(sources: ChipSource[]): string {
     })
     .join("")}</span>`;
 }
+
+
+/**
+ * THE STRIP UNDER THE PLAYER — the shape of the cut, in one line.
+ *
+ * One Take draws a segment per block, its width the block's duration and
+ * its colour the video it came from, and pressing one goes there. It is the
+ * only place in the product where you can see the SHAPE of a cut — that it
+ * opens with ninety seconds of one video and then alternates, or that one
+ * block is twice as long as everything around it.
+ *
+ * THE SAME COLOURS AS THE CHIPS, in the same order, which is the whole
+ * point of it: the third segment being green and the chip for video B being
+ * green is how you read it without a legend. Both index into the same
+ * ordered list of sources.
+ *
+ * A voice beat is gold and has no source, because it is not footage yet —
+ * it is a space you have left for yourself.
+ */
+export interface StripBlock {
+  id: string;
+  /** Milliseconds. A zero-length block is not drawn: it has no width to be. */
+  ms: number;
+  /** The source it came from, or null for a recording or a gap. */
+  sourceId: string | null;
+  struck: boolean;
+  label: string;
+}
+
+export function blockStrip(blocks: StripBlock[], sources: ChipSource[]): string {
+  const live = blocks.filter((b) => b.ms > 0);
+  if (live.length < 2) return "";
+  const order = new Map(sources.map((s, i) => [s.id, i]));
+  const segs = live
+    .map((b) => {
+      const i = b.sourceId === null ? -1 : order.get(b.sourceId) ?? -1;
+      const colour = i < 0 ? ACCENT.gold : CHIP_COLOURS[i % CHIP_COLOURS.length];
+      /* A struck block is still drawn — nothing vanishes — but quietly, so
+         the shape you see is the shape that renders. */
+      return `<button class="strip-seg" data-block="${esc(b.id)}" title="${esc(b.label)}"
+        style="flex:${Math.max(1, Math.round(b.ms / 100))};height:100%;border:none;padding:0;border-radius:99px;cursor:pointer;background:${colour};opacity:${
+          b.struck ? "0.18" : "0.62"
+        }"></button>`;
+    })
+    .join("");
+  return `<div class="strip" style="margin-top:8px;display:flex;gap:2px;height:5px">${segs}</div>`;
+}
+
+/**
+ * The keys, where the prototype puts them: under the player, quiet, in mono.
+ *
+ * They are in the shortcut sheet too, which is a thing you have to know to
+ * open. One line under the control they belong to is how somebody finds out
+ * the arrows move a block without going looking.
+ */
+export function keyHints(): string {
+  /* THE PROTOTYPE'S OWN CHARACTERS, not their entities. It read "space play
+     &middot; &larr;..." and the strings check flagged it, correctly: the
+     prototype has the literal glyphs, so the entity version is a different
+     string that happens to render the same. Verbatim means verbatim. */
+  return `<div style="margin-top:14px;font-size:${SIZE.pill};line-height:1.7;font-family:${FONT.mono};color:${C.ink32}">space play · ← → block · x cut · ⌘z undo</div>`;
+}

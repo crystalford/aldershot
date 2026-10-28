@@ -29,7 +29,7 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { GRADE_NAME, grade, gradeForScore, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
-import { sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
+import { blockStrip, keyHints, sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -83,6 +83,12 @@ export interface CutData {
    * true of a cut nothing has been assembled into.
    */
   sources?: ChipSource[];
+  /**
+   * Which video each block came from, keyed by block id — for the strip
+   * under the player, which colours by source. A block with no entry is
+   * this project's own source, the same rule mediaKey follows.
+   */
+  blockSource?: Record<string, string>;
   /**
    * How much the assistant decides — the composer's dial (src/decide.ts).
    *
@@ -1507,7 +1513,21 @@ export function renderCut(d: CutData): string {
       and this is the third; it used to sit at the top of the assistant, which
       made one column do two jobs and left the document what was left over.
     -->
-    <div class="editor-player">${player}${sourceLine}</div>
+    <!-- The player, the shape of the cut under it, and the keys. One Take
+         puts all three here; the build had the player and the line back to
+         the footage. -->
+    <div class="editor-player">${player}${blockStrip(
+      d.blocks.map((b) => ({
+        id: b.id,
+        ms: Math.max(0, b.end_ms - b.start_ms),
+        /* A block with no entry is this project's own source, which is the
+           same rule mediaKey and previewKey follow. */
+        sourceId: (d.blockSource ?? {})[b.id] ?? d.sourceId,
+        struck: b.struck,
+        label: `${tc(b.start_ms / 1000)} · ${b.text.slice(0, 60)}`,
+      })),
+      d.sources ?? [],
+    )}${keyHints()}${sourceLine}</div>
   </div>
   <!--
     THE EXPORT BAR WAS HERE, and One Take has no such thing.
