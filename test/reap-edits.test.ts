@@ -150,6 +150,10 @@ function listed(): string[] {
     CREATE TABLE renders(id TEXT PRIMARY KEY, project_id TEXT);
     CREATE TABLE sources(id TEXT PRIMARY KEY, title TEXT, cut_title TEXT);
     INSERT INTO sources VALUES('S1','DJI 0026 D','Quartering the north field');
+    /* A source the namer never managed to name. src/naming.ts: "a source that
+       could not be named keeps a null cut_title". Every fixture here used to
+       have one, which is why nothing caught the NULL. */
+    INSERT INTO sources VALUES('S2','GX010042',NULL);
   `);
   const rows: Array<[string, string, string | null, string, string | null]> = [
     // id, title, source_id, brief, cuts
@@ -160,6 +164,15 @@ function listed(): string[] {
     ["briefed", "a supercut of the wind", "S1", "a supercut of the wind", null],
     ["cutdown", "Quartering the north field", "S1", "", '[{"seg":2,"words":null}]'],
     ["composed", "From the composer", null, "", null],
+    /* The row the `=` version dropped: named by the user, no brief, no cuts,
+       and a source with no cut_title — so both other branches of UNNAMED are
+       false, the third is NULL, and NOT NULL is NULL. */
+    ["renamed-unnamed-source", "The kitchen cut", "S2", "", null],
+    /* Its controls on the same source, to show the NULL was the only problem:
+       one still placeholder, one named after the footage. Both unworked, so
+       both stay out whichever way the comparison is written. */
+    ["placeholder-unnamed-source", "Untitled cut", "S2", "", null],
+    ["filenamed-unnamed-source", "GX010042", "S2", "", null],
   ];
   const ins = db.prepare(`INSERT INTO v2_projects VALUES(?,'U1',?,'cut',?,?,?,1,NULL,NULL)`);
   for (const [id, title, src, brief, cuts] of rows) ins.run(id, title, src, brief, cuts);
@@ -175,11 +188,27 @@ function listed(): string[] {
 
 test("an edit you only opened stays out of Projects, whatever the product named it", () => {
   const shown = listed();
-  for (const id of ["placeholder", "filenamed", "autonamed"]) {
+  for (const id of ["placeholder", "filenamed", "autonamed", "placeholder-unnamed-source", "filenamed-unnamed-source"]) {
     assert.ok(!shown.includes(id), `${id} carries no work and must not list`);
   }
 });
 
 test("an edit with work in it lists, including one named by the user", () => {
-  assert.deepEqual(listed(), ["briefed", "composed", "cutdown", "renamed"]);
+  assert.deepEqual(listed(), ["briefed", "composed", "cutdown", "renamed", "renamed-unnamed-source"]);
+});
+
+/*
+ * THE NULL, ON ITS OWN, because the assertion above would also go red for a
+ * dozen unrelated reasons and this is the one worth naming.
+ *
+ * `=` against a null cut_title yields NULL rather than false, the OR chain
+ * comes out NULL, `NOT NULL` is NULL, and the row fails its own WHERE clause.
+ * A cut the user had named themselves was absent from Projects and present at
+ * its own URL. Restoring `=` in src/projects.ts must fail this.
+ */
+test("a cut you named lists even when its source was never named", () => {
+  assert.ok(
+    listed().includes("renamed-unnamed-source"),
+    "UNNAMED must be null-safe: use IS, not =, or a named cut of an unnamed source silently stops listing",
+  );
 });

@@ -50,6 +50,13 @@ const PROTO = APP_PROTO + '\n' + LANDING_PROTO + '\n' + ONE_TAKE_PROTO;
 const TOKENS = fs.readFileSync(path.join(ROOT, 'src/ui/tokens.ts'), 'utf8');
 
 let findings = 0;
+/** Rules that did not run, and why. Read by the exit code at the bottom. */
+const SKIPPED = [];
+function skipped(check, why) {
+  SKIPPED.push(check);
+  console.log(`\n⚠ ${check} — SKIPPED: ${why}.`);
+}
+
 function fail(check, msg, detail) {
   findings++;
   console.log(`\n✘ ${check}\n  ${msg}`);
@@ -539,7 +546,7 @@ async function checkStrings() {
     up = r.ok;
   } catch { up = false; }
   if (!up) {
-    console.log(`\n⚠ strings — SKIPPED: no dev server at ${BASE}. Run \`npx wrangler dev --port 8787 --enable-containers=false\` and re-run.`);
+    skipped('strings', `no dev server at ${BASE}. Run \`npx wrangler dev --port 8787 --enable-containers=false\` and re-run`);
     return;
   }
 
@@ -640,6 +647,33 @@ async function checkStrings() {
         "purpose. Kept as written: each says what to do next and how long it " +
         "takes, and claims nothing the product does not do.",
     ]),
+    /*
+     * TWO MORE OF THE SAME, and reached for the same reason: a fixture.
+     *
+     * scripts/seed-fixture.cjs seeds a transcribed source and a project cut
+     * from it, and NOTHING ELSE — no scored clips, no passes. That is a state
+     * every real account passes through in its first minute and that this
+     * check had never crawled, because the crawl always landed on a project
+     * somebody had already worked on.
+     *
+     * Both are empty states, so the reasoning above applies unchanged: the
+     * prototype draws every frame populated and has no wording for either.
+     */
+    [
+      "Press one, or say it in your own words.",
+      "An empty state: the conversation before anything has been said to it. " +
+        "The prototype only ever draws the assistant mid-conversation. The " +
+        "verbs beneath it say what it can do better than a sentence would — " +
+        "which is the mistake this line replaced — so it points at them and " +
+        "promises nothing.",
+    ],
+    [
+      "Nothing in your library yet.",
+      "An empty state: a project's Footage tab before any moment has been " +
+        "scored. Unreachable by this check until a seeded fixture gave it a " +
+        "transcribed project with no clips, which is where every account " +
+        "starts. Says what is absent and claims nothing.",
+    ],
     ...[
       "As recorded",
       "Clean it up",
@@ -2198,6 +2232,28 @@ checkSchema();
 checkWiring();
 
 checkStrings().then(() => {
-  console.log(findings ? `\n${findings} finding(s)` : '\nAll checks passed');
-  process.exit(findings ? 1 : 0);
+  /* "All checks passed" having skipped one is the same lie as check.sh's
+   * used to be, one level down. Name the skips here too, so the line is true
+   * whichever output a person happens to be reading. */
+  console.log(
+    findings
+      ? `\n${findings} finding(s)`
+      : SKIPPED.length
+        ? `\nAll checks passed except ${SKIPPED.join(', ')} — SKIPPED, not run`
+        : '\nAll checks passed',
+  );
+  /*
+   * 78 MEANS "PASSED, BUT SOMETHING WENT UNCHECKED".
+   *
+   * `strings` returns early with no dev server — correctly, because a check
+   * that goes red for an absent dependency teaches people to ignore red.
+   * But it returned 0, so `scripts/check.sh` could print ALL CHECKS PASSED
+   * having checked no rendered HTML at all: the one rule that reads the
+   * running product was the one rule that could quietly not run.
+   *
+   * A finding still beats a skip — a wrong answer is worse news than no
+   * answer, so 1 wins over 78. check.sh names every skip in its summary and
+   * fails on one under --strict, which is what CI runs.
+   */
+  process.exit(findings ? 1 : SKIPPED.length ? 78 : 0);
 });

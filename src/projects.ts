@@ -187,10 +187,35 @@ export async function getProject(db: D1Database, id: string, userId: string): Pr
  * renamed it" — so every video you merely opened would reappear in Projects,
  * which is the exact complaint that made untouched edits stop listing.
  */
+/*
+ * `IS`, NOT `=`, AND THAT IS THE WHOLE POINT.
+ *
+ * `cut_title` is null on any source whose auto-naming failed — src/naming.ts
+ * says so in as many words: "a source that could not be named keeps a null
+ * cut_title". With `=`, comparing a real title against that null is NULL, not
+ * false, so the whole OR chain came out NULL whenever both other branches were
+ * false. `NOT NULL` is NULL too, so TOUCHED went NULL and the row failed its
+ * own WHERE clause: **a cut you had named yourself did not appear in Projects
+ * at all**, as long as its source had never been given a cut_title and the
+ * edit had no brief, cuts, beats or renders to short-circuit the OR.
+ *
+ * It hid for as long as it did because almost every real project has one of
+ * those four, and because only ONE of the two uses can see it: the reap
+ * (`AND ${UNNAMED}`) is unaffected, since every row it means to collapse makes
+ * an earlier branch of the OR true and SQL short-circuits there. It takes the
+ * `NOT` in TOUCHED to turn an unknown into a dropped row.
+ *
+ * Found by scripts/seed-fixture.cjs checking its own work through the product
+ * instead of reading back its INSERTs: the cut page rendered all 163 words and
+ * /api/projects did not list the project.
+ *
+ * SQLite's `IS` is null-safe equality, so every branch is now true or false
+ * and never NULL.
+ */
 const UNNAMED = `(
   title = 'Untitled cut'
-  OR title = (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id)
-  OR title = (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id)
+  OR title IS (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id)
+  OR title IS (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id)
 )`;
 
 /**

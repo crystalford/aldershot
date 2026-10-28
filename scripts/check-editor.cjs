@@ -31,6 +31,13 @@ const BASE = process.env.BASE || "http://localhost:8787";
 const CHROME = process.env.CHROME || "/opt/pw-browsers/chromium";
 
 const bad = [];
+/** What went unchecked, and why — read by the exit code at the bottom. */
+const SKIPS = [];
+const skipped = (why) => {
+  SKIPS.push(why);
+  console.log("⚠ editor — SKIPPED: " + why + ".");
+};
+
 const say = (ok, name, detail) => {
   if (ok) return console.log("    ✓ " + name);
   bad.push(detail ? name + " — " + detail : name);
@@ -50,7 +57,7 @@ async function main() {
   try {
     await fetch(BASE + "/api/projects");
   } catch {
-    console.log("⚠ editor — SKIPPED: no dev server at " + BASE);
+    skipped("no dev server at " + BASE);
     console.log("    Run `npx wrangler dev --port 8787 --enable-containers=false` and re-run.");
     return;
   }
@@ -111,7 +118,8 @@ async function main() {
     }
   }
   if (!project) {
-    console.log("⚠ editor — SKIPPED: no transcribed project in this account to drive.");
+    skipped("no transcribed project in this account to drive");
+    console.log("    Run `node scripts/seed-fixture.cjs` and re-run.");
     await browser.close();
     return;
   }
@@ -602,13 +610,27 @@ async function main() {
          * than everyone else's. The assembly writes itself into the
          * conversation as the first turn.
          */
-        say(
-          await $(() => {
-            const t = document.querySelector(".asst-talk");
-            return !!t && /moments? from \d+ video/.test(t.textContent);
-          }),
-          "the conversation opens with what it pulled and from how many videos",
-        );
+        /*
+         * TWO FACTS, ASKED FOR SEPARATELY.
+         *
+         * This used to be one regex — /moments? from \d+ video/ — which also
+         * demanded the two sit next to each other. They never have to:
+         * src/assemble.ts builds the line as describe() + " · from N videos",
+         * and describe() puts the runtime and the rules in between, so the
+         * real sentence reads "4 of 5 moments · 0:20 · one thread at a time ·
+         * from 1 video". The assertion was pinning the gap between two facts
+         * rather than the facts.
+         *
+         * It had never run to find out. The brief is built from a word in
+         * whatever project this check happened to drive, and until there was a
+         * seeded fixture that word matched nothing in the library, so /api/begin
+         * answered 422 and this whole block skipped with a warning.
+         */
+        const opening = await $(() => (document.querySelector(".asst-talk") || {}).textContent || "");
+        say(/\bmoments?\b/.test(opening), "the conversation opens with what it pulled",
+          "no count of moments in the first turn");
+        say(/from \d+ video/.test(opening), "and from how many videos",
+          "blocks from several places with no account of where they came from");
         say(
           await $(() => {
             const turn = document.querySelector(".turn");
@@ -616,9 +638,18 @@ async function main() {
           }),
           "with a Show me, and no Undo — there is no earlier state to go back to",
         );
+        /*
+         * AND IT IS IN THE PLAYER COLUMN, not the rail.
+         *
+         * This looked in `.asst` because the player used to sit at the top of
+         * the assistant column — src/ui/pages/cut.ts says so where it moved it
+         * out: "it used to sit at the top of the assistant, which made one
+         * column do two jobs". The line back to the footage went with it. The
+         * assertion kept naming the rail and never ran to find out.
+         */
         say(
-          await $(() => /in your library/.test(document.querySelector(".asst").textContent)),
-          "and the rail says it is made of the library rather than one video",
+          await $(() => /in your library/.test((document.querySelector(".editor-player") || {}).textContent || "")),
+          "and the line under the player says it is made of the library rather than one video",
         );
 
         /*
@@ -781,7 +812,26 @@ async function main() {
   console.log("✔ editor — the assistant reads as one, find finds, and striking undoes");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    /*
+     * 78 MEANS "PASSED, BUT SOMETHING WENT UNCHECKED".
+     *
+     * This used to return 0 on a skip, and so did the string rule in
+     * check-fidelity.cjs — so `scripts/check.sh` could print ALL CHECKS
+     * PASSED having rendered no HTML and driven no editor. The skip itself
+     * is right (a check that goes red for an absent server teaches people
+     * to ignore red); what was wrong is that the skip was invisible to the
+     * one command whose exit code is supposed to be the answer.
+     *
+     * So: 0 means checked and fine, 1 means checked and wrong, 78 means not
+     * checked. check.sh names every 78 in its summary and fails on one
+     * under --strict, which is what CI runs. 78 is EX_CONFIG from sysexits,
+     * which is close enough to "your environment, not your code".
+     */
+    if (SKIPS.length) process.exit(78);
+  })
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
