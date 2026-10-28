@@ -1,0 +1,83 @@
+name: The gate
+
+# THE GATE, ON A MACHINE.
+#
+# CLAUDE.md says "npm run check — the gate. Nothing merges red." Nothing
+# enforced that: it was a habit, run by hand, and deploy.yml went from
+# `npm install` straight to `wrangler deploy` with no check of any kind in
+# between. A red build deployed.
+#
+# This runs the whole thing on every pull request and on main, with the two
+# stages that need a dev server actually able to run — which is why it boots
+# wrangler and seeds a fixture first. `--strict` means a stage that skips for
+# want of a dependency fails here, so the gate cannot report success having
+# checked less than it claims.
+
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # The editor stage drives a browser through a real cut and back again; the
+    # strings crawl fetches every surface. Generous, but not unbounded — a
+    # hung dev server should fail rather than idle for six hours.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # check-editor drives a real browser. scripts/chrome.cjs uses the
+      # sandbox's shared binary when it exists and otherwise lets Playwright
+      # find its own, which is this.
+      - name: Browser
+        run: npx playwright install --with-deps chromium
+
+      # Without DEV_LOGIN_EMAIL every page is a 302 and the crawl sees
+      # nothing but redirects. It is the auth bypass, which is exactly why it
+      # lives in .dev.vars and never in wrangler.jsonc — deploy.yml refuses to
+      # ship a config carrying it. A throwaway address: this database is
+      # created empty here and thrown away with the runner.
+      - name: Local dev vars
+        run: echo "DEV_LOGIN_EMAIL=ci@aldershot.invalid" > .dev.vars
+
+      - name: Boot the dev server
+        run: |
+          set -euo pipefail
+          npx wrangler dev --port 8787 --enable-containers=false > /tmp/dev.log 2>&1 &
+          echo $! > /tmp/dev.pid
+          for _ in $(seq 1 90); do
+            if curl -sf -o /dev/null http://localhost:8787/api/health; then
+              echo "up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "the dev server never answered /api/health:"; cat /tmp/dev.log; exit 1
+
+      # The account has to exist before it can be seeded, and the app is what
+      # creates it — see the script's own header.
+      - name: Seed the fixture
+        run: |
+          curl -sf -o /dev/null http://localhost:8787/
+          node scripts/seed-fixture.cjs
+
+      - name: npm run check -- --strict
+        run: bash scripts/check.sh --strict
+
+      # What the dev server said while all of that ran. Only on a failure,
+      # because a 400-line miniflare log on a green run is a log nobody reads.
+      - name: The dev server's own log
+        if: failure()
+        run: tail -200 /tmp/dev.log

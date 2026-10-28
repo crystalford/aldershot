@@ -14,6 +14,7 @@
  *   BASE=https://... node scripts/walk.cjs
  */
 const { chromium } = require('playwright');
+const { chromeOptions } = require('./chrome.cjs');
 
 const BASE = process.env.BASE || 'http://localhost:8787';
 /* WIDTH=390 walks it as a phone. The owner has reported mobile layout bugs
@@ -22,7 +23,7 @@ const WIDTH = Number(process.env.WIDTH || 1280);
 const HEIGHT = Number(process.env.HEIGHT || 900);
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const browser = await chromium.launch(chromeOptions());
   const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
 
   /* The sandbox cannot reach Google Fonts, and each attempt costs ~20s of

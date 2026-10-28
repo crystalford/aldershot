@@ -26,9 +26,9 @@
  * would leave somebody's edit cut. It refuses any BASE that is not loopback.
  */
 const { chromium } = require("playwright");
+const { chromeOptions } = require("./chrome.cjs");
 
 const BASE = process.env.BASE || "http://localhost:8787";
-const CHROME = process.env.CHROME || "/opt/pw-browsers/chromium";
 
 const bad = [];
 /** What went unchecked, and why — read by the exit code at the bottom. */
@@ -62,7 +62,7 @@ async function main() {
     return;
   }
 
-  const browser = await chromium.launch({ executablePath: CHROME });
+  const browser = await chromium.launch(chromeOptions());
   /*
    * 1440, WHICH IS THE MEASURE THE DESIGN IS DRAWN AT.
    *

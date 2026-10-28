@@ -23,6 +23,23 @@ jobs:
           node-version: 22
       - run: npm install
 
+      # THE GATE, BEFORE ANYTHING TOUCHES CLOUDFLARE.
+      #
+      # This step did not exist. The job went from `npm install` straight to
+      # provisioning and `wrangler deploy`, so a build that failed typecheck or
+      # tests deployed anyway — in a repo whose CLAUDE.md says "nothing merges
+      # red". The habit was real and nothing enforced it.
+      #
+      # Deliberately the non-strict gate. The two stages that need a running
+      # dev server skip here and say so, which is right: booting wrangler and
+      # seeding a fixture belongs in check.yml, which runs on this same push
+      # and does exactly that. Everything else — typecheck, the full test
+      # suite, the container's module graph, and every fidelity rule that
+      # reads source rather than rendered HTML — runs, and a failure stops the
+      # job before a single Cloudflare resource is touched.
+      - name: The gate
+        run: bash scripts/check.sh
+
       - name: Provision resources and deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
