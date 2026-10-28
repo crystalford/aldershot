@@ -116,8 +116,23 @@ const REFERENTIAL = new Set([
  *
  * Starting a clip on one is starting in the middle, and the viewer knows it
  * within a word.
+ *
+ * "SO" IS NOT ONE OF THEM, and it used to be.
+ *
+ * The prototype's own flagship short opens "So I'm going. Not because it's
+ * better there." — and rates its Hook strong. The build rated it a Long
+ * shot, on this list. Putting the two side by side is what found it.
+ *
+ * The design is right. Sentence-initial "so" in speech is a discourse
+ * marker — it opens a thought rather than continuing one — where "and",
+ * "but" and "or" are conjunctions that genuinely need an antecedent. It is
+ * ambiguous in principle ("so I told him no" does continue something), and
+ * the ambiguity is settled by which error costs more: this list decides a
+ * BAND, nothing is withheld, and mislabelling the strongest line in
+ * somebody's footage is worse than letting one weak opener through for them
+ * to judge.
  */
-const CONTINUATIONS = new Set(["and", "but", "so", "because", "then", "or", "which", "also", "anyway"]);
+const CONTINUATIONS = new Set(["and", "but", "because", "then", "or", "which", "also", "anyway"]);
 
 const TERMINATORS = /[.!?…]["'”’)\]]*\s*$/;
 
@@ -221,6 +236,90 @@ export interface Graded {
  * which of two self-sufficient sentences is the better short and a number
  * pretending otherwise is the thing invariant 3 forbids.
  */
+/**
+ * THE DIMENSIONS A SHORT IS JUDGED ON, with a band and a reason each.
+ *
+ * One Take's shorts view puts four cards under the line — Hook, Flow, Value
+ * and Trend — each with a word rather than a number and a sentence saying
+ * why, under a line that states the rule out loud: "Bands and reasons, not
+ * scores — a shortlist, not a prediction."
+ *
+ * The build showed one band and one reason for the whole short, which is
+ * the right vocabulary applied to the wrong grain: "it starts part-way
+ * through a sentence" is a fact about the HOOK, and reading it as a verdict
+ * on the whole clip tells you to throw away something whose only problem is
+ * its first second.
+ *
+ * TREND IS NOT HERE, and that is the point of this comment.
+ *
+ * The prototype's fourth card reads "personal decisions travel well this
+ * month" — a claim about the outside world. Nothing in this codebase knows
+ * what travels this month, and a card that guessed would be the product
+ * inventing a fact on a surface whose whole argument is that it does not.
+ * Invariant 4: every claim keeps its receipt. There is no receipt for that
+ * one, so there is no card. It comes back the day something can measure it.
+ *
+ * VALUE is the scorer's own opinion of the moment, which is a receipt we do
+ * have — and it is absent rather than invented when the moment was never
+ * scored.
+ */
+export type Dimension = "hook" | "flow" | "value";
+
+export const DIMENSION_NAME: Record<Dimension, string> = {
+  hook: "Hook",
+  flow: "Flow",
+  value: "Value",
+};
+
+export interface Read {
+  dimension: Dimension;
+  band: Grade;
+  reason: string;
+}
+
+/** The problems that are the OPENING's fault, and the ones that are the end's. */
+const HOOK_KINDS: ReadonlySet<string> = new Set([
+  "starts-mid-sentence",
+  "dangling-referent",
+  "too-short",
+]);
+
+export function reads(c: Candidate, score?: number | null): Read[] {
+  const found = problems(c);
+  const out: Read[] = [];
+
+  const hook = found.filter((p) => HOOK_KINDS.has(p.kind));
+  out.push(
+    hook.length
+      ? { dimension: "hook", band: HARD.has(hook[0].kind) ? "long" : "worth", reason: hook[0].reason }
+      : { dimension: "hook", band: "strong", reason: "it opens on its own words" },
+  );
+
+  const flow = found.filter((p) => !HOOK_KINDS.has(p.kind));
+  out.push(
+    flow.length
+      ? { dimension: "flow", band: HARD.has(flow[0].kind) ? "long" : "worth", reason: flow[0].reason }
+      : { dimension: "flow", band: "strong", reason: "it lands the point on its own" },
+  );
+
+  /* Absent rather than guessed: a moment the scorer never rated has no
+     opinion attached to it, and "0" is the absence of one. */
+  const band = gradeForScore(score);
+  if (band) {
+    out.push({
+      dimension: "value",
+      band,
+      reason:
+        band === "strong"
+          ? "one of the sharpest lines in your footage"
+          : band === "worth"
+            ? "worth a look beside the rest"
+            : "weaker than the lines around it",
+    });
+  }
+  return out;
+}
+
 export function grade(c: Candidate): Graded {
   const found = problems(c);
   const hard = found.filter((p) => HARD.has(p.kind));

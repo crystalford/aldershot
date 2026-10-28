@@ -26,7 +26,7 @@ import { itemMenu } from "../item-menu.ts";
 import { wordStruck, type Block } from "../../blocks.ts";
 import { ORDERS, type Order } from "../../rules.ts";
 import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
-import { GRADE_NAME, grade, gradeForScore, type Grade } from "../../shorts.ts";
+import { DIMENSION_NAME, GRADE_NAME, grade, gradeForScore, reads, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
 import { blockStrip, keyHints, sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
@@ -548,6 +548,17 @@ function shortsList(d: CutData): string {
   }
 
   const ORDER: Record<Grade, number> = { strong: 0, worth: 1, long: 2 };
+  /*
+   * THE RULE, SAID OUT LOUD, where the judgements are.
+   *
+   * One Take prints it under the cards: "Bands and reasons, not scores — a
+   * shortlist, not a prediction. The rules on the left apply here too."
+   * That is invariant 3 addressed to the person reading, on the one surface
+   * where a product like this would normally show a percentage, and it is
+   * also the honest limit of a shortlist: it says what stands on its own,
+   * not what will do well.
+   */
+  const said = `<div style="margin-top:4px;margin-bottom:10px;font-size:${SIZE.meta};line-height:1.5;color:${C.ink32};text-wrap:pretty">Bands and reasons, not scores — a shortlist, not a prediction. The rules on the left apply here too.</div>`;
   const graded = lines
     .map((b, i) => ({ b, i, g: grade({ text: b.text, durationMs: b.end_ms - b.start_ms }) }))
     .sort((x, y) => ORDER[x.g.grade] - ORDER[y.g.grade] || x.i - y.i);
@@ -563,7 +574,19 @@ function shortsList(d: CutData): string {
         <span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${accentBg(accent)};color:${accent};white-space:nowrap">${esc(GRADE_NAME[g.grade].toUpperCase())}</span>
         <span style="flex:1 1 220px;min-width:min(200px,100%)">
           <span data-content style="display:block;font-size:${SIZE.body};line-height:1.5">${esc(b.text)}</span>
-          <span data-content style="display:block;margin-top:3px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(g.reason)}</span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${reads(
+            { text: b.text, durationMs: b.end_ms - b.start_ms },
+            b.score,
+          )
+            .map((rd) => {
+              const ink = ACCENT[GRADE_ACCENT[rd.band]];
+              return `<span title="${esc(rd.reason)}" style="display:inline-flex;align-items:baseline;gap:5px;font-size:${SIZE.meta};padding:3px 7px;border-radius:4px;background:${C.pill}">
+                <span data-content style="color:${C.ink45}">${esc(DIMENSION_NAME[rd.dimension])}</span>
+                <span data-content style="font-weight:600;color:${ink}">${esc(GRADE_NAME[rd.band].toLowerCase())}</span>
+              </span>`;
+            })
+            .join("")}</span>
+          <span data-content style="display:block;margin-top:5px;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(g.reason)}</span>
         </span>
         ${
           seg
@@ -581,6 +604,7 @@ function shortsList(d: CutData): string {
       <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">Shorts</span>
       <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${strong} of ${graded.length} lines stand on their own</span>
     </div>
+    ${said}
     ${briefBox(d.projectId)}
     <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
   </div>`;
