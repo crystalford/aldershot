@@ -127,7 +127,24 @@ export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boole
       { role: "user", content: `Plan it: ${topic}` },
     ],
     response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 4000,
+    /*
+     * 8000, LIKE EVERY OTHER CALL THAT RETURNS A STRUCTURE THIS SIZE.
+     *
+     * It was 4000, and the first time anything actually called this — the
+     * composer's new essay door — `reportRoom` said what had been true all
+     * along: "[plan] cut off: spent all 4000 output token(s), so the answer is
+     * incomplete and anything parsed from it is a guess. Raise the budget."
+     * Nothing parsed, no beats came back, and the plan could not be reached.
+     *
+     * The ask is a claim plus five to eight beats, each with a role, a name
+     * and a `need` written as a described moment — the same order of output as
+     * score.ts, arrange.ts and essay.ts, which all use 8000. 4000 was the
+     * figure for a call that returns a sentence.
+     *
+     * Unnoticed for as long as it was because POST /api/plans had no caller:
+     * the budget was only ever wrong on a path nobody took.
+     */
+    max_tokens: 8000,
   });
 
   const { tokensIn, tokensOut } = usageTokens(res);

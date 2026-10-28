@@ -27,7 +27,10 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
   `labs/Essay to video.dc.html`) and there is no object for *a video that could
   be made* — so nothing ranks angles, nothing lets a Scout find change the
   plan's mind, and nothing prices an angle that leans on ghosts.
-- `docs/handoff/16-STATE-OF-PLAY.md` is accurate as of 14 Oct 2026. The README's "Where the repo is ahead of the handoff" section says what has landed since.
+- `docs/handoff/16-STATE-OF-PLAY.md` is a **photograph of 14 Oct 2026**, not a
+  status. It lists as missing roughly twenty things that now exist, and says so
+  at the top. For what is true now: `npm run check`, then the README's "Where
+  the repo is ahead of the handoff", then `12-DEFERRED.md`.
 
 ## When the documents disagree
 

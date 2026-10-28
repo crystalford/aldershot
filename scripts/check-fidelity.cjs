@@ -1728,19 +1728,20 @@ function checkReachable() {
    * check. Wire them or take them out; a list like this earns its keep only
    * by getting shorter.
    */
-  const KNOWN_DEAD = [
-    '/api/projects/:id/outline',
-    /*
-     * React mode's planner, written ahead of its phase.
-     *
-     * It lays out clips interleaved with lines to say after them, which is
-     * doc 09's React mode, and React mode has no UI yet. It surfaced on
-     * 21 Oct 2026 when this rule stopped accepting a comment as a caller —
-     * it had never been reachable, and the rule had never been able to say
-     * so. Listed rather than exempted so it stays visible every run.
-     */
-    '/api/projects/:id/reactions',
-  ];
+  /*
+   * EMPTY, AND IT IS MEANT TO STAY THAT WAY.
+   *
+   * It held /api/projects/:id/outline and /api/projects/:id/reactions, both
+   * surfaced on 21 Oct 2026 when this rule stopped accepting a comment as a
+   * caller. Neither was ever reachable, and both were deleted on 28 Oct: they
+   * were second doors to work `begin()` already dispatches from the composer,
+   * so the capabilities stayed and the routes went.
+   *
+   * A list like this earns its keep only by getting shorter. Adding to it is
+   * how a route nothing asks for becomes permanent furniture, so an entry
+   * needs a reason written beside it saying what will make it reachable.
+   */
+  const KNOWN_DEAD = [];
   const callers = server
     .split('\n')
     .filter((line) => !/app\.(?:get|post|put|delete)\("\/api\//.test(line))

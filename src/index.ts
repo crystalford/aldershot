@@ -40,7 +40,6 @@ import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { nameSourceCut, nameUnnamedSources } from "./naming.ts";
 import { createShortRender } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
-import { renderProjects } from "./ui/pages/projects.ts";
 import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
 import { ACCENT, C } from "./ui/tokens.ts";
@@ -53,6 +52,7 @@ const ACCENT_VIOLET = ACCENT.violet;
 const ACCENT_RED = ACCENT.red;
 import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
 import { draftPlan, findForBeats } from "./plan.ts";
+import { readIntent } from "./intent.ts";
 import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
@@ -754,14 +754,20 @@ async function editRows(db: D1Database, userId: string) {
   return rows;
 }
 
-app.get("/projects", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const rows = await editRows(c.env.DB, user.id);
-  return c.html(
-    surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows), user.email),
-  );
-});
+/*
+ * PROJECTS IS A TAB OF THE ROOM, so this is where the old page goes.
+ *
+ * 02-SCREENS.md: "Home, Footage and Projects were three pages describing one
+ * library." The room folded all three in and has carried a `projects` tab
+ * since; this page was left mounted and linked to from nowhere — no href in
+ * src/ui/ pointed at it, so it was a surface with no door, rendering a second
+ * answer to a question the room already answers.
+ *
+ * A redirect rather than a deletion: the URL is three years of nobody's
+ * bookmarks and one of somebody's, it costs a line, and it lands on the same
+ * list. 303 and not 302 — this is "that page is now over here", permanently.
+ */
+app.get("/projects", (c) => c.redirect("/?tab=projects", 303));
 
 /**
  * THE ROOM — One Take's front door, with no project open.
@@ -1041,9 +1047,12 @@ const roomHandler = async (c: Ctx) => {
  * a surface before its replacement covers it is how a product loses features
  * quietly. It goes when the room covers it, not before.
  *
- * /room stays as an alias so anything already linking to it keeps working.
+ * /ROOM IS GONE, 28 Oct 2026. The line here used to read "/room stays as an
+ * alias so anything already linking to it keeps working", and named its own
+ * condition two paragraphs up: "/room becomes / once nothing points at them".
+ * Nothing does — no href in src/ui/ contains it — so it was a second URL for
+ * one surface that no crawl reached and no person could arrive at.
  */
-app.get("/room", roomHandler);
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -4213,46 +4222,24 @@ app.post("/api/dictate", async (c) => {
 });
 
 /** Lay out a reaction: clips interleaved with lines drafted to say after them. */
-app.post("/api/projects/:id/reactions", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
-
-  const b = await body<{ about: string }>(c);
-  const about = (b.about || project.brief || "").trim();
-  if (!about) return c.json({ error: "say what you're reacting to" }, 400);
-
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  await dispatch(c.env, c.executionCtx, {
-    type: "reactions", jobId: job.id, userId: user.id, projectId: project.id, about,
-  });
-  return c.json({ jobId: job.id });
-});
-
-/**
- * Outline an essay from the library.
+/*
+ * TWO ROUTES GONE, 28 Oct 2026: /api/projects/:id/reactions and
+ * /api/projects/:id/outline.
  *
- * Unlike every other pass, this one has no source video — it builds from what
- * the user has already kept. A beat the model could not back with a real clip
- * comes back marked as a gap rather than dropped or faked.
+ * Both were second doors to work the composer already starts. `begin()` picks
+ * the intent from the sentence and dispatches `reactions` for a react brief
+ * and `outline` for an essay one — and its own comment says why that moved
+ * there: "there were two callers, only one dispatched anything, and the one
+ * that did hardcoded score — so /sources/:id/edit could create a job that
+ * nothing ever ran. One place decides the intent, the job type and the message
+ * together."
+ *
+ * These were the other callers. Nothing in src/ asked for either one, and the
+ * fidelity gate had been listing both as known-dead every run since 21 Oct.
+ * The capabilities are untouched: src/reactions.ts and src/essay.ts are still
+ * reached through /api/begin, which is the door a person actually goes
+ * through. A list of known-dead routes earns its keep only by getting shorter.
  */
-app.post("/api/projects/:id/outline", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project) return c.json({ error: "not found" }, 404);
-
-  const b = await body<{ topic: string }>(c);
-  const topic = (b.topic || project.brief || project.title || "").trim();
-  if (!topic) return c.json({ error: "what is the essay about?" }, 400);
-
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  await dispatch(c.env, c.executionCtx, {
-    type: "outline", jobId: job.id, userId: user.id, projectId: project.id, topic,
-  });
-  return c.json({ jobId: job.id });
-});
 
 /**
  * Generate the voice for a beat.
@@ -5886,6 +5873,50 @@ app.post("/api/begin", async (c) => {
       const mine = new Set((await listSources(c.env.DB, user.id, "newest")).map((x) => x.id));
       scope = asked.filter((id) => mine.has(id));
       if (!scope.length) return c.json({ error: "those videos aren't here any more" }, 422);
+    }
+
+    /*
+     * AN ESSAY GETS THE PLAN FIRST, and that is where /plan/:id was supposed
+     * to be entered from all along.
+     *
+     * The whole plan flow — claim, beats, the one stop, find, cut — was built,
+     * tested, and REACHABLE FROM NOWHERE: no href in src/ui/ pointed at
+     * /plan/:id, and POST /api/plans had no caller. A sentence asking for a
+     * video that argues something went straight to assembleFromLibrary, which
+     * pulls the moments that match and arranges them. That is the right answer
+     * for "a supercut of X" and the wrong one for "make the case that X": it
+     * cuts before anybody has agreed what the thing is saying.
+     *
+     * THE PROTOTYPE PUTS IT HERE. `Aldershot One Take.dc.html` tests the
+     * sentence before it does anything else —
+     *
+     *   if (/essay|video about|argue|make the case|explain|plan it/.test(L))
+     *     { this.startPlan(t); return; }
+     *
+     * — and its ESSAY card on the front door reads "a thesis, your footage, or
+     * both · the plan first". The plan first, either way.
+     *
+     * ONLY WITH NO VIDEO ATTACHED, which is the branch this sits in. Point at
+     * one video and say "a video essay out of this" and that is still a pass
+     * over that video; the plan is for an argument assembled out of the
+     * library, which is what it searches for per beat.
+     *
+     * AND IT FALLS THROUGH RATHER THAN DEAD-ENDING. draftPlan returning no
+     * beats means it could not find an argument in the sentence — so the
+     * sentence gets the assembly it would have had, instead of a refusal for
+     * work the user did not ask for by name.
+     */
+    if (readIntent(brief) === "essay") {
+      const draft = await draftPlan(c.env, brief);
+      if (draft.beats.length) {
+        const planId = await createPlan(c.env.DB, {
+          userId: user.id,
+          topic: brief,
+          claim: draft.claim,
+          beats: draft.beats,
+        });
+        return c.json({ intent: "essay", projectId: null, jobId: null, href: `/plan/${planId}` });
+      }
     }
 
     const made = await assembleFromLibrary(c.env, { userId: user.id, brief, scope });

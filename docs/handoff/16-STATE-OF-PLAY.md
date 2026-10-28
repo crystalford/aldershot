@@ -1,5 +1,37 @@
 # 16 · State of play — prototype, repo, spec
 
+> ## HISTORICAL. Read it as a photograph, not as a status.
+>
+> This was an audit of `main` on **14 October 2026** and it was accurate that
+> day. It is no longer a description of this repo, and it is the kind of
+> document that is dangerous when stale: it lists as *missing entirely* things
+> that have since been built, so a reader planning from it would plan to build
+> them again.
+>
+> **Landed since this was written**, among others: the rule engine ported from
+> `footage.js`; the deterministic solver; word-id spans; the three-way judge
+> (`src/judge.ts`); forced alignment in the container; Scout end to end,
+> including ghosts, missions and the board; the dead-letter queue
+> (`aldershot-jobs-dlq`), which `npm run check` now *requires* for every
+> consumer; Vectorize and hybrid retrieval fused by reciprocal rank; a
+> retrieval eval (`npm run eval`); the scorer readout (`npm run labels`); the
+> brief compiler; the plan flow; and the One Take room, which replaced the
+> Home / Footage / Projects / staged-Editor shape this document describes
+> throughout.
+>
+> **For what is true now**, in this order: `npm run check` (what the build
+> actually guarantees), `README.md`'s "Where the repo is ahead of the handoff",
+> `docs/handoff/11-BUILD-ORDER.md` for sequencing and acceptance, and
+> `docs/handoff/12-DEFERRED.md` for what is deliberately not built — including
+> its "Built, measured, and not wired" section, which is the current list of
+> code that exists and is not reached.
+>
+> It is kept rather than deleted because the REASONING is still worth reading:
+> the Keep/Refactor/Replace judgements below are why the build looks the way it
+> does, and "treat it as a foundation to refactor toward this package, not a
+> diff to patch" was the right call.
+
+
 As of **14 October 2026**. Repo `crystalford/aldershot`, branch `main` (tree `1695351eddbf`), `package.json` version 0.1.0. Read with the GitHub tools on this date; re-check before acting on any line.
 
 ## In one paragraph

@@ -393,3 +393,62 @@ test("the coverage survives a reload, and null survives as null", async () => {
   assert.deepEqual(plan?.beats[0].found, ["c1", "c2", "c3"]);
   assert.equal(plan?.state, "found");
 });
+
+/* ── The door in ────────────────────────────────────────────────────────── */
+
+/**
+ * /plan/:id WAS REACHABLE FROM NOWHERE.
+ *
+ * The whole flow was built and tested and nothing in the product pointed at
+ * it: no href in src/ui/ contained /plan/, and POST /api/plans had no caller
+ * anywhere in src/. A sentence asking for a video that argues something went
+ * to assembleFromLibrary instead and was cut before anyone had agreed what it
+ * was saying.
+ *
+ * The prototype puts the door in /api/begin's no-video branch and tests the
+ * sentence before anything else happens:
+ *
+ *   if (/essay|video about|argue|make the case|explain|plan it/.test(L))
+ *     { this.startPlan(t); return; }
+ *
+ * This reads the shipped source rather than driving a model, for the reason
+ * test/intent-dispatch.test.ts gives about the same route: the thing that was
+ * wrong was which arm the code took, and that is visible in the code.
+ */
+const beginSource = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+
+test("a sentence that reads as an essay starts a plan, and lands on it", () => {
+  const branch = beginSource.slice(beginSource.indexOf('app.post("/api/begin"'));
+  const body = branch.slice(0, branch.indexOf("const src = await getSource"));
+
+  assert.match(body, /readIntent\(brief\) === "essay"/, "the sentence is read before anything is made");
+  assert.match(
+    body,
+    /readIntent\(brief\) === "essay"[\s\S]{0,900}createPlan\(/,
+    "an essay sentence creates a plan",
+  );
+  assert.match(
+    body,
+    /createPlan\([\s\S]{0,400}href: `\/plan\/\$\{planId\}`/,
+    "and the user lands on the plan, which is the page nothing linked to",
+  );
+
+  /*
+   * Before the assembly, not after it. The order IS the behaviour: running the
+   * assembly first spends retrieval over the whole library and produces a cut
+   * of an argument nobody has agreed to.
+   *
+   * Anchored on the CALL rather than the name. The first version searched for
+   * "assembleFromLibrary" and found it in the comment above the branch, which
+   * explains what the old behaviour was — so the assertion compared a line of
+   * prose against the code and went red for the wrong reason.
+   */
+  assert.ok(
+    body.indexOf('readIntent(brief) === "essay"') < body.indexOf("await assembleFromLibrary("),
+    "the plan is offered before the library is assembled",
+  );
+
+  /* And a sentence it cannot find an argument in still gets the assembly it
+     would have had, rather than a refusal for work nobody asked for by name. */
+  assert.match(body, /if \(draft\.beats\.length\)/, "no beats means fall through, not dead-end");
+});

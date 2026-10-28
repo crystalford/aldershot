@@ -106,25 +106,32 @@ test("ACCEPTANCE: the known-dead list is printed on every run", () => {
   assert.match(GATE, /console\.log\('  … ' \+ deadStill\.length/);
 });
 
-test("the known-dead list holds only what was found, and says when", () => {
+test("the known-dead list is empty, and the gate still explains itself", () => {
   /*
-   * A list that grew without anybody noticing would be the rule switched off
-   * by instalments, so the exact contents are pinned here and changing them
-   * takes an argument in a commit message.
+   * EMPTY, 28 Oct 2026, and that is the list finishing its job rather than
+   * being switched off.
    *
-   * `shorts-from-line` came off it the day the Shorts tab wired it, which is
-   * the list doing what it is for. `reactions` went on the day comments
-   * stopped counting as callers: React mode's planner, written ahead of its
-   * phase, never reachable, and until then never reportable either.
+   * It held /api/projects/:id/outline and /api/projects/:id/reactions, both
+   * found when this rule stopped accepting a comment as a caller. The rule's
+   * own instruction was "Wire them or take them out", and they were taken
+   * out: each was a second door to work `begin()` already dispatches from the
+   * composer, so the capabilities (src/essay.ts, src/reactions.ts) stayed and
+   * the routes went. `shorts-from-line` came off the same list the day the
+   * Shorts tab wired it, which is the other way an entry is meant to leave.
+   *
+   * STILL PINNED, in the other direction. This used to assert the exact two
+   * entries so the list could not grow unnoticed — "the rule switched off by
+   * instalments". The same argument now says it must stay at zero, so an
+   * addition takes a reason in a commit message.
    */
   const list = GATE.match(/const KNOWN_DEAD = \[([\s\S]*?)\];/)?.[1] ?? "";
-  /* Route-shaped only: the comments in the list contain apostrophes, and
-     "React mode's planner" is not a route. */
   const routes = [...list.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual(routes, ["/api/projects/:id/outline", "/api/projects/:id/reactions"]);
-  assert.match(GATE, /18 Oct 2026/, "the list says when it was written");
-  assert.match(GATE, /21 Oct 2026/, "and when it was added to");
-  assert.match(GATE, /Wire them or take them out/);
+  assert.deepEqual(routes, [], "a dead route is wired or deleted, not listed");
+  assert.match(
+    GATE,
+    /earns its keep only by getting shorter/,
+    "and the list still says what it is for, so the next reader knows the bar",
+  );
 });
 
 test("ACCEPTANCE: the rule passes on this repo, and says what it is still carrying", () => {
@@ -150,10 +157,17 @@ test("ACCEPTANCE: the rule passes on this repo, and says what it is still carryi
   const out = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
   assert.match(out, /✔ reachable/, "the rule passes on the repo as it stands");
   assert.doesNotMatch(out, /nothing anywhere asks for it/, "and nothing is unwired");
-  assert.match(
+  /*
+   * AND NAMES NOTHING, because there is nothing left to name. The line is
+   * printed only when the list has entries (`if (deadStill.length)`), so its
+   * absence is the whole point: every route this rule knows about is asked
+   * for by something. When an entry comes back, this assertion is what has to
+   * change, and changing it is the argument.
+   */
+  assert.doesNotMatch(
     out,
-    /2 route\(s\) still unreachable and known: \/api\/projects\/:id\/reactions, \/api\/projects\/:id\/outline/,
-    "and names both of them, every run",
+    /route\(s\) still unreachable and known/,
+    "no route is unreachable-and-tolerated any more",
   );
 });
 
