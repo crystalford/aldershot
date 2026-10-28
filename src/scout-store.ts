@@ -25,6 +25,7 @@ import { ulid } from "./id.ts";
 import type { AdapterName, Family, SourceCandidate } from "./scout-adapters.ts";
 import type { ScoutBeat } from "./scout-decompose.ts";
 import type { Verdict } from "./scout-verify.ts";
+import type { LedgerRow } from "./scout-reduce.ts";
 import type { RunSnapshot } from "./scout-run.ts";
 import type { StopReason } from "./scout-stop.ts";
 import type { ItemStatus } from "./items.ts";
@@ -625,4 +626,196 @@ export async function diligence(db: D1Database, runId: string): Promise<Diligenc
        inventive one. */
     rejectionRate: decided ? Number((rejected / decided).toFixed(4)) : 0,
   };
+}
+
+/* ── What the stopping rule measures ───────────────────────────────────── */
+
+/**
+ * THE RUN'S OWN COUNTERS, which the planner had been handed as zeroes.
+ *
+ * `runScoutPhase` built its stop state with `rounds: 0, sourcesScanned: 0,
+ * spendUsd: 0` written in literally, and a one-point curve. decideStop reads
+ * all four:
+ *
+ *   if (state.rounds >= budget.maxRounds)        — never, 0 >= 4 is false
+ *   if (state.sourcesScanned >= budget.maxSources)  — never
+ *   if (state.spendUsd >= budget.maxSpendUsd)    — never
+ *   knee(state.curve)                            — needs more than one point
+ *
+ * So Spec 18's three budgets — four rounds, forty sources, $1.50 — could not
+ * fire, and neither could the knee. Every one of them is a count over rows
+ * already written, which is why this is a read rather than a new column.
+ *
+ * SPEND IS SEARCH SPEND, AND ONLY THAT. `scout_searches.cost_usd` is the one
+ * per-call cost this run records; the model calls (decompose, expand, scan,
+ * reduce) compute their token counts and no row attributes them to a run, so
+ * they are not in this figure. That makes the cap fire later than it should
+ * rather than never, and the gap is written down in 12-DEFERRED.md rather
+ * than papered over with an estimate.
+ */
+export async function runCounters(
+  db: D1Database,
+  runId: string,
+): Promise<{ rounds: number; sourcesScanned: number; spendUsd: number }> {
+  const [run, scanned, spend] = await Promise.all([
+    db.prepare("SELECT rounds FROM scout_runs WHERE id = ?").bind(runId).first<{ rounds: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS n FROM scout_sources WHERE run_id = ? AND scanned = 1")
+      .bind(runId)
+      .first<{ n: number }>(),
+    db
+      .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS n FROM scout_searches WHERE run_id = ?")
+      .bind(runId)
+      .first<{ n: number }>(),
+  ]);
+  return {
+    rounds: Number(run?.rounds ?? 0),
+    sourcesScanned: Number(scanned?.n ?? 0),
+    spendUsd: Number(spend?.n ?? 0),
+  };
+}
+
+/**
+ * The curve the knee is found on: verified moments against queries issued.
+ *
+ * Built from the rows rather than stored, which is the same argument the
+ * curve's own comment in scout-job makes about the coverage — "a measurement
+ * held in a message is a measurement that drifts".
+ *
+ * ONE POINT PER QUERY, in the order they were issued, each carrying how many
+ * rows had been VERIFIED by the time that query went out. `verified_at` is
+ * what makes this possible and is the column that exists for it. The leading
+ * (0, 0) is kept because the knee is measured from the chord between the
+ * first and last points and a curve starting at the first query would be
+ * measuring from halfway up.
+ */
+export async function searchCurve(db: D1Database, runId: string): Promise<Array<{ queries: number; verified: number }>> {
+  const [{ results: issued }, { results: verified }] = await Promise.all([
+    db
+      .prepare(
+        "SELECT issued_at AS at FROM scout_searches WHERE run_id = ? AND outcome = 'ok' ORDER BY issued_at",
+      )
+      .bind(runId)
+      .all<{ at: number }>(),
+    db
+      .prepare(
+        "SELECT verified_at AS at FROM scout_ledger WHERE run_id = ? AND verify = 'verified' " +
+          "AND verified_at IS NOT NULL ORDER BY verified_at",
+      )
+      .bind(runId)
+      .all<{ at: number }>(),
+  ]);
+
+  const stamps = (verified ?? []).map((r) => Number(r.at));
+  const curve = [{ queries: 0, verified: 0 }];
+  (issued ?? []).forEach((q, i) => {
+    const at = Number(q.at);
+    /* Verified rows are already in order, so a count of those at or before
+       this query is a walk rather than a scan per point. */
+    let n = 0;
+    while (n < stamps.length && stamps[n] <= at) n += 1;
+    curve.push({ queries: i + 1, verified: n });
+  });
+  return curve;
+}
+
+/* ── Seeds ─────────────────────────────────────────────────────────────── */
+
+export interface SeedIn {
+  kind: string;
+  value: string;
+  support: number;
+  why: string;
+  queriesN: number;
+}
+
+/**
+ * The seeds a round raised, so the next round does not raise them again.
+ *
+ * snowball() takes `alreadySeeded` for exactly one reason, in its own words:
+ * "without this a run derives the same phrase every round, searches it, finds
+ * the rows it came from, and spends the budget going in a circle." That set
+ * has to outlive the message that carried the round, because a redelivery
+ * would otherwise re-raise every seed and pay for every query again.
+ *
+ * Written here and read by `seedsRaised` below. It is also the only record of
+ * WHY a round asked what it asked, which is the half of the diligence log
+ * that explains the queries rather than listing them.
+ */
+export async function writeSeeds(db: D1Database, runId: string, round: number, seeds: SeedIn[], now = Date.now()): Promise<void> {
+  if (!seeds.length) return;
+  await db.batch(
+    seeds.map((s) =>
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO scout_seeds (id, run_id, round, kind, value, support, why, queries_n, created_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(ulid(now), runId, round, s.kind, s.value, s.support, s.why, s.queriesN, now),
+    ),
+  );
+}
+
+/** Every seed this run has already raised, as snowball's own seedKey. */
+export async function seedsRaised(db: D1Database, runId: string): Promise<string[]> {
+  const { results } = await db
+    .prepare("SELECT kind, value FROM scout_seeds WHERE run_id = ?")
+    .bind(runId)
+    .all<{ kind: string; value: string }>();
+  return (results ?? []).map((r) => r.kind + "\u0000" + String(r.value).trim().toLowerCase());
+}
+
+/**
+ * A round has closed. Spec 18's round budget counts these.
+ *
+ * Incremented by the snowball phase, which is what a round ENDS with — see
+ * nextStep's "KEEP GOING, AND A ROUND ENDS WITH SNOWBALL". Nothing incremented
+ * it before, so `scout_runs.rounds` was written back as 0 every time the row
+ * was refreshed and the four-round cap was unreachable.
+ */
+export async function closeRound(db: D1Database, runId: string): Promise<number> {
+  await db.prepare("UPDATE scout_runs SET rounds = rounds + 1 WHERE id = ?").bind(runId).run();
+  const row = await db.prepare("SELECT rounds FROM scout_runs WHERE id = ?").bind(runId).first<{ rounds: number }>();
+  return Number(row?.rounds ?? 0);
+}
+
+/**
+ * The verified rows snowball seeds from, in the shape scout-reduce defines.
+ *
+ * Only verified. snowball() filters again on arrival — belt and braces, and
+ * its own comment says why: seeding from a paraphrase spends real searches on
+ * a phrase that may not have been said, and seeding from a rejection sends the
+ * run after a fabrication.
+ */
+export async function verifiedRows(db: D1Database, runId: string): Promise<LedgerRow[]> {
+  const { results } = await db
+    .prepare(
+      "SELECT l.id AS id, l.beat_id AS beat_id, l.verify AS verify, l.quote_exact AS quote_exact, " +
+        "l.t_start_s AS t_start_s, l.t_end_s AS t_end_s, l.context_before AS context_before, " +
+        "l.context_after AS context_after, l.source_id AS source_id, l.crowd_signals_n AS crowd_signals_n, " +
+        "l.original_of AS original_of, s.title AS title, s.channel AS channel, s.kind AS kind, " +
+        "s.published_at AS published_at FROM scout_ledger l " +
+        "LEFT JOIN scout_sources s ON s.id = l.source_id " +
+        "WHERE l.run_id = ? AND l.verify = 'verified' ORDER BY l.created_at",
+    )
+    .bind(runId)
+    .all<Record<string, unknown>>();
+
+  return (results ?? []).map((r) => ({
+    id: String(r.id),
+    beatId: String(r.beat_id ?? ""),
+    verify: "verified" as Verdict,
+    quoteExact: String(r.quote_exact ?? ""),
+    tStartS: Number(r.t_start_s ?? 0),
+    tEndS: Number(r.t_end_s ?? 0),
+    ...(r.context_before == null ? {} : { contextBefore: String(r.context_before) }),
+    ...(r.context_after == null ? {} : { contextAfter: String(r.context_after) }),
+    sourceId: String(r.source_id ?? ""),
+    ...(r.title == null ? {} : { sourceTitle: String(r.title) }),
+    ...(r.channel == null ? {} : { sourceChannel: String(r.channel) }),
+    ...(r.kind == null ? {} : { sourceKind: String(r.kind) }),
+    ...(r.published_at == null ? {} : { publishedAt: Number(r.published_at) }),
+    crowdSignals: Number(r.crowd_signals_n ?? 0),
+    originalOf: r.original_of == null ? null : String(r.original_of),
+  }));
 }

@@ -1,10 +1,10 @@
 /**
  * Home — the composer. The only entry point that matters (01-PRODUCT.md).
  *
- * TODO(phase-1): the demo card is designed and rendered, but "Open the demo"
- * has nothing to open until a real 48-minute demo source is seeded and read.
- * Its copy makes a specific factual claim ("Twelve clips found") that must be
- * true of the actual seeded source before this ships to anyone.
+ * THE DEMO CARD IS NOT RENDERED, and the note that used to be here warned
+ * that it must not ship making a claim ("Twelve clips found") that is not
+ * true of any account. It was taken out instead — see the reasoning beside
+ * `answerPanel` below, which is where the decision is recorded.
  *
  * Markup transcribed from the `<sc-if value="{{ isHome }}">` block of
  * design/Aldershot.dc.html. Every string here is copied from the prototype and

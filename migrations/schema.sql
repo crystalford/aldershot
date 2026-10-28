@@ -529,6 +529,21 @@ CREATE TABLE IF NOT EXISTS scout_ledger (
 
 CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify);
 
+CREATE TABLE IF NOT EXISTS scout_seeds (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES scout_runs(id),
+    round INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    support INTEGER NOT NULL,
+    why TEXT NOT NULL,
+    queries_n INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(run_id, kind, value)
+  );
+
+CREATE INDEX IF NOT EXISTS scout_seeds_by_run ON scout_seeds(run_id, round);
+
 CREATE TABLE IF NOT EXISTS scout_crowd (
     id TEXT PRIMARY KEY,
     source_id TEXT NOT NULL REFERENCES scout_sources(id),

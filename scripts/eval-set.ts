@@ -13,10 +13,18 @@
  * figure is pinned to a worked example; this reads the file, runs what can
  * be run today, and says plainly what cannot.
  *
- * WHAT CANNOT, TODAY: the judge. The three-way judge is Phase 4 and does not
- * exist yet, so the two figures that measure IT are reported as waiting
- * rather than as zero. A runner that printed 0.00 for a judge that has never
- * been written would be a number somebody could quote.
+ * WHAT CANNOT, TODAY: the SET. `eval/set.jsonl` does not exist, and it is
+ * ~200 claims over ~10 of the owner's own videos with two labellers — footage
+ * and judgement, not code. Everything around it is built.
+ *
+ * THE JUDGE EXISTS. It is `src/judge.ts`, it is behind its capability
+ * contract, and this runner already reads its answers out of `eval_machine`
+ * and reports "not asked yet" for a pair nobody has put to it. This header
+ * used to say the judge "is Phase 4 and does not exist yet", two phases after
+ * it landed — in the one file whose whole job is to be believable about
+ * numbers. Its figures are still reported as WAITING rather than as zero when
+ * the judge has not been asked, which is the part that was always right: 0.00
+ * for a question nobody asked is a number somebody could quote.
  *
  * TypeScript and typechecked, like scripts/eval-retrieval.ts, and for the
  * reason that file gives: an evaluation harness that is not itself checked

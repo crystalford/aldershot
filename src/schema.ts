@@ -807,6 +807,38 @@ const STATEMENTS: string[] = [
      the table. */
 
   /*
+   * WHAT A ROUND'S FINDS POINTED AT, and the record that stops a run going in
+   * a circle.
+   *
+   * src/scout-snowball.ts derives a round's next questions from what was
+   * verified, and takes `alreadySeeded` for a stated reason: "without this a
+   * run derives the same phrase every round, searches it, finds the rows it
+   * came from, and spends the budget going in a circle." That set has to
+   * survive the message that carried the round — a redelivery would otherwise
+   * re-raise every seed and pay for every query a second time.
+   *
+   * It is also the only record of WHY a round asked what it asked. The
+   * diligence log lists the queries; this says what each one was chasing.
+   *
+   * UNIQUE on (run_id, kind, value) with INSERT OR IGNORE: raising the same
+   * seed twice is the condition this table exists to prevent, so the database
+   * refuses it rather than trusting the caller to check first.
+   */
+  `CREATE TABLE IF NOT EXISTS scout_seeds (
+     id TEXT PRIMARY KEY,
+     run_id TEXT NOT NULL REFERENCES scout_runs(id),
+     round INTEGER NOT NULL,
+     kind TEXT NOT NULL,
+     value TEXT NOT NULL,
+     support INTEGER NOT NULL,
+     why TEXT NOT NULL,
+     queries_n INTEGER NOT NULL,
+     created_at INTEGER NOT NULL,
+     UNIQUE(run_id, kind, value)
+   )`,
+  `CREATE INDEX IF NOT EXISTS scout_seeds_by_run ON scout_seeds(run_id, round)`,
+
+  /*
    * Where fans already indexed the moment. lag_corrected_t_s is the comment
    * timestamp moved to where the thing actually is: a viewer types the time
    * they noticed, which is after it happened.

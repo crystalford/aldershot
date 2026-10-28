@@ -41,12 +41,19 @@ import { DEFAULT_BUDGET, coverageOf, recapture, type Point } from "./scout-stop.
 import { sourcesToScan,
   getBeats,
   queriesTried,
+  closeRound,
+  runCounters,
+  searchCurve,
+  seedsRaised,
   snapshot,
+  verifiedRows,
   writeBeats,
   writeRunRow,
   writeSearches,
+  writeSeeds,
   writeSources,
 } from "./scout-store.ts";
+import { snowball } from "./scout-snowball.ts";
 
 /** Every adapter that works without a key. The rest refuse with a sentence. */
 export function adapters(env: Env): Map<string, ScoutAdapter> {
@@ -96,17 +103,52 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
   const triedByBeat = new Map<string, number>();
   for (const b of beats) triedByBeat.set(b.id, b.queriesTried);
 
+  /*
+   * THE NUMBERS THE STOPPING RULE READS, and three of them used to be the
+   * literal 0.
+   *
+   * decideStop checks `rounds >= maxRounds`, `sourcesScanned >= maxSources`
+   * and `spendUsd >= maxSpendUsd` against DEFAULT_BUDGET's 4 / 40 / $1.50.
+   * With all three hardcoded to zero not one of Spec 18's budgets could ever
+   * fire, and the curve was a single point, so `knee` had no chord to measure
+   * from either. The only way this run could stop was coverage.
+   *
+   * Every one of them is a count over rows already written — see runCounters
+   * and searchCurve, which is also where the one genuine gap is recorded:
+   * spend is SEARCH spend, because no row attributes a model call to a run.
+   */
+  const counters = await runCounters(env.DB, job.runId);
   const stop = {
-    rounds: 0,
-    sourcesScanned: 0,
-    spendUsd: 0,
+    rounds: counters.rounds,
+    sourcesScanned: counters.sourcesScanned,
+    spendUsd: counters.spendUsd,
     queriesIssued: tried.length,
-    curve: [{ queries: 0, verified: 0 }] as Point[],
+    curve: (await searchCurve(env.DB, job.runId)) as Point[],
     coverage: coverageOf(
       beats.map((b) => ({ id: b.id, role: b.role, needMin: b.needMin })),
       verifiedByBeat,
       triedByBeat,
     ),
+    /*
+     * NOT WIRED, AND IT CANNOT BE FROM THESE ROWS. Written down rather than
+     * estimated — see 12-DEFERRED.md.
+     *
+     * recapture compares what the `direct` family found against what the
+     * `crowd` family found and reads the OVERLAP as how much is still out
+     * there. That needs to know which family found each source, and nothing
+     * records it: `scout_sources` has no family column, and `writeSources`
+     * uses INSERT OR IGNORE on UNIQUE(run_id, adapter, external_id) — so a
+     * source both families found is stored once and the second family's find,
+     * which IS the overlap, is discarded on the way in.
+     * `scout_ledger.found_by_family` exists for this and is written by nothing
+     * for the same reason: the scan cannot know what it was never told.
+     *
+     * Zeroes are the SAFE direction here, and that is why this is a deferral
+     * rather than a bug. recapture only ever PREVENTS a stop — decideStop's
+     * `if (state.recapture.moreOutThere) return { stop: false }` — so an
+     * absent estimate makes a run stop at the knee instead of looking longer.
+     * It never causes a run to stop early for a reason that is not true.
+     */
     recapture: recapture(0, 0, 0, 0),
   };
 
@@ -222,6 +264,75 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
           `${out.unreadable.length ? ` — ${out.unreadable.length} source(s) unreadable, rows left for a retry` : ""}`,
       );
       return { ...job, snowballed: false };
+    }
+
+    /*
+     * SNOWBALL: WHAT WAS VERIFIED DECIDES WHAT TO LOOK FOR NEXT.
+     *
+     * THIS ARM DID NOT EXIST. src/scout-snowball.ts is 447 lines, fully
+     * tested, and nothing in src/ imported it — while nextStep emitted
+     * `snowball` as the phase that ENDS a round ("its last act is deciding
+     * what the next round should ask"). With no case for it the switch fell to
+     * `default: return null`, which does not loop — it ends the chain. So
+     * every Scout run there has ever been stopped dead at its first round
+     * boundary, and the step the spec calls "the one that made Scout worth
+     * building" had never run.
+     *
+     * The two bugs hid each other: the run died at round one, so the
+     * four-round budget being hardcoded to zero never mattered.
+     *
+     * NO MODEL CALL. Every seed is a count or a match over rows already held
+     * — a phrase in two verified quotes, a channel on three sources, three
+     * finds inside a fortnight. The convention: if it can be a count, it is
+     * not a model call. Asking a model what to search next produces plausible
+     * queries about the subject; this produces queries about what the evidence
+     * turned out to be.
+     */
+    case "snowball": {
+      const out = snowball({
+        rows: await verifiedRows(env.DB, job.runId),
+        subject: job.subject,
+        alreadyTried: tried,
+        alreadySeeded: await seedsRaised(env.DB, job.runId),
+      });
+
+      /* The round closes whether or not it raised anything, and that
+         distinction is the reason `snowballed` is a boolean rather than a seed
+         count — see RunSnapshot. A run on a subject nobody has discussed
+         raises no seeds and must still advance, or it snowballs for ever. */
+      const round = await closeRound(env.DB, job.runId);
+      await writeSeeds(
+        env.DB,
+        job.runId,
+        round,
+        out.seeds.map((s) => ({
+          kind: s.kind,
+          value: s.value,
+          support: s.support,
+          why: s.why,
+          queriesN: s.queries.length,
+        })),
+      );
+
+      console.log(
+        `[scout] snowball round ${round}: ${out.seeds.length} seed(s), ${out.queries.length} query(ies)` +
+          `${out.skipped.length ? ` — ${out.skipped.length} set aside` : ""}`,
+      );
+
+      /*
+       * The seeds become this round's pending queries, so the next dispatch
+       * sees `queriesPending > 0` and searches them. A seed's beat is not
+       * recoverable: it is derived from rows across several beats by
+       * construction, which is the point of it, so the search row records a
+       * null beat rather than attributing it to one of them arbitrarily.
+       */
+      const requests: SearchRequest[] = out.queries.map((q) => ({
+        adapter: "youtube",
+        beatId: null,
+        family: q.family,
+        query: q.query,
+      }));
+      return { ...job, queriesPending: requests, snowballed: true };
     }
 
     /*

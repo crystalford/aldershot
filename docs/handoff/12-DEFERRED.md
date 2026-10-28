@@ -17,6 +17,38 @@ None of these blocks launch. Each has been decided far enough that it can be pic
 
 Every stored asset carries licence, source URL and credit beside its file. Searchable by words: GDELT, podcasts, the user's own captures. Everything else by title and tag. Corrections to earlier assumptions: C-SPAN forbids all unlicensed commercial use (floor proceedings excepted); Freesound and Jamendo free APIs are non-commercial; X is paid per call with no reuse; Canadian legislative footage is non-commercial without permission.
 
+## Built, measured, and not wired (28 Oct 2026)
+
+Two of Scout's stopping inputs are computed by code that works and fed
+numbers that are not the truth. Both are written here rather than estimated,
+because an estimate in a stopping rule is a run that stops for a reason
+nobody can check.
+
+- **Capture–recapture.** `recapture()` in `src/scout-stop.ts` compares what
+  the `direct` query family found against what the `crowd` family found and
+  reads the overlap as how much is still out there. It is called with
+  `(0, 0, 0, 0)`, because nothing records which family found a given source:
+  `scout_sources` has no family column, and `writeSources` uses
+  `INSERT OR IGNORE` on `UNIQUE(run_id, adapter, external_id)` — so a source
+  BOTH families found is stored once and the second find, which is precisely
+  the overlap the estimate needs, is discarded on the way in.
+  `scout_ledger.found_by_family` exists for this and is written by nothing,
+  for the same reason: the scan cannot know what it was never told.
+  To wire it: carry the family from `runSearches`' per-request candidate lists
+  (`found: SourceCandidate[][]`, which already knows) into a
+  `(run, source, family)` row, and read n1/n2/m off it.
+  **The zeroes are the safe direction**, which is why this is a deferral and
+  not a bug: `decideStop` only ever reads `moreOutThere` to REFUSE a stop, so
+  an absent estimate makes a run stop at the knee instead of looking longer.
+  It cannot stop a run early for a reason that is not true.
+
+- **Model spend, per run.** `runCounters` sums `scout_searches.cost_usd`, so
+  the $1.50 budget now fires on real search spend. The model calls — decompose,
+  expand, scan, reduce — compute their token counts and no row attributes them
+  to a run, so they are not in the figure. The cap therefore fires later than
+  it should rather than never. To wire it: give `usage_events` the run id it
+  already has a `job_id` column for, and add that sum here.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.
