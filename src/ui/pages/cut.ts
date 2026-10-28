@@ -132,7 +132,12 @@ export interface CutData {
     pauses: { found: number; savedMs: number };
   };
   /** The inserted blocks, for the "what still needs you" line in the footer. */
-  beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown }>;
+  /*
+   * `text` is here so the recording note can say WHICH beat is next. "2 of 4
+   * recorded" without it is a number nobody can act on, and the prototype's
+   * line names the line you still owe.
+   */
+  beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown; text?: string | null }>;
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /**
@@ -143,7 +148,22 @@ export interface CutData {
    * out and which rule took it, and that one is clickable because disagreeing
    * with a rule is the point.
    */
-  moments: Array<{ id: string; quote: string; source_title: string; in: boolean; note: string }>;
+  moments: Array<{
+    id: string;
+    quote: string;
+    source_title: string;
+    in: boolean;
+    note: string;
+    /**
+     * The two rules that disagreed about this moment, by their numbers.
+     *
+     * src/rules.ts has recorded this since the engine was ported and nothing
+     * in src/ui/ read it, so a cut where two of your own rules contradict each
+     * other looked exactly like one where they agree. Null on almost every
+     * moment, which is why it has to be shown LOUDLY when it is not.
+     */
+    contest?: { k: string; d: string; kId: string } | null;
+  }>;
   /**
    * Videos this cut is NOT drawing on, and could.
    *
@@ -161,6 +181,13 @@ export interface CutData {
    * thing it was about. The prototype puts "rule 01" on the block.
    */
   blockRule: Record<string, string>;
+  /**
+   * The blocks two rules disagreed about, so the gold mark can go on them.
+   *
+   * The note beside the cut's numbers says "marked in the blocks" — a promise
+   * this is what keeps.
+   */
+  blockContested?: Record<string, true>;
   /** "2:04 · 3 blocks · from 2 videos · one thread at a time". */
   cutLine: string;
   /** Every instruction given to the model on this cut, and what came of it. */
@@ -188,6 +215,79 @@ export interface CutData {
     kind?: string;
     order?: Order;
   }>;
+}
+
+/**
+ * THE LINES THAT ARE ONLY THERE WHEN THEY ARE TRUE.
+ *
+ * Beside the cut's own numbers the prototype puts up to three short notes with
+ * a coloured dot each — what is still to record, what the sound pass did, and
+ * how many moments two rules disagreed about. The build had none of them,
+ * while computing two.
+ *
+ * ABSENT RATHER THAN ZERO. "0 judgement calls" is a sentence that makes a
+ * person look for something that is not there, so a note with nothing to say
+ * is not rendered at all. That is the prototype's own rule — every push is
+ * inside an `if`.
+ */
+function cutNotes(d: CutData): string {
+  const note = (text: string, color: string, dot: string) =>
+    `<span title="${esc(text)}" style="flex:none;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:${color};white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:${dot}"></span><span data-content>${esc(text)}</span></span>`;
+
+  const out: string[] = [];
+
+  /*
+   * WHAT IS LEFT TO RECORD. The beats are already counted — buildSummary has
+   * done it since voice beats landed — and the count reached the screen only
+   * as a single gold phrase at the end of a line. The prototype says which
+   * beat is next, because "2 of 4 recorded" without it is a number you cannot
+   * act on.
+   */
+  const voice = d.beats.filter((b) => (b.kind === "vo" || b.kind === "react") && !(Boolean(b.struck) && b.struck !== "0"));
+  if (voice.length) {
+    const done = voice.filter((b) => b.media_r2_key).length;
+    if (done >= voice.length) {
+      out.push(note(`All ${voice.length} recorded — ready to render`, ACCENT.green, ACCENT.green));
+    } else {
+      const next = voice.find((b) => !b.media_r2_key);
+      const line = (next?.text ?? "").slice(0, 38);
+      out.push(note(`${done} of ${voice.length} recorded — next: ${line}…`, ACCENT.gold, ACCENT.gold));
+    }
+  }
+
+  /*
+   * THE SOUND NOTE, AND IT DOES NOT SAY WHAT THE PROTOTYPE SAYS.
+   *
+   * The prototype's line is "Levels matched across 3 sources", and this
+   * product cannot honestly claim it. src/loudness.ts normalises the
+   * PROGRAMME once, applied to the finished mix in container/render.mjs,
+   * whose own comment explains why normalising each part separately is the
+   * wrong thing to do. "Matched across 3 sources" asserts a per-source pass
+   * that does not exist.
+   *
+   * So the line says what the pipeline actually does. Changing a sentence
+   * costs a line; building per-source gain staging costs a render-pipeline
+   * change and a new measurement, right before a container that has never
+   * been built once. The divergence is written down in 12-DEFERRED.md.
+   */
+  const videos = new Set(
+    d.blocks.filter((b) => !b.struck && b.origin === "footage").map((b) => b.mediaKey ?? d.sourceId ?? "own"),
+  ).size;
+  if (videos > 1) out.push(note("Loudness set for the platform", C.ink70, ACCENT.cyan));
+
+  /* The disagreements, counted. */
+  const contested = d.moments.filter((m) => m.contest).length;
+  if (contested) {
+    out.push(
+      note(
+        `${contested} judgement call${contested === 1 ? "" : "s"} — marked in the blocks`,
+        "rgba(217,179,106,0.9)",
+        "rgba(217,179,106,0.6)",
+      ),
+    );
+  }
+
+  return out.join("");
 }
 
 /**
@@ -241,6 +341,7 @@ function blockRow(
   view: CutView = "blocks",
   rule = "",
   mark: Gutter | null = null,
+  contested = false,
 ): string {
   const script = view === "script";
   const struck = b.struck;
@@ -545,7 +646,22 @@ function blockRow(
   const toCamera = script && b.origin === "voice";
 
   return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
-      style="${shell}">
+      style="${shell}${
+        /*
+         * THE GOLD MARK THE NOTE PROMISES.
+         *
+         * "2 judgement calls — marked in the blocks" is a sentence that sends
+         * somebody looking, so the blocks it names carry a gold edge. A
+         * judgement call is a moment two of your own rules disagreed about —
+         * one wanted it in, one wanted it out — and the pane says which won.
+         *
+         * It REPLACES the score ring on a block that has one, because a later
+         * box-shadow wins and two edges on one row is noise. That is the
+         * right way round: a disagreement between your own rules is a thing
+         * to look at, and a model's opinion of a line is not.
+         */
+        contested ? `box-shadow:inset 2px 0 0 0 ${ACCENT.gold};` : ""
+      }"${contested ? ' data-contested="1"' : ""}>
     ${script ? gutter : thumb}
     <div style="flex:1;min-width:0">
       <div style="font-size:${script ? "15px" : SIZE.quote};line-height:${script ? "2" : "1.5"};color:${
@@ -864,7 +980,7 @@ function scoutPanel(projectId: string): string {
   );
 }
 
-function rulesPanel(rules: CutData["rules"]): string {
+function rulesPanel(rules: CutData["rules"], moments: CutData["moments"] = []): string {
   if (!rules.length) return "";
 
   /*
@@ -960,12 +1076,71 @@ function rulesPanel(rules: CutData["rules"]): string {
   return `<div style="padding-bottom:13px;border-bottom:1px solid rgba(255,255,255,0.05)">
     <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">THE RULES</div>
     <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(main)}</div>
+    ${conflictPanel(moments, main, number)}
     ${
       byHand.length
         ? `<div style="margin-top:12px;font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">by hand</div>
            <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(byHand)}</div>`
         : ""
     }
+  </div>`;
+}
+
+/**
+ * WHEN TWO OF YOUR OWN RULES DISAGREE.
+ *
+ * src/rules.ts has recorded `contest` on every moment a keep rule and a drop
+ * rule both matched since the engine was ported, and NOTHING in src/ui/ read
+ * it. So a cut built from rules that contradict each other looked exactly
+ * like one built from rules that agree — which is the one thing a pane of
+ * visible rules exists to prevent.
+ *
+ * ONE CONFLICT, NOT A LIST, and the prototype is deliberate about this:
+ * `Object.keys(pairs).slice(0, 1)`. A list of disagreements is a form to work
+ * through; one disagreement is a decision to make. The rest are still counted
+ * in the note beside the cut's own numbers and still marked on their blocks.
+ *
+ * The default is stated rather than assumed — taking out beats keeping unless
+ * you say otherwise — because a user who cannot see which way it went cannot
+ * tell a decision from a bug.
+ */
+function conflictPanel(
+  moments: CutData["moments"],
+  main: CutData["rules"],
+  number: (r: CutData["rules"][number]) => string,
+): string {
+  const pairs = new Map<string, { k: string; d: string; kId: string; n: number }>();
+  for (const m of moments) {
+    if (!m.contest) continue;
+    const key = `${m.contest.k}-${m.contest.d}`;
+    const row = pairs.get(key) ?? { k: m.contest.k, d: m.contest.d, kId: m.contest.kId, n: 0 };
+    row.n += 1;
+    pairs.set(key, row);
+  }
+  const first = [...pairs.values()][0];
+  if (!first) return "";
+
+  /* A conflict naming a rule that is no longer in the pane — archived, or by
+     hand — is a conflict nobody can act on, so it is not shown. */
+  const nums = new Set(main.map((r) => number(r)));
+  if (!nums.has(first.k) || !nums.has(first.d)) return "";
+
+  const red = ACCENT.red;
+  return `<div style="margin-top:10px;padding:12px 13px;border-radius:9px;background:rgba(224,106,106,0.07);box-shadow:inset 0 0 0 1px rgba(224,106,106,0.25)">
+    <div data-content style="font-size:12.5px;font-weight:600;color:${red};line-height:1.5">Rules ${esc(first.k)} and ${esc(
+      first.d,
+    )} disagree on ${first.n} moment${first.n === 1 ? "" : "s"}.</div>
+    <div data-content style="margin-top:4px;font-size:12px;line-height:1.55;color:${C.ink70};text-wrap:pretty">Rule ${esc(
+      first.d,
+    )} wins, because taking out beats keeping unless you say otherwise. Those moments are out.</div>
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="rule-wins" type="button" data-rule="${esc(first.kId)}" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:5px;background:${
+        C.active
+      };color:${C.ink};border:none;cursor:pointer;font-family:inherit;white-space:nowrap"><span data-content>Let ${esc(
+        first.k,
+      )} win</span></button>
+      <button class="show-contested" type="button" style="font-size:11.5px;font-weight:500;padding:5px 12px;border-radius:5px;background:transparent;color:rgba(236,236,241,0.5);border:none;cursor:pointer;font-family:inherit;white-space:nowrap">Show which moments</button>
+    </div>
   </div>`;
 }
 
@@ -1097,7 +1272,7 @@ function assistant(d: CutData, player: string): string {
     <!-- The RULES scroll when there are many of them; the Scout card below
          does not get clipped with them, so it is its own row rather than
          the tail of a capped one. -->
-    <div class="asst-top">${player}${rulesPanel(d.rules)}</div>
+    <div class="asst-top">${player}${rulesPanel(d.rules, d.moments)}</div>
     <div class="asst-scout">${scoutPanel(d.projectId)}</div>
 
     <!--
@@ -1599,7 +1774,7 @@ export function renderCut(d: CutData): string {
   const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? "", gutterFor(b)));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? "", gutterFor(b), Boolean((d.blockContested ?? {})[b.id])));
     list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
@@ -1646,7 +1821,7 @@ export function renderCut(d: CutData): string {
                      is the sentence that tells you what you are looking at. */
                   view === "script" ? "The cut, as words" : "The cut"
                 }</span>
-                <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(d.cutLine)}</span>
+                <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(d.cutLine)}</span>${cutNotes(d)}
               </div>`
             }${findBar(d.projectId)}
       <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="${

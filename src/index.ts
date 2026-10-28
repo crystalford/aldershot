@@ -1779,7 +1779,7 @@ app.get("/p/:id/:stagePath", async (c) => {
            * points at the wrong line. Computing twice would let them.
            */
           const stored = await loadRules(c.env.DB, project.id);
-          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {} };
+          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {}, blockContested: {} };
 
           /* Attached footage only. Without this the Footage tab lists every
              moment in the library against a cut that can only ever draw on
@@ -1832,11 +1832,24 @@ app.get("/p/:id/:stagePath", async (c) => {
             ]),
           );
           const blockRule: Record<string, string> = {};
+          /*
+           * AND WHICH BLOCKS THE NOTE IS TALKING ABOUT.
+           *
+           * The cut's own line says "2 judgement calls — marked in the
+           * blocks", so the blocks have to carry the mark or the sentence
+           * sends somebody looking for something that is not there. A beat's
+           * clip_id IS the moment's id, which is the same join blockRule
+           * above already makes.
+           */
+          const contested = new Set(judged.filter((m) => m.contest).map((m) => String(m.id)));
+          const blockContested: Record<string, true> = {};
           for (const bt of beats) {
             if (bt.clip_id && ruleOf.get(bt.clip_id)) blockRule[`b:${bt.id}`] = ruleOf.get(bt.clip_id)!;
+            if (bt.clip_id && contested.has(String(bt.clip_id))) blockContested[`b:${bt.id}`] = true;
           }
 
           return {
+            blockContested,
             addable,
             blockRule,
             rules: stored.map((r) => ({
@@ -1855,6 +1868,25 @@ app.get("/p/:id/:stagePath", async (c) => {
               quote: m.text,
               source_title: titles.get(String(m.id)) ?? "",
               in: m.in,
+              /*
+               * THE DISAGREEMENT, CARRIED THROUGH.
+               *
+               * src/rules.ts records `contest` whenever a keep rule and a drop
+               * rule both matched a moment, and it had been computed and
+               * thrown away here: nothing in src/ui/ had ever seen it, so a
+               * cut where two of your own rules disagree looked exactly like
+               * one where they do not. That is the opposite of what the rules
+               * pane is for.
+               */
+              contest: m.contest
+                ? {
+                    k: numberOf(m.contest.k),
+                    d: numberOf(m.contest.d),
+                    /* The id as well as the number: the number is what a
+                       person reads, the id is what the flip control posts. */
+                    kId: String(m.contest.k),
+                  }
+                : null,
               note: m.in
                 ? m.byId === null
                   ? "in · kept by hand"
@@ -2557,7 +2589,7 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ on?: boolean; order?: string }>(c);
+  const b = await body<{ on?: boolean; order?: string; wins?: boolean }>(c);
   const ruleId = c.req.param("ruleId");
   const rules = await loadRules(c.env.DB, project.id);
   const rule = rules.find((r) => String(r.id) === ruleId);
@@ -2593,6 +2625,42 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
       projectId: project.id,
       sourceId: null,
       instruction: orderText(b.order as Order),
+      result: `${done.kept} moment${done.kept === 1 ? "" : "s"} · ${fmtSecs(done.secs)}`,
+      firstChange: null,
+    }).catch(() => {});
+    return c.json({ ok: true, kept: done.kept, secs: done.secs });
+  }
+
+  /*
+   * THREE THINGS NOW: switch it, reorder it, or let it WIN.
+   *
+   * `wins` settles a disagreement. src/rules.ts records a contest whenever a
+   * keep rule and a drop rule both match a moment, and by default the drop
+   * takes it — taking out beats keeping unless you say otherwise. Setting
+   * `wins` on the KEEP rule reverses that, which is the "Let 01 win" control
+   * in the conflicts panel.
+   *
+   * It is a property of the rule and not of the moment on purpose: the
+   * decision is "whenever these two disagree, this one is right", which is a
+   * rule about rules. Saying it per moment would be making the same judgement
+   * call over and over, which is what the rules exist to stop.
+   */
+  if (b.wins !== undefined) {
+    const wins = Boolean(b.wins);
+    if (Boolean(rule.wins) === wins) return c.json({ ok: true, unchanged: true });
+    const flipped = rules.map((r) => (String(r.id) === ruleId ? { ...r, wins } : r));
+    const done = await recomputeFromRules(c.env, {
+      userId: user.id,
+      projectId: project.id,
+      rules: flipped,
+      scope: scopeOf(project),
+    });
+    if (!done) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, flipped);
+    await recordPass(c.env.DB, {
+      projectId: project.id,
+      sourceId: null,
+      instruction: wins ? `Keeping wins: ${rule.text ?? rule.kind}` : `Taking out wins again`,
       result: `${done.kept} moment${done.kept === 1 ? "" : "s"} · ${fmtSecs(done.secs)}`,
       firstChange: null,
     }).catch(() => {});

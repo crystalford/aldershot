@@ -42,6 +42,20 @@ nobody can check.
   an absent estimate makes a run stop at the knee instead of looking longer.
   It cannot stop a run early for a reason that is not true.
 
+- **Per-source loudness matching.** The prototype's cut carries a note
+  reading "Levels matched across 3 sources". The build says "Loudness set for
+  the platform" instead, because the first is a claim this render cannot keep:
+  `LOUDNORM` in `src/loudness.ts` normalises the PROGRAMME, applied once to the
+  finished mix in `container/render.mjs`, whose own comment explains why
+  normalising each part separately is the wrong thing to do. "Matched across 3
+  sources" asserts a per-source pass that does not exist.
+  To restore the stronger line: measure each source's loudness during the read,
+  stage per-source gain in the EDL, and keep the programme pass after it. That
+  is a render-pipeline change plus a new measurement, and it was not the thing
+  to do immediately before building a container for the first time. Changing
+  the sentence cost a line; invariant 4 cuts both ways, and a status line is a
+  claim like any other.
+
 - **Model spend, per run.** `runCounters` sums `scout_searches.cost_usd`, so
   the $1.50 budget now fires on real search spend. The model calls — decompose,
   expand, scan, reduce — compute their token counts and no row attributes them

@@ -4368,6 +4368,67 @@ document.querySelectorAll(".rule-order").forEach((btn) => {
   });
 });
 
+/*
+ * LET THE KEEP RULE WIN.
+ *
+ * The conflicts panel appears when two of your own rules disagree about the
+ * same moments. By default the drop rule takes them — taking out beats
+ * keeping unless you say otherwise — and this is the "unless you say
+ * otherwise". It sets wins on the KEEP rule — no backticks in this file,
+ * ever: client.ts is one String.raw template and a single one ends it —
+ * which is a standing decision
+ * about those two rules rather than a judgement made again per moment.
+ *
+ * A reload like every other rule change, because the cut is re-produced from
+ * the rules and half the page depends on the answer.
+ */
+document.querySelectorAll(".rule-wins").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wins: true }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/*
+ * SHOW WHICH MOMENTS, which is the promise the note beside the cut makes.
+ *
+ * Every block two rules disagreed about already carries data-contested and a
+ * gold edge; this takes you to the first of them. Scrolling rather than
+ * filtering: the point is to see the disagreement IN the cut, next to what
+ * surrounds it, not to be handed a list of three lines out of context.
+ */
+document.querySelectorAll(".show-contested").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const marked = document.querySelectorAll('[data-contested="1"]');
+    if (!marked.length) {
+      window.toast("Those moments are not in the window on screen.");
+      return;
+    }
+    marked[0].scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+});
+
 document.querySelectorAll(".rule-toggle").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;
