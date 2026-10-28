@@ -29,7 +29,7 @@ import { wordEndMs, wordStartMs, type Cut } from "../../cuts.ts";
 import { DIMENSION_NAME, GRADE_NAME, grade, gradeForScore, reads, type Grade } from "../../shorts.ts";
 import { dial } from "./home.ts";
 import { DEFAULT_MODE, type AskMode } from "../../decide.ts";
-import { blockStrip, keyHints, sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
+import { blockStrip, CHIP_COLOURS, keyHints, letterFor, sourceChips, switcher, type ChipSource, type SwitchItem } from "../switcher.ts";
 
 /**
  * TWO WAYS TO READ THE SAME EDIT.
@@ -191,6 +191,26 @@ export interface CutData {
 }
 
 /**
+ * WHAT THE THREE GESTURES DO, under the script.
+ *
+ * Verbatim from the prototype, and all three are promises this page has to
+ * keep: a word strikes and stays readable (it does — struck words are drawn
+ * through, not removed, because nothing is deleted), a paragraph seeks the
+ * player, and gold is a line you say to camera. The strings check holds the
+ * words and the `strings` promise rule holds the first one to something
+ * pressable.
+ */
+function wordsLegend(): string {
+  const quiet = "rgba(236,236,241,0.3)";
+  const lit = "rgba(236,236,241,0.5)";
+  return `<div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:${quiet}">
+    <span><span style="color:${lit}">click a word</span> — the video skips it, the word stays readable</span>
+    <span><span style="color:${lit}">click a paragraph</span> — the player jumps to it</span>
+    <span><span style="color:${ACCENT.gold}">gold</span> is you, to camera</span>
+  </div>`;
+}
+
+/**
  * One block.
  *
  * The words are individually clickable, which is Descript's gesture and was
@@ -198,6 +218,21 @@ export interface CutData {
  * the render is built from the surviving ranges — so it has to be here, on the
  * surface where you are reading, not one navigation away.
  */
+/**
+ * WHAT THE GUTTER SAYS, in Words.
+ *
+ * The prototype puts a 56px mono column to the left of every line carrying the
+ * source's LETTER and the timestamp — "A 6:40" — in that source's own colour,
+ * or the word `you` in gold for a line you record to camera. It is the only
+ * thing on the page that says which video you are reading, and the build had
+ * nothing: it put a grey duration UNDER each line instead, which answers a
+ * question nobody asked and leaves the one that matters unanswered.
+ */
+export interface Gutter {
+  text: string;
+  color: string;
+}
+
 function blockRow(
   b: Block,
   cuts: Cut[],
@@ -205,6 +240,7 @@ function blockRow(
   total: number,
   view: CutView = "blocks",
   rule = "",
+  mark: Gutter | null = null,
 ): string {
   const script = view === "script";
   const struck = b.struck;
@@ -479,25 +515,68 @@ function blockRow(
   /* Reading, not managing: no card, no frame, no rule between lines. The
      score's green ring goes too — it is a property of the line you are
      reading, and a page of ringed paragraphs is a form again. */
+  /* The prototype's own row: 16px between the gutter and the words, 4px of
+     padding bled 8px into the panel's own, and a rounded tint on the line you
+     are on. */
   const shell = script
-    ? `display:flex;gap:10px;align-items:flex-start;padding:3px 0;background:none;box-shadow:none;${struck ? "opacity:.5;" : ""}`
+    ? `position:relative;display:flex;gap:16px;align-items:flex-start;padding:4px 8px;margin:0 -8px;border-radius:6px;background:none;box-shadow:none;${struck ? "opacity:.5;" : ""}`
     : `display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:9px;background:${C.surface};box-shadow:${
         b.score != null ? `inset 0 0 0 1px ${accentBg(ACCENT.green)}` : "none"
       };${struck ? "opacity:.5;" : ""}`;
 
+  /*
+   * THE GUTTER REPLACES THE THUMBNAIL, rather than the thumbnail merely going.
+   *
+   * Words dropped the frame and put nothing in its place, so every line began
+   * at the same left edge and the page could not say which of three videos it
+   * was reading. 56px, mono, 10.5px over a 1.4 line-height, coloured by the
+   * source — the same letter and the same colour as the chips beside the
+   * title and the strip under the player, because all three come from
+   * letterFor and CHIP_COLOURS and disagreeing about which video is B would
+   * be worse than having no letter at all.
+   */
+  const gutter =
+    script && mark
+      ? `<span data-content style="flex:none;width:56px;padding-top:9px;font-size:10.5px;line-height:1.4;font-family:${FONT.mono};color:${mark.color};white-space:nowrap">${esc(mark.text)}</span>`
+      : "";
+
+  /* Gold body text for a line you say to camera, which is what the legend
+     strip under the panel promises: "gold is you, to camera". */
+  const toCamera = script && b.origin === "voice";
+
   return `<div class="blk" data-block="${esc(b.id)}" data-struck="${struck ? 1 : 0}" data-ms="${b.end_ms - b.start_ms}"
       style="${shell}">
-    ${script ? "" : thumb}
+    ${script ? gutter : thumb}
     <div style="flex:1;min-width:0">
-      <div style="font-size:${SIZE.quote};line-height:1.5;color:rgba(236,236,241,0.92)">${originTag}${body}</div>
-      ${meta}
+      <div style="font-size:${script ? "15px" : SIZE.quote};line-height:${script ? "2" : "1.5"};color:${
+        toCamera ? ACCENT.gold : script ? "rgba(236,236,241,0.85)" : "rgba(236,236,241,0.92)"
+      }">${originTag}${body}</div>
+      ${script ? "" : meta}
       ${fill}
     </div>
-    <div class="blk-actions" style="flex:none;display:flex;align-items:center;gap:4px">
-      ${judged}
-      ${arrow(-1, i === 0)}${arrow(1, i === total - 1)}
-      ${short}
-      ${picture}
+    <!--
+      OUT OF FLOW IN WORDS, and this was costing the page most of its measure.
+      Measured on the rendered build at 1440: a 574px row gave the gutter 56,
+      THE ACTIONS 332, and the words 138. They are invisible until you hover a
+      line, and they were taking more than half the column the whole time — so
+      a view whose entire job is reading ran at a quarter of its width and
+      every sentence broke after five words. Nothing could have caught that
+      except looking at it.
+
+      Positioned rather than removed. The prototype's Words row carries no
+      controls at all, and dropping them would lose the one gesture a person
+      reading actually wants (cut this line) — so they sit at the right edge,
+      over the end of the line, and appear on hover exactly as before.
+    -->
+    <div class="blk-actions" style="${
+      script
+        ? "position:absolute;right:0;top:2px;display:flex;align-items:center;gap:4px"
+        : "flex:none;display:flex;align-items:center;gap:4px"
+    }">
+      ${script ? "" : judged}
+      ${script ? "" : arrow(-1, i === 0) + arrow(1, i === total - 1)}
+      ${script ? "" : short}
+      ${script ? "" : picture}
       <button class="blk-strike" data-block="${esc(b.id)}"
         style="background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill" data-kept="${struck ? 0 : 1}">${struck ? "Add back" : "Cut"}</span></button>
     </div>
@@ -1478,10 +1557,49 @@ export function renderCut(d: CutData): string {
    * there is no second copy of this markup to drift.
    */
   const view: CutView = d.view ?? "blocks";
+
+  /*
+   * THE LETTER AND COLOUR PER LINE — the THIRD use of this mapping.
+   *
+   * The chips beside the title, the strip under the player and now the Words
+   * gutter all say which video a thing came from, and all three have to agree:
+   * a page where the chip says B and the gutter says C about the same
+   * recording is worse than one that says neither. So all three take the
+   * letter from letterFor(index into d.sources) and the colour from
+   * CHIP_COLOURS at the same index, and none of them keeps a list of its own.
+   *
+   * The timestamp is the block's start, which comes from word ids like every
+   * other time in this product.
+   */
+  const order = new Map((d.sources ?? []).map((sc, i) => [sc.id, i]));
+  const gutterFor = (b: Block): Gutter | null => {
+    if (view !== "script") return null;
+    /* A line you record has no source and no timecode — it is you, now. */
+    if (b.origin !== "footage") return { text: "you", color: ACCENT.gold };
+    const sid = (d.blockSource ?? {})[b.id] ?? d.sourceId ?? "";
+    const idx = order.get(sid);
+    /* One video needs no letter: "A" on every line of a single-source cut is
+       a column of the same character. The prototype shows the letter because
+       its cut draws on three. */
+    const letter = idx === undefined || (d.sources ?? []).length < 2 ? "" : letterFor(idx) + " ";
+    const colour = idx === undefined ? C.ink45 : CHIP_COLOURS[idx % CHIP_COLOURS.length];
+    /*
+     * hms, NOT tc, and the difference is visible in a column.
+     *
+     * tc pads a position — "03:38" — and its comment is right that the
+     * prototype pads positions elsewhere. The gutter is not one of those
+     * places: design/one-take/footage.js carries every moment's time as
+     * "0:00", "1:12", "3:40", "6:40", unpadded, and that is what the Words
+     * column shows. Padded, a cut that never reaches ten minutes renders a
+     * column of "00:" down the left-hand side.
+     */
+    return { text: `${letter}${hms(b.start_ms / 1000)}`, color: colour };
+  };
+
   const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? ""));
+    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? "", gutterFor(b)));
     list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {
@@ -1522,13 +1640,33 @@ export function renderCut(d: CutData): string {
                * reading rather than where you scroll to.
                */
               `<div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px">
-                <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">The cut</span>
+                <span data-content style="flex:none;font-size:${SIZE.body};font-weight:600">${
+                  /* The prototype names the reading, not just the thing: it is
+                     "The cut" in Blocks and "The cut, as words" in Words, which
+                     is the sentence that tells you what you are looking at. */
+                  view === "script" ? "The cut, as words" : "The cut"
+                }</span>
                 <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${esc(d.cutLine)}</span>
               </div>`
             }${findBar(d.projectId)}
-      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="display:flex;flex-direction:column;gap:${view === "script" ? "0" : "1px"}">
+      <div id="blocks" data-project="${esc(d.projectId)}" data-source="${esc(d.sourceId ?? "")}" data-view="${view}" style="${
+        view === "script"
+          ? /*
+             * ONE PANEL, which is what makes it read as a script rather than
+             * as a list with the furniture taken off.
+             *
+             * Words used to be the Blocks rows with the thumbnail and the rule
+             * chip removed — same page background, same gaps, same stack. The
+             * prototype draws a single #141418 card with a hairline, 24/28 of
+             * padding, 15px over a line-height of 2 and text-wrap:pretty, and
+             * the lines run together inside it. Taking furniture away is not
+             * the same as setting type.
+             */
+            `display:flex;flex-direction:column;gap:0;padding:24px 28px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);text-wrap:pretty`
+          : `display:flex;flex-direction:column;gap:1px`
+      }">
         ${list.join("")}
-      </div>`
+      </div>${view === "script" ? wordsLegend() : ""}`
       }
     </div>
 
