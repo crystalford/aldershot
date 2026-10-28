@@ -121,7 +121,7 @@ Living timelines with event extraction (only as suggestions the user accepts); t
 
 ## Elastic length and liquid video
 
-One control from 15 s to full length, re-solved from the stored policy; canonical variants pre-rendered; locale and reading-level variants with type and captions composited client-side; packaging personalisation (hook, thumbnail, length) before any change to substance; a publish kit (transcript, chapters, clip markup, provenance manifest, cut ledger); an agent endpoint exposing `search_moments`, `get_clip`, `get_receipts`, `render_variant` with the integrity envelope enforced server-side. An open "liquid video package" spec is the big swing.
+One control from 15 s to full length, re-solved from the stored policy; canonical variants pre-rendered; locale and reading-level variants with type and captions composited client-side; packaging personalisation (hook, thumbnail, length) before any change to substance; a publish kit (transcript, chapters, clip markup, provenance manifest, cut ledger); an agent endpoint exposing `search_moments`, `get_clip`, `get_receipts` with the integrity envelope enforced server-side (spiked 28 Oct — see `docs/decisions/claude-skill.md`, which recommends dropping `render_variant` and never exposing an edit tool: an agent that should change a cut should propose a RULE, the way the product does). An open "liquid video package" spec is the big swing.
 
 ## Generation
 
