@@ -55,6 +55,7 @@ import { draftPlan, findForBeats } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { setCap, underCap } from "./spend.ts";
+import { renderBeforePost } from "./ui/pages/beforepost.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
@@ -1619,6 +1620,32 @@ const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts", "foota
  * further down; this is only where it is mounted.
  */
 app.get("/p/:id/receipts", (c) => receiptsAdmin(c));
+
+/**
+ * THE SHEET, AS A PAGE.
+ *
+ * It answered only as a .txt download — `content-disposition: attachment` —
+ * so the most important safety surface in the product was the one surface
+ * with no surface. Nobody about to post something opens a text file first.
+ *
+ * The text file stays at the /api/ path below, because a checklist you can
+ * hand to somebody else is worth having. It is no longer the only way to read
+ * it.
+ */
+app.get("/p/:id/before-post", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return c.notFound();
+  const lines = await beforePostFor(c as Ctx, project, user.id);
+  return c.html(
+    page(
+      { title: `Before you post — ${project.title}`, view: "room", screenLabel: "Before you post", email: user.email },
+      renderBeforePost({ projectId: project.id, title: project.title, lines }),
+    ),
+  );
+});
+
 
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -3624,12 +3651,14 @@ app.get("/api/projects/:id/dispute", async (c) => {
  * property of a finished file, not of a plan — and saying so is better than
  * predicting it.
  */
-app.get("/api/projects/:id/before-post", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project) return c.json({ error: "not found" }, 404);
-
+/**
+ * THE CHECKLIST, COMPUTED. Shared by the page and the text file.
+ *
+ * Two callers and one computation, so the sheet somebody reads and the file
+ * they hand to a lawyer can never disagree about what was checked.
+ */
+async function beforePostFor(c: Ctx, project: Awaited<ReturnType<typeof getProject>> & object, userId: string) {
+  const user = { id: userId };
   const external = await disputeFor(c.env.DB, project.id);
   const pictures = await cueSheetFor(c.env.DB, project.id);
   const built = await edlForProject(c.env, project, user.id);
@@ -3667,6 +3696,16 @@ app.get("/api/projects/:id/before-post", async (c) => {
         .first<{ n: number }>(),
     ),
   });
+
+  return lines;
+}
+
+app.get("/api/projects/:id/before-post", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  const lines = await beforePostFor(c as Ctx, project, user.id);
 
   const name = (project.title || "before-you-post").replace(/[^\w.\- ]/g, "_");
   return new Response(checklistText(lines, project.title || "Untitled"), {

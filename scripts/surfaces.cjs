@@ -113,7 +113,32 @@ function declared(source = readFileSync(SRC, "utf8")) {
     else htmlUnderApi.push(route);
   });
 
-  return { pages, htmlUnderApi };
+  /*
+   * ROUTES A CATCH-ALL ALREADY SWALLOWED.
+   *
+   * `/p/:id/:stagePath` matches `/p/<id>/receipts` and `/p/<id>/before-post`
+   * too, and answers notFound for anything not in EDITOR_PATHS. Hono matches
+   * in registration order, so a literal sibling registered AFTER it is dead:
+   * it 404s on every request and nothing says why.
+   *
+   * This has happened twice — the receipts admin page and the Before you post
+   * sheet — and both times the route looked completely correct in isolation.
+   * /p/:id/scout escaped it only by being declared further up the file.
+   */
+  const shadowed = [];
+  const order = [...source.matchAll(/^app\.get\("([^"]+)"/gm)].map((m) => ({ route: m[1], at: m.index }));
+  for (const wild of order) {
+    const parts = wild.route.split("/");
+    if (parts.length !== 4 || !parts[2].startsWith(":") || !parts[3].startsWith(":")) continue;
+    for (const other of order) {
+      if (other.at <= wild.at) continue;
+      const bits = other.route.split("/");
+      if (bits.length !== 4 || bits[1] !== parts[1] || !bits[2].startsWith(":") || bits[3].startsWith(":")) continue;
+      shadowed.push({ route: other.route, by: wild.route });
+    }
+  }
+
+  return { pages, htmlUnderApi, shadowed };
 }
 
 /**
@@ -149,7 +174,7 @@ function enums() {
  */
 async function expand(opts) {
   const { base, fetchJson } = opts;
-  const { pages, htmlUnderApi } = declared();
+  const { pages, htmlUnderApi, shadowed } = declared();
   const E = enums();
 
   const first = async (path, key) => {
@@ -191,6 +216,10 @@ async function expand(opts) {
       );
     } else if (route === "/plan/:id") {
       add(route, planId ? [`/plan/${planId}`] : [], planId ? null : "no plan in this account");
+    } else if (route === "/p/:id/before-post") {
+      /* The checklist a person reads before posting. It answered only as a
+         .txt download until 28 Oct, so no crawl had ever seen it. */
+      add(route, projectId ? [`/p/${projectId}/before-post`] : [], projectId ? null : "no project in this account");
     } else if (route === "/p/:id/receipts") {
       /* Where the maker publishes or takes down the public receipts page. It
          answered at /api/projects/:id/receipts until 28 Oct — the second
@@ -232,7 +261,7 @@ async function expand(opts) {
     }
   }
 
-  return { surfaces: out, urls: out.flatMap((r) => r.urls), htmlUnderApi, enums: E };
+  return { surfaces: out, urls: out.flatMap((r) => r.urls), htmlUnderApi, shadowed, enums: E };
 }
 
 module.exports = { declared, enums, expand, isPage };

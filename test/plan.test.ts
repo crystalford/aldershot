@@ -468,7 +468,7 @@ const planBase: PlanData = {
   state: "beats",
   projectId: null,
   beats: [
-    { id: "b1", role: "subject" as Role, name: "The decision already happened", need: "the rooms before anything is packed", kept: true, found: 0, backed: null },
+    { id: "b1", role: "subject" as Role, name: "The decision already happened", need: "the rooms before anything is packed", kept: true, found: 0, backed: null, gap: null },
   ],
 };
 

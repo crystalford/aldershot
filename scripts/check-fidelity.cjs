@@ -700,6 +700,20 @@ async function checkStrings() {
         "here is why\" is a different sentence from \"this is a weak short\", " +
         "and the first one can be argued with.",
     ]),
+    ...[
+      "Back to the cut",
+      "Take it away as text &nearr;",
+    ].map((t) => [
+      t,
+      "The Before you post sheet, which the prototype draws as an OVERLAY " +
+        "pressed open from Export and the build serves as a page — so it " +
+        "needs a way back and the prototype does not. It answered only as a " +
+        ".txt download until 28 Oct (content-disposition: attachment), which " +
+        "made the most important safety surface in the product the one " +
+        "surface with no surface: nobody about to post something opens a " +
+        "text file first. The file is still there, because a checklist you " +
+        "can hand to somebody else is worth having.",
+    ]),
     [
       "Make the short",
       "The Shorts workbench's render control. The prototype's pair is " +
@@ -1589,6 +1603,22 @@ async function checkStrings() {
    */
   for (const route of inventory.htmlUnderApi) {
     suspect.push('page-url: ' + route + ' returns a document from an /api/ path, where no crawl reaches it');
+  }
+
+  /*
+   * AND NO ROUTE A CATCH-ALL HAS ALREADY SWALLOWED.
+   *
+   * Hono matches in registration order. `/p/:id/:stagePath` matches
+   * `/p/<id>/receipts` too and answers notFound for anything not in
+   * EDITOR_PATHS, so a literal sibling registered after it 404s on every
+   * request — and the route looks completely correct where it is written.
+   *
+   * Twice in one week: the receipts admin page and the Before you post sheet.
+   * /p/:id/scout escaped only by being declared further up the file, which is
+   * not a thing to rely on.
+   */
+  for (const sh of inventory.shadowed) {
+    suspect.push(`shadowed: ${sh.route} is registered after ${sh.by}, which already matches it — it will 404`);
   }
 
   /*

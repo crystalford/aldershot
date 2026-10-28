@@ -67,7 +67,7 @@ export function exportPanel(projectId: string, plan: string): string {
       a tick beside them would be worse than no checklist.
     -->
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-      <a href="/api/projects/${esc(projectId)}/before-post" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Before you post &nearr;</a>
+      <a href="/p/${esc(projectId)}/before-post" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Before you post &nearr;</a>
       <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.</span>
     </div>
     <!--
