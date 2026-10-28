@@ -23,7 +23,8 @@
     "eval:model": "node scripts/eval-model.cjs",
     "check:duck": "node --experimental-strip-types scripts/check-duck.cjs",
     "check:graphics": "node --experimental-strip-types scripts/check-graphics.cjs",
-    "fonts": "node scripts/sync-fonts.cjs"
+    "fonts": "node scripts/sync-fonts.cjs",
+    "preflight": "node scripts/preflight.cjs"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

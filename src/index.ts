@@ -6168,6 +6168,37 @@ app.get("/api/jobs", async (c) => {
 });
 
 /** Owner-only real spend (05-INFRA-AND-COSTS.md; the panel itself is Phase 8). */
+/**
+ * WHAT IS CONFIGURED. Booleans, never values.
+ *
+ * scripts/preflight.cjs asks this so the answer about a deployment comes from
+ * the deployment rather than from a tick in a document. It reports whether a
+ * secret is PRESENT and nothing else — there is no code path here that can
+ * put a key in a response, which matters because the natural shape of this
+ * endpoint is the dangerous one.
+ *
+ * Owner-only, like the spend panel. What a deployment has configured is not a
+ * customer's business and the absence of a key is a small map of where to
+ * push.
+ */
+app.get("/api/preflight", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  if (!user.is_owner) return c.json({ error: "not found" }, 404);
+  const has = (v: unknown) => Boolean(typeof v === "string" ? v.trim() : v);
+  return c.json({
+    sign_in_google: has(c.env.GOOGLE_CLIENT_ID) && has(c.env.GOOGLE_CLIENT_SECRET),
+    sign_in_email: has(c.env.EMAIL) && has(c.env.MAIL_FROM),
+    session_secret: has(c.env.SESSION_SECRET),
+    app_origin: has(c.env.APP_ORIGIN),
+    billing: has(c.env.STRIPE_SECRET_KEY) && has(c.env.STRIPE_PRICE_ID),
+    billing_webhook: has(c.env.STRIPE_WEBHOOK_SECRET),
+    storage_signing:
+      has(c.env.R2_ACCESS_KEY_ID) && has(c.env.R2_SECRET_ACCESS_KEY) && has(c.env.R2_ACCOUNT_ID),
+    frontier_model: has(c.env.ANTHROPIC_API_KEY),
+  });
+});
+
 app.get("/api/usage/month", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
