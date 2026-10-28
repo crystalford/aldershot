@@ -1028,7 +1028,21 @@ const roomHandler = async (c: Ctx) => {
           updated_at: p.updated_at,
         })),
         counts: {
-          sources: sources.length,
+          /*
+           * READ, NOT UPLOADED.
+           *
+           * This was sources.length, and the title row says "N videos read"
+           * over it. On the only account where the two differ — a new one
+           * whose first upload failed — it read "1 video read · 0 moments"
+           * above a line saying that video didn't finish, which is the page
+           * contradicting itself about the one thing that had happened.
+           *
+           * Found by driving the first run as somebody who had just signed
+           * up (scripts/walk.cjs --fresh). Every check before it ran on an
+           * account where every source had already been read, so the two
+           * numbers were always the same number.
+           */
+          sources: sources.filter((s) => s.transcript_state === "ready").length,
           moments: shownCount,
           external: externalCount,
         },

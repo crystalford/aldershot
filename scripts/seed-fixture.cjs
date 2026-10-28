@@ -42,6 +42,11 @@ const BASE = process.env.BASE || "http://localhost:8787";
 const SOURCE_ID = "fix-source-kitchen";
 const PROJECT_ID = "fix-project-kitchen";
 
+/* The account with nothing in it. Fixed id so the drive can sign in as it
+   without asking the database who it is. */
+const EMPTY_USER = "fix-user-empty";
+const EMPTY_EMAIL = "fix-empty@aldershot.test";
+
 const SOURCE_TITLE = "The kitchen, eleven days";
 /*
  * A NAME SOMEBODY TYPED, which is not decoration.
@@ -184,6 +189,42 @@ async function main() {
 
   const now = Date.now();
   const sql = [];
+
+  /*
+   * AND A SECOND ACCOUNT WITH NOTHING IN IT.
+   *
+   * Every check in this repo has only ever run against an account that
+   * already has footage in it, because the dev sign-in makes exactly one
+   * user and the seeder fills it. So the first thing anybody who signs up
+   * will see — the room with no footage, the upload, the wait — is the one
+   * path nothing has driven.
+   *
+   * It is a user row and nothing else, deliberately: the point is to meet
+   * the product the way a stranger does. scripts/walk.cjs --fresh signs in
+   * as it by minting the session cookie, which works because in development
+   * the signing secret is a constant (src/auth.ts) and a cookie beats
+   * DEV_LOGIN_EMAIL in currentUser.
+   */
+  sql.push(
+    `INSERT OR REPLACE INTO v2_users (id,email,name,plan,spend_cap_usd,is_owner,created_at)
+     VALUES (${q(EMPTY_USER)},${q(EMPTY_EMAIL)},${q("Nobody")},${q("free")},NULL,0,${now});`,
+  );
+  /*
+   * AND IT IS EMPTIED EVERY RUN.
+   *
+   * The first-run drive uploads a file, which is the point of it — so after
+   * one drive the empty account is not empty, and the second drive is a
+   * walk of an account with a failed upload in it. An empty fixture that
+   * stops being empty after one use is a fixture for one use.
+   *
+   * Hard DELETE rather than the product's soft one: invariant 6 is about
+   * what a PERSON can lose, and nobody is attached to a 64KB file of
+   * sevens. Scoped to this account, which owns nothing a person made.
+   */
+  sql.push(`DELETE FROM segments WHERE source_id IN (SELECT id FROM sources WHERE user_id=${q(EMPTY_USER)});`);
+  sql.push(`DELETE FROM v2_clips WHERE user_id=${q(EMPTY_USER)};`);
+  sql.push(`DELETE FROM jobs WHERE user_id=${q(EMPTY_USER)};`);
+  sql.push(`DELETE FROM sources WHERE user_id=${q(EMPTY_USER)};`);
 
   sql.push(
     `INSERT OR REPLACE INTO sources

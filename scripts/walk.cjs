@@ -17,6 +17,41 @@ const { chromium } = require('playwright');
 const { chromeOptions } = require('./chrome.cjs');
 
 const BASE = process.env.BASE || 'http://localhost:8787';
+
+/*
+ * --fresh: WALK IT AS SOMEBODY WHO JUST SIGNED UP.
+ *
+ * Every check in this repo has only ever run against an account that already
+ * had footage in it: the dev sign-in makes one user and the seeder fills it.
+ * So the first thing a stranger sees — the empty room, the upload, the wait —
+ * is the one path nothing had ever driven, and the empty states were a thing
+ * read in source rather than looked at.
+ *
+ * It signs in by MINTING THE SESSION COOKIE for the empty account, which
+ * works for one honest reason: in development src/auth.ts signs with a
+ * constant (there is no SESSION_SECRET), and currentUser prefers a valid
+ * cookie over DEV_LOGIN_EMAIL. There is no other way to be a second person
+ * against a dev server, and a drive that could only ever be the same user is
+ * not a first-run drive.
+ */
+const FRESH = process.argv.includes('--fresh');
+const EMPTY_USER = 'fix-user-empty';
+
+/** The same HMAC src/auth.ts mints, with the development constant. */
+async function devSession(userId) {
+  const body = `${userId}.${Date.now() + 7 * 86400000}`;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode('dev-only-not-a-secret'),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)));
+  let raw = '';
+  for (const b of sig) raw += String.fromCharCode(b);
+  return `${body}.${Buffer.from(raw, 'binary').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+}
 /* WIDTH=390 walks it as a phone. The owner has reported mobile layout bugs
    before and every check since has run at 1280, where they cannot happen. */
 const WIDTH = Number(process.env.WIDTH || 1280);
@@ -150,6 +185,224 @@ const EXPECTED_OFF = ['Move earlier', 'Move later', 'Remove \u201Cum\u201D and \
     if (off.length) console.log(`   ⚠ disabled: ${off.map((c) => c.name).join(', ')}`);
     return d;
   };
+
+  if (FRESH) {
+    await page.context().addCookies([
+      { name: 'as_session', value: await devSession(EMPTY_USER), url: BASE, httpOnly: true, sameSite: 'Lax' },
+    ]);
+    await go('/');
+    const who = await page.evaluate(() => fetch('/api/projects').then((r) => r.status));
+    if (who !== 200) {
+      console.log('✘ --fresh could not sign in as the empty account (/api/projects said ' + who + ').');
+      console.log('    Run `node scripts/seed-fixture.cjs` first — it creates the row.');
+      await browser.close();
+      process.exit(1);
+    }
+
+    /*
+     * AND IT STARTS EMPTY EVERY TIME.
+     *
+     * This drive uploads a file, which is the point of it — so the second
+     * run walks an account with a failed upload in it and reports every
+     * empty state as populated. The first time that happened the drive
+     * reported /footage as saying nothing about what to do next, which was
+     * true of THAT account and not of a new one: a fixture that stops being
+     * a fixture after one use.
+     *
+     * Through the product's own delete, not the database, because that is
+     * the path a person has and it is worth driving too.
+     */
+    const left = await page.evaluate(async () => {
+      const { sources = [] } = await fetch('/api/sources').then((r) => r.json());
+      for (const s of sources) {
+        await fetch('/api/sources/' + s.id + '/delete', { method: 'POST' });
+      }
+      return sources.length;
+    });
+    if (left) console.log(`(cleared ${left} source(s) left by an earlier run)\n`);
+    await go('/');
+
+    let uploaded = 'found no way to upload';
+    console.log('── the first run, as somebody who just signed up\n');
+    for (const [label, path] of [
+      ['the room, nothing in it', '/'],
+      ['  · Highlights', '/?tab=highlights'],
+      ['  · Projects', '/?tab=projects'],
+      ['everything you have', '/footage'],
+      ['  · moments', '/footage?tab=moments'],
+      ['  · edits', '/footage?tab=edits'],
+      ['  · exports', '/footage?tab=exports'],
+      ['settings', '/settings'],
+    ]) {
+      await go(path);
+      const d = await survey(label);
+      /*
+       * AN EMPTY SURFACE HAS TO SAY WHAT TO DO NEXT.
+       *
+       * A page with nothing on it and nothing to press is a dead end, and
+       * the only way to find one is to be the person who has nothing.
+       */
+      /*
+       * THE LAST LONG LINE, NOT THE FIRST.
+       *
+       * The first is the page's own subtitle, which is the same on every
+       * tab — so the first version of this reported the same sentence for
+       * all five of Footage's tabs and said nothing about any of them. What
+       * a person wants to know on an empty tab is what the TAB says, and
+       * that is the last thing on the page.
+       */
+      const sentence = await page.evaluate(() => {
+        const t = (document.querySelector('main') || document.body).innerText
+          .split('\n')
+          .map((x) => x.trim())
+          .filter((x) => x.length > 24);
+        /*
+         * AND IT HAS TO BE THE TAB'S OWN LINE, not the page's.
+         *
+         * "the last long line" was not enough: delete a tab's empty-state
+         * sentence and the last long line becomes the page SUBTITLE, which
+         * is on every tab — so the check went green over a tab that now
+         * said nothing. Caught by deleting "Nothing exported yet…" and
+         * watching this pass. If the last thing on the page is the same as
+         * the first, the body said nothing of its own.
+         */
+        if (t.length < 2 || t[t.length - 1] === t[0]) return '';
+        return t[t.length - 1];
+      });
+      /*
+       * AND THESE TWO COUNT AS FAILURES, because the stage's summary says
+       * "every one saying what to do next" and a summary that claims
+       * something nothing checked is the thing this repo keeps catching
+       * itself doing. A surface with nothing on it and nothing to press is
+       * a dead end, and the only way to find one is to be the person who
+       * has nothing.
+       */
+      if (!sentence) {
+        console.log('   ⚠ nothing on this page says what to do next');
+        errors.push(`${path} :: empty, and says nothing about what to do next`);
+      } else console.log(`   says: ${sentence.slice(0, 110)}`);
+      if (!d.controls.length) {
+        console.log('   ⚠ NOTHING TO PRESS');
+        errors.push(`${path} :: nothing to press`);
+      }
+    }
+
+    /* The one thing the front door asks you to do. */
+    console.log('\n── the upload, pressed');
+    await go('/');
+    const file = page.locator('input[type="file"]').first();
+    if (!(await file.count())) {
+      console.log('   ⚠ no file input on the front door — there is no way in');
+    } else {
+      /* Not a real recording: the point is to learn how far the product
+         gets and what it says, not to transcribe anything. A container is
+         not running here and the read will not finish; what this reports is
+         whether the handoff from the browser to the job is intact. */
+      await file.setInputFiles({
+        name: 'first.mp4',
+        mimeType: 'video/mp4',
+        buffer: Buffer.alloc(64 * 1024, 7),
+      });
+      await page.waitForTimeout(2000);
+      await survey('  → after choosing a file');
+
+      /*
+       * AND THEN PRESS THE BUTTON, because choosing a file is not the
+       * gesture — the front door takes a file AND a sentence, and the first
+       * drive stopped at the file and reported "nothing was created", which
+       * was the drive being half a step short rather than the product being
+       * broken. Half a step short is exactly how a first run gets mis-read.
+       */
+      const say = page.locator('textarea').first();
+      if (await say.count()) await say.fill('keep the parts where I am working something out');
+      const run = page.locator('button:has-text("Run it")').first();
+      if (await run.count()) {
+        await run.click();
+        await page.waitForTimeout(4000);
+      }
+      await survey('  → after pressing Run it');
+
+      /*
+       * A REFUSED UPLOAD IS NOT A BROKEN ONE.
+       *
+       * 20 uploads an hour per account (src/ratelimit.ts), and this drive
+       * spends one every time it runs — so on a machine where it has been
+       * run twenty times in an hour the product correctly says no, and the
+       * drive was reporting the limit working as "NOTHING WAS CREATED".
+       * That is the check calling the product broken for doing its job,
+       * which is how a check gets ignored on the day it is right.
+       */
+      const capped = errors.some((e) => /^429 POST \/api\/uploads/.test(e));
+      for (let i = errors.length - 1; i >= 0; i -= 1) {
+        if (/^429 POST \/api\/uploads/.test(errors[i])) errors.splice(i, 1);
+      }
+      const sources = await page.evaluate(() =>
+        fetch('/api/sources').then((r) => r.json()).then((j) => (j.sources || []).length),
+      );
+      if (capped && !sources) {
+        console.log('   the upload limit refused it (20 an hour) — which is the limit working.');
+        uploaded = 'refused by the hourly limit';
+      } else {
+        uploaded = sources ? 'uploaded' : 'upload went nowhere';
+        console.log(`   sources now: ${sources}  ${sources ? 'OK — the file reached the server' : '⚠ NOTHING WAS CREATED'}`);
+        if (!sources) errors.push('/ :: chose a file, pressed Run it, and nothing was created');
+      }
+      if (sources) {
+        const state = await page.evaluate(() =>
+          fetch('/api/sources').then((r) => r.json()).then((j) => (j.sources || [])[0] || {}),
+        );
+        console.log(`   it says: ${state.transcript_state || '(no state)'} — "${state.title || '(untitled)'}"`);
+
+        /*
+         * A FAILED READ IS NOT A VIDEO READ.
+         *
+         * There is no container here, so this upload always fails — which
+         * is the useful part: it is the only state where "N videos read"
+         * and "N videos uploaded" differ, and the title row said "1 video
+         * read" directly above a line saying that video didn't finish.
+         * Every check before this one ran on an account where every source
+         * had already been read, so the two were always the same number.
+         */
+        await go('/');
+        const claims = await page.evaluate(() => {
+          const t = document.body.innerText;
+          return {
+            read: (t.match(/(\d+) videos? read/) || [])[1] || null,
+            failed: /didn't finish/.test(t),
+          };
+        });
+        const honest = claims.failed ? claims.read === '0' : true;
+        console.log(
+          `   the room says "${claims.read} videos read"` +
+            (claims.failed ? ' and that it didn\'t finish' : '') +
+            `  ${honest ? 'OK' : '⚠ IT CLAIMS TO HAVE READ WHAT IT COULD NOT'}`,
+        );
+        if (!honest) errors.push('/ :: says it read a video whose transcript failed');
+      }
+    }
+
+    const counted0 = new Map();
+    for (const e of errors) counted0.set(e, (counted0.get(e) ?? 0) + 1);
+    console.log(
+      '\n── errors on the first run: ' +
+        ([...counted0].map(([e, n]) => (n > 1 ? `${e}   ×${n}` : e)).join('\n   ') || 'none'),
+    );
+    await browser.close();
+    /* It has an exit code for the same reason the full walk does: a first
+       run that 4xxs, throws or lies about what it read is a defect, and a
+       drive that only ever prints is one nobody runs twice. The media
+       exemption does not apply — this account has no media to miss. */
+    const bad = [...counted0.keys()];
+    if (bad.length) {
+      console.log('\n✘ walk --fresh — ' + bad.length + ' problem(s) on the first run');
+      process.exit(1);
+    }
+    console.log(
+      '\n✔ walk --fresh — signed up, looked around, ' + uploaded +
+        '; every empty surface says what to do next',
+    );
+    return;
+  }
 
   /* Every editor stage of a real project, not just the one you land on. The
      stages are where the actual work happens and they were never walked. */

@@ -45,4 +45,38 @@ const BASE = process.env.BASE || "http://localhost:8787";
     "✔ walk — " + surfaces + " surfaces walked, every one answered, nothing threw" +
       (tolerated ? " (" + tolerated + " fixture media object(s) absent, which is the fixture)" : ""),
   );
+
+  /*
+   * AND THE SAME WALK AS SOMEBODY WHO JUST SIGNED UP.
+   *
+   * Every stage above it runs as an account with footage already in it,
+   * because the dev sign-in makes one user and the seeder fills it. The
+   * first thing a stranger sees was the one path nothing drove, and the
+   * first drive of it found the room claiming to have read a video whose
+   * transcript had failed.
+   *
+   * It needs the empty account, which seed-fixture.cjs creates and empties.
+   * No account, no stage — 78, like every other thing here that cannot run
+   * rather than has run and failed.
+   */
+  const fresh = spawnSync("node", [join(__dirname, "walk.cjs"), "--fresh"], { encoding: "utf8" });
+  const fout = `${fresh.stdout ?? ""}${fresh.stderr ?? ""}`;
+  if (/could not sign in as the empty account/.test(fout)) {
+    console.log("⚠ first run — SKIPPED: no empty fixture account.");
+    console.log("    Run `node scripts/seed-fixture.cjs` and re-run.");
+    process.exit(78);
+  }
+  if (fresh.status !== 0) {
+    console.log(fout.trimEnd());
+    process.exit(1);
+  }
+  const empties = (fout.match(/^\s{3}says: /gm) || []).length;
+  /* What actually happened to the upload, in walk.cjs's own words — it is
+     "uploaded" on a clean machine and "refused by the hourly limit" on one
+     that has run this twenty times in an hour, and claiming the first when
+     the second happened is the summary lying about its own run. */
+  const how = (fout.match(/signed up, looked around, ([^;]+);/) || [])[1] || "ran";
+  console.log(
+    "✔ first run — " + how + "; " + empties + " empty surfaces, every one saying what to do next",
+  );
 })();
