@@ -636,6 +636,15 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    [
+      "Does nothing now — switch it off",
+      "The prototype says 'Does nothing now — archive it' and archiving is " +
+        "not something a rule can do here: invariant 6 is that nothing is " +
+        "deleted and rules switch off, and there is no archived state on a " +
+        "rule. A rule removed from the pane would be a cut with an " +
+        "unexplained shape. So the sentence is the prototype's and the verb " +
+        "is the one that describes the press. docs/handoff/12-DEFERRED.md.",
+    ],
     /*
      * THE EMPTY STATES, which this check could not see until today.
      *

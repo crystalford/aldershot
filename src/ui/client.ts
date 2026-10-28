@@ -4586,6 +4586,105 @@ document.querySelectorAll(".show-contested").forEach((btn) => {
   });
 });
 
+/*
+ * TWO OFFERS, ONE PRESS: switch that rule off.
+ *
+ * "Does nothing now — switch it off" on a rule matching nothing, and
+ * "Bring back all 4 rule 02 took out" on one that is taking out a lot. They
+ * read as different decisions and they are the same write, because turning a
+ * rule off IS how its moments come back and how a rule stops acting. It
+ * never deletes: invariant 6.
+ *
+ * Not the .rule-toggle class, even though the request is identical. That
+ * class is the switch, and a switch is something whose state you can read
+ * off the control; these are sentences. A later query for "the switch on
+ * rule 02" would find three elements.
+ */
+document.querySelectorAll(".rule-off").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: false }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/* The fixes by hand, folded away until you want them. No fetch: it is a
+   disclosure, and the list is already on the page. */
+document.querySelectorAll(".fixes-toggle").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const wrap = btn.parentElement;
+    const list = wrap && wrap.querySelector(".fixes-list");
+    const caret = btn.querySelector(".fixes-caret");
+    if (!list) return;
+    const open = list.hasAttribute("hidden");
+    if (open) list.removeAttribute("hidden");
+    else list.setAttribute("hidden", "");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (caret) caret.innerHTML = open ? "&#9652;" : "&#9662;";
+  });
+});
+
+/*
+ * UNDO ONE FIX, by making the same decision again.
+ *
+ * POST /api/projects/:id/moments/:momentId removes a hand rule when the
+ * direction posted matches the one already there, which returns the moment
+ * to whatever the rules say. Posting the OPPOSITE would pin it by hand in
+ * the other direction and there would be no way back to the rule's answer —
+ * see that route's header.
+ */
+document.querySelectorAll(".fix-undo").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + btn.getAttribute("data-moment"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keep: btn.getAttribute("data-keep") === "1" }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That fix didn't undo.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That fix didn't undo.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".rule-toggle").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;

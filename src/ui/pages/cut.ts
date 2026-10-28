@@ -173,6 +173,21 @@ export interface CutData {
      * moment, which is why it has to be shown LOUDLY when it is not.
      */
     contest?: { k: string; d: string; kId: string } | null;
+    /**
+     * WHICH RULE, BY ID, put this moment in or took it out.
+     *
+     * `note` says it in words — "out · rule 02 · click to keep" — and words
+     * are what a person reads, not what a count can be made from. The pane
+     * needs to know that rule 02 took out four moments, and that rule 03 took
+     * out none and kept none and is therefore doing nothing at all. Parsing
+     * the sentence back into a number to find that out would make the two
+     * disagree the first time the sentence changed.
+     *
+     * Null when a hand decision did it, because a hand decision is not a rule
+     * and neither offer applies to one.
+     */
+    byRule?: string | null;
+    dropRule?: string | null;
   }>;
   /**
    * Videos this cut is NOT drawing on, and could.
@@ -234,6 +249,16 @@ export interface CutData {
     hand: boolean;
     kind?: string;
     order?: Order;
+    /**
+     * The moment a hand fix is about, so undoing it has something to post to.
+     *
+     * A hand fix IS a rule — that is how the engine makes "keep this one
+     * whatever the rules say" survive a recompute — but it is undone through
+     * the moment it names, because pressing the same decision again takes the
+     * hand back (see POST /api/projects/:id/moments/:momentId). Only hand
+     * rules have one.
+     */
+    cid?: string | null;
   }>;
 }
 
@@ -1394,6 +1419,32 @@ function rulesPanel(rules: CutData["rules"], moments: CutData["moments"] = []): 
       <span data-content style="display:block;margin-top:7px;font-size:${SIZE.meta};line-height:1.5;color:${C.ink45};text-wrap:pretty">${esc(ORDERS[chosen].why)}</span>`;
   };
 
+  /*
+   * A RULE THAT IS ON AND DOING NOTHING.
+   *
+   * Switched on, matching no moment either way, and named by no
+   * disagreement. The pane renders it identically to a rule that is holding
+   * the cut together, so a sentence that no longer describes any of your
+   * footage — the subject was cut, the words were never said — sits there
+   * looking like direction. The prototype offers to retire it.
+   *
+   * Only keep and drop rules. An order rule with nothing to reorder, a
+   * length cap nothing exceeds and a gap rule on a cut with no gaps are all
+   * "doing nothing" in exactly the sense that means they are working.
+   */
+  const touched = new Set<string>();
+  for (const m of moments) {
+    if (m.byRule) touched.add(m.byRule);
+    if (m.dropRule) touched.add(m.dropRule);
+    if (m.contest?.k) touched.add(`#${m.contest.k}`);
+    if (m.contest?.d) touched.add(`#${m.contest.d}`);
+  }
+  const isDead = (r: CutData["rules"][number]) =>
+    r.on &&
+    (r.kind === "keep" || r.kind === "drop") &&
+    !touched.has(String(r.id)) &&
+    !touched.has(`#${number(r)}`);
+
   const rows = (list: CutData["rules"]) => list
     .map(
       (r) => `<div class="rule-card" style="display:flex;gap:12px;align-items:flex-start;padding:12px 13px;border-radius:9px;background:#15151A;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05);transition:background .14s,box-shadow .14s">
@@ -1402,9 +1453,28 @@ function rulesPanel(rules: CutData["rules"], moments: CutData["moments"] = []): 
           <span data-content style="display:block;font-size:${SIZE.body};line-height:1.55;color:${
             r.on ? C.ink : C.ink45
           };${r.on ? "" : "text-decoration:line-through;"}text-wrap:pretty">${esc(r.text)}</span>
-          <span data-content style="display:block;margin-top:4px;font-size:${SIZE.meta};line-height:1.5;color:${
-            r.on ? "rgba(236,236,241,0.5)" : C.ink32
-          }">${esc(r.effect)}</span>
+          <span style="display:flex;margin-top:4px;align-items:baseline;gap:8px;flex-wrap:wrap">
+            <span data-content style="flex:1 1 auto;min-width:0;font-size:${SIZE.meta};line-height:1.5;color:${
+              r.on ? "rgba(236,236,241,0.5)" : C.ink32
+            }">${esc(r.effect)}</span>
+            ${
+              isDead(r)
+                ? /*
+                   * THE PROTOTYPE SAYS "archive it" AND THIS SAYS "switch it
+                   * off", because that is what the press does.
+                   *
+                   * Invariant 6: nothing is deleted, rules switch off. There
+                   * is no archived state on a rule in this build and there
+                   * should not be one — a rule removed from the pane is a cut
+                   * with an unexplained shape. So the offer keeps the
+                   * prototype's sentence and its own verb tells the truth
+                   * about where the rule goes. Recorded in 12-DEFERRED.md.
+                   */
+                  `<button class="rule-off" type="button" data-rule="${esc(r.id)}"
+                    style="flex:none;font-size:${SIZE.meta};font-weight:500;color:${ACCENT.gold};background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Does nothing now — switch it off</button>`
+                : ""
+            }
+          </span>
           ${alternatives(r)}
         </span>
         <button class="rule-toggle" data-rule="${esc(r.id)}" data-on="${r.on ? 1 : 0}"
@@ -1421,16 +1491,107 @@ function rulesPanel(rules: CutData["rules"], moments: CutData["moments"] = []): 
     )
     .join("");
 
+  /*
+   * BRING BACK ALL FOUR OF THEM, as one press.
+   *
+   * A rule that took out two or more moments is a rule worth disagreeing
+   * with wholesale, and the alternative the pane offered was to go to the
+   * Footage tab and press "click to keep" four times — four decisions to
+   * undo one. The prototype offers it per rule, up to three of them, and
+   * the action is the rule's own switch: turning it off is what brings its
+   * moments back, and it stays in the list saying so.
+   */
+  const dropped = new Map<string, number>();
+  for (const m of moments) {
+    if (m.in || !m.dropRule) continue;
+    dropped.set(m.dropRule, (dropped.get(m.dropRule) ?? 0) + 1);
+  }
+  const bulk = main
+    .filter((r) => r.on && (dropped.get(String(r.id)) ?? 0) >= 2)
+    .slice(0, 3)
+    .map((r) => {
+      const n = dropped.get(String(r.id)) ?? 0;
+      return `<button class="rule-off" type="button" data-rule="${esc(r.id)}"
+        style="text-align:left;font-size:${SIZE.meta};font-weight:500;padding:6px 13px;border-radius:7px;background:transparent;color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui}"><span data-content>Bring back all ${n} rule ${number(
+          r,
+        )} took out</span></button>`;
+    })
+    .join("");
+
+  /*
+   * THE DISAGREEMENT COMES FIRST.
+   *
+   * Which is where the prototype puts it — conflicts at line 303, the rules
+   * at 313 — and where the build did not. The pane is capped at half the
+   * column and scrolls, so a panel under four rule cards is a panel nobody
+   * arriving at the page sees, and it is the one thing here that is a
+   * decision rather than a list. Found by rendering it: the note beside the
+   * cut said "2 judgement calls", the blocks carried the gold mark, and the
+   * panel that acts on both was off the bottom of a scrolling box.
+   *
+   * A JS comment, not an HTML one. A comment inside a template literal is
+   * shipped to the browser, which is how a sentence about a control that
+   * does not exist once ended up on a page.
+   */
   return `<div style="padding-bottom:13px;border-bottom:1px solid rgba(255,255,255,0.05)">
     <div style="font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">THE RULES</div>
-    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(main)}</div>
     ${conflictPanel(moments, main, number)}
-    ${
-      byHand.length
-        ? `<div style="margin-top:12px;font-size:${SIZE.secondary};font-weight:600;color:${C.ink45}">by hand</div>
-           <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(byHand)}</div>`
-        : ""
-    }
+    <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">${rows(main)}</div>
+    ${bulk ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:1px">${bulk}</div>` : ""}
+    ${fixesPanel(byHand)}
+  </div>`;
+}
+
+/**
+ * THE FIXES YOU MADE BY HAND, COLLAPSED.
+ *
+ * A hand decision is a rule in the engine — that is how "keep this one
+ * whatever the rules say" survives a recompute — and the pane was showing it
+ * as one: a numbered card with a switch, the same weight as "Keep the parts
+ * where you are working something out". It is not the same weight. A rule is
+ * a standing instruction about the whole cut; a fix is one moment you
+ * disagreed about, and ten of them should not push the rules off the screen.
+ *
+ * So: one line that says how many, a caret, and the fixes under it when you
+ * want them — a minus in red for a cut, a plus in green for a keep, and an
+ * undo on each. The prototype's shape exactly.
+ *
+ * UNDO POSTS TO THE MOMENT, not to the rule. Pressing the same decision
+ * again takes the hand back and returns the moment to whatever the rules
+ * say, which is the only direction that is reversible — see the header of
+ * POST /api/projects/:id/moments/:momentId.
+ */
+function fixesPanel(byHand: CutData["rules"]): string {
+  if (!byHand.length) return "";
+  const count = byHand.length === 1 ? "1 fix by hand" : `${byHand.length} fixes by hand`;
+  const rows = byHand
+    .map((f) => {
+      const drop = f.kind === "drop";
+      return `<div style="display:flex;gap:11px;align-items:baseline;padding:8px 13px;border-radius:7px">
+        <span style="flex:none;width:16px;font-size:${SIZE.pill};font-family:${FONT.mono};color:${
+          drop ? ACCENT.red : ACCENT.green
+        };white-space:nowrap">${drop ? "&minus;" : "+"}</span>
+        <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};line-height:1.5;color:${C.ink70};text-wrap:pretty">${esc(
+          f.text,
+        )}</span>
+        ${
+          f.cid
+            ? `<button class="fix-undo" type="button" data-moment="${esc(f.cid)}" data-keep="${drop ? 0 : 1}"
+                title="Undo this fix" style="flex:none;font-size:${SIZE.meta};color:${C.ink45};background:none;border:none;padding:0;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">undo</button>`
+            : ""
+        }
+      </div>`;
+    })
+    .join("");
+
+  return `<div style="margin-top:10px">
+    <button class="fixes-toggle" type="button" aria-expanded="false"
+      style="width:100%;text-align:left;display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:8px;background:none;border:none;cursor:pointer;font-family:${FONT.ui}">
+      <span data-content style="flex:none;font-size:${SIZE.secondary};color:${C.ink70};white-space:nowrap">and ${count}</span>
+      <span class="fixes-caret" style="flex:none;font-size:10px;color:${C.ink45};white-space:nowrap">&#9662;</span>
+      <span style="flex:1;height:1px;background:rgba(255,255,255,0.05)"></span>
+    </button>
+    <div class="fixes-list" hidden style="display:flex;flex-direction:column;gap:1px">${rows}</div>
   </div>`;
 }
 
@@ -1612,48 +1773,24 @@ function assistant(d: CutData, player: string): string {
     ? d.passes.map(turn).join("")
     : `<div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink45}">Press one, or say it in your own words.</div>`;
 
+  /*
+   * THE RULES, at the top of direction. They are the standing answer to
+   * "why these moments"; the conversation below is the history of asking,
+   * and the composer under that is where the next one goes. The player used
+   * to sit here and is now its own column.
+   *
+   * ONE SCROLLER, THE COMPOSER OUTSIDE IT — the prototype's shape. The
+   * three boxes that were here each had their own constraint and the rules
+   * lost: see .asst-scroll in src/ui/shell.ts for the measurement that
+   * settled it. A JS comment, because an HTML one ships to the browser.
+   */
   return `<div class="asst" data-project="${esc(d.projectId)}">
-    <!-- THE RULES, at the top of direction. They are the standing answer to
-         "why these moments"; the conversation below is the history of asking,
-         and the composer under that is where the next one goes. The player
-         used to sit here and is now its own column. -->
-    <!-- The RULES scroll when there are many of them; the Scout card below
-         does not get clipped with them, so it is its own row rather than
-         the tail of a capped one. -->
-    <div class="asst-top">${player}${rulesPanel(d.rules, d.moments)}</div>
-    <div class="asst-scout">${scoutPanel(d.projectId)}</div>
-
-    <!--
-      190px is what this ASKS FOR, not a floor it will die on.
-
-      It was min-height:190px — a hard floor, put there because the rules
-      pane above had crushed this to 125px on a project with six rules, not
-      room for one exchange let alone the two scripts/check-editor.cjs asks
-      for. That argument is still right and the floor is still the wrong
-      shape for it: a child that cannot yield does not win the space, it
-      pushes whatever comes AFTER it out of the column. What comes after it
-      is the composer, and the composer ended two pixels under the export
-      bar the moment the dial went in beside the mic.
-
-      So it is a flex basis of 190 that NEVER SHRINKS — flex-shrink 0 — and
-      grows when there is room. It used to be a hard min-height, which is
-      the same number with a worse failure: a child that cannot shrink and
-      has no say in the layout does not win the space, it pushes whatever
-      comes after it out of the column, and what came after it was the
-      composer.
-      
-      With shrink at zero the deficit falls entirely on .asst-top, which is
-      the right one to give: it has max-height:50%, min-height:0 and its own
-      scrollbar, and it is a LIST — the rules — where this is a conversation.
-      That is what the original note here argued for and what the hard floor
-      was not able to do.
-      
-      check-editor.cjs's two-exchange assertion is what says whether 190 is
-      still enough, and it caught this twice: once when the dial went into
-      the composer, and once when every rule became a card with a switch.
-    -->
-    <div class="asst-talk" style="flex:1 0 190px;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;padding:14px 2px">
-      ${talk}
+    <div class="asst-scroll">
+      <div class="asst-top">${player}${rulesPanel(d.rules, d.moments)}</div>
+      <div class="asst-scout">${scoutPanel(d.projectId)}</div>
+      <div class="asst-talk" style="display:flex;flex-direction:column;gap:16px;padding:14px 2px">
+        ${talk}
+      </div>
     </div>
 
     <div class="asst-foot" style="flex:none;padding-top:10px">

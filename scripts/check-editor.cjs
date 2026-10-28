@@ -172,12 +172,31 @@ async function main() {
       const talk = document.querySelector(".asst-talk");
       const foot = document.querySelector(".asst-foot");
       if (!top || !talk || !foot) return false;
-      /* Video, then conversation, then composer — the order that makes it
-         read as a chat rather than a panel of controls. */
-      return top.getBoundingClientRect().bottom <= talk.getBoundingClientRect().top + 2
-        && talk.getBoundingClientRect().bottom <= foot.getBoundingClientRect().top + 2;
+      /*
+       * Rules, then conversation, then composer — the order that makes it
+       * read as a chat rather than a panel of controls.
+       *
+       * ASSERTED AS ORDER, NOT AS GEOMETRY. This compared bounding rects,
+       * which is a proxy that holds only while all three sit in one
+       * unclipped flow. The direction column is now one scroller with the
+       * composer OUTSIDE it, the way the prototype has it, so a long
+       * conversation's rect runs well past the composer's while being, in
+       * every sense a person would mean, above it. The claim was always
+       * about order; this is the claim.
+       *
+       * The composer's own geometry is still asserted, twice: "visible
+       * without opening anything" above, and the export-bar overlap below.
+       * Those are what the rect comparison was standing in for.
+       */
+      const before = (a, b) =>
+        (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      if (!before(top, talk) || !before(talk, foot)) return false;
+      /* And the composer is not inside the scrolling part, or it scrolls
+         away — which is the failure this layout exists to prevent. */
+      const scroll = document.querySelector(".asst-scroll");
+      return !!scroll && !scroll.contains(foot) && scroll.contains(talk);
     }),
-    "video above the conversation, conversation above the composer",
+    "rules above the conversation, conversation above the composer",
   );
   say(
     await $(() => !!document.querySelector(".editor-player #cut-video")),

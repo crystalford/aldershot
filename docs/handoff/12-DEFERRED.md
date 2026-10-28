@@ -108,6 +108,18 @@ nobody can check.
   it should rather than never. To wire it: give `usage_events` the run id it
   already has a `job_id` column for, and add that sum here.
 
+- **Archiving a rule.** The prototype's rules pane offers "Does nothing now —
+  archive it" on a rule that is on and matching nothing, and archiving there
+  removes it from the list. Invariant 6 is that nothing is deleted and rules
+  switch off, and a rule gone from the pane is a cut with an unexplained
+  shape — the one thing a pane of visible rules exists to prevent. So the
+  build keeps the sentence and changes the verb: **"Does nothing now — switch
+  it off"**, and the rule stays listed, struck through, saying "off".
+  To build the stronger thing honestly: an `archived_at` on the rule, a
+  "retired rules" disclosure below the fixes, and the archived ones still
+  counted in any explanation of why a moment is where it is. Signed off in
+  `check-fidelity.cjs` with this reasoning.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.

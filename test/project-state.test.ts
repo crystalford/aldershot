@@ -138,8 +138,30 @@ test("rules are numbered, and a hand decision does not take a number", () => {
   assert.ok(numbered("02", "Take out the hellos"));
   assert.ok(numbered("03", "Keep it under 2 minutes"));
   assert.ok(!/>04</.test(pane), "the hand rule must not be numbered 04");
-  assert.match(pane, /&gt;by hand|>by hand</, "a section of its own");
-  assert.match(pane, /by hand[\s\S]{0,900}Keep this one whatever/, "and the hand rule is in it");
+
+  /*
+   * THIS USED TO ASSERT A "by hand" SECTION OF FULL RULE CARDS, and the
+   * counter-argument is the reason it does not any more.
+   *
+   * A hand decision IS a rule in the engine — that is how "keep this one
+   * whatever the rules say" survives a recompute — and the pane was showing
+   * it as one: a card, a switch, the same weight as a standing instruction
+   * about the whole cut. The prototype collapses them to one line with a
+   * caret ("and 3 fixes by hand") and a minus or plus per fix, because ten
+   * disagreements about ten moments should not push the direction off the
+   * screen. The old assertion was pinning the build's shape, not the
+   * product's.
+   *
+   * What it still pins is the claim that mattered: a hand decision is
+   * listed apart from the rules and takes no number.
+   */
+  assert.match(pane, /and 1 fix by hand/, "collapsed, and counted");
+  assert.match(pane, /fixes-list[\s\S]{0,900}Keep this one whatever/, "and the fix is in it");
+  assert.doesNotMatch(
+    pane.slice(pane.indexOf("fix by hand")),
+    /class="rule-card"/,
+    "a fix is not a rule card",
+  );
 });
 
 test("a moment's rule number is the pane's rule number", () => {
@@ -590,4 +612,134 @@ test("an order the engine does not know is refused, not defaulted", () => {
   const index = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
   assert.match(index, /if \(!isOrder\(b\.order\)\) return c\.json\(\{ error: "no such order" \}, 422\);/);
   assert.match(index, /if \(rule\.kind !== "order"\) return c\.json\(\{ error: "that rule has no order" \}, 422\);/);
+});
+
+/* ── The rules pane, rendered rather than reasoned about ────────────────── */
+
+/**
+ * WHAT A POPULATED RULES PANE TURNED OUT TO BE MISSING.
+ *
+ * The pane had been built from unit tests alone. The first time a fixture put
+ * four rules, a real disagreement and a hand fix into it and the page was
+ * screenshotted, four things were wrong at once — and three of them were
+ * behaviours in the prototype that nothing here had ever asked for.
+ */
+
+/** A moment as the route hands one over. */
+const mom = (o: Partial<CutData["moments"][number]>) => ({
+  id: "m1",
+  quote: "the kettle",
+  source_title: "the kitchen",
+  in: false,
+  note: "out · rule 02 · click to keep",
+  ...o,
+});
+
+const pane = (d: Partial<CutData>) => {
+  const html = renderCut({ ...base, ...d } as CutData);
+  return html.slice(html.indexOf(">THE RULES<"), html.indexOf("asst-talk"));
+};
+
+test("the disagreement is above the rules, not under them", () => {
+  /*
+   * THE DEFECT A SCREENSHOT FOUND AND NO ASSERTION COULD.
+   *
+   * .asst-top is capped at half the column and scrolls. The panel was
+   * rendered after every rule card, so on a cut with four rules it was off
+   * the bottom of a scrolling box on arrival — while the note beside the cut
+   * said "2 judgement calls" and the blocks carried the gold mark. The one
+   * decision in the pane was the one thing you could not see.
+   *
+   * The prototype has conflicts at line 303 and the rules at 313. Ordering,
+   * not presence, is the claim — presence is pinned by cut-notes.
+   */
+  const p = pane({
+    rules: RULES,
+    moments: [
+      mom({ id: "m1", contest: { k: "01", d: "02", kId: "r-keep-core" } }),
+      mom({ id: "m2", contest: { k: "01", d: "02", kId: "r-keep-core" } }),
+    ],
+  });
+  assert.ok(p.indexOf("disagree on 2 moments") < p.indexOf("rule-card"), "the panel comes first");
+});
+
+test("a rule that is on and matching nothing offers to go off", () => {
+  /*
+   * Switched on, no moment in by it, no moment out by it, named by no
+   * disagreement — and rendered identically to a rule holding the cut
+   * together. A sentence that no longer describes any of your footage looked
+   * like direction.
+   *
+   * It says "switch it off" where the prototype says "archive it", because
+   * invariant 6 is that nothing is deleted. 12-DEFERRED.md records that.
+   */
+  const p = pane({
+    rules: [
+      { id: "r-live", text: "Keep the working out.", on: true, hand: false, effect: "brings in 1", kind: "keep" },
+      { id: "r-dead", text: "Take out the sponsor read.", on: true, hand: false, effect: "nothing here touches it", kind: "drop" },
+    ],
+    moments: [mom({ id: "m1", in: true, byRule: "r-live", note: "in · rule 01" })],
+  });
+  const cards = p.split('class="rule-card"').slice(1);
+  assert.ok(!/rule-off/.test(cards[0]), "the rule that is working is not offered");
+  assert.match(cards[1], /class="rule-off"[^>]*data-rule="r-dead"/, "the dead one is");
+  assert.match(cards[1], /Does nothing now — switch it off/);
+});
+
+test("an order rule matching nothing is not called dead", () => {
+  /*
+   * "Doing nothing" is not a defect for every kind of rule. An order rule
+   * with one block to order, a cap nothing exceeds and a gap rule on a cut
+   * with no gaps are all working exactly as asked. Only keep and drop can be
+   * dead, which is the prototype's own condition.
+   */
+  const p = pane({
+    rules: [{ id: "r-ord", text: "Run it as it happened.", on: true, hand: false, effect: "in order", kind: "order", order: "time" }],
+    moments: [],
+  });
+  assert.doesNotMatch(p, /rule-off/);
+});
+
+test("a rule that took out two or more offers to bring them all back", () => {
+  /*
+   * The alternative the pane offered was the Footage tab and four presses of
+   * "click to keep" — four decisions to undo one. Turning the rule off IS
+   * what brings its moments back, so the offer posts the rule's own switch.
+   */
+  const p = pane({
+    rules: RULES,
+    moments: [
+      mom({ id: "m1", dropRule: "r-drop-housekeeping" }),
+      mom({ id: "m2", dropRule: "r-drop-housekeeping" }),
+      mom({ id: "m3", dropRule: "r-cap" }),
+    ],
+  });
+  assert.match(p, /Bring back all 2 rule 02 took out/);
+  assert.doesNotMatch(p, /rule 03 took out/, "one moment is not a wholesale disagreement");
+});
+
+test("hand fixes collapse to one line, folded away, each with an undo", () => {
+  const p = pane({
+    rules: [
+      RULES[0],
+      { id: "r-h1", text: "Keep this one whatever the rules say.", on: true, hand: true, effect: "brings in 1", kind: "keep", cid: "c9" },
+      { id: "r-h2", text: "Take this one out whatever the rules say.", on: true, hand: true, effect: "takes out 1", kind: "drop", cid: "c4" },
+    ],
+    moments: [],
+  });
+  assert.match(p, /and 2 fixes by hand/);
+  assert.match(p, /class="fixes-list" hidden/, "folded until asked for");
+  /* The direction matters: undoing a hand DROP posts keep:false, because
+     making the same decision again is what takes the hand back. Posting the
+     opposite would pin the moment by hand the other way with no road back. */
+  assert.match(p, /class="fix-undo"[^>]*data-moment="c9"[^>]*data-keep="1"/);
+  assert.match(p, /class="fix-undo"[^>]*data-moment="c4"[^>]*data-keep="0"/);
+});
+
+test("one fix is one fix", () => {
+  const p = pane({
+    rules: [{ id: "r-h1", text: "Keep this one.", on: true, hand: true, effect: "brings in 1", kind: "keep", cid: "c9" }],
+    moments: [],
+  });
+  assert.match(p, /and 1 fix by hand/);
 });

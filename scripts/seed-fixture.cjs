@@ -294,7 +294,43 @@ async function main() {
       text: "Lose the hedging.",
       params: { words: ["maybe", "sort of"] },
     },
+    /*
+     * 05 IS ON AND MATCHES NOTHING, which is its whole job.
+     *
+     * Nobody in this transcript mentions a sponsor. The pane renders a rule
+     * like this identically to one holding the cut together, so the offer to
+     * retire it — "Does nothing now — switch it off" — had no account in the
+     * product that could produce it. Now one can.
+     */
+    {
+      key: "r-dead",
+      kind: "keep",
+      on: 1,
+      text: "Keep anything about the sponsor.",
+      params: { words: ["sponsor", "patreon"] },
+    },
   ];
+
+  /*
+   * AND ONE DECISION MADE BY HAND.
+   *
+   * A hand rule is how the engine makes "take this one out whatever the
+   * rules say" survive a recompute, and it is the one rule shape the pane
+   * draws differently: folded into "and 1 fix by hand" with an undo, rather
+   * than given a number of its own. Nothing had ever rendered it.
+   *
+   * The key is what ruleKey() produces for the same decision, because the
+   * undo posts to the MOMENT and the route finds the rule by recomputing
+   * that key. A hand rule seeded under any other id would render an undo
+   * that quietly did nothing.
+   */
+  const HAND_CLIP = "fix-clip-10";
+  sql.push(
+    `INSERT OR REPLACE INTO rules (id,project_id,key,idx,kind,on_,text,tag,clip_ids,ord,secs,params,hand,wins,created_at)
+     VALUES (${q("fix-rule-hand")},${q(PROJECT_ID)},${q("r-drop-hand-" + HAND_CLIP)},${RULES.length},
+             ${q("drop")},1,${q("Take this one out whatever the rules say.")},NULL,
+             ${q(JSON.stringify([HAND_CLIP]))},NULL,NULL,NULL,1,0,${now});`,
+  );
 
   RULES.forEach((r, i) => {
     sql.push(
@@ -474,6 +510,9 @@ async function main() {
     ["the cut counts the judgement calls", /2 judgement calls/],
     ["a beat is still to record", /0 of 1 recorded/],
     ["the conversation has turns", /class="turn"/],
+    ["a rule doing nothing offers to go off", /Does nothing now — switch it off/],
+    ["the hand fix is folded, not numbered", /and 1 fix by hand/],
+    ["and it can be undone", /class="fix-undo"[^>]*data-moment="fix-clip-10"/],
   ];
   let bad = 0;
   for (const [name, re] of want) {

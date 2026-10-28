@@ -274,18 +274,31 @@ p,div{text-wrap:pretty}
   position:sticky;top:88px;height:calc(100vh - 320px);min-height:360px;
   display:flex;flex-direction:column;overflow:hidden}
 /*
- * THE RULES SCROLL; THE CONVERSATION DOES NOT GET CRUSHED.
+ * ONE SCROLLER FOR THE DIRECTION, AND THE COMPOSER PINNED UNDER IT.
  *
- * flex:none alone let the rules pane take whatever it needed, and the
- * conversation under it took what was left — so a project with six rules
- * left 125px for the conversation, which is not room for one exchange, let
- * alone the two check-editor.cjs asks for. A rules list is unbounded by
- * design: the whole point is that every change is a rule you can see.
+ * Which is what the prototype does — its left column is a single
+ * overflow-y:auto with the composer as a sibling outside it — and what this
+ * did not. It had three boxes with their own constraints: the rules capped
+ * at half the column and scrolling, the Scout row, and the conversation with
+ * a 190px basis that never shrank.
  *
- * So the rules take at most half the column and scroll inside it. The
- * conversation's own floor is inline on the element in src/ui/pages/cut.ts,
- * next to the rest of its layout and next to the min-height:0 it replaced —
- * one place, rather than a stylesheet rule an inline style silently beats.
+ * The argument for the cap was real and is written below. It was that a
+ * project with six rules left 125px for the conversation, which is not room
+ * for one exchange. But the cure traded one crushed thing for another: the
+ * first time a fixture put four rules and a conflicts panel in the pane, the
+ * column showed ONE rule card, sliced in half, and the panel that resolves
+ * the conflict was the only thing you could read. A rules pane that shows
+ * one rule is not a rules pane, and the whole product's claim is that the
+ * rules are visible.
+ *
+ * Both problems came from the same mistake: making the composer's safety the
+ * job of every box above it. It is not. The composer is OUTSIDE the scroller
+ * now, so nothing above it can reach it, and everything above it can be as
+ * tall as it needs to be. The conversation keeps its 190px floor because the
+ * floor was never the problem — the floor fighting a cap was.
+ *
+ * The old reasoning, kept because the measurement in it is still the one
+ * that says whether this is right:
  *
  * NO BACKTICKS IN THIS FILE'S COMMENTS: the stylesheet is a template
  * literal and one ends it, taking the whole shell with it. The typechecker
@@ -299,8 +312,15 @@ p,div{text-wrap:pretty}
  * clip the card and draw the conversation over it — which is what the
  * first version did, and it took a screenshot to see.
  */
-.asst-top{flex:0 1 auto;max-height:50%;overflow-y:auto;min-height:0;scrollbar-width:thin}
+.asst-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;
+  display:flex;flex-direction:column}
+.asst-top{flex:none}
 .asst-scout{flex:none}
+/* The conversation's floor, now that it is safe to have one. Inside the
+   scroller nothing it refuses to give up can push the composer anywhere:
+   the composer is the scroller's SIBLING. The number is check-editor's,
+   measured as two exchanges. */
+.asst-talk{flex:none;min-height:190px}
 /*
  * THE PLAYER'S OWN COLUMN, in a project.
  *

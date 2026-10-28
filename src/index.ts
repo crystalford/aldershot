@@ -1932,6 +1932,9 @@ app.get("/p/:id/:stagePath", async (c) => {
                  the other two orders as chips. */
               kind: r.kind,
               order: r.order,
+              /* The moment a hand fix is about, so the undo beside it has
+                 something to post to. Rules proper have no cid. */
+              cid: r.cid === undefined || r.cid === null ? null : String(r.cid),
             })),
             moments: judged.map((m) => ({
               id: String(m.id),
@@ -1957,6 +1960,18 @@ app.get("/p/:id/:stagePath", async (c) => {
                     kId: String(m.contest.k),
                   }
                 : null,
+              /*
+               * THE SAME TWO FACTS AS A COUNT CAN BE MADE FROM.
+               *
+               * `note` below says it in words, and the pane needs to know
+               * that rule 02 took out four moments and that rule 03 took out
+               * none and kept none. Reading the number back out of the
+               * sentence would make the two disagree the first time the
+               * sentence changed. A hand decision is not a rule, so it is
+               * null here and stays visible in the sentence.
+               */
+              byRule: m.in && m.byId !== null && !isHand(m.byId) ? String(m.byId) : null,
+              dropRule: !m.in && m.dropId !== null && !isHand(m.dropId) ? String(m.dropId) : null,
               note: m.in
                 ? m.byId === null
                   ? "in · kept by hand"
