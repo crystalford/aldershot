@@ -134,3 +134,27 @@ export async function underCap(db: D1Database, userId: string, now = Date.now())
     return { allowed: true, spentUsd: 0, capUsd: DEFAULT_CAP_USD, says: "The spend cap could not be checked." };
   }
 }
+
+/**
+ * RAISING THE CAP, which the refusal has been telling people to do.
+ *
+ * `capVerdict`'s own sentence reads "Nothing else will run until you raise it
+ * in Settings" — and `spend_cap_usd` was READ by capFor and WRITTEN BY
+ * NOTHING. There was no route, no control, and no code path anywhere in src/
+ * that could change it. So the cap sat at DEFAULT_CAP_USD for every account
+ * that ever existed, it stopped their work when they reached it, and the
+ * message told them to do a thing the product could not do.
+ *
+ * Clamped rather than trusted: a negative cap is not a cap, and a number that
+ * is not a number must not become one by way of NaN. Zero is allowed and
+ * means it — capVerdict has a sentence for exactly that case ("Your spend cap
+ * is set to nothing, so no jobs will run"), which is a legitimate thing to
+ * want on an account you are stepping away from.
+ */
+export const MAX_CAP_USD = 10_000;
+
+export async function setCap(db: D1Database, userId: string, usd: number): Promise<number> {
+  const clamped = Number.isFinite(usd) ? Math.min(MAX_CAP_USD, Math.max(0, Math.round(usd))) : DEFAULT_CAP_USD;
+  await db.prepare(`UPDATE v2_users SET spend_cap_usd = ? WHERE id = ?`).bind(clamped, userId).run();
+  return clamped;
+}

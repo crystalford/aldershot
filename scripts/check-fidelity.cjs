@@ -688,6 +688,18 @@ async function checkStrings() {
         "transcribed project with no clips, which is where every account " +
         "starts. Says what is absent and claims nothing.",
     ],
+    [
+      "Save the cap",
+      "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
+        "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +
+        "reading \"Top-ups stop here until you raise it\" and offers no way to " +
+        "raise it. src/spend.ts stops every job at that number with a sentence " +
+        "that says \"until you raise it in Settings\", and `spend_cap_usd` was " +
+        "read by capFor and written by nothing in the whole of src/ — so the " +
+        "product told somebody to do a thing it could not do. New behaviour " +
+        "rather than a paraphrase, and the smallest thing that makes the " +
+        "existing refusal true.",
+    ],
     /*
      * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.
      *

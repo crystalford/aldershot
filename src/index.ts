@@ -54,6 +54,7 @@ import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./proj
 import { draftPlan, findForBeats } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
+import { setCap, underCap } from "./spend.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
@@ -5391,6 +5392,24 @@ app.get("/landing", async (c) => {
   );
 });
 
+/**
+ * SET THE SPEND CAP, because the refusal tells people to.
+ *
+ * src/spend.ts stops work at the cap and its sentence says "until you raise
+ * it in Settings". Nothing could: `spend_cap_usd` was read and never written,
+ * so there was no way to raise it from anywhere in the product. This is the
+ * missing half of a control that was already enforcing.
+ */
+app.post("/api/spend-cap", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ usd?: number }>(c);
+  const usd = Number(b.usd);
+  if (!Number.isFinite(usd)) return c.json({ error: "that isn't a number" }, 422);
+  const cap = await setCap(c.env.DB, user.id, usd);
+  return c.json({ ok: true, cap });
+});
+
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -5416,6 +5435,9 @@ app.get("/settings", async (c) => {
    * to the user and the number enforced against them have to be one number.
    */
   const limits = PLANS[user.plan] ?? PLANS.free;
+  /* The same verdict the dispatcher refuses on, so the figure a person reads
+     and the figure enforced against them are one figure. */
+  const spend = await underCap(c.env.DB, user.id);
   /* The owner is metered and never blocked — checkCap and checkStorage both
      pass them — so a ceiling here would be a number nothing enforces. What
      they have used is the point, and it stays. */
@@ -5451,6 +5473,30 @@ app.get("/settings", async (c) => {
       unit: "GB",
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
+    },
+    /*
+     * THE SPEND CAP, which has been stopping work without ever appearing.
+     *
+     * src/spend.ts checks it on every dispatch and fails the job when it is
+     * reached, with a sentence that reads "Nothing else will run until you
+     * raise it in Settings". Settings had no such row and no such control, and
+     * `spend_cap_usd` was read by capFor and written by nothing at all — so
+     * the cap could not be raised from anywhere, and the only warning
+     * (`nearingCap`) went to a server log.
+     *
+     * The one meter here denominated in money rather than work, which is why
+     * it is last: the two above are what you have used, this is what it cost.
+     */
+    {
+      label: "Monthly spend cap",
+      used: Math.round(spend.spentUsd * 100) / 100,
+      cap: Math.round(spend.capUsd),
+      /* Enforced on EVERY account, the owner's included — unlike the two
+         above, which the owner is exempt from. So it is never `uncapped`. */
+      unit: "USD",
+      color: ACCENT_GOLD,
+      editable: true,
+      note: "What running your jobs has actually cost this month. Work stops here until you raise it.",
     },
   ];
 

@@ -11,13 +11,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
+import { fakeD1 } from "./helpers/fake-d1.ts";
 import {
   DEFAULT_CAP_USD,
+  MAX_CAP_USD,
   WARN_AT,
+  capFor,
   capOrDefault,
   capVerdict,
   monthStart,
   nearingCap,
+  setCap,
 } from "../src/spend.ts";
 
 test("ACCEPTANCE: past the cap, nothing else runs", () => {
@@ -133,4 +139,69 @@ test("nonsense spending is treated as none, not as infinity", () => {
      account out of a product it has not used. */
   assert.equal(capVerdict({ spentUsd: Number.NaN, capUsd: 400 }).allowed, true);
   assert.equal(capVerdict({ spentUsd: -3, capUsd: 400 }).spentUsd, 0);
+});
+
+/* ── Raising it, which the refusal has always told people to do ─────────── */
+
+/**
+ * THE HALF THAT WAS NOT BUILT.
+ *
+ * capVerdict's own refusal reads "Nothing else will run until you raise it in
+ * Settings", and `spend_cap_usd` was READ by capFor and WRITTEN BY NOTHING —
+ * no route, no control, no code path anywhere in src/. So every account sat
+ * at DEFAULT_CAP_USD for ever, work stopped there, and the message named a
+ * place where the thing it asked for could not be done.
+ */
+test("setCap writes the cap capFor reads", async () => {
+  const raw = new DatabaseSync(":memory:");
+  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
+  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
+  const db = fakeD1(raw) as never;
+
+  assert.equal(await capFor(db, "u1"), DEFAULT_CAP_USD, "an unset cap is the default");
+  assert.equal(await setCap(db, "u1", 250), 250);
+  assert.equal(await capFor(db, "u1"), 250, "and the enforcer reads what was set");
+});
+
+test("the cap is clamped, so a typo cannot become a policy", async () => {
+  const raw = new DatabaseSync(":memory:");
+  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
+  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
+  const db = fakeD1(raw) as never;
+
+  assert.equal(await setCap(db, "u1", -40), 0, "a negative cap is not a cap");
+  assert.equal(await setCap(db, "u1", 99_999_999), MAX_CAP_USD, "and neither is an unbounded one");
+  assert.equal(await setCap(db, "u1", Number.NaN), DEFAULT_CAP_USD, "not-a-number falls back rather than storing NaN");
+});
+
+test("zero is allowed, and means it", async () => {
+  /* A legitimate thing to want on an account you are stepping away from, and
+     capVerdict has a sentence for exactly this case. */
+  const raw = new DatabaseSync(":memory:");
+  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
+  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
+  const db = fakeD1(raw) as never;
+
+  await setCap(db, "u1", 0);
+  assert.equal(await capFor(db, "u1"), 0);
+  const v = capVerdict({ spentUsd: 0, capUsd: 0 });
+  assert.equal(v.allowed, false);
+  assert.match(v.says, /set to nothing/);
+});
+
+test("the refusal names a place that now has the control", () => {
+  /*
+   * The sentence and the surface, pinned together. Changing either without
+   * the other is how this got broken in the first place: a refusal that
+   * points somewhere, and nothing there.
+   */
+  const says = capVerdict({ spentUsd: 500, capUsd: 400 }).says;
+  assert.match(says, /raise it in Settings/);
+
+  const settings = readFileSync(join(import.meta.dirname, "..", "src", "ui", "pages", "settings.ts"), "utf8");
+  assert.match(settings, /cap-form/, "Settings renders the form");
+  assert.match(settings, /cap-usd/, "with the figure in it");
+
+  const client = readFileSync(join(import.meta.dirname, "..", "src", "ui", "client.ts"), "utf8");
+  assert.match(client, /\/api\/spend-cap/, "and something posts it");
 });

@@ -23,6 +23,8 @@ export interface Meter {
   color: string;
   /** Metered but never blocked — the cap is not enforced, so it is not shown. */
   uncapped?: boolean;
+  /** The spend cap, which the user sets. See the control in meterRow. */
+  editable?: boolean;
 }
 
 export interface CostLine {
@@ -161,6 +163,29 @@ function planBlock(plan: string, meters: Meter[], billingReady: boolean): string
       </div>`
       }
       <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:6px;line-height:1.5">${m.note}</div>
+      ${
+        /*
+         * THE ONE METER YOU CAN CHANGE, and the only one that needs a control.
+         *
+         * src/spend.ts stops every job at this number with a sentence reading
+         * "Nothing else will run until you raise it in Settings" — and until
+         * now Settings had nowhere to do it, because `spend_cap_usd` was read
+         * by capFor and written by nothing in the whole of src/. A product
+         * that tells somebody to do a thing has to let them do it.
+         *
+         * A number box rather than presets: it is their money and the right
+         * figure is whatever they say it is. Zero is allowed and means it —
+         * capVerdict has a sentence for that case.
+         */
+        m.editable
+          ? `<form class="cap-form" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:${SIZE.meta};color:${C.ink45}">Stop at</span>
+              <input class="cap-usd" type="number" min="0" step="10" value="${m.cap}" aria-label="Monthly spend cap in dollars"
+                style="width:92px;font-size:${SIZE.secondary};font-family:${FONT.mono};padding:6px 9px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+              <button type="submit" style="font-size:${SIZE.meta};font-weight:600;padding:6px 13px;border-radius:${RADIUS.button};background:${C.active};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Save the cap</button>
+            </form>`
+          : ""
+      }
     </div>`;
   };
 

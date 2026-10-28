@@ -4382,6 +4382,45 @@ document.querySelectorAll(".rule-order").forEach((btn) => {
  * A reload like every other rule change, because the cut is re-produced from
  * the rules and half the page depends on the answer.
  */
+/*
+ * SAVE THE SPEND CAP.
+ *
+ * The one meter in Settings a person can change. Everything else there is a
+ * reading; this is a decision, and src/spend.ts has been enforcing it against
+ * a number nothing could write since the column was added.
+ */
+document.querySelectorAll(".cap-form").forEach((form) => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = form.querySelector(".cap-usd");
+    if (!input) return;
+    const btn = form.querySelector("button");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/spend-cap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ usd: Number(input.value) }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That cap didn't save.");
+        if (btn) btn.disabled = false;
+        return;
+      }
+      /* The figure comes back from the server because setCap clamps it, and
+         showing what was asked for rather than what was stored is how a cap
+         of 99999 looks accepted and is not. */
+      input.value = String(out.cap);
+      window.toast("Work stops at $" + out.cap + " a month.");
+      if (btn) btn.disabled = false;
+    } catch {
+      window.toast("That cap didn't save.");
+      if (btn) btn.disabled = false;
+    }
+  });
+});
+
 document.querySelectorAll(".rule-wins").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;
