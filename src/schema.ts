@@ -1248,6 +1248,21 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /* The spend cap. See the v2_users table above; here as well because there
      is no migration runner and every existing account already has a row. */
   { table: "v2_users", column: "spend_cap_usd", ddl: "ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL" },
+  /*
+   * WHEN THE LAST BILLING EVENT WE ACTED ON WAS MADE.
+   *
+   * Stripe does not guarantee delivery order and says so. The sequence that
+   * costs money is: a subscription is cancelled, Stripe sends `updated`
+   * (active) and then `deleted`, and the two arrive the other way round —
+   * leaving the account on the paid plan for ever, paying nothing.
+   *
+   * `created` on the event is the ordering Stripe DOES give, so this holds
+   * the last one applied and anything older is ignored. Null until the first
+   * event, and an event carrying no timestamp is still applied: ordering is a
+   * refinement and not a gate, and the alternative is a paid account that
+   * never gets its plan because a field was missing.
+   */
+  { table: "v2_users", column: "billing_event_at", ddl: "ALTER TABLE v2_users ADD COLUMN billing_event_at INTEGER" },
 
   /*
    * WHETHER SCOUT MAY GO OUTSIDE, which the front door asks and nothing
