@@ -222,3 +222,39 @@ test("a multi-source cut does not claim levels were matched per source", () => {
 test("a single-source cut says nothing about sound at all", () => {
   assert.doesNotMatch(cut(), /Loudness set/);
 });
+
+/* ── The join that only worked for assembled cuts ───────────────────────── */
+
+/**
+ * THE MARK HAS TO LAND ON A CUT OF ONE VIDEO, which is most of them.
+ *
+ * `blockContested` and `blockRule` were both built by walking BEATS, because
+ * a beat carries the moment's id in `clip_id`. A cut with a source of its own
+ * has no beats at all — its blocks come straight from the transcript's
+ * segments and are identified `s:<idx>`. So on the commonest shape of cut in
+ * the product, neither the rule chip nor the gold judgement mark could ever
+ * appear, while the cut's own note went on promising "marked in the blocks".
+ *
+ * Found the first time a fixture had rules that disagreed AND a single
+ * source: the note rendered and the mark did not.
+ *
+ * Pinned here on the RENDERER's contract — given a contested block id, the
+ * mark is drawn — and the route's half is pinned by scripts/seed-fixture.cjs,
+ * which fails if the page does not carry `data-contested` after seeding two
+ * rules that argue.
+ */
+test("a segment block can carry the mark, not only a beat block", () => {
+  const html = cut({
+    moments: contested(2),
+    /* `s:` — a segment of this project's own source, the shape a cut of one
+       video is made of. The beat shape is `b:<id>`. */
+    blocks: [block("s:0"), block("s:1")],
+    blockContested: { "s:1": true },
+  } as Partial<CutData>);
+
+  const marked = html.slice(html.indexOf('data-block="s:1"'));
+  assert.match(marked.slice(0, marked.indexOf(">")), new RegExp(`inset 2px 0 0 0 ${ACCENT.gold}`));
+
+  const plain = html.slice(html.indexOf('data-block="s:0"'));
+  assert.doesNotMatch(plain.slice(0, plain.indexOf(">")), new RegExp(`inset 2px 0 0 0 ${ACCENT.gold}`));
+});

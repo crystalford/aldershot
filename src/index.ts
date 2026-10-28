@@ -1882,6 +1882,42 @@ app.get("/p/:id/:stagePath", async (c) => {
             if (bt.clip_id && contested.has(String(bt.clip_id))) blockContested[`b:${bt.id}`] = true;
           }
 
+          /*
+           * AND THE SAME JOIN FOR A CUT OF ONE VIDEO, which is most of them.
+           *
+           * The loop above walks BEATS, and a beat carries the moment's id in
+           * clip_id. A cut with a source of its own has no beats at all — its
+           * blocks come straight from the transcript's segments and are
+           * identified `s:<idx>`. So on the commonest shape of cut in the
+           * product, neither the rule chip nor the gold judgement mark could
+           * ever appear: blockRule and blockContested were both empty, always,
+           * and the cut's own note went on promising "marked in the blocks".
+           *
+           * Found the first time a fixture had rules that disagreed AND a
+           * single source — the note rendered, the mark did not.
+           *
+           * Matched on the moment's MIDPOINT falling inside the block. A
+           * moment is a range of the same recording the segments came from, so
+           * one segment contains it; the midpoint is what survives the edges
+           * being trimmed by a breathing rule or a struck word at either end.
+           */
+          /* The engine's Moment carries ts/dur, not milliseconds — the POOL
+             these were built from has the range, so the join goes through it
+             by id rather than converting "m:ss" back into a number. */
+          const rangeOf = new Map(pool.map((x) => [String(x.id), x]));
+          for (const m of judged) {
+            const r = rangeOf.get(String(m.id));
+            if (!r) continue;
+            const mid = (r.start_ms + r.end_ms) / 2;
+            const b = blocks.find(
+              (x) => x.origin === "footage" && x.start_ms <= mid && mid <= x.end_ms,
+            );
+            if (!b) continue;
+            const rule = ruleOf.get(String(m.id));
+            if (rule && !blockRule[b.id]) blockRule[b.id] = rule;
+            if (m.contest) blockContested[b.id] = true;
+          }
+
           return {
             blockContested,
             addable,
