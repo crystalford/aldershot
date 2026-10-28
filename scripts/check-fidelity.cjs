@@ -637,6 +637,17 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
+      "Sound only &mdash; no camera yet",
+      "The prototype's recorder is a full-screen stage with camera and mic " +
+        "modes, layout options and a teleprompter. The build records audio " +
+        "and nothing else — getUserMedia({ audio: true }) — and the camera " +
+        "half is deferred with its reasons in 12-DEFERRED.md. A recorder " +
+        "that does not say which it is, beside a control called 'Record " +
+        "it', is one somebody points a camera at. beforepost.ts makes the " +
+        "same move and for the same reason: naming what is not checked " +
+        "beats a tick beside it.",
+    ],
+    [
       "Does nothing now — switch it off",
       "The prototype says 'Does nothing now — archive it' and archiving is " +
         "not something a rule can do here: invariant 6 is that nothing is " +

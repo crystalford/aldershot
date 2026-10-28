@@ -419,6 +419,31 @@ export interface Gutter {
   color: string;
 }
 
+/**
+ * WHERE A BEAT SITS, which the recorder never said.
+ *
+ * Reading a line to camera is the one thing in this product you cannot undo
+ * by pressing something — you have to say it again — and the editor asked for
+ * it with the line and nothing else. The prototype puts the context on the
+ * beat: which one of how many, what it comes after, and what it runs into.
+ *
+ * Every field is already in `renderCut`: a beat's neighbours are the blocks
+ * either side of it in the list it is being drawn from.
+ */
+export interface BeatContext {
+  /** This beat's number among the beats, and how many there are. */
+  n: number;
+  of: number;
+  /** The line before it, and where to watch that line from. */
+  afterText: string;
+  afterAt: string;
+  afterStart: number;
+  afterMedia: string;
+  /** The line after it, and where it is. Empty when this beat ends the cut. */
+  thenText: string;
+  thenAt: string;
+}
+
 function blockRow(
   b: Block,
   cuts: Cut[],
@@ -428,6 +453,7 @@ function blockRow(
   rule = "",
   mark: Gutter | null = null,
   contested = false,
+  beat: BeatContext | null = null,
 ): string {
   const script = view === "script";
   const struck = b.struck;
@@ -622,6 +648,51 @@ function blockRow(
   const took = b.end_ms > b.start_ms ? hms((b.end_ms - b.start_ms) / 1000) : "";
 
   /*
+   * THE CONTEXT, ABOVE THE LINE AND THE RECORDER.
+   *
+   * "Beat 1 of 4" is the count the cut's own note promises ("0 of 4
+   * recorded"); what the beat comes after is the thing you have to pitch
+   * against, with a control to hear it; and what it runs into, or the fact
+   * that nothing does. A person reading to camera needs all three and the
+   * editor gave none of them.
+   *
+   * Quoted and clipped, because this is orientation and not the transcript —
+   * the lines themselves are two rows away in either direction.
+   */
+  const clip = (t: string, n = 64) => (t.length > n ? t.slice(0, n).trimEnd() + "…" : t);
+  const context =
+    beat && !script
+      ? `<div style="display:flex;flex-direction:column;gap:7px;margin-bottom:11px">
+          ${
+            beat.afterText
+              ? `<div>
+                  <div style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.09em;color:${C.ink45}">YOU'RE ANSWERING</div>
+                  <div style="margin-top:5px;display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
+                    <span data-content style="flex:1 1 180px;min-width:0;font-size:${SIZE.meta};line-height:1.5;color:${C.ink70};text-wrap:pretty">&ldquo;${esc(
+                      clip(beat.afterText),
+                    )}&rdquo;</span>
+                    ${
+                      beat.afterAt
+                        ? `<span data-content style="flex:none;font-size:${SIZE.pill};font-family:${FONT.mono};color:${C.ink45}">${esc(beat.afterAt)}</span>`
+                        : ""
+                    }
+                    <button class="blk-play" data-start="${beat.afterStart}" data-media="${esc(beat.afterMedia)}"
+                      style="flex:none;font-size:${SIZE.meta};font-weight:500;color:${C.ink70};background:${C.pill};border:none;border-radius:4px;padding:3px 9px;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Watch the moment</button>
+                  </div>
+                </div>`
+              : ""
+          }
+          ${
+            beat.thenText
+              ? `<div data-content style="font-size:${SIZE.meta};line-height:1.5;color:${C.ink45};text-wrap:pretty">Then it cuts to ${esc(
+                  beat.thenAt,
+                )} &mdash; &ldquo;${esc(clip(beat.thenText))}&rdquo;</div>`
+              : `<div style="font-size:${SIZE.meta};line-height:1.5;color:${C.ink45}">This is the last beat of the cut.</div>`
+          }
+        </div>`
+      : "";
+
+  /*
    * TWO KINDS OF BLOCK CAN CARRY A RECORDING.
    *
    * A voiceover beat IS the recording — its mediaKey is the take. A clip
@@ -641,6 +712,7 @@ function blockRow(
     <div class="rec-idle" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
       <button class="blk-record" style="font-size:${SIZE.meta};font-weight:600;padding:5px 12px;border-radius:${RADIUS.button};background:${ACCENT.gold};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">${voice ? "Another take" : overBRoll ? "Talk over it" : "Record it"}</button>
       <button class="blk-tts" style="font-size:${SIZE.meta};font-weight:500;padding:5px 12px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Generate it</button>
+      <span style="flex:none;font-size:${SIZE.meta};color:${C.ink32};white-space:nowrap">Sound only &mdash; no camera yet</span>
       ${
         voice
           ? `<button class="blk-unrecord" style="margin-left:auto;font-size:${SIZE.meta};color:${C.ink32};background:none;border:none;padding:0 4px;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Remove</button>`
@@ -693,7 +765,34 @@ function blockRow(
     rule && !script
       ? `<span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink32}">${esc(rule)}</span>`
       : "";
-  const meta = why
+  /*
+   * A WARNING IS NOT A COMPLIMENT, AND WAS DRAWN AS ONE.
+   *
+   * `why` carries two completely different sentences. Under a footage block
+   * it is the scorer saying what it liked. Under a recording it is
+   * src/take.ts saying the audio is not the line that was written — the only
+   * signal anybody gets that a forced aligner put a script over the wrong
+   * take — and it arrived in the same field, in the same grey, clamped to
+   * one line like a note.
+   *
+   * So a beat with a verdict says so in gold, which is this product's colour
+   * for the system speaking, and names the state before the sentence.
+   * `drifted` means it read something else; `unclear` means the aligner
+   * could not tell, which is a different thing and says so.
+   */
+  const takeNote =
+    b.takeVerdict && why
+      ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">
+          <span data-content style="flex:none;font-size:${SIZE.pill};font-weight:600;padding:2px 6px;border-radius:4px;background:${accentBg(
+            ACCENT.gold,
+          )};color:${ACCENT.gold};white-space:nowrap">${b.takeVerdict === "drifted" ? "NOT THE LINE" : "COULDN'T TELL"}</span>
+          <span data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink70};line-height:1.5;text-wrap:pretty">${esc(why)}</span>
+        </div>`
+      : "";
+
+  const meta = takeNote
+    ? takeNote
+    : why
     ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span class="blk-why" data-content style="flex:1;min-width:0;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5;cursor:pointer;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden" title="Show the whole reason">${dur ? `${esc(dur)} · ` : ""}${esc(why)}</span></div>`
     : dur || ruleChip
       ? `<div style="display:flex;gap:8px;align-items:baseline;margin-top:4px">${ruleChip}<span data-content style="font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5">${esc(dur)}</span></div>`
@@ -750,6 +849,7 @@ function blockRow(
       }"${contested ? ' data-contested="1"' : ""}>
     ${script ? gutter : thumb}
     <div style="flex:1;min-width:0">
+      ${context}
       <div style="font-size:${script ? "15px" : SIZE.quote};line-height:${script ? "2" : "1.5"};color:${
         toCamera ? ACCENT.gold : script ? "rgba(236,236,241,0.85)" : "rgba(236,236,241,0.92)"
       }">${originTag}${body}</div>
@@ -2328,10 +2428,60 @@ export function renderCut(d: CutData): string {
     return { text: `${letter}${hms(b.start_ms / 1000)}`, color: colour };
   };
 
+  /*
+   * WHERE EACH BEAT SITS IN THE CUT.
+   *
+   * Computed over the WHOLE list, not the window on screen: "beat 2 of 4" is
+   * a fact about the cut, and counting only what has been scrolled to would
+   * make it change as you scroll. The neighbours are the nearest blocks
+   * either side, skipping struck ones — a line you have cut is not what this
+   * beat comes after.
+   */
+  const beatsAll = d.blocks.filter((x) => x.origin === "voice" && !x.struck);
+  const beatOf = new Map<string, BeatContext>();
+  beatsAll.forEach((b, n) => {
+    const at = d.blocks.indexOf(b);
+    const near = (step: -1 | 1): Block | null => {
+      for (let j = at + step; j >= 0 && j < d.blocks.length; j += step) {
+        if (!d.blocks[j].struck) return d.blocks[j];
+      }
+      return null;
+    };
+    const before = near(-1);
+    const after = near(1);
+    const mk = before && before.origin === "footage" ? markOf(d, order, before) : null;
+    beatOf.set(b.id, {
+      n: n + 1,
+      of: beatsAll.length,
+      afterText: before?.text ?? "",
+      afterAt: before && before.origin === "footage" ? `${mk?.letter ? mk.letter + " " : ""}${hms(before.start_ms / 1000)}` : "",
+      afterStart: before?.start_ms ?? 0,
+      afterMedia: before?.previewKey ?? "",
+      thenText: after?.text ?? "",
+      thenAt: (() => {
+        if (!after || after.origin !== "footage") return "";
+        const m2 = markOf(d, order, after);
+        return `${m2.letter ? m2.letter + " " : ""}${hms(after.start_ms / 1000)}`;
+      })(),
+    });
+  });
+
   const shown = d.blocks.slice(0, d.windowSize);
   const list: string[] = [seam(d.projectId, 0, view)];
   shown.forEach((b, i) => {
-    list.push(blockRow(b, d.cuts, i, d.blocks.length, view, d.blockRule[b.id] ?? "", gutterFor(b), Boolean((d.blockContested ?? {})[b.id])));
+    list.push(
+      blockRow(
+        b,
+        d.cuts,
+        i,
+        d.blocks.length,
+        view,
+        d.blockRule[b.id] ?? "",
+        gutterFor(b),
+        Boolean((d.blockContested ?? {})[b.id]),
+        beatOf.get(b.id) ?? null,
+      ),
+    );
     list.push(seam(d.projectId, i + 1, view));
   });
   if (d.blocks.length > shown.length) {

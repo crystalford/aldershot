@@ -816,3 +816,113 @@ test("the threads are chips with counts, and only when there is a choice", () =>
   });
   assert.doesNotMatch(one, /thread-chip/);
 });
+
+/* ── The recorder's context ─────────────────────────────────────────────── */
+
+/**
+ * READING A LINE TO CAMERA IS THE ONE THING YOU CANNOT UNDO BY PRESSING.
+ *
+ * You have to say it again. The editor asked for it with the line and
+ * nothing else: no sense of what the beat comes after, no way to hear that,
+ * and no idea what it runs into. All of it was already in `renderCut` — a
+ * beat's neighbours are the blocks either side of it.
+ */
+const VOICE = {
+  ...BLOCK,
+  id: "b:vo1",
+  origin: "voice" as const,
+  text: "What the eleven days actually cost.",
+  words: [],
+  start_ms: 0,
+  end_ms: 12_000,
+} satisfies Block;
+
+const seg = (i: number, text: string, at: number) => ({
+  ...BLOCK,
+  id: `s:${i}`,
+  start_ms: at,
+  end_ms: at + 4000,
+  text,
+});
+
+test("a beat says what it answers, with a way to watch it", () => {
+  const html = renderCut({
+    ...base,
+    blocks: [seg(0, "The kettle was in a box marked books", 57_510), VOICE, seg(1, "Label the boxes by room", 62_000)],
+    windowSize: 60,
+  } as Partial<CutData> as CutData);
+  assert.match(html, /YOU'RE ANSWERING/);
+  assert.match(html, /&ldquo;The kettle was in a box marked books&rdquo;/);
+  /* Unpadded, the way footage.js writes every moment's time — and ROUNDED,
+     which is why this says 0:58 for a block starting at 57510ms. The first
+     version of this asserted 0:57 from the milliseconds and was simply
+     wrong about what hms does. */
+  assert.match(html, />0:58</);
+  /* And the control seeks to it — the same blk-play the thumbnails use, so
+     there is one play path rather than two that drift. */
+  assert.match(html, /class="blk-play" data-start="57510"[\s\S]{0,300}Watch the moment/);
+});
+
+test("and what it runs into, or that nothing does", () => {
+  const middle = renderCut({
+    ...base,
+    blocks: [seg(0, "before", 1000), VOICE, seg(1, "Label the boxes by room", 62_000)],
+  } as Partial<CutData> as CutData);
+  assert.match(middle, /Then it cuts to 1:02 &mdash; &ldquo;Label the boxes by room&rdquo;/);
+  assert.doesNotMatch(middle, /last beat of the cut/);
+
+  const last = renderCut({
+    ...base,
+    blocks: [seg(0, "before", 1000), VOICE],
+  } as Partial<CutData> as CutData);
+  assert.match(last, /This is the last beat of the cut\./);
+});
+
+test("a struck line is not what the beat comes after", () => {
+  /* You cut it. Offering it as the thing to pitch against would be the
+     editor describing a cut that no longer exists. */
+  const html = renderCut({
+    ...base,
+    blocks: [seg(0, "kept line", 1000), { ...seg(1, "struck line", 40_000), struck: true }, VOICE],
+  } as Partial<CutData> as CutData);
+  assert.match(html, /&ldquo;kept line&rdquo;/);
+  assert.doesNotMatch(html, /&ldquo;struck line&rdquo;/);
+});
+
+test("the recorder says it is sound only", () => {
+  /*
+   * getUserMedia({ audio: true }) and nothing else. A recorder that does not
+   * say which it is, beside a control called "Record it", is one somebody
+   * points a camera at. The prototype's recorder has camera modes; this does
+   * not, and 12-DEFERRED.md says so.
+   */
+  const html = renderCut({ ...base, blocks: [VOICE] } as Partial<CutData> as CutData);
+  assert.match(html, /Sound only &mdash; no camera yet/);
+});
+
+test("a take that is not the line that was written does not read like praise", () => {
+  /*
+   * `why` carries two different sentences. Under a footage block it is the
+   * scorer saying what it liked; under a recording it is src/take.ts saying
+   * the audio is not the script — the only signal anybody gets that a forced
+   * aligner put a script over the wrong take. Both arrived in the same
+   * field, in the same grey, clamped to one line like a note.
+   */
+  const drifted = renderCut({
+    ...base,
+    blocks: [{ ...VOICE, why: "It reads about half of what you wrote.", takeVerdict: "drifted" as const }],
+  } as Partial<CutData> as CutData);
+  assert.match(drifted, />NOT THE LINE</);
+  assert.doesNotMatch(drifted, /class="blk-why"/, "not the scorer's quiet grey");
+
+  const unclear = renderCut({
+    ...base,
+    blocks: [{ ...VOICE, why: "The aligner placed almost nothing.", takeVerdict: "unclear" as const }],
+  } as Partial<CutData> as CutData);
+  assert.match(unclear, />COULDN'T TELL</, "which is a different answer from a wrong one");
+
+  /* A take that reads the line says nothing at all: a row of reassurance
+     under every good one is what made the bad one invisible. */
+  const fine = renderCut({ ...base, blocks: [VOICE] } as Partial<CutData> as CutData);
+  assert.doesNotMatch(fine, /NOT THE LINE|COULDN'T TELL/);
+});

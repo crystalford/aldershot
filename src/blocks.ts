@@ -38,6 +38,21 @@ export interface Block {
   score: number | null;
   why: string | null;
   /**
+   * WHETHER THE RECORDING IS THE LINE THAT WAS WRITTEN.
+   *
+   * `why` already carries the sentence src/take.ts wrote, and that is the
+   * problem this field solves: a warning and a compliment were arriving in
+   * the same field, to be drawn in the same grey. "It reads about half of
+   * what you wrote" and "names the mistake plainly" are not the same kind of
+   * thing and must not look alike — this is the only signal anybody gets
+   * that a forced aligner put a script over the wrong audio.
+   *
+   * Null on everything that is not a recording with a verdict, and never
+   * "matches": a row of reassurance under every good take is a row nobody
+   * reads, which is what made the bad one invisible.
+   */
+  takeVerdict?: "drifted" | "unclear" | null;
+  /**
    * WHAT GOES ON SCREEN OVER THIS BLOCK, and null for almost all of them.
    *
    * A generated picture and a stock clip carry a label; the maker's own
@@ -324,6 +339,8 @@ function takeWords(json: string | null | undefined): Array<{ s: number; e: numbe
      * nobody reads.
      */
     why: b.take_verdict && b.take_verdict !== "matches" ? (b.take_reason ?? null) : null,
+    takeVerdict:
+      b.take_verdict === "drifted" || b.take_verdict === "unclear" ? b.take_verdict : null,
     /* No user action: the kind decides the type, the type decides the label. */
     label: labelFor(b.kind),
     /* A recording is small and has no separate copy — it is its own preview. */

@@ -136,6 +136,20 @@ nobody can check.
   is the identity; the picture needs `frame_r2_key` served per moment and is
   the same media the walk already reports absent in the fixture.
 
+- **The recorder's camera half, and every take kept.** `getUserMedia({ audio:
+  true })` is what the build records with, and the beat now says so beside the
+  control ("Sound only — no camera yet"). The prototype's recorder is a
+  full-screen stage: camera or mic, a teleprompter, a countdown, layout
+  options ("HOW IT SITS IN THE CUT" — full, corner, side by side), generated
+  script drafts, and **every take kept with one picked**. The build stores one
+  `media_r2_key` per beat, so a second take replaces the first — which breaks
+  invariant 6 for the one thing in the product that cannot be re-made by
+  pressing something. What it needs: a `takes` table keyed on the beat with
+  the chosen one marked, the recorder writing a row rather than a column, and
+  `runTake` aligning per take rather than per beat. The layout options need a
+  compositor the render container does not have; the teleprompter and the
+  countdown are client work on top of the bar that exists.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.
