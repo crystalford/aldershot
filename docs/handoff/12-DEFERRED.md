@@ -42,6 +42,24 @@ nobody can check.
   an absent estimate makes a run stop at the knee instead of looking longer.
   It cannot stop a run early for a reason that is not true.
 
+- **Footage-hours, generated seconds, and the plan set.** A PRICING decision,
+  and the owner's: the design and the build denominate differently and neither
+  contradicts itself.
+  `design/one-take/Aldershot Settings.dc.html` prices in **footage-hours**
+  (Starter $39 for 3 h), meters **generated seconds** as top-up-only, and shows
+  a monthly spend cap. The build is consistently in **processing minutes**
+  (Free 300 / Studio $29 for 1,200) with no generated-second metering anywhere
+  in `src/` — landing, Settings and `PLANS` all agree with each other, and
+  `checkCap` enforces the same figure Settings displays, which is the property
+  that actually matters.
+  What re-denominating would take: `PLANS` in `src/plans.ts`, the cap check
+  that reads it, the two meters and their notes in `/settings`, four strings on
+  the landing page, and a decision about whether a generated second is billed
+  at all — `usage_events` has no row kind for one. It is not a refactor to do
+  on a hunch about what the price should be.
+  The spend cap itself IS now built and settable (28 Oct); it was enforced and
+  unraisable before that.
+
 - **Per-source loudness matching.** The prototype's cut carries a note
   reading "Levels matched across 3 sources". The build says "Loudness set for
   the platform" instead, because the first is a claim this render cannot keep:
