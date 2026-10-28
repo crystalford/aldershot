@@ -47,6 +47,42 @@ const ROLE_ACCENT: Record<Role, keyof typeof ACCENT> = {
   outside: "cyan",
 };
 
+/**
+ * WHERE YOU ARE IN THE SEVEN STEPS, which is what makes the stop legible.
+ *
+ * The plan stops once, deliberately, before anything is searched or cut —
+ * 11-BUILD-ORDER's acceptance says it stops exactly once and this is the
+ * once. A page that simply shows a claim and some beats does not say that: it
+ * looks like a page that has finished, and the one thing a person needs to
+ * know is that it has NOT, and that nothing has been spent yet.
+ *
+ * The seven are the prototype's own, and so is the rule that the step you are
+ * on is the lit one, everything before it is done, and everything after is
+ * waiting. FIND becomes FOUND once the searching has happened, because they
+ * are the same step before and after — the prototype does the same.
+ *
+ * SIZED carries no figure here. The prototype's reads "SIZED · moderate" from
+ * a corpus assessment that does not exist in this build; the word on its own
+ * is true (something was read) and the qualifier would be invented.
+ */
+function stepper(state: PlanData["state"]): string {
+  const found = state !== "beats";
+  const steps = ["BRIEF", "SIZED", "CLAIM", "BEATS", found ? "FOUND" : "FIND", "PLAN", "FIRST CUT"];
+  /* Which one is lit. `beats` is the stop, so the flow is parked on BEATS
+     until the beats are answered. */
+  const at = state === "beats" ? 3 : state === "found" ? 4 : 6;
+
+  return `<div style="margin-top:12px;display:flex;gap:4px;flex-wrap:wrap">${steps
+    .map((name, i) => {
+      const done = i < at;
+      const here = i === at;
+      return `<span style="flex:none;font-size:9.5px;font-weight:600;letter-spacing:.07em;padding:3px 7px;border-radius:3px;background:${
+        here ? C.ink : done ? "rgba(236,236,241,0.1)" : "transparent"
+      };color:${here ? "#131316" : done ? "rgba(236,236,241,0.7)" : "rgba(236,236,241,0.3)"}">${name}</span>`;
+    })
+    .join("")}</div>`;
+}
+
 function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string {
   const accent = ACCENT[ROLE_ACCENT[b.role]];
   /*
@@ -112,6 +148,7 @@ export function renderPlan(d: PlanData): string {
 
   return `<div data-plan="${esc(d.id)}" style="max-width:min(720px,100%)">
     <div data-content style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">${esc(d.topic)}</div>
+    ${stepper(d.state)}
 
     ${
       d.claim

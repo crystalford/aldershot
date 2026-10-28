@@ -452,3 +452,59 @@ test("a sentence that reads as an essay starts a plan, and lands on it", () => {
      would have had, rather than a refusal for work nobody asked for by name. */
   assert.match(body, /if \(draft\.beats\.length\)/, "no beats means fall through, not dead-end");
 });
+
+/* ── Where you are in it ────────────────────────────────────────────────── */
+
+/**
+ * The plan stops ONCE, before anything is searched or cut, and a page that
+ * shows a claim and some beats does not say that — it looks like a page that
+ * has finished. The seven steps are what make the stop legible: this is step
+ * four of seven and nothing has been spent.
+ */
+const planBase: PlanData = {
+  id: "pl1",
+  topic: "whether to leave",
+  claim: "Moving breaks you because a home is the autopilot your self runs on.",
+  state: "beats",
+  projectId: null,
+  beats: [
+    { id: "b1", role: "subject" as Role, name: "The decision already happened", need: "the rooms before anything is packed", kept: true, found: 0, backed: null },
+  ],
+};
+
+const steps = (over: Partial<PlanData> = {}) => renderPlan({ ...planBase, ...over });
+
+test("the seven steps are there, and BEATS is the one you are on", () => {
+  const html = steps();
+  for (const s of ["BRIEF", "SIZED", "CLAIM", "BEATS", "FIND", "PLAN", "FIRST CUT"]) {
+    assert.ok(html.includes(">" + s + "<"), `${s} is a step`);
+  }
+  /* The stop. Lit means the ink background — everything before it is done,
+     everything after is waiting. */
+  const at = html.indexOf(">BEATS<");
+  const tag = html.lastIndexOf("<span", at);
+  assert.match(html.slice(tag, at), /background:#ECECF1/, "BEATS is the lit one");
+});
+
+test("FIND becomes FOUND once the searching has happened", () => {
+  assert.ok(steps().includes(">FIND<"), "before");
+  assert.ok(steps({ state: "found" }).includes(">FOUND<"), "after");
+  assert.ok(!steps({ state: "found" }).includes(">FIND<"), "and not both");
+});
+
+test("SIZED carries no figure, because there is nothing to size it with", () => {
+  /*
+   * The prototype's reads "SIZED · moderate", from a corpus assessment this
+   * build does not have. The word on its own is true — something was read —
+   * and the qualifier would be invented.
+   */
+  assert.ok(!steps().includes("SIZED ·"));
+  assert.ok(!/SIZED[^<]*moderate/.test(steps()));
+});
+
+test("a plan that has been cut is at the end of its own flow", () => {
+  const html = steps({ state: "cut", projectId: "p9" });
+  const at = html.indexOf(">FIRST CUT<");
+  const tag = html.lastIndexOf("<span", at);
+  assert.match(html.slice(tag, at), /background:#ECECF1/);
+});
