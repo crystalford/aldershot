@@ -4030,6 +4030,52 @@ document.querySelectorAll(".add-source").forEach((btn) => {
    overrides every rule above it, so the whole cut is re-produced and the page
    reloads: membership AND order may have changed, and a partial DOM update
    would be a second answer to what the cut is. */
+/*
+ * KEEP IT OR CUT IT, ON THE LINE ITSELF.
+ *
+ * The two answers to a judgement call. Both are hand decisions on the
+ * moment, and the route takes the hand BACK when the direction posted
+ * matches the one already there — so pressing the one the moment is already
+ * on returns it to whatever the rules say, and pressing the other pins it.
+ * That is the behaviour, not a bug to work around: a decision you cannot
+ * undo is not one this product makes.
+ *
+ * Its own class rather than .moment-hand, which infers the direction from
+ * where the row already is. Here the direction is the control.
+ */
+document.querySelectorAll(".judge-hand").forEach((btn) => {
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + btn.getAttribute("data-moment"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keep: btn.getAttribute("data-keep") === "1" }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".moment-hand").forEach((row) => {
   row.addEventListener("click", async () => {
     if (row.disabled) return;

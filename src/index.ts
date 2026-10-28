@@ -1891,9 +1891,50 @@ app.get("/p/:id/:stagePath", async (c) => {
            */
           const contested = new Set(judged.filter((m) => m.contest).map((m) => String(m.id)));
           const blockContested: Record<string, true> = {};
+          /*
+           * AND WHAT THE DISAGREEMENT WAS, for the block to say it.
+           *
+           * The gold edge marks a judgement call and names nothing. The
+           * rules pane settles the two rules IN GENERAL — "whenever these
+           * two disagree, this one is right" — and this is the other half:
+           * one moment, in front of you, with the two rules named and both
+           * answers a press away. A hand decision overrides every rule above
+           * it, which is why the second control can exist at all.
+           */
+          const judgeOf = new Map<string, { k: string; d: string; kept: boolean; byHand: boolean }>();
+          for (const m of judged) {
+            if (!m.contest) continue;
+            /*
+             * AND WHETHER A HAND IS HOLDING IT, which is not the same as a
+             * rule winning.
+             *
+             * A hand decision overrides every rule above it, so once you
+             * have answered this call the rules are no longer deciding —
+             * and the panel was still naming one of them as the winner.
+             * Caught by driving it: pressing Keep it moved the moment to
+             * "in · kept by hand" and the panel went on saying rule 01 was
+             * winning.
+             */
+            const held = m.in ? m.byId : m.dropId;
+            judgeOf.set(String(m.id), {
+              k: numberOf(m.contest.k),
+              d: numberOf(m.contest.d),
+              kept: m.in,
+              byHand: held !== null && isHand(held),
+            });
+          }
+          const blockJudgement: Record<
+            string,
+            { k: string; d: string; kept: boolean; byHand: boolean; momentId: string }
+          > = {};
+          const judgeBlock = (blockId: string, momentId: string) => {
+            const j = judgeOf.get(momentId);
+            if (j) blockJudgement[blockId] = { ...j, momentId };
+          };
           for (const bt of beats) {
             if (bt.clip_id && ruleOf.get(bt.clip_id)) blockRule[`b:${bt.id}`] = ruleOf.get(bt.clip_id)!;
             if (bt.clip_id && contested.has(String(bt.clip_id))) blockContested[`b:${bt.id}`] = true;
+            if (bt.clip_id) judgeBlock(`b:${bt.id}`, String(bt.clip_id));
           }
 
           /*
@@ -1930,10 +1971,12 @@ app.get("/p/:id/:stagePath", async (c) => {
             const rule = ruleOf.get(String(m.id));
             if (rule && !blockRule[b.id]) blockRule[b.id] = rule;
             if (m.contest) blockContested[b.id] = true;
+            judgeBlock(b.id, String(m.id));
           }
 
           return {
             blockContested,
+            blockJudgement,
             addable,
             blockRule,
             rules: stored.map((r) => ({

@@ -926,3 +926,99 @@ test("a take that is not the line that was written does not read like praise", (
   const fine = renderCut({ ...base, blocks: [VOICE] } as Partial<CutData> as CutData);
   assert.doesNotMatch(fine, /NOT THE LINE|COULDN'T TELL/);
 });
+
+/* ── The judgement call, on the line it is about ────────────────────────── */
+
+/**
+ * THE GOLD EDGE SAID A CALL WAS MADE AND NAMED NOTHING.
+ *
+ * The conflicts panel in the rules pane settles the two rules IN GENERAL —
+ * "whenever these two disagree, this one is right". This is the other half:
+ * one moment in front of you, both rules named, both answers a press away.
+ * They are different decisions and the product needs both; collapsing them
+ * would make a standing rule out of one line's worth of doubt.
+ */
+const JUDGED = {
+  ...BLOCK,
+  id: "s:1",
+  text: "I had four mugs and no kettle for the first three days",
+};
+
+type Judgement = { k: string; d: string; kept: boolean; byHand: boolean; momentId: string };
+
+const withJudge = (j: Partial<Judgement>) =>
+  renderCut({
+    ...base,
+    blocks: [BLOCK, JUDGED],
+    blockContested: { "s:1": true },
+    blockJudgement: { "s:1": { k: "01", d: "02", kept: false, byHand: false, momentId: "c9", ...j } },
+  } as Partial<CutData> as CutData);
+
+test("a judgement call names both rules and which is winning", () => {
+  const html = withJudge({});
+  assert.match(
+    html,
+    /Judgement call &mdash; rule 01 keeps it, rule 02 takes it out\. Rule 02 is winning\./,
+  );
+  /* And only on the block it is about. */
+  const plain = html.slice(html.indexOf('data-block="s:0"'), html.indexOf('data-block="s:1"'));
+  assert.doesNotMatch(plain, /Judgement call/);
+});
+
+test("the winning rule is the one that got its way, not always the drop", () => {
+  assert.match(withJudge({ kept: true }), /Rule 01 is winning\./);
+});
+
+test("it says which rule is winning, never whether the line is in the cut", () => {
+  /*
+   * Those are the same fact on an assembled cut, where a block IS a moment,
+   * and they are not on a cut of one video: there the blocks are the
+   * transcript's segments and the rule engine's verdict governs the library,
+   * so a moment the rules took out still has its segment on screen,
+   * unstruck. The first version said "It is out." under a line that was
+   * visibly in the cut.
+   */
+  const html = withJudge({});
+  assert.doesNotMatch(html, /It is (in|out)\./);
+});
+
+test("both answers are offered, and they post opposite directions", () => {
+  const html = withJudge({});
+  assert.match(html, /class="judge-hand"[^>]*data-moment="c9"[^>]*data-keep="1"[^>]*>Keep it</);
+  assert.match(html, /class="judge-hand"[^>]*data-moment="c9"[^>]*data-keep="0"[^>]*>Cut it</);
+});
+
+test("once you have answered it, the only move left is taking it back", () => {
+  /*
+   * A hand decision overrides every rule above it, so the rules are no
+   * longer deciding and the panel must not name one of them as the winner.
+   * Found by driving it: pressing Keep it moved the moment to "in · kept by
+   * hand" and the panel went on saying rule 01 was winning.
+   *
+   * And the control that remains posts the SAME direction, because that is
+   * what takes the hand back. "Keep it" on a moment you have already kept
+   * would un-keep it — a button whose label is the opposite of what it does.
+   */
+  const kept = withJudge({ kept: true, byHand: true });
+  assert.match(kept, /You kept it by hand\./);
+  assert.doesNotMatch(kept, /is winning/);
+  assert.match(kept, /class="judge-hand"[^>]*data-keep="1"[^>]*>Let the rules decide</);
+  assert.doesNotMatch(kept, />Keep it</);
+  assert.doesNotMatch(kept, />Cut it</);
+
+  const cut = withJudge({ kept: false, byHand: true });
+  assert.match(cut, /You cut it by hand\./);
+  assert.match(cut, /class="judge-hand"[^>]*data-keep="0"[^>]*>Let the rules decide</);
+});
+
+test("Words shows no judgement call", () => {
+  /* A page of prose with a pair of buttons mid-paragraph is the thing that
+     view exists to get rid of. */
+  const html = renderCut({
+    ...base,
+    view: "script",
+    blocks: [JUDGED],
+    blockJudgement: { "s:1": { k: "01", d: "02", kept: false, byHand: false, momentId: "c9" } },
+  } as Partial<CutData> as CutData);
+  assert.doesNotMatch(html, /Judgement call/);
+});

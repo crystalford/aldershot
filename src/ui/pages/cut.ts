@@ -233,6 +233,25 @@ export interface CutData {
    */
   blockContested?: Record<string, true>;
   /**
+   * WHICH TWO RULES DISAGREED ABOUT THIS BLOCK, and which way it went.
+   *
+   * The gold edge says a judgement call was made here and names nothing.
+   * The conflicts panel in the rules pane settles the two rules IN GENERAL
+   * — "whenever these two disagree, this one is right" — and this is the
+   * other half: one moment, in front of you, both rules named, and both
+   * answers a press away. They are different decisions and the product
+   * needs both; collapsing them would make a standing rule out of one
+   * line's worth of doubt.
+   *
+   * `momentId` because the answer is a HAND decision on the moment, which
+   * overrides every rule above it (step 6 of the engine) and is what makes
+   * a second control possible at all.
+   */
+  blockJudgement?: Record<
+    string,
+    { k: string; d: string; kept: boolean; byHand: boolean; momentId: string }
+  >;
+  /**
    * Which short is in front of you, from ?short=.
    *
    * A URL rather than client state so the back button works, a link to one
@@ -454,6 +473,7 @@ function blockRow(
   mark: Gutter | null = null,
   contested = false,
   beat: BeatContext | null = null,
+  judgement: { k: string; d: string; kept: boolean; byHand: boolean; momentId: string } | null = null,
 ): string {
   const script = view === "script";
   const struck = b.struck;
@@ -790,6 +810,64 @@ function blockRow(
         </div>`
       : "";
 
+  /*
+   * THE JUDGEMENT CALL, ON THE LINE IT IS ABOUT.
+   *
+   * The prototype puts it here: a gold sentence under the words and two
+   * presses beside it. Its own version is produced by a demo heuristic
+   * (`r.id % 3 === 1`) and says "kept because it carries 'X'" — a reason
+   * nothing in this build computes. What this build knows is better and
+   * exact: WHICH TWO RULES disagreed, and which of them got its way.
+   *
+   * Not in the script view. Words is a page of prose and a pair of buttons
+   * mid-paragraph is the thing that view exists to get rid of.
+   *
+   * Both answers are hand decisions on the moment, and the one that matches
+   * where the moment already is takes the hand BACK rather than pinning it
+   * — the route does that, and it is why pressing the other and then this
+   * one restores exactly what the rules say.
+   *
+   * IT SAYS WHICH RULE IS WINNING, NOT WHETHER THE LINE IS IN. Those are
+   * the same fact on an assembled cut, where a block IS a moment, and they
+   * are not on a cut of one video: there the blocks are the transcript's
+   * segments and the rule engine's verdict governs the library, so a moment
+   * the rules took out still has its segment on screen, unstruck. The first
+   * version of this said "It is out." under a line that was visibly in the
+   * cut. Naming the winning rule is true of both shapes.
+   */
+  const judgeBtn = (keep: 0 | 1, label: string, lead: boolean) =>
+    `<button class="judge-hand" type="button" data-moment="${esc(judgement!.momentId)}" data-keep="${keep}"
+      style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:4px 10px;border-radius:4px;background:${
+        lead ? C.pill : "transparent"
+      };color:${lead ? C.ink : "rgba(236,236,241,0.55)"};border:none;cursor:pointer;font-family:${
+        FONT.ui
+      };white-space:nowrap">${label}</button>`;
+
+  const judge =
+    judgement && !script
+      ? `<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span data-content style="flex:1 1 200px;min-width:min(200px,100%);font-size:${SIZE.meta};line-height:1.5;color:rgba(217,179,106,0.9)">Judgement call &mdash; rule ${esc(
+            judgement.k,
+          )} keeps it, rule ${esc(judgement.d)} takes it out. ${
+            judgement.byHand
+              ? `You ${judgement.kept ? "kept" : "cut"} it by hand.`
+              : `Rule ${esc(judgement.kept ? judgement.k : judgement.d)} is winning.`
+          }</span>
+          ${
+            /*
+             * ONCE YOU HAVE ANSWERED IT, THE ONLY MOVE LEFT IS TAKING IT
+             * BACK. Offering "Keep it" on a moment you have already kept is
+             * a control that un-keeps — the route takes the hand back when
+             * the direction matches — and a button whose label is the
+             * opposite of what it does is worse than no button.
+             */
+            judgement.byHand
+              ? judgeBtn(judgement.kept ? 1 : 0, "Let the rules decide", true)
+              : judgeBtn(1, "Keep it", true) + judgeBtn(0, "Cut it", false)
+          }
+        </div>`
+      : "";
+
   const meta = takeNote
     ? takeNote
     : why
@@ -854,6 +932,7 @@ function blockRow(
         toCamera ? ACCENT.gold : script ? "rgba(236,236,241,0.85)" : "rgba(236,236,241,0.92)"
       }">${originTag}${body}</div>
       ${script ? "" : meta}
+      ${judge}
       ${fill}
     </div>
     <!--
@@ -2480,6 +2559,7 @@ export function renderCut(d: CutData): string {
         gutterFor(b),
         Boolean((d.blockContested ?? {})[b.id]),
         beatOf.get(b.id) ?? null,
+        (d.blockJudgement ?? {})[b.id] ?? null,
       ),
     );
     list.push(seam(d.projectId, i + 1, view));

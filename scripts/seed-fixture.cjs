@@ -600,6 +600,11 @@ async function main() {
     ["four rules render", /rule-toggle/],
     ["two rules disagree, and it says so", /disagree on 2 moments/],
     ["the contested blocks carry the mark", /data-contested="1"/],
+    [
+      "and say what the call was, on the line itself",
+      /Judgement call &mdash; rule 01 keeps it, rule 02 takes it out\. Rule 02 is winning\./,
+    ],
+    ["with both answers a press away", /class="judge-hand"[^>]*data-keep="0"/],
     ["the cut counts the judgement calls", /2 judgement calls/],
     ["a beat is still to record", /0 of 1 recorded/],
     ["the conversation has turns", /class="turn"/],
