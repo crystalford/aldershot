@@ -33,17 +33,29 @@ interface Job {
 }
 
 const JOBS: Job[] = [
-  {
-    name: "Clips",
-    color: GREEN,
-    body: "Point it at a video, get the moments back — scored, tagged, saved. No timeline, nothing to manage.",
-    example: "get the clip where she nails the one-line answer",
-  },
+  /*
+   * "Clips" WAS A MODE THAT DOES NOT EXIST.
+   *
+   * The room offers Cut, Shorts, Essay and React; the landing offered Clips,
+   * Cuts, Reactions and Essays — so the public page named something you
+   * cannot make and omitted the one the whole Shorts workbench was built
+   * for. Its body also said moments come back "scored", which is invariant 3
+   * said out loud on the only page a stranger reads.
+   *
+   * The copy is the current design's, which says the band vocabulary and the
+   * refusal in the same breath.
+   */
   {
     name: "Cuts",
     color: GOLD,
-    body: "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
-    example: "tighten this webinar down to the actual demo",
+    body: "Three hours becomes four minutes, by rules you can read. It cuts first and says exactly what went; you fix anything by changing a rule or striking a line.",
+    example: "tighten this down to the argument — lose the procedure",
+  },
+  {
+    name: "Shorts",
+    color: GREEN,
+    body: "Moments that stand on their own, ranked with a reason — Strong, Worth a look, Long shot — never a score. Paste a client brief and it compiles into rules.",
+    example: "six shorts, hooks in the first two seconds, nothing about money",
   },
   {
     name: "Reactions",
@@ -282,8 +294,8 @@ export function renderLanding(d: LandingData): string {
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Aldershot — the timeline is gone.</title>
-<meta name="description" content="Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut."/>
+<title>Aldershot — say what the video should be.</title>
+<meta name="description" content="Drop in footage. Each answer becomes a plain-English rule you can see, switch off, or change. The cut follows the rules."/>
 <style>${FONT_CSS}</style>
 <style>
   *,*::before,*::after{box-sizing:border-box}
@@ -324,38 +336,79 @@ export function renderLanding(d: LandingData): string {
   <div style="${PAD}">
     <div style="${WRAP};padding:clamp(64px,10vw,110px) 0 clamp(48px,7vw,72px);text-align:center">
       <!--
-        The joke is the owner's, and it is a better eyebrow than a list of
-        things we do not have — which is what this was, directly above a
-        headline that said the same thing again.
+        THE HERO SELLS THE RULES NOW, because that is what was built.
+        See the block comment above renderLanding.
       -->
-      <div style="${EYEBROW};color:${GOLD}">THEY CALLED IT NON-LINEAR · THEN GAVE YOU A LINE</div>
-      <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">The timeline is gone.<br>Good.</h1>
-      <p style="margin:20px auto 0;max-width:560px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut — you strike what's weak, keep what's good, and it's done.</p>
-      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start cutting — free", true, d.google)}</div>
+      <div style="${EYEBROW}">A VIDEO EDITOR WITH NO TIMELINE</div>
+      <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">Say what the video should be.<br>The rules do the cutting.</h1>
+      <p style="margin:20px auto 0;max-width:600px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop in footage — yours or anyone's. Aldershot reads it and asks what you want. Each answer becomes a plain-English rule you can see, switch off, or change. The cut follows the rules. Nothing is ever deleted.</p>
+      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start free", true, d.google)}</div>
       <div style="margin-top:10px;font-size:12px;color:rgba(236,236,241,0.3)">No card. 300 processing minutes a month on the house.</div>
       ${notice(d)}
 
-      <div style="margin:clamp(40px,6vw,64px) auto 0;max-width:760px;text-align:left;background:#1A1A1F;border-radius:12px;padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.5)">
-        <div style="padding:16px 16px 12px;font-size:16.5px;line-height:1.5;color:#ECECF1;min-height:52px">Every time the guest actually answers the question — one tight supercut.</div>
-        <div style="display:flex;gap:10px;align-items:center;padding:10px 8px 6px 16px;border-top:1px solid rgba(255,255,255,0.05);flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:10px;flex:1 1 220px;min-width:0">
-            <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)"><img src="/assets/frame-2.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
-            <span style="font-size:12px;color:rgba(236,236,241,0.6);font-family:${MONO};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">podcast_ep_141_full.mp4 · 1.2 GB</span>
+      <!--
+        THE BRIEF AND THE RULES IT WROTE, side by side.
+
+        The old hero was the brief card alone, with a green-dotted line under
+        it saying the result "becomes a project you can come back to". True,
+        and the wrong thing to lead with: it describes the filing, not the
+        product. The design puts the RULES beside the brief, because a brief
+        turning into two numbered rules with switches IS the product, and a
+        picture of it says more than the sentence did.
+
+        Static, deliberately. These two rules are what the sentence beside
+        them compiles to; nothing here is read from a database, and a landing
+        page that implies a live account it does not have is the demo-card
+        problem that CLAUDE.md already records once.
+      -->
+      <div style="margin:clamp(40px,6vw,64px) auto 0;max-width:860px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px;text-align:left">
+        <div style="background:#1A1A1F;border-radius:12px;padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 24px 80px rgba(0,0,0,0.5)">
+          <div style="padding:16px 16px 12px;font-size:16.5px;line-height:1.5;color:#ECECF1;min-height:52px">Six shorts from the strongest moments. Hooks in the first two seconds.</div>
+          <div style="display:flex;gap:10px;align-items:center;padding:10px 8px 6px 16px;border-top:1px solid rgba(255,255,255,0.05);flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:10px;flex:1 1 180px;min-width:0">
+              <div style="flex:none;width:46px;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#07070a;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)"><img src="/assets/frame-2.png" alt="" style="width:100%;height:100%;object-fit:cover;display:block"/></div>
+              <span style="font-size:12px;color:rgba(236,236,241,0.6);font-family:${MONO};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">kino_casino_372.mp4 · 3:04:00</span>
+            </div>
+            <!-- A real link. This was a <div> styled to look exactly like the
+                 button below it, so the most prominent thing in the hero did
+                 nothing at all when clicked. -->
+            <a href="#start" style="flex:none;font-size:13.5px;font-weight:600;padding:9px 22px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</a>
           </div>
-          <!-- A real link. This was a <div> styled to look exactly like the
-               button below it, so the most prominent thing in the hero did
-               nothing at all when clicked. -->
-          <a href="#start" style="flex:none;font-size:13.5px;font-weight:600;padding:9px 22px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Begin →</a>
         </div>
-      </div>
-      <!-- inline-flex, so the row shrink-wraps its two children and stays
-           centred as a unit. As a plain flex row the text span filled the
-           width once it wrapped, stranding the dot against the left edge — a
-           phone-only break, since the line fits on one row on a desktop. -->
-      <div style="margin-top:14px;text-align:center">
-        <div style="display:inline-flex;gap:8px;align-items:baseline;font-size:12px;color:rgba(236,236,241,0.35);text-align:left">
-          <span style="width:6px;height:6px;border-radius:50%;background:${GREEN};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
-          <span>Reads as a cut — this becomes a project you can come back to.</span>
+
+        <div style="background:#141418;border-radius:12px;padding:14px 16px 16px;box-shadow:0 0 0 1px rgba(255,255,255,0.06)">
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="width:6px;height:6px;border-radius:50%;background:${GREEN};flex:none"></span>
+            <span style="${EYEBROW}">THE RULES IT WROTE</span>
+          </div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+            ${[
+              { n: "01", text: "Hook in the first 2 seconds.", on: true },
+              { n: "02", text: "Nothing about money.", on: false },
+            ]
+              .map(
+                (r) => `<div style="display:flex;gap:11px;align-items:center;padding:9px 11px;border-radius:7px;background:${
+                  r.on ? "#1A1A20" : "transparent"
+                }">
+                  <span style="flex:none;width:16px;font-size:10.5px;font-family:${MONO};color:${
+                    r.on ? GOLD : "rgba(236,236,241,0.28)"
+                  }">${r.n}</span>
+                  <span style="flex:1;min-width:0;font-size:13px;line-height:1.5;color:${
+                    r.on ? "#ECECF1" : "rgba(236,236,241,0.35)"
+                  }">${r.text}</span>
+                  <span style="flex:none;position:relative;width:27px;height:15px;border-radius:99px;background:${
+                    r.on ? GREEN : "#2E2E36"
+                  }">
+                    <span style="position:absolute;top:2.5px;left:${
+                      r.on ? "14px" : "2.5px"
+                    };width:10px;height:10px;border-radius:99px;background:${
+                      r.on ? "#101013" : "rgba(236,236,241,0.5)"
+                    }"></span>
+                  </span>
+                </div>`,
+              )
+              .join("")}
+          </div>
         </div>
       </div>
     </div>
@@ -363,8 +416,8 @@ export function renderLanding(d: LandingData): string {
 
   <div id="what" style="${PAD}">
     <div style="${WRAP};padding:clamp(40px,6vw,64px) 0">
-      <div style="${EYEBROW};color:rgba(236,236,241,0.35)">ONE INTAKE · FOUR THINGS OUT</div>
-      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:640px;line-height:1.15">It takes the sentence and works out the job.</h2>
+      <div style="${EYEBROW};color:rgba(236,236,241,0.35)">ONE CONVERSATION · FOUR THINGS OUT</div>
+      <h2 style="margin:14px 0 0;font-size:clamp(24px,3.4vw,34px);font-weight:600;letter-spacing:-0.025em;max-width:640px;line-height:1.15">It asks one question, recommends an answer, and gets on with it.</h2>
       <div style="margin-top:32px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">${JOBS.map(jobCard).join("")}</div>
       <div style="margin-top:20px;padding:16px 18px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.18);font-size:13.5px;color:rgba(236,236,241,0.6);line-height:1.6">Ask for clips and there's nothing to manage — they land in your footage, tagged. Ask for a cut, a reaction, or an essay and it becomes a project you can put down and pick back up.</div>
     </div>
@@ -412,7 +465,19 @@ export function renderLanding(d: LandingData): string {
           </div>
           <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:8px;background:#141418;box-shadow:inset 0 0 0 1px rgba(224,106,106,0.3)">
             <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${RED};animation:blip 1.2s ease-in-out infinite"></span>
-            <span style="font-size:12.5px;color:rgba(236,236,241,0.75);flex:1">Your take goes here — on camera or voice only</span>
+            <!--
+              SOUND ONLY, and the design says otherwise.
+
+              Both the current design and the retired one say "on camera or
+              voice only"; getUserMedia({ audio: true }) is what the recorder
+              actually asks for, and the beat itself says "Sound only — no
+              camera yet" beside the Record control. A landing page that
+              promises a camera the product does not have is the one kind of
+              divergence that is not a fidelity gap — it is a lie, and the
+              design does not get to overrule that. 12-DEFERRED.md carries
+              the camera half with its reasons.
+            -->
+            <span style="font-size:12.5px;color:rgba(236,236,241,0.75);flex:1">Your take goes here — sound only, no camera yet</span>
             <span style="flex:none;font-size:10.5px;font-weight:600;color:${RED};font-family:${MONO}">REC</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:8px;background:#101014">

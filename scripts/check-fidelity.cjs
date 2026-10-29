@@ -45,8 +45,34 @@ const APP_PROTO = fs.readFileSync(path.join(ROOT, 'design/Aldershot.dc.html'), '
  * Drop the retired file from PROTO once nothing needs it.
  */
 const ONE_TAKE_PROTO = fs.readFileSync(path.join(ROOT, 'design/one-take/Aldershot One Take.dc.html'), 'utf8');
+/*
+ * TWO LANDINGS, FOR THE SAME REASON THERE ARE TWO APP PROTOTYPES.
+ *
+ * design/Landing.dc.html is 16 Oct, the retired batch. design/one-take/
+ * Landing.dc.html is 17 Oct and is the current design — and until today
+ * NOTHING in this repo had ever read it, so the only page a stranger sees
+ * was being checked against a design that had been replaced.
+ *
+ * That was not a mis-pointed constant so much as an honest report of a
+ * surface that never moved: of six strings sampled from the current design
+ * the build rendered zero. What it cost is on the page — it named a mode
+ * that does not exist (Clips), stated the pricing without the half that is
+ * the point, and promised a camera the recorder does not have.
+ *
+ * Both are accepted while the landing moves across, exactly as APP_PROTO
+ * and ONE_TAKE_PROTO are above: a section that has not been rebuilt keeps
+ * passing against the file it was built from, anything written for One Take
+ * passes against One Take, and copy that exists in neither still fails.
+ * Drop the retired one when no section needs it.
+ */
 const LANDING_PROTO = fs.readFileSync(path.join(ROOT, 'design/Landing.dc.html'), 'utf8');
-const PROTO = APP_PROTO + '\n' + LANDING_PROTO + '\n' + ONE_TAKE_PROTO;
+const LANDING_NOW = fs.readFileSync(path.join(ROOT, 'design/one-take/Landing.dc.html'), 'utf8');
+/*
+ * SETTINGS HAS ITS OWN DESIGN AND NOTHING READ THAT EITHER. 30KB of it,
+ * mentioned in two sign-off comments below and never once in the haystack.
+ */
+const SETTINGS_PROTO = fs.readFileSync(path.join(ROOT, 'design/one-take/Aldershot Settings.dc.html'), 'utf8');
+const PROTO = [APP_PROTO, LANDING_PROTO, LANDING_NOW, SETTINGS_PROTO, ONE_TAKE_PROTO].join('\n');
 const TOKENS = fs.readFileSync(path.join(ROOT, 'src/ui/tokens.ts'), 'utf8');
 
 let findings = 0;
@@ -636,6 +662,16 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    [
+      "Your take goes here — sound only, no camera yet",
+      "Both landing designs say 'on camera or voice only'. The recorder asks " +
+        "for getUserMedia({ audio: true }) and nothing else, and the beat " +
+        "itself says so beside the Record control. A landing page that " +
+        "promises a camera the product does not have is not a fidelity gap " +
+        "— it is a lie, and a design does not get to overrule that. The " +
+        "camera half is deferred with its reasons in " +
+        "docs/handoff/12-DEFERRED.md.",
+    ],
     [
       "Sound only &mdash; no camera yet",
       "The prototype's recorder is a full-screen stage with camera and mic " +

@@ -150,6 +150,33 @@ nobody can check.
   compositor the render container does not have; the teleprompter and the
   countdown are client work on top of the bar that exists.
 
+- **The rest of the landing, below the hero.** `design/one-take/Landing.dc.html`
+  is now in the fidelity haystack and the hero is built from it; the sections
+  under it are still the retired design's copy, and both files are accepted
+  while that is true (see the note above `LANDING_PROTO`). What is still to
+  move, in the order it appears:
+  - **the nav** — the design names the product's own ideas (`The rules`,
+    `The archive`, `Pricing`, `Manual`); the build has `What it does`,
+    `How it works`, `Pricing`. Renaming them means renaming the sections they
+    anchor to, which is the rest of this entry.
+  - **THE RULES ARE THE FILE** — the design's worked example: a council
+    meeting, four numbered rules, and eight moments each labelled with what
+    happened to it (`out · rule 01`, `protected`, `out · over the cap`), under
+    the line "Left-out moments are kept, with the rule that removed them as
+    the reason. Nothing is deleted." Invariants 1 and 6 demonstrated rather
+    than asserted. The build has no equivalent.
+  - **Stories and Supercuts** — the room offers both as project kinds and the
+    landing lists four modes, not six.
+  - **THE ARCHIVE DIRECTS THE NEXT ONE**, the pricing tables, and the FAQ.
+
+- **"Open the sample cut".** The design's hero has two controls and the build
+  renders one, because there is no sample cut: no route serves a public,
+  signed-out cut and no seeded source backs one. A second control that goes
+  nowhere is the defect the `strings` promise rule exists to catch, so it is
+  absent rather than dead. To build it: a published, read-only cut at a fixed
+  URL — closest to the existing `/r/:token` receipts page, which is already
+  the one surface shown to the public.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.
