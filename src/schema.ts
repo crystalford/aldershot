@@ -223,6 +223,33 @@ const STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS takes_by_beat ON takes(beat_id, created_at)`,
 
+  /*
+   * A BUCKET SOMEBODY OWNS, CONNECTED.
+   *
+   * "Point sources at a bucket you own" has been on the landing page and in
+   * Settings since both were written, and nothing implemented it. This is
+   * where a connection lives.
+   *
+   * `secret_sealed` is ciphertext — see src/secretbox.ts. The access key id
+   * is not secret on its own and stays readable so the UI can show which key
+   * is connected without decrypting anything.
+   *
+   * `foreign_db` is the one Neolog-shaped column: the name of a D1 database
+   * holding the archive's own metadata, read for lengths and dates ONLY and
+   * never for transcripts. Null for an ordinary bucket, which is every other
+   * user.
+   */
+  `CREATE TABLE IF NOT EXISTS connections (
+     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+     provider TEXT NOT NULL,
+     endpoint TEXT NOT NULL, bucket TEXT NOT NULL, region TEXT,
+     access_key_id TEXT NOT NULL, secret_sealed TEXT NOT NULL,
+     foreign_db TEXT,
+     last_import_at INTEGER,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS connections_by_user ON connections(user_id, created_at)`,
+
   `CREATE TABLE IF NOT EXISTS plans (
      id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
      topic TEXT NOT NULL,
@@ -999,6 +1026,12 @@ const STATEMENTS: string[] = [
  * project uses for lazy migrations.
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
+  /* Imported footage: which connection it came through, its key over there,
+     and when it was SHOT — which is the one fact an import cannot recover
+     later and the thing `time` ordering and Story sort by. */
+  { table: "sources", column: "connection_id", ddl: "ALTER TABLE sources ADD COLUMN connection_id TEXT" },
+  { table: "sources", column: "foreign_id", ddl: "ALTER TABLE sources ADD COLUMN foreign_id TEXT" },
+  { table: "sources", column: "recorded_at", ddl: "ALTER TABLE sources ADD COLUMN recorded_at INTEGER" },
   /*
    * THE MOMENT'S ADDRESS, independent of its timing.
    *

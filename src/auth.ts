@@ -85,7 +85,7 @@ async function hmac(secret: string, message: string): Promise<string> {
  * session forgery becomes trivial. In development the DEV_LOGIN_EMAIL path
  * does not need a session at all, so a placeholder there is harmless.
  */
-function secretOf(env: AuthEnv): string {
+export function secretOf(env: AuthEnv): string {
   if (env.SESSION_SECRET) return env.SESSION_SECRET;
   if (env.DEV_LOGIN_EMAIL) return "dev-only-not-a-secret";
   throw new Error("SESSION_SECRET is not set");

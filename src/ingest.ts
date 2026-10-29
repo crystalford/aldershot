@@ -8,6 +8,7 @@
  * is worse than not having a cap.
  */
 
+import { presignSource } from "./connections.ts";
 import type { Env } from "./env.ts";
 import { advance, createJob, failJob, finishJob, isTransient, startJob } from "./jobs.ts";
 import { begin } from "./begin.ts";
@@ -93,9 +94,18 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
      */
     let readKey = src.r2_key;
     if (!isAudio(src.filename)) {
-      const audio = await extractAudio(env, src.r2_key, (label: string) => {
-        void advance(env.DB, job.id, 8, label);
-      });
+      /* Imported footage lives in the bucket it came from and is never
+         copied here, so the extractor needs a URL signed with that
+         connection's key. Null for an ordinary upload, which reads from our
+         own bucket exactly as before. */
+      const audio = await extractAudio(
+        env,
+        src.r2_key,
+        (label: string) => {
+          void advance(env.DB, job.id, 8, label);
+        },
+        await presignSource(env, src.user_id, src),
+      );
       readKey = audio.key;
     }
 

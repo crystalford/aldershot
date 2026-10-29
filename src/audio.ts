@@ -100,6 +100,19 @@ export async function extractAudio(
   env: Env,
   sourceKey: string,
   onProgress?: (label: string) => void,
+  /*
+   * WHERE TO READ THE VIDEO, when it is not in our bucket.
+   *
+   * Footage imported from a bucket somebody owns is never copied here — the
+   * source row points at the object where it already lives. So the extractor
+   * cannot be handed a presigned URL for OUR bucket; it needs one signed with
+   * that connection's key, which only the caller holding the source row can
+   * produce.
+   *
+   * Optional, and the default is unchanged: an uploaded video is still read
+   * exactly as it was.
+   */
+  sourceUrl?: string | null,
 ): Promise<ExtractResult> {
   const key = audioKeyFor(sourceKey);
 
@@ -111,6 +124,7 @@ export async function extractAudio(
   }
 
   const url =
+    sourceUrl ??
     (await presignGet(env, sourceKey, 7200)) ??
     (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${sourceKey}` : null);
   if (!url) throw new Error("couldn't give the extractor a way to read the file");

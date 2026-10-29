@@ -51,6 +51,8 @@ const ACCENT_GREEN = ACCENT.green;
 const ACCENT_VIOLET = ACCENT.violet;
 const ACCENT_RED = ACCENT.red;
 import { chooseTake, deleteBeat, getBeats, insertBeat, listTakes, moveBeat, setBeatMedia } from "./projects.ts";
+import { listBucket } from "./bucket.ts";
+import { importFromBucket, listConnections, saveConnection, usableConnection } from "./connections.ts";
 import { draftPlan, findForBeats } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
@@ -5668,6 +5670,83 @@ app.get("/landing", async (c) => {
  * so there was no way to raise it from anywhere in the product. This is the
  * missing half of a control that was already enforcing.
  */
+/**
+ * CONNECT A BUCKET YOU OWN.
+ *
+ * "Point sources at a bucket you own" has been on the landing page and in
+ * Settings since both were written, and nothing implemented it.
+ *
+ * The key is checked by USING it — one listing — before anything is stored.
+ * A connection that saves and then fails on first import is a form that lied
+ * to you, and the failure arrives later, somewhere else, about something
+ * else.
+ *
+ * Read-only, and the Worker never hands the key to the browser: it goes in
+ * sealed (src/secretbox.ts) and only comes out to sign a request.
+ */
+app.post("/api/connections", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{
+    endpoint?: string;
+    bucket?: string;
+    region?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    foreignDb?: string;
+  }>(c);
+
+  const conn = {
+    endpoint: (b.endpoint || "").trim(),
+    bucket: (b.bucket || "").trim(),
+    region: (b.region || "").trim() || undefined,
+    accessKeyId: (b.accessKeyId || "").trim(),
+    secretAccessKey: (b.secretAccessKey || "").trim(),
+  };
+  if (!conn.endpoint || !conn.bucket || !conn.accessKeyId || !conn.secretAccessKey) {
+    return c.json({ error: "that needs an endpoint, a bucket and a read-only key" }, 422);
+  }
+
+  try {
+    /* One page is enough to know the key works and the bucket is there. */
+    await listBucket(conn, { cap: 1 });
+  } catch {
+    return c.json({ error: "that key could not read that bucket" }, 422);
+  }
+
+  const id = await saveConnection(c.env, user.id, { ...conn, foreignDb: b.foreignDb || null });
+  return c.json({ ok: true, id });
+});
+
+/**
+ * Bring the footage across — instantly, and without reading any of it.
+ *
+ * Every video lands `unread`: visible, searchable by name, choosable, and
+ * costing nothing until the first time you cut with it. Invariant 5 is that
+ * footage is read once and charged once, and an import that queued two
+ * hundred reads would charge for an archive before you had decided which of
+ * it you wanted.
+ */
+app.post("/api/connections/:id/import", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const conn = await usableConnection(c.env, c.req.param("id"), user.id);
+  if (!conn) return c.json({ error: "that connection needs reconnecting" }, 404);
+
+  try {
+    return c.json({ ok: true, ...(await importFromBucket(c.env, user.id, conn)) });
+  } catch {
+    return c.json({ error: "the bucket stopped answering part way through" }, 502);
+  }
+});
+
+app.get("/api/connections", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ connections: await listConnections(c.env.DB, user.id) });
+});
+
 app.post("/api/spend-cap", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -5824,6 +5903,11 @@ app.get("/settings", async (c) => {
         email: user.email,
         plan: user.plan,
         isOwner: !!user.is_owner,
+        connections: (await listConnections(c.env.DB, user.id)).map((x) => ({
+          id: x.id,
+          bucket: x.bucket,
+          last_import_at: x.last_import_at,
+        })),
         meters,
         cost,
         /*

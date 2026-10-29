@@ -40,6 +40,8 @@ export interface SettingsData {
   email: string;
   plan: string;
   isOwner: boolean;
+  /** Buckets this account has connected. Empty is the normal case. */
+  connections?: Array<{ id: string; bucket: string; last_import_at: number | null }>;
   /**
    * WHETHER THIS PRODUCT IS WORKING. Owner-only, null for everyone else.
    *
@@ -390,11 +392,61 @@ function trashBlock(rows: TrashRow[]): string {
   <div style="font-size:${SIZE.meta};color:${C.ink32};margin-top:10px;line-height:1.55">Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.</div>`;
 }
 
+/**
+ * CONNECTED SERVICES — your own storage.
+ *
+ * "Point sources at a bucket you own" is on the landing page, in the pricing
+ * table and in this page's own design, and nothing implemented it until now.
+ *
+ * READ-ONLY, AND SAID SO WHERE THE KEY IS TYPED. Somebody is handing over
+ * access to their whole archive; the sentence that promises Aldershot never
+ * writes to it belongs beside the box, not in a help page nobody opens.
+ *
+ * Nothing is copied: an import creates a row per video pointing at the object
+ * where it already lives, and reading one is metered and happens the first
+ * time you cut with it. That is why it is instant however large the archive
+ * is, and why the copy says "brings them in without reading them".
+ */
+function connectionsBlock(list: SettingsData["connections"]): string {
+  const rows = (list ?? [])
+    .map(
+      (c) => `<div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:11px 13px;border-radius:${RADIUS.card};background:${C.pill}">
+        <span data-content style="flex:1 1 180px;min-width:0;font-size:${SIZE.secondary};font-weight:500">${esc(c.bucket)}</span>
+        <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${
+          c.last_import_at ? "imported" : "never imported"
+        }</span>
+        <button class="bucket-import" type="button" data-conn="${esc(c.id)}"
+          style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:6px 13px;border-radius:${RADIUS.button};background:${C.active};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Bring the footage in</button>
+      </div>`,
+    )
+    .join("");
+
+  return `${sectionLabel("Your own storage")}
+  <div style="margin-top:16px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70};text-wrap:pretty;max-width:620px">Your videos stay where they are &mdash; Aldershot reads them in place and keeps only the read (transcripts, moments, the index) and small preview copies.</div>
+    ${rows ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">${rows}</div>` : ""}
+    <form class="bucket-form" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input class="bucket-endpoint" placeholder="https://your-account.r2.cloudflarestorage.com" aria-label="Storage endpoint"
+        style="flex:1 1 260px;min-width:min(240px,100%);font-size:${SIZE.secondary};font-family:${FONT.mono};padding:7px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+      <input class="bucket-name" placeholder="neolog-videos" aria-label="Bucket name"
+        style="flex:0 1 160px;min-width:min(140px,100%);font-size:${SIZE.secondary};font-family:${FONT.mono};padding:7px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+      <input class="bucket-key" placeholder="Access key ID" aria-label="Access key ID"
+        style="flex:0 1 180px;min-width:min(160px,100%);font-size:${SIZE.secondary};font-family:${FONT.mono};padding:7px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+      <input class="bucket-secret" type="password" placeholder="Secret access key" aria-label="Secret access key"
+        style="flex:0 1 200px;min-width:min(180px,100%);font-size:${SIZE.secondary};font-family:${FONT.mono};padding:7px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+      <button type="submit" style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:${C.canvas};border:none;cursor:pointer;font-family:${FONT.ui}">Connect</button>
+    </form>
+    <div style="margin-top:8px;font-size:${SIZE.meta};color:${C.ink32};text-wrap:pretty">Bucket name. On another account, add a read-only R2 access key in the next step. Nothing is written to your bucket.</div>
+    <div style="margin-top:6px;font-size:${SIZE.meta};color:${C.ink32};text-wrap:pretty">Connecting brings the footage in without reading it &mdash; a video is read the first time you cut with it.</div>
+  </div>`;
+}
+
 export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
 <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
 ${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
+${connectionsBlock(d.connections)}
 ${trashBlock(d.trash)}
 ${d.cost ? costPanel(d.cost) : ""}
 ${d.slo ? sloPanel(d.slo) : ""}`;

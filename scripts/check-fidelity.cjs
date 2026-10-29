@@ -663,6 +663,20 @@ async function checkStrings() {
    */
   const SIGNED_OFF = new Map([
     [
+      "Connecting brings the footage in without reading it &mdash; a video is read the first time you cut with it.",
+      "The Settings design's own paragraph ends '...On the same Cloudflare " +
+        "account it binds the bucket directly, no keys. From Neolog it " +
+        "imports the transcripts already there — no transcribing twice.' " +
+        "Neither half is true of this build and both would be promises it " +
+        "does not keep: a binding is deploy-time configuration and works for " +
+        "exactly one account, so every connection uses a read-only key; and " +
+        "the owner does not trust Neolog's transcripts (it runs a workflow " +
+        "to find hallucinated ones), so footage is read here and the word " +
+        "table is deliberately not imported — see src/neolog.ts. This " +
+        "sentence says what actually happens instead, including the part " +
+        "that costs money.",
+    ],
+    [
       "Your take goes here — sound only, no camera yet",
       "Both landing designs say 'on camera or voice only'. The recorder asks " +
         "for getUserMedia({ audio: true }) and nothing else, and the beat " +

@@ -171,6 +171,18 @@ CREATE TABLE IF NOT EXISTS takes (
 
 CREATE INDEX IF NOT EXISTS takes_by_beat ON takes(beat_id, created_at);
 
+CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    endpoint TEXT NOT NULL, bucket TEXT NOT NULL, region TEXT,
+    access_key_id TEXT NOT NULL, secret_sealed TEXT NOT NULL,
+    foreign_db TEXT,
+    last_import_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS connections_by_user ON connections(user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
     topic TEXT NOT NULL,
@@ -622,6 +634,9 @@ CREATE TABLE IF NOT EXISTS scout_lexicon (
 CREATE INDEX IF NOT EXISTS scout_lexicon_by_entity ON scout_lexicon(user_id, entity, source_count);
 
 -- Added after the fact (ADDED_COLUMNS; applied only where missing).
+ALTER TABLE sources ADD COLUMN connection_id TEXT;
+ALTER TABLE sources ADD COLUMN foreign_id TEXT;
+ALTER TABLE sources ADD COLUMN recorded_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN start_word INTEGER;
 ALTER TABLE v2_clips ADD COLUMN end_word INTEGER;
 ALTER TABLE plan_beats ADD COLUMN backed INTEGER;

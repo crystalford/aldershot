@@ -7,6 +7,7 @@
  * they show their real empty states rather than a fabricated preview.
  */
 
+import type { TranscriptState } from "../../sources.ts";
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
@@ -22,7 +23,9 @@ export interface SourceRow {
   title: string;
   filename: string | null;
   duration_s: number | null;
-  transcript_state: "pending" | "running" | "ready" | "failed";
+  /* The union lives in src/sources.ts. Repeating it here is how a fifth
+     state gets added to the database and silently never rendered. */
+  transcript_state: TranscriptState;
   poster_r2_key: string | null;
   created_at: number;
   /** Live read progress, so the row shows a bar rather than a bare label. */
@@ -64,6 +67,13 @@ export function hms(totalSeconds: number): string {
  */
 function stateChip(state: SourceRow["transcript_state"]): string {
   const map: Record<SourceRow["transcript_state"], [string, string]> = {
+    /*
+     * IMPORTED AND NOT READ YET — which is a thing you have, not a thing
+     * that went wrong, and not a thing that is about to cost you money.
+     * Connecting a bucket brings a whole archive across at once; reading is
+     * metered per video and happens the first time you cut with one.
+     */
+    unread: ["Not read yet", C.ink45],
     pending: ["Queued", C.ink45],
     running: ["Reading", ACCENT.gold],
     ready: ["Ready", ACCENT.green],

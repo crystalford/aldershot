@@ -4051,6 +4051,82 @@ document.querySelectorAll(".add-source").forEach((btn) => {
  * away — the take you were using is still there and one press from being
  * chosen back.
  */
+/*
+ * CONNECT A BUCKET YOU OWN.
+ *
+ * The key is checked by being used — one listing, server-side — before the
+ * row is written, so a connection that saves is a connection that works. A
+ * form that accepts a bad key and fails later, somewhere else, about
+ * something else, is the worst version of this.
+ */
+document.querySelectorAll(".bucket-form").forEach((form) => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const val = (sel) => (form.querySelector(sel) || {}).value || "";
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          endpoint: val(".bucket-endpoint"),
+          bucket: val(".bucket-name"),
+          accessKeyId: val(".bucket-key"),
+          secretAccessKey: val(".bucket-secret"),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That bucket didn't connect.");
+        if (btn) btn.disabled = false;
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That bucket didn't connect.");
+      if (btn) btn.disabled = false;
+    }
+  });
+});
+
+/*
+ * BRING THE FOOTAGE IN — without reading any of it.
+ *
+ * Every video lands "not read yet": instant however large the archive is,
+ * and nothing is metered until you cut with one.
+ */
+document.querySelectorAll(".bucket-import").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/connections/" + btn.getAttribute("data-conn") + "/import", {
+        method: "POST",
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That import didn't finish.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      /* The numbers, because "done" says nothing about an archive you cannot
+         see from here. */
+      window.toast(
+        out.added + " brought in" + (out.already ? ", " + out.already + " already here" : "") +
+          (out.truncated ? " — there is more over there" : ""),
+      );
+      location.reload();
+    } catch {
+      window.toast("That import didn't finish.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".take-pick").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;

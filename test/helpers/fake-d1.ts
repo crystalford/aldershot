@@ -98,11 +98,15 @@ export function schema(db: DatabaseSync): void {
       /* Stripe does not guarantee event order; see applyEvent. */
       billing_event_at INTEGER,
       outside_pref TEXT, ask_mode TEXT);
+    CREATE TABLE connections (id TEXT PRIMARY KEY, user_id TEXT, provider TEXT,
+      endpoint TEXT, bucket TEXT, region TEXT, access_key_id TEXT, secret_sealed TEXT,
+      foreign_db TEXT, last_import_at INTEGER, created_at INTEGER);
     CREATE TABLE sources (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, filename TEXT,
       origin TEXT, r2_key TEXT, proxy_r2_key TEXT, stream_uid TEXT,
       duration_s INTEGER, width INTEGER, height INTEGER,
       transcript_state TEXT, poster_r2_key TEXT, cut_title TEXT, brief TEXT, bytes INTEGER,
       timing_source TEXT, aligned_at INTEGER,
+      connection_id TEXT, foreign_id TEXT, recorded_at INTEGER,
       created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE segments (id TEXT PRIMARY KEY, source_id TEXT, idx INTEGER,
       start_ms INTEGER, end_ms INTEGER, speaker TEXT, text TEXT, words TEXT);

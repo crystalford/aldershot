@@ -11,7 +11,20 @@ import { ulid } from "./id.ts";
 import type { WhisperSegment } from "./transcribe.ts";
 import { reconcile } from "./transcribe.ts";
 
-export type TranscriptState = "pending" | "running" | "ready" | "failed";
+/*
+ * "unread" IS A STATE, AND IT IS THE ONE AN IMPORT LANDS IN.
+ *
+ * The four before it describe a read that is happening or has happened.
+ * Connecting a bucket puts footage in the library that nobody has asked to
+ * read yet — an archive of two hundred videos arrives at once, and reading
+ * is metered and costs money per video (invariant 5: read once, charged
+ * once). So "pending" would be a lie that bills you.
+ *
+ * It is NOT the same as "failed" and not the same as missing: the video is
+ * there, it is yours, you can see it and choose it, and the first time you
+ * cut with it the read happens then.
+ */
+export type TranscriptState = "unread" | "pending" | "running" | "ready" | "failed";
 
 export interface Source {
   id: string;
