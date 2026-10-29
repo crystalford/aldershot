@@ -1709,6 +1709,36 @@ async function checkStrings() {
   }
 
   /*
+   * READING THE USER BEFORE THE TABLES EXIST.
+   *
+   * On a database with no schema, every page in the product answered 200 and
+   * `/` answered 500 — the front door, and the first URL anybody visits,
+   * including on a fresh deployment. It was the one route that had to read
+   * the database to decide WHICH handler to call, so it queried before
+   * anything had run ensureV2Schema.
+   *
+   * It cannot be found on a machine that has ever run the app once, which is
+   * every machine this was written on. CI found it on a clean runner, at the
+   * cost of a whole red run, and a convention that every caller remembers is
+   * what let it happen. So it is a rule now.
+   *
+   * ensureV2Schema is memoised, so the fix is free everywhere it is applied.
+   */
+  const idx = fs.readFileSync(path.join(ROOT, 'src/index.ts'), 'utf8').split('\n');
+  const OPENS = /^(app\.(?:get|post|put|patch|delete|all|on|use)\(|const \w+\s*=\s*async|async function |function )/;
+  idx.forEach((line, i) => {
+    if (!/\bcurrentUser\(/.test(line)) return;
+    let open = i;
+    while (open > 0 && !OPENS.test(idx[open])) open -= 1;
+    const before = idx.slice(open, i).join('\n');
+    if (/ensureV2Schema\(/.test(before)) return;
+    suspect.push(
+      `cold start: src/index.ts:${i + 1} reads currentUser before ensureV2Schema — ` +
+        `on a database with no tables this 500s instead of answering`,
+    );
+  });
+
+  /*
    * NO SIGNED-OUT PASS, AND IT WOULD PROVE NOTHING HERE.
    *
    * The dev server needs DEV_LOGIN_EMAIL or every page is a 302, and

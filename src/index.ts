@@ -698,6 +698,24 @@ const homeHandler = async (c: Ctx) => {
  */
 app.get("/home", homeHandler);
 app.get("/", async (c) => {
+  /*
+   * THE SCHEMA FIRST, BECAUSE THIS ROUTE ASKS A QUESTION BEFORE DELEGATING.
+   *
+   * Both handlers below ensure the schema as their first statement. This one
+   * has to read the database to decide WHICH of them to call — and so it was
+   * the only route in the product that queried before anything had created
+   * the tables. On a database with no schema, every page answered 200 and
+   * `/` answered 500: the front door, and the first URL anybody visits,
+   * including on a fresh deployment.
+   *
+   * Found by CI on a clean runner, where the D1 is created empty. It cannot
+   * be found on a machine that has ever run the app once, which is every
+   * machine this was written on.
+   *
+   * It is free to call twice — ensureV2Schema returns on a memo after the
+   * first — so the handlers keep their own calls and do not depend on this.
+   */
+  await ensureV2Schema(c.env.DB);
   const visitor = await currentUser(c.env, c.req.header("cookie"));
   return visitor ? roomHandler(c) : homeHandler(c);
 });
@@ -1221,6 +1239,10 @@ app.get("/footage", async (c) => {
  * the null check being forgotten somewhere.
  */
 async function requireUser(c: Ctx) {
+  /* Every caller does this first by convention, and `/` is what a convention
+     costs when somebody writes the one route that does not follow it. Here it
+     is the function's job instead, and it is a memo hit for all of them. */
+  await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env, c.req.header("cookie"));
   if (user) return user;
 
@@ -1401,6 +1423,10 @@ app.post("/api/sources/:id/poster", async (c) => {
 app.get("/media/*", async (c) => {
   const key = c.req.path.replace(/^\/media\//, "");
 
+  /* The same cold-database hole as `/`: this reads the user directly rather
+     than through requireUser, because a redirect is the wrong answer to a
+     subresource fetch. A 500 is a worse one. */
+  await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env, c.req.header("cookie"));
   if (!user || !(await mayReadMedia(c.env.DB, user.id, key))) return c.notFound();
 
