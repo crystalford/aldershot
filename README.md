@@ -111,7 +111,7 @@ was defensible; together they changed the feel.
 obvious in review; a swapped icon set is invisible. So:
 
 ```bash
-npx wrangler dev --port 8787 --enable-containers=false   # in one shell
+npx wrangler dev --local --port 8787 --enable-containers=false   # in one shell
 node scripts/check-fidelity.cjs                          # icons, colours, strings, layout
 node scripts/shoot.cjs app /                             # screenshot the build
 node scripts/shoot.cjs proto Home                        # screenshot the prototype, same width

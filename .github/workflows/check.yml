@@ -53,10 +53,27 @@ jobs:
       - name: Local dev vars
         run: echo "DEV_LOGIN_EMAIL=ci@aldershot.invalid" > .dev.vars
 
+      # --local, AND IT IS NOT OPTIONAL HERE.
+      #
+      # `env.AI` has no local emulation, so without this wrangler opens a
+      # REMOTE PROXY SESSION to Cloudflare to serve it — which needs
+      # CLOUDFLARE_API_TOKEN. The first run of this workflow died exactly
+      # there, three minutes of polling a server that was never going to
+      # answer: "Could not start remote dev session. No credentials found."
+      #
+      # It had always worked on the machine it was written on, because that
+      # machine had a wrangler login. So the dev server silently depended on
+      # a Cloudflare account, and nobody could have cloned this repo and run
+      # it. Only a clean runner could find that.
+      #
+      # --local disables remote bindings, which is also the right answer on
+      # its own terms: a gate that calls a paid API is a gate with a bill.
+      # The whole check passes without AI, which is invariant-shaped — the
+      # model is never in the path of anything this verifies.
       - name: Boot the dev server
         run: |
           set -euo pipefail
-          npx wrangler dev --port 8787 --enable-containers=false > /tmp/dev.log 2>&1 &
+          npx wrangler dev --local --port 8787 --enable-containers=false > /tmp/dev.log 2>&1 &
           echo $! > /tmp/dev.pid
           for _ in $(seq 1 90); do
             if curl -sf -o /dev/null http://localhost:8787/api/health; then

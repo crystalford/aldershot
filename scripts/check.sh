@@ -86,7 +86,7 @@ if [ -n "$SKIPPED" ]; then
     echo "--strict: a skipped check is a check that did not run."
     exit 78
   fi
-  echo "  Start \`npx wrangler dev --port 8787 --enable-containers=false\`, run"
+  echo "  Start \`npx wrangler dev --local --port 8787 --enable-containers=false\`, run"
   echo "  \`node scripts/seed-fixture.cjs\`, and re-run to check these too."
 else
   echo "ALL CHECKS PASSED"

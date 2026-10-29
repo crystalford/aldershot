@@ -560,7 +560,7 @@ async function checkStrings() {
     up = r.ok;
   } catch { up = false; }
   if (!up) {
-    skipped('strings', `no dev server at ${BASE}. Run \`npx wrangler dev --port 8787 --enable-containers=false\` and re-run`);
+    skipped('strings', `no dev server at ${BASE}. Run \`npx wrangler dev --local --port 8787 --enable-containers=false\` and re-run`);
     return;
   }
 

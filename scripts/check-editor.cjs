@@ -58,7 +58,7 @@ async function main() {
     await fetch(BASE + "/api/projects");
   } catch {
     skipped("no dev server at " + BASE);
-    console.log("    Run `npx wrangler dev --port 8787 --enable-containers=false` and re-run.");
+    console.log("    Run `npx wrangler dev --local --port 8787 --enable-containers=false` and re-run.");
     return;
   }
 

@@ -24,7 +24,7 @@ const BASE = process.env.BASE || "http://localhost:8787";
     await fetch(BASE + "/api/health");
   } catch {
     console.log("⚠ walk — SKIPPED: no dev server at " + BASE + ".");
-    console.log("    Run `npx wrangler dev --port 8787 --enable-containers=false` and re-run.");
+    console.log("    Run `npx wrangler dev --local --port 8787 --enable-containers=false` and re-run.");
     process.exit(78);
   }
 

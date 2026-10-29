@@ -209,7 +209,7 @@ async function main() {
      naming a model privileged. Fetched once so one failure explains itself. */
   const home = await fetch(`${BASE}/`, { redirect: 'manual' }).catch(() => null);
   if (!home) {
-    console.log(`${RED}No dev server at ${BASE}.${OFF} Run: npx wrangler dev --port 8787 --enable-containers=false`);
+    console.log(`${RED}No dev server at ${BASE}.${OFF} Run: npx wrangler dev --local --port 8787 --enable-containers=false`);
     process.exit(1);
   }
   const cookie = (home.headers.get('set-cookie') ?? '').split(';')[0] || '';

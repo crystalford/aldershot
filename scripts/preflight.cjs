@@ -89,7 +89,7 @@ const WANTED = [
     got = await res.json();
   } catch {
     console.log(`✘ nothing answered at ${BASE}.`);
-    console.log("   Local: npx wrangler dev --port 8787 --enable-containers=false");
+    console.log("   Local: npx wrangler dev --local --port 8787 --enable-containers=false");
     process.exit(1);
   }
 

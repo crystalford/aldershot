@@ -5,7 +5,7 @@
  *   npm run eval:set                      eval/set.jsonl, offline
  *   npm run eval:set -- --file path.jsonl
  *   npm run eval:set -- --live            also re-runs retrieval for recall@5
- *                                         (needs `npx wrangler dev --port 8787`)
+ *                                         (needs `npx wrangler dev --local --port 8787`)
  *
  * The acceptance: "the set exists in the repo with a runner that reports
  * recall@5, judge precision/recall per label, false-support rate, and
@@ -177,7 +177,7 @@ async function main() {
       }).catch(() => null);
       if (!res?.ok) {
         console.log(`  ✘ ${BASE} did not answer, or redirected to sign in.`);
-        console.log("     Run `npx wrangler dev --port 8787` with DEV_LOGIN_EMAIL set in .dev.vars.");
+        console.log("     Run `npx wrangler dev --local --port 8787` with DEV_LOGIN_EMAIL set in .dev.vars.");
         return;
       }
       const html = await res.text();

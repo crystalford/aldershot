@@ -88,7 +88,11 @@ paragraph of what the product is.
 
 ## Commands
 
-- `npx wrangler dev --port 8787 --enable-containers=false` — run the app locally.
+- `npx wrangler dev --local --port 8787 --enable-containers=false` — run the app locally.
+  **`--local` is load-bearing.** Without it wrangler opens a remote proxy
+  session to serve `env.AI`, which needs a Cloudflare login — so the server
+  starts on a machine that has one and hangs for three minutes on a machine
+  that does not. CI found this; no local run ever could.
   Needs `DEV_LOGIN_EMAIL=you@example.com` in `.dev.vars` or every page is a 302.
 - `npm test` — unit and engine tests. The `footage.js` port must reproduce the
   sample cut (8 of 14 moments, 5:59, 4 to-camera gaps) when it lands.

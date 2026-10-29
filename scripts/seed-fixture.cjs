@@ -168,7 +168,7 @@ async function main() {
     await fetch(BASE + "/api/projects");
   } catch {
     console.log("✘ no dev server at " + BASE + ".");
-    console.log("    Run `npx wrangler dev --port 8787 --enable-containers=false` first.");
+    console.log("    Run `npx wrangler dev --local --port 8787 --enable-containers=false` first.");
     process.exit(1);
   }
 
