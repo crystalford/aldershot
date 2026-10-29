@@ -296,6 +296,44 @@ async function main() {
   }
 
   /*
+   * A PLAN, SO /plan/:id IS A PAGE ANY ACCOUNT CAN REACH.
+   *
+   * The `coverage` rule fails a route that renders a page the crawl could
+   * not get to, and scripts/surfaces.cjs finds a plan by asking
+   * /api/plans for one. There was never a plan in the fixture — so the
+   * crawl only reached that page on a machine that happened to have an old
+   * one lying around, which was the machine this was written on. CI said
+   * "no plan in this account" and was right.
+   *
+   * It is the same fault as the archive's video count one commit ago: a
+   * check resting on state the fixture does not create. The fixture creates
+   * it now.
+   *
+   * `state: "beats"` is where the flow stops and shows you the beats before
+   * anything is found — the one stop the build order asks for — so this is
+   * the plan page at the moment it is worth looking at.
+   */
+  const PLAN_ID = "fix-plan-amazon";
+  sql.push(
+    `INSERT OR REPLACE INTO plans (id,user_id,topic,claim,state,project_id,created_at)
+     VALUES (${q(PLAN_ID)},${q(userId)},
+             ${q("Why the Amazon expedition did not turn back")},
+             ${q("Orellana did not choose to go on — the river chose for him, and the record was written to make it look like a decision.")},
+             ${q("beats")},NULL,${now});`,
+  );
+  sql.push(`DELETE FROM plan_beats WHERE plan_id=${q(PLAN_ID)};`);
+  [
+    ["subject", "The current took the choice away", "the moment the boat could not go back upstream"],
+    ["counter", "They could have waited", "someone saying the camp could have held out longer"],
+    ["outside", "What the chronicle says", "Carvajal's own account of the decision"],
+  ].forEach(([role, name, need], i) => {
+    sql.push(
+      `INSERT OR REPLACE INTO plan_beats (id,plan_id,idx,role,name,need,kept,found)
+       VALUES (${q("fix-beat-" + i)},${q(PLAN_ID)},${i},${q(role)},${q(name)},${q(need)},1,NULL);`,
+    );
+  });
+
+  /*
    * TWO THREADS, NAMED IN THE SPEAKER'S OWN WORDS.
    *
    * Invariant 10 and src/threads.ts: a thread's name comes from the quotes,
@@ -680,6 +718,26 @@ async function main() {
     ["and shows the gap it did not fill", /gap|Gap/],
   ]) {
     const ok = re.test(board);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+
+  /*
+   * THE PLAN PAGE, WHICH NOTHING COULD REACH WITHOUT ONE.
+   *
+   * scripts/surfaces.cjs finds a plan by asking /api/plans, and the
+   * `coverage` rule fails a route that renders a page the crawl cannot get
+   * to. The fixture never made a plan, so that page was only ever reached on
+   * a machine with an old one lying around — this one. CI said "no plan in
+   * this account" and was right.
+   */
+  const { plans } = await (await fetch(BASE + "/api/plans")).json();
+  const planId = (plans || [])[0]?.id ?? null;
+  const planPage = planId ? await (await fetch(BASE + "/plan/" + planId)).text() : "";
+  for (const [name, ok] of [
+    ["a plan exists for the crawl to reach", Boolean(planId)],
+    ["and it stops on the beats", /The current took the choice away/.test(planPage)],
+  ]) {
     if (!ok) bad += 1;
     console.log((ok ? "  ✓ " : "  ✗ ") + name);
   }

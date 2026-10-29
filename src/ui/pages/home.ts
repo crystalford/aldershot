@@ -51,6 +51,20 @@ const HOW_THIS_GOES: Array<[string, string]> = [
  * and so cannot be rendered until Phase 1 has jobs to count — until then only
  * the fresh half is ever true.
  */
+/*
+ * IT IS RENDERED WITH data-content, BECAUSE THE PERSON'S NAME IS IN IT.
+ *
+ * "Good morning." is the prototype's copy and is signed off as such.
+ * "Good morning, Ci." is that copy with an account's name appended, and the
+ * strings rule read the whole line as one invented sentence. It had only ever
+ * seen the nameless form, on the machine this was written on; CI signs in as
+ * ci@aldershot.invalid and derived "Ci" — so the first clean machine to run
+ * the gate reported the greeting as a paraphrase.
+ *
+ * The sentence is written by the data, which is exactly what the attribute
+ * means. A JS comment and not an HTML one: a comment inside a template
+ * literal ships to the browser.
+ */
 function greeting(name: string | null, isFresh: boolean, landedOvernight: number): string {
   /*
    * No name means no name — not a stand-in. "Chris" was a placeholder from the
@@ -610,7 +624,7 @@ export interface HomeData {
 
 export function renderHome(d: HomeData): string {
   return `<div style="font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-0.025em;line-height:1.2">What are we making today?</div>
-<div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
+<div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
 ${composer()}
 <div style="margin-top:16px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);padding-left:4px">A full cut, a few shorts, a cleanup — it works out the job and checks with you first.</div>
 ${
