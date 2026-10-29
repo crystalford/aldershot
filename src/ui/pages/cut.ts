@@ -148,6 +148,19 @@ export interface CutData {
    * line names the line you still owe.
    */
   beats: Array<{ kind: string; media_r2_key: string | null; clip_id: string | null; struck?: unknown; text?: string | null }>;
+  /**
+   * EVERY TAKE ON A BEAT, newest first, keyed by beat id.
+   *
+   * Recording again used to overwrite the one before it. It does not now
+   * (invariant 6, and a performance is the one thing the engine cannot
+   * re-make) — so the beat has a history, and the only way that is worth
+   * anything is if you can see it and pick one.
+   *
+   * Absent on a beat with one take: a list of one is a list of nothing, and
+   * every other surface in this product goes absent rather than showing a
+   * count of one.
+   */
+  takes?: Record<string, Array<{ id: string; dur_ms: number | null; verdict: string | null; chosen: boolean }>>;
   /** Live pass, when the model is still reading. */
   job: { state: string; pct: number; stage_label: string | null; error: string | null } | null;
   /**
@@ -474,6 +487,7 @@ function blockRow(
   contested = false,
   beat: BeatContext | null = null,
   judgement: { k: string; d: string; kept: boolean; byHand: boolean; momentId: string } | null = null,
+  takes: Array<{ id: string; dur_ms: number | null; verdict: string | null; chosen: boolean }> = [],
 ): string {
   const script = view === "script";
   const struck = b.struck;
@@ -750,6 +764,46 @@ function blockRow(
     </div>
   </div>`;
 
+  /*
+   * THE TAKES YOU HAVE MADE, and which one the cut is using.
+   *
+   * Recording again used to overwrite the one before it, so there was never
+   * more than one and nothing to show. There is now — invariant 6, and a
+   * performance is the one thing this product cannot re-make for you.
+   *
+   * Only when there are two or more: a list of one is a list of nothing.
+   * Newest first, because the one you just made is the one you are deciding
+   * about. NOT THE LINE'S VERDICT REPEATED — "NOT THE LINE" beside a take
+   * you are choosing between is the fact that decides it, where under the
+   * block it was a warning about the chosen one.
+   */
+  const takeList =
+    takes.length > 1 && !script
+      ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:${SIZE.pill};font-weight:600;letter-spacing:.09em;color:${C.ink45}">EVERY TAKE IS KEPT</span>
+          ${takes
+            .map(
+              (t, i) => `<div style="display:flex;gap:9px;align-items:baseline;padding:6px 9px;border-radius:6px;background:${
+                t.chosen ? "#1A1A20" : "transparent"
+              }">
+              <span data-content style="flex:none;width:52px;font-size:${SIZE.pill};font-family:${FONT.mono};color:${
+                t.chosen ? ACCENT.green : C.ink32
+              }">take ${takes.length - i}</span>
+              <span data-content style="flex:1;min-width:0;font-size:${SIZE.meta};color:${C.ink70}">${
+                t.dur_ms ? esc(hms(t.dur_ms / 1000)) : "length unknown"
+              }${t.verdict && t.verdict !== "matches" ? " &middot; not the line that was written" : ""}</span>
+              ${
+                t.chosen
+                  ? `<span style="flex:none;font-size:${SIZE.meta};color:${ACCENT.green};white-space:nowrap">in the cut</span>`
+                  : `<button class="take-pick" type="button" data-beat="${beatId}" data-take="${esc(t.id)}"
+                      style="flex:none;font-size:${SIZE.meta};font-weight:500;padding:3px 9px;border-radius:4px;background:${C.pill};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">Use this one</button>`
+              }
+            </div>`,
+            )
+            .join("")}
+        </div>`
+      : "";
+
   /* The take you already have, playable. A recording you cannot hear back is
      one you have to re-record to check. */
   const take = voice
@@ -762,7 +816,7 @@ function blockRow(
   /* B-roll gets the recorder too — that is the whole point: a shot, and you
      saying what it means over it. "Generate it" is left to voiceover beats,
      where a synthetic line stands on its own. */
-  const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder : "";
+  const fill = !struck && (b.origin === "voice" || overBRoll) ? take + recorder + takeList : "";
 
   /*
    * THE MODEL'S REASON, CLAMPED.
@@ -2560,6 +2614,7 @@ export function renderCut(d: CutData): string {
         Boolean((d.blockContested ?? {})[b.id]),
         beatOf.get(b.id) ?? null,
         (d.blockJudgement ?? {})[b.id] ?? null,
+        (d.takes ?? {})[b.id.slice(2)] ?? [],
       ),
     );
     list.push(seam(d.projectId, i + 1, view));

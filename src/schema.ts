@@ -188,6 +188,41 @@ const STATEMENTS: string[] = [
    * Storing the step means a reload during the stop comes back to the stop
    * rather than starting again or silently carrying on.
    */
+  /*
+   * EVERY TAKE, KEPT — invariant 6, on the one thing you cannot re-make by
+   * pressing something.
+   *
+   * A beat had one `media_r2_key`, so recording again overwrote the first
+   * take and "Redo" deleted the object from R2 outright. Reading a line to
+   * camera is the single gesture in this product that cannot be undone by
+   * the engine: the rules can be switched back on, a struck word comes back,
+   * a cut moment waits thirty days — but a performance is gone the moment it
+   * is overwritten, and you have to say it again.
+   *
+   * The design says so in as many words: "every take is kept, so you can
+   * change your mind later."
+   *
+   * WHICH ONE IS CHOSEN IS STILL `beats.media_r2_key`. That is deliberate:
+   * blocks.ts, cuesheet.ts, the renderer and the export all read it already,
+   * so the chosen take needs no new concept anywhere downstream — it is
+   * simply the take whose key the beat points at. A `chosen` column here
+   * would be a second source of truth for the same fact.
+   *
+   * The verdict is per TAKE, because it is a fact about one recording:
+   * src/take.ts reads whether THIS audio is the line that was written. The
+   * beat mirrors the chosen take's verdict so the editor keeps reading one
+   * field.
+   */
+  `CREATE TABLE IF NOT EXISTS takes (
+     id TEXT PRIMARY KEY,
+     beat_id TEXT NOT NULL REFERENCES beats(id),
+     r2_key TEXT NOT NULL,
+     dur_ms INTEGER,
+     verdict TEXT, reason TEXT, words TEXT,
+     created_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS takes_by_beat ON takes(beat_id, created_at)`,
+
   `CREATE TABLE IF NOT EXISTS plans (
      id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
      topic TEXT NOT NULL,

@@ -4043,6 +4043,49 @@ document.querySelectorAll(".add-source").forEach((btn) => {
  * Its own class rather than .moment-hand, which infers the direction from
  * where the row already is. Here the direction is the control.
  */
+/*
+ * USE THIS TAKE INSTEAD.
+ *
+ * Every recording on a beat is kept, so changing your mind is picking one
+ * rather than recording again. Nothing is created and nothing is thrown
+ * away — the take you were using is still there and one press from being
+ * chosen back.
+ */
+document.querySelectorAll(".take-pick").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") +
+          "/beats/" + btn.getAttribute("data-beat") + "/takes",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          /* In the body: a take's id is derived from its R2 key and has
+             slashes in it, so it cannot be a path segment. */
+          body: JSON.stringify({ take: btn.getAttribute("data-take") }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That take didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That take didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".judge-hand").forEach((btn) => {
   btn.addEventListener("click", async (e) => {
     e.stopPropagation();

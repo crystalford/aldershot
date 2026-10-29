@@ -35,6 +35,31 @@ export async function runTake(env: Env, userId: string, beatId: string): Promise
   const words = scriptWords(beat.text ?? "");
   const take = readTake(await alignTake(env, beat.media_r2_key, words), words.length);
 
+  /*
+   * THE VERDICT BELONGS TO THE TAKE, and the beat mirrors the chosen one.
+   *
+   * It is a fact about one recording — whether THIS audio is the line that
+   * was written — so writing it only to the beat meant a second take
+   * inherited the first one's answer until it was re-aligned. The beat keeps
+   * its copy because the editor and the renderer read one field, and that
+   * copy is now a mirror of whichever take the beat points at.
+   */
+  await env.DB.prepare(
+    `UPDATE takes SET verdict = ?, reason = ?, words = ?, dur_ms = COALESCE(?, dur_ms)
+      WHERE beat_id = ? AND r2_key = ?`,
+  )
+    .bind(
+      take.verdict,
+      take.reason,
+      JSON.stringify(
+        take.words.map((w, i) => ({ w: words[i] ?? "", s: w.startMs / 1000, e: w.endMs / 1000 })),
+      ),
+      take.durationMs || null,
+      beatId,
+      beat.media_r2_key,
+    )
+    .run();
+
   await env.DB.prepare(
     `UPDATE beats SET take_verdict = ?, take_reason = ?, take_words = ?, dur_ms = ? WHERE id = ?`,
   )

@@ -602,6 +602,105 @@ export async function setBeatMedia(
     )
     .bind(key, Date.now(), durMs || null, beatId, userId)
     .run();
+  if ((meta?.changes ?? 0) === 0) return false;
+
+  /*
+   * AND THE TAKE IS KEPT.
+   *
+   * The UPDATE above is the whole of what this used to do, which meant a
+   * second recording overwrote the first and the first was gone. Invariant
+   * 6 — and a performance is the one thing the engine cannot re-make.
+   *
+   * After the ownership check, not before: a row written for a beat that
+   * turned out not to be yours would be a stranger's recording filed under
+   * your account, which is the bug the check above exists for.
+   */
+  await db
+    .prepare(
+      `INSERT INTO takes (id, beat_id, r2_key, dur_ms, created_at)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET r2_key=excluded.r2_key, dur_ms=excluded.dur_ms`,
+    )
+    .bind(takeId(beatId, key), beatId, key, durMs || null, Date.now())
+    .run();
+  return true;
+}
+
+/*
+ * A TAKE'S ID IS ITS BEAT AND ITS KEY.
+ *
+ * Derived rather than random so that saving the same recording twice — a
+ * retried upload, a double-fired handler — is one take and not two. The
+ * same reasoning as every other `INSERT OR REPLACE` in this codebase: the
+ * write has to be safe to repeat.
+ */
+export const takeId = (beatId: string, key: string) => `t:${beatId}:${key}`;
+
+export interface Take {
+  id: string;
+  r2_key: string;
+  dur_ms: number | null;
+  verdict: string | null;
+  reason: string | null;
+  created_at: number;
+  /** The one the beat points at — see the takes table's own comment. */
+  chosen: boolean;
+}
+
+/** Every take on a beat, newest first, and which one the cut is using. */
+export async function listTakes(
+  db: D1Database,
+  beatId: string,
+  userId: string,
+): Promise<Take[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, t.r2_key, t.dur_ms, t.verdict, t.reason, t.created_at,
+              CASE WHEN t.r2_key = b.media_r2_key THEN 1 ELSE 0 END AS chosen
+         FROM takes t
+         JOIN beats b ON b.id = t.beat_id
+         JOIN v2_projects p ON p.id = b.project_id
+        WHERE t.beat_id = ? AND p.user_id = ? AND p.deleted_at IS NULL
+        ORDER BY t.created_at DESC`,
+    )
+    .bind(beatId, userId)
+    .all<Omit<Take, "chosen"> & { chosen: number }>();
+  return (results ?? []).map((r) => ({ ...r, chosen: Boolean(r.chosen) }));
+}
+
+/**
+ * Use this take instead.
+ *
+ * Points the beat at it and mirrors its length and verdict, because the
+ * editor and the renderer read those from the beat. Nothing is thrown away:
+ * the take you were using is still a row, still in R2, and one press from
+ * being chosen again.
+ */
+export async function chooseTake(
+  db: D1Database,
+  beatId: string,
+  takeRowId: string,
+  userId: string,
+): Promise<boolean> {
+  const take = await db
+    .prepare(
+      `SELECT t.r2_key, t.dur_ms, t.verdict, t.reason
+         FROM takes t
+         JOIN beats b ON b.id = t.beat_id
+         JOIN v2_projects p ON p.id = b.project_id
+        WHERE t.id = ? AND t.beat_id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
+    )
+    .bind(takeRowId, beatId, userId)
+    .first<{ r2_key: string; dur_ms: number | null; verdict: string | null; reason: string | null }>();
+  if (!take) return false;
+
+  const { meta } = await db
+    .prepare(
+      `UPDATE beats SET media_r2_key=?, dur_ms=COALESCE(?, dur_ms),
+              take_verdict=?, take_reason=? WHERE id=?`,
+    )
+    .bind(take.r2_key, take.dur_ms, take.verdict, take.reason, beatId)
+    .run();
   return (meta?.changes ?? 0) > 0;
 }
 

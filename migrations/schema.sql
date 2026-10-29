@@ -160,6 +160,17 @@ CREATE TABLE IF NOT EXISTS rules (
 
 CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx);
 
+CREATE TABLE IF NOT EXISTS takes (
+    id TEXT PRIMARY KEY,
+    beat_id TEXT NOT NULL REFERENCES beats(id),
+    r2_key TEXT NOT NULL,
+    dur_ms INTEGER,
+    verdict TEXT, reason TEXT, words TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS takes_by_beat ON takes(beat_id, created_at);
+
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
     topic TEXT NOT NULL,

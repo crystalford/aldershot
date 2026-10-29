@@ -50,7 +50,7 @@ const ACCENT_GOLD = ACCENT.gold;
 const ACCENT_GREEN = ACCENT.green;
 const ACCENT_VIOLET = ACCENT.violet;
 const ACCENT_RED = ACCENT.red;
-import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
+import { chooseTake, deleteBeat, getBeats, insertBeat, listTakes, moveBeat, setBeatMedia } from "./projects.ts";
 import { draftPlan, findForBeats } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
@@ -1781,6 +1781,29 @@ app.get("/p/:id/:stagePath", async (c) => {
         posterKey: source?.poster_r2_key ?? null,
         blocks,
         beats,
+        /*
+         * THE TAKES, only where there is more than one to choose between.
+         *
+         * A list of one is a list of nothing, and the rest of this product
+         * goes absent rather than printing a count of one. Loaded per
+         * recorded beat rather than in one query because a cut has a handful
+         * of beats, not hundreds, and the join is per beat by design — see
+         * listTakes, which checks ownership through the project on each.
+         */
+        takes: Object.fromEntries(
+          (
+            await Promise.all(
+              beats
+                .filter((bt) => bt.media_r2_key)
+                .map(async (bt) => [bt.id, await listTakes(c.env.DB, bt.id, user.id)] as const),
+            )
+          )
+            .filter(([, list]) => list.length > 1)
+            .map(([id, list]) => [
+              id,
+              list.map((t) => ({ id: t.id, dur_ms: t.dur_ms, verdict: t.verdict, chosen: t.chosen })),
+            ]),
+        ),
         cuts,
         view,
         windowSize: BLOCK_WINDOW,
@@ -4402,22 +4425,34 @@ app.post("/api/projects/:id/beats/:beatId", async (c) => {
   }
 
   /*
-   * "Redo" — throw the take away so Record comes back.
+   * "Redo" — put the beat back to unrecorded so Record comes back.
    *
-   * The recording is deleted from R2 rather than merely unlinked. It is being
-   * explicitly discarded by the person who made it, and an unlinked object is
-   * invisible to every cleanup path in the product, so leaving it would mean
-   * every abandoned take billed forever with nothing able to find it again.
+   * IT NO LONGER DELETES THE RECORDING, and the argument that said it should
+   * is worth keeping because it was right about its own world:
+   *
+   *   "The recording is deleted from R2 rather than merely unlinked. It is
+   *    being explicitly discarded by the person who made it, and an unlinked
+   *    object is invisible to every cleanup path in the product, so leaving
+   *    it would mean every abandoned take billed forever with nothing able to
+   *    find it again."
+   *
+   * The load-bearing half is "invisible to every cleanup path". That was true
+   * when a beat had one media key and nothing else recorded the object's
+   * existence — unlinking really did orphan it. It is not true now: the take
+   * is a row in `takes`, so it is findable, countable and sweepable like
+   * everything else.
+   *
+   * And the other half does not survive invariant 6. "Explicitly discarded by
+   * the person who made it" describes striking a line and switching off a
+   * rule too, and neither of those destroys anything. A performance is the
+   * one thing in this product the engine cannot re-make — you have to say it
+   * again — so it is the last thing that should be the only one deleted on
+   * the spot.
    */
   if (b.clearMedia) {
-    const beat = await c.env.DB
-      .prepare(`SELECT media_r2_key FROM beats WHERE id=? AND project_id=?`)
-      .bind(beatId, project.id)
-      .first<{ media_r2_key: string | null }>();
-
-    if (beat?.media_r2_key) await c.env.MEDIA.delete(beat.media_r2_key).catch(() => {});
     await c.env.DB
-      .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL WHERE id=? AND project_id=?`)
+      .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL,
+                       take_verdict=NULL, take_reason=NULL WHERE id=? AND project_id=?`)
       .bind(beatId, project.id)
       .run();
     return c.json({ ok: true });
@@ -4427,6 +4462,40 @@ app.post("/api/projects/:id/beats/:beatId", async (c) => {
     .prepare(`UPDATE beats SET text=? WHERE id=? AND project_id=?`)
     .bind(b.text ?? null, beatId, project.id)
     .run();
+  return c.json({ ok: true });
+});
+
+/**
+ * USE THIS TAKE INSTEAD.
+ *
+ * Every recording on a beat is kept (see the `takes` table), and this is how
+ * you change your mind. It points the beat at a take you already made;
+ * nothing is created and nothing is thrown away, so it is as reversible as
+ * every other decision in the product — press the other one.
+ */
+app.post("/api/projects/:id/beats/:beatId/takes", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  /*
+   * THE TAKE ID TRAVELS IN THE BODY, NOT THE PATH.
+   *
+   * It was `/takes/:takeId`, and the id is derived from the recording's R2
+   * key — `t:<beat>:u/<user>/takes/<beat>/2.wav` — which has slashes in it.
+   * A path parameter never matches across a slash, so the route could not be
+   * hit at all: Hono's own 404, before any of this ran.
+   *
+   * Found by pressing the button in a browser. Nothing else would have: the
+   * handler is correct, the markup is correct, the id is correct, and the
+   * URL they combine into cannot exist.
+   */
+  const { take } = await body<{ take?: string }>(c);
+  if (!take) return c.json({ error: "which take?" }, 422);
+
+  const ok = await chooseTake(c.env.DB, c.req.param("beatId"), take, user.id);
+  if (!ok) return c.json({ error: "that take isn't here any more" }, 404);
   return c.json({ ok: true });
 });
 

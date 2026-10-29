@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderCut, type CutData } from "../src/ui/pages/cut.ts";
+import { renderCut, type CutData, type CutView } from "../src/ui/pages/cut.ts";
 import { GRADE_NAME, gradeForScore } from "../src/shorts.ts";
 import type { Block } from "../src/blocks.ts";
 import { isOrder, orderText } from "../src/rules.ts";
@@ -1021,4 +1021,67 @@ test("Words shows no judgement call", () => {
     blockJudgement: { "s:1": { k: "01", d: "02", kept: false, byHand: false, momentId: "c9" } },
   } as Partial<CutData> as CutData);
   assert.doesNotMatch(html, /Judgement call/);
+});
+
+/* ── Every take is kept ─────────────────────────────────────────────────── */
+
+/**
+ * INVARIANT 6, ON THE ONE THING THE ENGINE CANNOT RE-MAKE.
+ *
+ * A beat had one `media_r2_key`, so recording again overwrote the take
+ * before it and "Redo" deleted the object from R2 outright. Rules switch
+ * back on, struck words come back, cut moments wait thirty days — and a
+ * performance was the single thing destroyed on the spot, when it is the
+ * only one you cannot get back by pressing something.
+ */
+const take = (n: number, chosen: boolean, verdict: string | null = null) => ({
+  id: `t:b:vo:${n}`,
+  dur_ms: 9000 + n,
+  verdict,
+  chosen,
+});
+
+const withTakes = (list: ReturnType<typeof take>[], view: CutView = "blocks") =>
+  renderCut({
+    ...base,
+    view,
+    blocks: [{ ...VOICE, id: "b:vo", mediaKey: "u/x/takes/vo/2.wav" }],
+    takes: { vo: list },
+  } as Partial<CutData> as CutData);
+
+test("a beat with one take shows no list", () => {
+  /* A list of one is a list of nothing, and every other surface here goes
+     absent rather than printing a count of one. */
+  assert.doesNotMatch(withTakes([take(1, true)]), /EVERY TAKE IS KEPT/);
+});
+
+test("two or more takes are listed, newest first and numbered", () => {
+  const html = withTakes([take(3, false), take(2, true), take(1, false)]);
+  assert.match(html, /EVERY TAKE IS KEPT/);
+  const nums = [...html.matchAll(/>take (\d)</g)].map((m) => m[1]);
+  assert.deepEqual(nums, ["3", "2", "1"], "newest first, highest number first");
+});
+
+test("the one in the cut says so, and the others offer to replace it", () => {
+  const html = withTakes([take(3, false), take(2, true), take(1, false)]);
+  assert.match(html, /in the cut/);
+  /* Exactly the two that are not chosen — a control beside the one already
+     in use would do nothing. */
+  assert.equal([...html.matchAll(/class="take-pick"/g)].length, 2);
+  assert.doesNotMatch(html, /class="take-pick"[^>]*data-take="t:b:vo:2"/);
+});
+
+test("a take that is not the line that was written says so on its own row", () => {
+  /*
+   * The banner under the block is about the CHOSEN take. Here the fact is
+   * what decides which one you pick, so it belongs on each row.
+   */
+  const html = withTakes([take(2, true), take(1, false, "drifted")]);
+  assert.match(html, /not the line that was written/);
+  /* And a take with no verdict says nothing — silence is the good case. */
+  assert.doesNotMatch(withTakes([take(2, true), take(1, false)]), /not the line that was written/);
+});
+
+test("Words shows no take list", () => {
+  assert.doesNotMatch(withTakes([take(2, true), take(1, false)], "script"), /EVERY TAKE IS KEPT/);
 });

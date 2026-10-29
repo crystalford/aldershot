@@ -500,6 +500,44 @@ async function main() {
   );
 
   /*
+   * AND A SECOND BEAT THAT HAS BEEN RECORDED THREE TIMES.
+   *
+   * Every take is kept now (invariant 6 — a performance is the one thing the
+   * engine cannot re-make), and the list that lets you choose between them
+   * only renders when there are two or more. With one beat and no recording
+   * in the fixture, that surface was built and unreachable: no crawl could
+   * draw it and `strings` never saw a word of it.
+   *
+   * The takes carry different verdicts on purpose, because the point of
+   * seeing them side by side is that one of them is not the line you wrote —
+   * which is the only signal src/take.ts produces and the reason you would
+   * pick an older one.
+   *
+   * The beat points at take 2, NOT the newest. A fixture where the chosen
+   * one is always the last would never show that choosing is a real thing.
+   */
+  const VOICE_2 = "fix-beat-vo-2";
+  const takeKey = (n) => `u/${userId}/takes/${VOICE_2}/${n}.wav`;
+  sql.push(
+    `INSERT OR REPLACE INTO beats (id,project_id,idx,kind,act,clip_id,text,struck,dur_ms,media_r2_key,recorded_at,take_verdict,take_reason)
+     VALUES (${q(VOICE_2)},${q(PROJECT_ID)},98,${q("vo")},NULL,NULL,
+             ${q("Eleven days, and the kettle was in the box marked books.")},NULL,9000,
+             ${q(takeKey(2))},${now},NULL,NULL);`,
+  );
+  sql.push(`DELETE FROM takes WHERE beat_id=${q(VOICE_2)};`);
+  [
+    [1, 11000, "drifted", "It reads about half of what you wrote."],
+    [2, 9000, null, null],
+    [3, 9400, "unclear", "The aligner placed almost nothing."],
+  ].forEach(([n, dur, verdict, reason]) => {
+    sql.push(
+      `INSERT OR REPLACE INTO takes (id,beat_id,r2_key,dur_ms,verdict,reason,words,created_at)
+       VALUES (${q("t:" + VOICE_2 + ":" + takeKey(n))},${q(VOICE_2)},${q(takeKey(n))},${dur},
+               ${verdict === null ? "NULL" : q(verdict)},${reason === null ? "NULL" : q(reason)},NULL,${now + n});`,
+    );
+  });
+
+  /*
    * ── A FINISHED SCOUT RUN ──────────────────────────────────────────────
    *
    * src/ui/pages/board.ts is 510 lines and NOTHING HAS EVER RENDERED IT WITH
@@ -644,8 +682,11 @@ async function main() {
     ],
     ["with both answers a press away", /class="judge-hand"[^>]*data-keep="0"/],
     ["the cut counts the judgement calls", /2 judgement calls/],
-    ["a beat is still to record", /0 of 1 recorded/],
+    ["a beat is still to record", /1 of 2 recorded/],
     ["the conversation has turns", /class="turn"/],
+    ["every take is kept, and you can see them", /EVERY TAKE IS KEPT/],
+    ["and the one in the cut is not just the newest", /take 2[\s\S]{0,400}in the cut/],
+    ["an older take can be chosen", /class="take-pick"/],
     ["a rule doing nothing offers to go off", /Does nothing now — switch it off/],
     ["the hand fix is folded, not numbered", /and 1 fix by hand/],
     ["and it can be undone", /class="fix-undo"[^>]*data-moment="fix-clip-10"/],
