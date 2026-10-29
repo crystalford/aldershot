@@ -626,8 +626,22 @@ async function main() {
   const room = await (await fetch(BASE + "/?tab=highlights")).text();
   const roomWant = [
     [
+      /*
+       * THE SHAPE OF THE SENTENCE, NOT A COUNT THIS FIXTURE DOES NOT OWN.
+       *
+       * This said "2 threads run through 2 videos", and the second 2 was not
+       * the fixture's — it was a source left over from earlier work in the
+       * account this was written in. CI has only what the seeder makes, so
+       * it rendered "1 video" and the claim failed on a machine where
+       * everything was correct.
+       *
+       * A fixture that is only deterministic on the machine it grew up on is
+       * not a fixture. What it owns and can assert is the SHAPE: a paragraph
+       * naming its two threads, in the speaker's own words. How many other
+       * videos happen to be in the account is the account's business.
+       */
       "the archive is a paragraph, not a count",
-      /2 threads run through 2 videos — the kettle and whether to go back\./,
+      /threads run through \d+ videos? — the kettle and whether to go back\./,
     ],
     /*
      * AND THE TWO SURFACES AGREE ABOUT IT. The room says the kettle is in 4
