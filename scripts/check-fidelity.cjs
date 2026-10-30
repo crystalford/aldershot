@@ -1682,6 +1682,21 @@ const SIGNED_OFF = new Map([
     "The two empty states are the same gap one level down. A cut with nothing attached and an account with one project are both states the product reaches on its first day and no design draws."
   ]),
   [
+    "Bring the footage in",
+    "THE IMPORT CONTROL, which the Settings design has no equivalent for " +
+      "because in the design there is nothing to press: it says a bucket on " +
+      "the same Cloudflare account binds directly and that Neolog's " +
+      "transcripts come across with it. Neither is true here (see the " +
+      "sign-off for the paragraph above this one), so footage is listed " +
+      "when you connect and READ when you ask \u2014 which needs a button, " +
+      "and a button needs words.\n\n" +
+      "It had never been checked by anything either. `strings` only renders " +
+      "what an account HAS, and no account on any machine that runs the " +
+      "gate has a connected bucket, so the whole connected state of this " +
+      "page \u2014 the bucket row, its import date and this control \u2014 was " +
+      "invisible to every check until `copy` rendered it from a fixture.",
+  ],
+  [
     "Receipts for viewers &nearr;",
     "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
       "the audience, not just the maker\". The prototype has no Before you " +

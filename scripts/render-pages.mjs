@@ -13,6 +13,7 @@
 import { renderLanding, renderConfirm } from "../src/ui/pages/landing.ts";
 import { receiptsHtml, receiptsPage } from "../src/receipts.ts";
 import { renderCut } from "../src/ui/pages/cut.ts";
+import { renderSettings } from "../src/ui/pages/settings.ts";
 
 /*
  * A CUT, MADE UP, FOR ITS COPY ONLY.
@@ -109,6 +110,39 @@ const out = [
     html: renderCut(cutData({ footageTab: "videos", onlySourceId: "b" })),
   },
   { label: "renderCut (footage · made)", html: renderCut(cutData({ footageTab: "made" })) },
+  {
+    /* Settings on a free account with nothing connected — the first thing
+       anybody sees there, and the page whose plan hints were wrong until
+       today. */
+    label: "renderSettings (free)",
+    html: renderSettings({
+      name: "Someone",
+      email: "someone@example.com",
+      plan: "free",
+      isOwner: false,
+      connections: [],
+      meters: [],
+      billingReady: true,
+      trash: [],
+      cost: null,
+      slo: null,
+    }),
+  },
+  {
+    label: "renderSettings (studio, one bucket connected)",
+    html: renderSettings({
+      name: "Someone",
+      email: "someone@example.com",
+      plan: "pro",
+      isOwner: false,
+      connections: [{ id: "c1", bucket: "a-bucket", last_import_at: null }],
+      meters: [],
+      billingReady: true,
+      trash: [],
+      cost: null,
+      slo: null,
+    }),
+  },
   {
     /* And the two empty states, which need a cut with nothing attached and
        an account with one project. */
