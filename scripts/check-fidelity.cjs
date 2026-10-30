@@ -662,6 +662,20 @@ async function checkStrings() {
    * would have hidden the next paraphrase along with this one.
    */
   const SIGNED_OFF = new Map([
+    ...[
+      "EVERY TAKE IS KEPT",
+      "Use this one",
+      "in the cut",
+    ].map((t) => [
+      t,
+      "The take list, which the prototype has no UI for at all — its " +
+        "recorder is a full-screen stage and the only place it says this is " +
+        "a sentence: 'Your take — on camera or voice only. Every take is " +
+        "kept.' The build kept that promise (invariant 6: a performance is " +
+        "the one thing the engine cannot re-make) and had to invent the " +
+        "surface that makes it worth anything — seeing the takes and " +
+        "choosing one. New behaviour, flagged rather than paraphrased.",
+    ]),
     [
       "Connecting brings the footage in without reading it &mdash; a video is read the first time you cut with it.",
       "The Settings design's own paragraph ends '...On the same Cloudflare " +

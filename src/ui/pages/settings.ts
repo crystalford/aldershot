@@ -423,7 +423,7 @@ function connectionsBlock(list: SettingsData["connections"]): string {
 
   return `${sectionLabel("Your own storage")}
   <div style="margin-top:16px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface}">
-    <div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70};text-wrap:pretty;max-width:620px">Your videos stay where they are &mdash; Aldershot reads them in place and keeps only the read (transcripts, moments, the index) and small preview copies.</div>
+    <div style="font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70};text-wrap:pretty;max-width:620px">Your videos stay where they are — Aldershot reads them in place and keeps only the read (transcripts, moments, the index) and small preview copies.</div>
     ${rows ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">${rows}</div>` : ""}
     <form class="bucket-form" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input class="bucket-endpoint" placeholder="https://your-account.r2.cloudflarestorage.com" aria-label="Storage endpoint"
