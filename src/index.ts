@@ -27,12 +27,12 @@ import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, 
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blockSources, blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, sourcesInCut, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
+import { blockSources, blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, sourcesInCut, toggleBeatStruck, scopeOf, attachedScope, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
 import { moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { buildSummary, renderBlockSlice, renderCut, type CutView } from "./ui/pages/cut.ts";
+import { buildSummary, renderBlockSlice, renderCut, type CutView, type ProjFootTab } from "./ui/pages/cut.ts";
 import { previewFromRules } from "./assemble.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
@@ -165,6 +165,17 @@ async function body<T extends object>(c: { req: { json<U>(): Promise<U> } }): Pr
  * is the honest instruction for something that is different on every request.
  * Static assets keep their own long cache — this only covers HTML.
  */
+/**
+ * Which of Footage's three tabs a `?tab=` means.
+ *
+ * Anything else is Highlights, which is what the tab showed before the other
+ * two existed — so an old link, a typo and a crawler all land somewhere real
+ * rather than on an empty panel.
+ */
+function footageTabFrom(raw: string | undefined): ProjFootTab {
+  return raw === "videos" || raw === "made" ? raw : "moments";
+}
+
 app.use("*", async (c, next) => {
   await next();
   const type = c.res.headers.get("content-type") || "";
@@ -1904,12 +1915,28 @@ app.get("/p/:id/:stagePath", async (c) => {
            * a cut without one already draws on everything, so there is
            * nothing to add and a control offering to would do nothing.
            */
-          const scope = scopeOf(project);
+          /* attachedScope: a cut narrowed to one video has not stopped
+             being made of the others, so they must not be offered as
+             things to attach. */
+          const scope = attachedScope(project);
+          /*
+           * One listing, two answers: what this cut is made of, and what it
+           * is not. Footage's Videos tab needs the first — including a video
+           * attached and contributing nothing, which is the row that tab
+           * exists for — and `addable` is the second.
+           *
+           * A cut with no scope is made of the whole library, so that is
+           * what it lists. Read sources only: an unread one has no moments
+           * to count and a row saying "0 of 0" would read as a video the
+           * rules rejected rather than one nothing has looked at yet.
+           */
+          const library = await listSources(c.env.DB, user.id, "newest");
           const addable = scope
-            ? (await listSources(c.env.DB, user.id, "newest"))
-                .filter((x) => !scope.includes(x.id))
-                .map((x) => ({ id: x.id, title: x.title }))
+            ? library.filter((x) => !scope.includes(x.id)).map((x) => ({ id: x.id, title: x.title }))
             : [];
+          const cutSources = (scope ? library.filter((x) => scope.includes(x.id)) : library)
+            .filter((x) => x.transcript_state === "ready")
+            .map((x) => ({ id: x.id, title: x.title, duration_s: x.duration_s ?? null }));
 
           /*
            * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
@@ -2029,6 +2056,12 @@ app.get("/p/:id/:stagePath", async (c) => {
             blockContested,
             blockJudgement,
             addable,
+            /* Which of Footage's three tabs, and whether this cut is
+               narrowed to one video. The tab is in the URL so a link to
+               Videos arrives at Videos. */
+            footageTab: footageTabFrom(c.req.query("tab")),
+            cutSources,
+            onlySourceId: project.only_source_id ?? null,
             blockRule,
             rules: stored.map((r) => ({
               id: String(r.id),
@@ -2201,6 +2234,10 @@ app.post("/api/passes/:passId/undo", async (c) => {
   if (snap.rules) {
     let restored: Rule[];
     let scope: string[] | null;
+    /* undefined means "this pass did not touch it"; null means "it cleared
+       it", and those are different instructions to the UPDATE below. */
+    let restoreOnly: string | null | undefined;
+    let restoreAttached: string[] | null = null;
     try {
       restored = JSON.parse(snap.rules) as Rule[];
       /*
@@ -2209,7 +2246,22 @@ app.post("/api/passes/:passId/undo", async (c) => {
        * what it was, and that is what goes back. Restoring only the rules
        * would undo an "Added that video" pass and leave the video added.
        */
-      scope = snap.scope == null ? scopeOf(project) : (JSON.parse(snap.scope) as string[] | null);
+      /*
+       * THE NARROWING, the same way and for the same reason.
+       *
+       * A pass that narrowed the cut to one video carries what the
+       * narrowing WAS, and that is what goes back. Without this, undoing
+       * "Only one video" would restore the rules and leave the cut looking
+       * at one video — which is the attach defect again, one column over.
+       */
+      const only =
+        snap.only == null
+          ? project.only_source_id
+          : (JSON.parse(snap.only) as string | null);
+      const attached = snap.scope == null ? attachedScope(project) : (JSON.parse(snap.scope) as string[] | null);
+      scope = scopeOf({ scope: attached?.length ? JSON.stringify(attached) : null, only_source_id: only });
+      restoreOnly = snap.only == null ? undefined : only;
+      restoreAttached = attached;
     } catch {
       return c.json({ error: "that one can't be taken back" }, 422);
     }
@@ -2219,7 +2271,13 @@ app.post("/api/passes/:passId/undo", async (c) => {
     if (snap.scope != null) {
       await c.env.DB
         .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
-        .bind(scope?.length ? JSON.stringify(scope) : null, Date.now(), project.id, user.id)
+        .bind(restoreAttached?.length ? JSON.stringify(restoreAttached) : null, Date.now(), project.id, user.id)
+        .run();
+    }
+    if (restoreOnly !== undefined) {
+      await c.env.DB
+        .prepare(`UPDATE v2_projects SET only_source_id=?, updated_at=? WHERE id=? AND user_id=?`)
+        .bind(restoreOnly, Date.now(), project.id, user.id)
         .run();
     }
     return c.json({ ok: true, kept: out.kept, secs: out.secs });
@@ -2981,7 +3039,10 @@ app.post("/api/projects/:id/attach", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const scope = scopeOf(project);
+  /* attachedScope, not scopeOf: this appends, and appending to a cut that is
+     narrowed to one video would write [that one, the new one] into the
+     project's record of what it is made of and lose the rest. */
+  const scope = attachedScope(project);
   if (!scope) return c.json({ error: "this cut already draws on everything you have" }, 422);
 
   const b = await body<{ sourceId: string }>(c);
@@ -3044,6 +3105,86 @@ app.post("/api/projects/:id/attach", async (c) => {
   }).catch(() => {});
 
   return c.json({ ok: true, kept: out.kept, secs: out.secs });
+});
+
+/**
+ * ONLY THIS VIDEO, and back again.
+ *
+ * The one control in the prototype's project Footage tab that the build had
+ * no route for, and the engine has supported it since the scope column
+ * existed: `inScope` filters the candidate pool, so a cut narrowed to one
+ * video is a cut the solver can already produce. There was simply no way to
+ * ask for it.
+ *
+ * NOTHING IS LOST BY PRESSING IT. The narrowing is its own column and the
+ * project's record of what it is made of does not move, so sending null
+ * brings every attached video back without re-attaching anything. That is
+ * the difference between this and writing a single id into `scope`, which
+ * is what the obvious version would have done and what invariant 6 forbids.
+ *
+ * It recomputes before it writes, like every other rule change: if the
+ * narrowed cut would be empty the narrowing is refused and the cut on screen
+ * is still the cut in the database.
+ */
+app.post("/api/projects/:id/only", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ sourceId: string | null }>(c);
+  const wanted = typeof b.sourceId === "string" ? b.sourceId.trim() : null;
+
+  /* Checked against this project's own videos, for the same reason attach
+     checks: a filter that takes arbitrary strings is a way to ask about
+     somebody else's library. */
+  const attached = attachedScope(project);
+  if (wanted) {
+    const src = await getSource(c.env.DB, wanted, user.id);
+    if (!src) return c.json({ error: "that video isn't here" }, 404);
+    if (attached && !attached.includes(wanted)) {
+      return c.json({ error: "this cut isn't made from that video" }, 422);
+    }
+  }
+
+  const rules = await loadRules(c.env.DB, project.id);
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: scopeOf({ scope: project.scope, only_source_id: wanted }),
+  });
+  if (!out) {
+    return c.json(
+      { error: wanted ? "there is nothing in that video this cut's rules would keep" : "there is nothing to cut" },
+      422,
+    );
+  }
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET only_source_id=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(wanted, Date.now(), project.id, user.id)
+    .run();
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: wanted ? "Only one video" : "Every video again",
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    /* The rules are what re-produces the cut and the OLD narrowing is what
+       this pass changed. Undoing without it would restore the rules and
+       leave the cut looking at one video — the same defect the attach pass
+       had and the reason that one carries its scope. */
+    undo: {
+      cuts: null,
+      order: null,
+      rules: JSON.stringify(rules),
+      only: JSON.stringify(project.only_source_id ?? null),
+    },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, only: wanted, kept: out.kept, secs: out.secs });
 });
 
 /**

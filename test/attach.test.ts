@@ -173,12 +173,19 @@ test("adding to an open cut, and taking it back, restores the scope", () => {
    */
   assert.match(
     src,
-    /A pass that did not touch the scope[\s\S]{0,1200}UPDATE v2_projects SET scope=\?/,
+    /A pass that did not touch the scope[\s\S]{0,2200}UPDATE v2_projects SET scope=\?/,
     "the undo writes the scope back",
   );
+  /*
+   * `restoreAttached`, not `scope`. The two parted company when narrowing
+   * arrived: `scope` is now the set the ENGINE cuts from, which a narrowing
+   * shrinks to one video, and what has to be written back into the column is
+   * the ATTACHED set. Writing the narrowed one would turn an undo into the
+   * delete this product does not do.
+   */
   assert.match(
     src,
-    /scope\?\.length \? JSON\.stringify\(scope\) : null/,
+    /restoreAttached\?\.length \? JSON\.stringify\(restoreAttached\) : null/,
     "and an emptied scope becomes null, which is what the whole library means",
   );
 });
@@ -191,7 +198,14 @@ test("a cut with no scope is not offered more footage", () => {
    */
   const src = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
   const block = src.slice(src.indexOf("The videos this cut is NOT drawing on"));
-  assert.match(block.slice(0, 500), /const scope = scopeOf\(project\);\s*\n\s*const addable = scope/);
+  /*
+   * attachedScope, not scopeOf. A cut narrowed to one video has not stopped
+   * being made of the others, so offering them as things to ATTACH would
+   * offer to add what is already there — and accepting that offer would
+   * append a duplicate id to the column.
+   */
+  assert.match(block.slice(0, 900), /const scope = attachedScope\(project\);/);
+  assert.match(block.slice(0, 1400), /const addable = scope/);
 
   const route = src.slice(src.indexOf("ADD A VIDEO TO AN OPEN CUT"));
   assert.match(

@@ -162,6 +162,11 @@ function enums() {
     roomTabs: union(read("ui/pages/room.ts"), "RoomTab"),
     footTabs: union(read("ui/pages/footage.ts"), "FootTab"),
     editorPaths: setOf(read("index.ts"), "EDITOR_PATHS"),
+    /* Footage's three tabs INSIDE a project. They are query parameters on an
+       editor path, so nothing above expands them: the crawl visited
+       /p/:id/footage and never the two tabs beside it, which is exactly the
+       blind spot this file exists to close. */
+    projFootTabs: union(read("ui/pages/cut.ts"), "ProjFootTab"),
   };
 }
 
@@ -211,7 +216,13 @@ async function expand(opts) {
     } else if (route === "/p/:id/:stagePath") {
       add(
         route,
-        projectId ? E.editorPaths.map((p) => `/p/${projectId}/${p}`) : [],
+        projectId
+          ? E.editorPaths.flatMap((p) =>
+              p === "footage"
+                ? [`/p/${projectId}/footage`, ...E.projFootTabs.map((t) => `/p/${projectId}/footage?tab=${t}`)]
+                : [`/p/${projectId}/${p}`],
+            )
+          : [],
         projectId ? null : "no project in this account",
       );
     } else if (route === "/plan/:id") {

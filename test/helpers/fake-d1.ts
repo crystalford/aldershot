@@ -112,7 +112,7 @@ export function schema(db: DatabaseSync): void {
       start_ms INTEGER, end_ms INTEGER, speaker TEXT, text TEXT, words TEXT);
     CREATE TABLE v2_projects (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, kind TEXT,
       source_id TEXT, brief TEXT, has_acts INTEGER DEFAULT 0, runtime_s INTEGER,
-      pct INTEGER DEFAULT 0, next_action TEXT, poster_r2_key TEXT, cuts TEXT, block_order TEXT,
+      pct INTEGER DEFAULT 0, next_action TEXT, poster_r2_key TEXT, cuts TEXT, block_order TEXT, only_source_id TEXT,
       scope TEXT,
       archived_at INTEGER, created_at INTEGER, updated_at INTEGER, deleted_at INTEGER);
     CREATE TABLE v2_clips (id TEXT PRIMARY KEY, user_id TEXT, source_id TEXT,

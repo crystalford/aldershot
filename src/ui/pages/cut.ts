@@ -75,6 +75,17 @@ import { blockStrip, CHIP_COLOURS, keyHints, letterFor, sourceChips, switcher, t
  */
 export type CutView = "footage" | "blocks" | "script" | "shorts";
 
+/**
+ * Footage's three tabs inside a project.
+ *
+ * A declared union because scripts/surfaces.cjs reads it: the crawl visits
+ * `/p/:id/footage?tab=<each>` derived from this line. A hand-kept list over
+ * there goes stale the first time a tab is added, and a tab no crawl visits
+ * is a tab no check has ever read a word of — which is how ten surfaces in
+ * this product went unexamined for a month.
+ */
+export type ProjFootTab = "videos" | "moments" | "made";
+
 export interface CutData {
   projectId: string;
   /** Which reading. Defaults to blocks everywhere it is not asked for. */
@@ -229,6 +240,34 @@ export interface CutData {
    * do anything.
    */
   addable: Array<{ id: string; title: string }>;
+  /**
+   * WHICH OF FOOTAGE'S THREE TABS IS OPEN.
+   *
+   * The prototype's Footage surface keeps its tabs inside a project, and the
+   * build had only the middle one — so the per-video view, where "Only this"
+   * lives, had nowhere to be. In the URL rather than the page, because the
+   * three tabs are three different readings of the cut and a link to one of
+   * them should arrive at it.
+   */
+  footageTab?: ProjFootTab;
+  /**
+   * EVERY VIDEO THIS CUT IS MADE OF, whether or not it is using any of them.
+   *
+   * Not `sources`, which is the videos the cut DRAWS ON, in the order it
+   * first uses them — the lettered chips. A video attached and contributing
+   * nothing is absent from that list and is the most useful row this tab
+   * has: "0 of 5 moments in this cut" is the answer somebody opened Videos
+   * to get, and a list built from what the cut uses can never say it.
+   */
+  cutSources?: ChipSource[];
+  /**
+   * Narrowed to this one video, or null for all of them.
+   *
+   * Read, not computed: `scopeOf` already narrows what the engine cuts from,
+   * so the only thing the page needs is which video the control is currently
+   * saying "Only this ✓" about.
+   */
+  onlySourceId?: string | null;
   /**
    * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
    *
@@ -2206,6 +2245,140 @@ function addToCut(d: CutData): string {
   </div>`;
 }
 
+/**
+ * FOOTAGE'S THREE TABS, INSIDE A PROJECT.
+ *
+ * Videos, Highlights, Projects — the prototype keeps all three whether or
+ * not a project is open, and the build had rendered only Highlights. The
+ * cost of that was not cosmetic: "Only this" is a per-video control, so the
+ * engine's per-source scoping had no surface anywhere in the product.
+ *
+ * Links, not buttons, because each tab is a URL you can arrive at.
+ */
+function footageTabs(d: CutData, tab: ProjFootTab): string {
+  const tabs: Array<[ProjFootTab, string]> = [
+    ["videos", "Videos"],
+    ["moments", "Highlights"],
+    ["made", "Projects"],
+  ];
+  return `<div class="footage-tabs" style="margin-top:4px;display:flex;gap:4px">${tabs
+    .map(
+      ([k, name]) =>
+        `<a href="/p/${esc(d.projectId)}/footage?tab=${k}"${tab === k ? ' aria-current="page"' : ""}
+          style="font-size:${SIZE.secondary};padding:5px 11px;border-radius:${RADIUS.button};text-decoration:none;background:${
+            tab === k ? "#2E2E36" : "transparent"
+          };color:${tab === k ? C.ink : C.ink45}">${name}</a>`,
+    )
+    .join("")}</div>`;
+}
+
+/**
+ * THE VIDEOS THIS CUT IS MADE OF, and how much of each one it uses.
+ *
+ * "41:06 · 3 of 5 moments in this cut" — the count is through the rules, so
+ * a video contributing nothing says so, which is the question this tab
+ * exists to answer. Nothing else in the product can tell you that: the
+ * lettered chips say which videos, and Highlights says which moments, and
+ * neither says which video is carrying the cut.
+ *
+ * ONLY THIS is the control, and pressing it is reversible by pressing it
+ * again — the narrowing is its own column and the project's record of what
+ * it is made of does not move. The row says so rather than making anyone
+ * guess, because "only" is a word people have been burned by.
+ */
+function videosInCut(d: CutData): string {
+  const sources = d.cutSources ?? d.sources ?? [];
+  if (!sources.length) {
+    return `<div style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">This cut has no videos attached yet.</div>`;
+  }
+
+  const total = new Map<string, number>();
+  const kept = new Map<string, number>();
+  for (const m of d.moments) {
+    if (!m.sourceId) continue;
+    total.set(m.sourceId, (total.get(m.sourceId) ?? 0) + 1);
+    if (m.in) kept.set(m.sourceId, (kept.get(m.sourceId) ?? 0) + 1);
+  }
+
+  const only = d.onlySourceId ?? null;
+  const rows = sources
+    .map((src, i) => {
+      const n = total.get(src.id) ?? 0;
+      const nIn = kept.get(src.id) ?? 0;
+      const isOnly = only === src.id;
+      const meta = `${src.duration_s ? hms(src.duration_s) + " · " : ""}${nIn} of ${n} moment${
+        n === 1 ? "" : "s"
+      } in this cut`;
+      return `<div style="display:flex;gap:11px;align-items:center;padding:11px 13px;border-radius:${RADIUS.input};background:${C.surface};box-shadow:inset 0 0 0 1px ${
+        isOnly ? "rgba(94,201,143,0.4)" : "rgba(255,255,255,0.05)"
+      }">
+        <span style="flex:none;width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:${SIZE.meta};font-weight:600;font-family:${FONT.mono};background:${
+          CHIP_COLOURS[i % CHIP_COLOURS.length]
+        }33;color:${CHIP_COLOURS[i % CHIP_COLOURS.length]}">${letterFor(i)}</span>
+        <div style="flex:1;min-width:0">
+          <div data-content style="font-size:${SIZE.secondary};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(src.title)}</div>
+          <div data-content style="margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${esc(meta)}</div>
+        </div>
+        <button class="only-source" type="button" data-source="${esc(src.id)}"${
+          isOnly ? " data-only" : ""
+        } style="flex:none;font-size:${SIZE.meta};padding:5px 11px;border-radius:${RADIUS.button};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap;background:${C.pill};color:${
+          isOnly ? ACCENT.green : C.ink45
+        }">${isOnly ? "Only this \u2713" : "Only this"}</button>
+      </div>`;
+    })
+    .join("");
+
+  /* One text node each, deliberately: an <em> in the middle of a sentence
+     splits it into fragments, and the copy check reads text nodes. */
+  const note = only
+    ? "This cut is narrowed to one video. The others are still attached \u2014 press Only this \u2713 again and they all come back."
+    : "How much of each video the rules are using. Press Only this to cut from one of them alone.";
+
+  return `<div style="margin-top:14px;font-size:${SIZE.secondary};line-height:1.55;color:${C.ink45};max-width:620px">${note}</div>
+    <div class="video-list" style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
+}
+
+/**
+ * THE OTHER CUTS, from inside this one.
+ *
+ * The prototype's third tab. Deliberately thin: the title row's switcher is
+ * how you MOVE between projects, and this is the tab the prototype puts
+ * them on, so it lists them and links to them rather than inventing a
+ * second way to open one.
+ */
+function projectsBeside(d: CutData): string {
+  const others = (d.projects ?? []).filter((p) => p.id !== d.projectId);
+  if (!others.length) {
+    return `<div style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">This is your only project so far.</div>`;
+  }
+  return `<div class="other-projects" style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${others
+    .map(
+      (p) => `<a href="/p/${esc(p.id)}/cut" style="display:flex;gap:11px;align-items:center;padding:11px 13px;border-radius:${RADIUS.input};background:${C.surface};text-decoration:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.05)">
+        <div style="flex:1;min-width:0">
+          <div data-content style="font-size:${SIZE.secondary};color:${C.ink};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.title)}</div>
+          <div data-content style="margin-top:2px;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">${
+            p.runtime_s ? hms(p.runtime_s) : "nothing cut yet"
+          }</div>
+        </div>
+        <span style="flex:none;font-size:${SIZE.meta};color:${C.ink45}">Open</span>
+      </a>`,
+    )
+    .join("")}</div>`;
+}
+
+/** Footage inside a project: the tabs, then whichever one is open. */
+function footageSurface(d: CutData): string {
+  const tab = d.footageTab ?? "moments";
+  return (
+    footageTabs(d, tab) +
+    (tab === "videos"
+      ? videosInCut(d)
+      : tab === "made"
+      ? projectsBeside(d)
+      : addToCut(d) + momentsThroughRules(d))
+  );
+}
+
 function momentsThroughRules(d: CutData): string {
   if (!d.moments.length) {
     return `<div style="margin-top:20px;font-size:${SIZE.secondary};color:${C.ink45}">Nothing in your library yet.</div>`;
@@ -2645,7 +2818,7 @@ export function renderCut(d: CutData): string {
         d.view === "shorts"
           ? shortsList(d)
           : d.view === "footage"
-          ? addToCut(d) + momentsThroughRules(d)
+          ? footageSurface(d)
           : `${
               /*
                * WHAT THE CUT IS, in one line, before the blocks.

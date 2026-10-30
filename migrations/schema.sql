@@ -647,6 +647,7 @@ ALTER TABLE sources ADD COLUMN timing_source TEXT;
 ALTER TABLE sources ADD COLUMN aligned_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER;
 ALTER TABLE v2_projects ADD COLUMN scope TEXT;
+ALTER TABLE v2_projects ADD COLUMN only_source_id TEXT;
 ALTER TABLE v2_projects ADD COLUMN cuts TEXT;
 ALTER TABLE uploads ADD COLUMN mode TEXT NOT NULL DEFAULT 'worker';
 ALTER TABLE v2_users ADD COLUMN stripe_customer_id TEXT;

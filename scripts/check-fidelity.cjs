@@ -1668,6 +1668,19 @@ const SIGNED_OFF = new Map([
     "\n\n" +
     "The second sentence is the one that matters and it is a refusal: this page can say the words were said, at that time, in that source, and it cannot say the quote is fair. A receipts page that let a reader believe otherwise would be worse than none, which is invariant 4 read the strict way."
   ]),
+  ...[
+    "How much of each video the rules are using. Press Only this to cut from one of them alone.",
+    "This cut is narrowed to one video. The others are still attached — press Only this ✓ again and they all come back.",
+    "This cut has no videos attached yet.",
+    "This is your only project so far.",
+  ].map((x) => [
+    x,
+    "FOOTAGE'S VIDEOS TAB, INSIDE A PROJECT. The prototype has the tab and the \"Only this\" control on each video; it has no hint line above them and no empty states anywhere, because a prototype always has data." +
+    "\n\n" +
+    "The second sentence is the one that had to be written. The prototype's narrowing is page state and it never tells you it is reversible — and \"only\" is a word people have been burned by, so a control that looks like it might throw the rest of the cut away needs to say that it does not. It does not: the narrowing is its own column and the project's record of what it is made of never moves (invariant 6)." +
+    "\n\n" +
+    "The two empty states are the same gap one level down. A cut with nothing attached and an account with one project are both states the product reaches on its first day and no design draws."
+  ]),
   [
     "Receipts for viewers &nearr;",
     "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +

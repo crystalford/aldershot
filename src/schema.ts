@@ -1126,6 +1126,24 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    */
   { table: "v2_projects", column: "scope", ddl: "ALTER TABLE v2_projects ADD COLUMN scope TEXT" },
 
+  /*
+   * NARROWING A CUT TO ONE OF ITS VIDEOS, reversibly.
+   *
+   * The prototype's Footage tab offers "Only this" on each video in a
+   * project, and `scope` could not hold the answer: attaching APPENDS to
+   * scope, so overwriting it with a single id would throw away the list of
+   * what the cut is made of, and pressing the control a second time would
+   * have nothing to restore. Nothing is deleted (invariant 6) — so the
+   * narrowing is a separate, nullable fact, and scope stays the record of
+   * what is attached.
+   *
+   * scopeOf() returns this alone when it is set, which is what makes the
+   * engine's existing per-source scoping reachable from the UI at all. Null
+   * means every attached video, which is every project that has ever
+   * existed.
+   */
+  { table: "v2_projects", column: "only_source_id", ddl: "ALTER TABLE v2_projects ADD COLUMN only_source_id TEXT" },
+
   // Script mode's transcript cuts, as JSON ranges. On the project because
   // Script edits the whole source transcript, not one block.
   { table: "v2_projects", column: "cuts", ddl: "ALTER TABLE v2_projects ADD COLUMN cuts TEXT" },

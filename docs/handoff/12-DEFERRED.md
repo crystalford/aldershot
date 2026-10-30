@@ -120,16 +120,19 @@ nobody can check.
   counted in any explanation of why a moment is where it is. Signed off in
   `check-fidelity.cjs` with this reasoning.
 
-- **Videos / Highlights / Projects inside a project.** The prototype's Footage
-  surface keeps its three tabs whether or not a project is open: in a project
-  Videos shows each source with "3 of 5 moments in this cut" and an "Only
-  this" scope control, Projects shows the other cuts, and Highlights is the
-  moment list the build renders today. The build has two separate surfaces —
-  the room's `/footage` with the tabs, and a project's Footage tab without
-  them — so scoping a cut to one of its sources, which the engine supports
-  (`scopeOf`), has no control in a project. What it needs: the three tabs on
-  `/p/:id/footage`, per-source counts through the current rules, and the
-  scope control posting the project's scope.
+- **A video attached to a cut, detached again.** Footage's Videos tab now
+  lists every video a cut is made of and offers "Only this" on each, which is
+  reversible; what it does not offer is removing one. `scope` only ever grows
+  — attach appends, and nothing subtracts. The honest version is not a
+  delete: it is an `unattached_at` beside the scope, the video's moments
+  shown struck through in Highlights the way a switched-off rule's are, and
+  the chips dropping a letter rather than renumbering (invariant 6, and the
+  letters are how three surfaces refer to the same recording).
+
+- **The frame on a video row.** The prototype's Videos rows carry a 16:9
+  thumbnail; the build renders the lettered chip, the length and the counts.
+  Same missing media as the moment rows below — `frame_r2_key` served per
+  source — and the same reason it is absent rather than a grey box.
 
 - **The frame on a moment row.** The prototype's rows carry a 78px thumbnail.
   The build renders the letter, the position and the duration instead, which

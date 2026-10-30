@@ -42,6 +42,14 @@ export interface Project {
   cuts: string | null;
   /** The arrangement: block ids in sequence. Null means never rearranged. */
   block_order: string | null;
+  /**
+   * Narrowed to this one video, or null for every video it is made of.
+   *
+   * Separate from `scope` on purpose: see the column's comment in
+   * src/schema.ts and scopeOf below. Clearing it restores the whole cut
+   * without re-attaching anything.
+   */
+  only_source_id: string | null;
 }
 
 export interface Beat {
@@ -103,14 +111,17 @@ export function titleFromBrief(brief: string, fallback: string): string {
 }
 
 /**
- * The sources a project is scoped to, or null for the whole library.
+ * THE VIDEOS A CUT IS MADE OF, or null for the whole library.
  *
  * Parsed rather than trusted: this is a TEXT column and a malformed value
  * would otherwise throw on whichever page read it next. A scope that cannot
  * be read is the same as no scope, which is the behaviour every project made
  * before the column existed already has.
+ *
+ * This is the ATTACHED set and it only grows. `scopeOf` is what the engine
+ * reads, and that narrows this by `only_source_id` when one is set.
  */
-export function scopeOf(project: { scope?: string | null }): string[] | null {
+export function attachedScope(project: { scope?: string | null }): string[] | null {
   if (!project.scope) return null;
   try {
     const ids = JSON.parse(project.scope) as unknown;
@@ -120,6 +131,29 @@ export function scopeOf(project: { scope?: string | null }): string[] | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The sources the engine should cut from, which is what every caller wants.
+ *
+ * `only_source_id` narrows it to one video. That is a REVERSIBLE view of the
+ * project, not a change to what it is made of: attachedScope still lists
+ * every video attached, so clearing the narrowing brings the rest of the cut
+ * back rather than needing it re-attached (invariant 6).
+ *
+ * A narrowing to a video that is not attached is ignored. It cannot happen
+ * through the route, which checks, but a stale row after a detach would
+ * otherwise produce a cut from nothing and look like an engine fault.
+ */
+export function scopeOf(project: {
+  scope?: string | null;
+  only_source_id?: string | null;
+}): string[] | null {
+  const attached = attachedScope(project);
+  const only = project.only_source_id;
+  if (!only) return attached;
+  if (attached && !attached.includes(only)) return attached;
+  return [only];
 }
 
 export async function createProject(
@@ -143,6 +177,8 @@ export async function createProject(
     source_id: opts.source_id ?? null,
     brief: opts.brief ?? null,
     scope: opts.scope?.length ? JSON.stringify(opts.scope) : null,
+    /* A new cut is never narrowed: it is made of everything it was given. */
+    only_source_id: null,
     has_acts: opts.kind === "essay" ? 1 : 0,
     runtime_s: null,
     pct: 0,

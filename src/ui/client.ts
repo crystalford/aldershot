@@ -3990,6 +3990,43 @@ document.querySelectorAll(".plan-cut").forEach((btn) => {
   );
 });
 
+/* ── The footage tab: cut from one video alone, and back ──────────────
+   Reversible by design: the narrowing is its own column and the project's
+   record of what it is made of does not move, so pressing an active
+   control sends null and the whole cut comes back. The server refuses a
+   narrowing whose cut would be empty, which is why the error is shown
+   rather than swallowed — the alternative is a button that looks like it
+   worked and a cut that did not change. */
+document.querySelectorAll(".only-source").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const on = btn.hasAttribute("data-only");
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + project.getAttribute("data-project") + "/only", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: on ? null : btn.getAttribute("data-source") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 /* ── The footage tab: add a video to this cut ─────────────────────────
    The same gesture as attaching before the project existed. Its moments are
    judged by the rules already on the board the moment it lands, so the whole

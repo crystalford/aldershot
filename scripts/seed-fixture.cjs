@@ -48,6 +48,28 @@ const EMPTY_USER = "fix-user-empty";
 const EMPTY_EMAIL = "fix-empty@aldershot.test";
 
 const SOURCE_TITLE = "The kitchen, eleven days";
+
+/*
+ * A SECOND VIDEO, ATTACHED AND BARELY USED.
+ *
+ * Footage's Videos tab says "N of M moments in this cut" per video and
+ * offers "Only this" on each one. With one video that tab has one row, both
+ * numbers are the same number, and narrowing to the only video changes
+ * nothing — so every claim it makes would be true by accident and the
+ * control would be untestable.
+ *
+ * This one is attached to the project and the rules keep almost none of it.
+ * That is the row the tab exists for: a video you added, that is costing you
+ * nothing, and that the rules have quietly decided against.
+ */
+const SECOND_ID = "fix-source-van";
+const SECOND_TITLE = "The van, and what would not fit";
+const SECOND_LINES = [
+  "The van was the bit I thought I had planned",
+  "Erm, so, right, the sofa, I measured the sofa",
+  "What I did not measure was the stairwell",
+  "And that is the whole story of the sofa",
+];
 /*
  * A NAME SOMEBODY TYPED, which is not decoration.
  *
@@ -95,10 +117,10 @@ const LINES = [
    pause rules have something to find; a flat cadence hides them. */
 const GAPS_MS = [220, 180, 640, 240, 900, 200, 260, 1400, 210, 300, 180, 520, 240, 0];
 
-function buildSegments() {
+function buildSegments(lines = LINES, gaps = GAPS_MS) {
   let t = 1_200; // ms — a beat of room tone before the first word
   const segs = [];
-  LINES.forEach((text, idx) => {
+  lines.forEach((text, idx) => {
     const tokens = text.split(" ");
     /* 340ms a word is close to unhurried speech, and the exact figure does
        not matter: nothing asserts a duration, several things assert that one
@@ -112,13 +134,20 @@ function buildSegments() {
     const start_ms = Math.round(words[0].s * 1000);
     const end_ms = Math.round(words[words.length - 1].e * 1000);
     segs.push({ idx, start_ms, end_ms, text, words });
-    t = end_ms + GAPS_MS[idx];
+    t = end_ms + gaps[idx];
   });
   return segs;
 }
 
 const SEGMENTS = buildSegments();
 const DURATION_S = Math.ceil(SEGMENTS[SEGMENTS.length - 1].end_ms / 1000) + 2;
+
+/* The second video, on its own clock. Same shape, shorter, and its own
+   word timings so a moment from it is addressable like any other. */
+const SECOND_SEGMENTS = buildSegments(SECOND_LINES, SECOND_LINES.map(() => 600));
+const SECOND_DURATION_S = Math.ceil(
+  SECOND_SEGMENTS[SECOND_SEGMENTS.length - 1].end_ms / 1000,
+) + 2;
 
 const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
 
@@ -225,6 +254,9 @@ async function main() {
   sql.push(`DELETE FROM v2_clips WHERE user_id=${q(EMPTY_USER)};`);
   sql.push(`DELETE FROM jobs WHERE user_id=${q(EMPTY_USER)};`);
   sql.push(`DELETE FROM sources WHERE user_id=${q(EMPTY_USER)};`);
+  /* The second video's moments, by their own prefix: `INSERT OR REPLACE`
+     covers the ones this run writes and this covers any it no longer does. */
+  sql.push(`DELETE FROM v2_clips WHERE user_id=${q(userId)} AND id LIKE 'fix-clip-van-%';`);
 
   sql.push(
     `INSERT OR REPLACE INTO sources
@@ -242,9 +274,34 @@ async function main() {
   }
 
   sql.push(
+    `INSERT OR REPLACE INTO sources
+       (id,user_id,title,filename,origin,r2_key,duration_s,width,height,transcript_state,created_at,deleted_at)
+     VALUES (${q(SECOND_ID)},${q(userId)},${q(SECOND_TITLE)},${q("van.mp4")},${q("upload")},
+             ${q(`u/${userId}/sources/${SECOND_ID}/original.mp4`)},${SECOND_DURATION_S},1920,1080,${q("ready")},${now},NULL);`,
+  );
+
+  for (const s of SECOND_SEGMENTS) {
+    sql.push(
+      `INSERT OR REPLACE INTO segments (id,source_id,idx,start_ms,end_ms,speaker,text,words)
+       VALUES (${q(SECOND_ID + ":" + s.idx)},${q(SECOND_ID)},${s.idx},${s.start_ms},${s.end_ms},NULL,
+               ${q(s.text)},${q(JSON.stringify(s.words))});`,
+    );
+  }
+
+  /*
+   * SCOPE: BOTH VIDEOS, written down.
+   *
+   * The project had no scope at all, which means "the whole library" — true,
+   * and it meant the Videos tab had nothing to list but whatever the cut
+   * happened to use, and `addable` was empty because there was nothing it
+   * was not already drawing on. A cut that says which videos it is made of
+   * is the normal case, so the fixture is one.
+   */
+  sql.push(
     `INSERT OR REPLACE INTO v2_projects
-       (id,user_id,title,kind,source_id,runtime_s,pct,created_at,updated_at,deleted_at)
+       (id,user_id,title,kind,source_id,scope,only_source_id,runtime_s,pct,created_at,updated_at,deleted_at)
      VALUES (${q(PROJECT_ID)},${q(userId)},${q(PROJECT_TITLE)},${q("cut")},${q(SOURCE_ID)},
+             ${q(JSON.stringify([SOURCE_ID, SECOND_ID]))},NULL,
              ${DURATION_S},100,${now},${now},NULL);`,
   );
 
@@ -292,6 +349,35 @@ async function main() {
                ${q(seg.text)},${m.why === null ? "NULL" : q(m.why)},${m.score === null ? "NULL" : m.score},
                ${m.heat === null ? "NULL" : m.heat},
                ${q(`u/${userId}/frames/${SOURCE_ID}/${m.seg}.jpg`)},1,${q("editor")},0,${now + m.seg},NULL);`,
+    );
+  }
+
+  /*
+   * TWO MOMENTS FROM THE SECOND VIDEO, which the rules keep neither of.
+   *
+   * Nothing in them says kettle, boxes, passport, lesson or temporary, so
+   * `r-keep` does not claim them and they come out "out · no rule keeps
+   * it". That is the point: Footage's Videos tab then reads "0 of 2 moments
+   * in this cut" against a video that is attached and costing nothing, and
+   * "Only this" on it is a narrowing the server must REFUSE — there is
+   * nothing in it these rules would keep.
+   *
+   * A fixture where every video contributes would make both of those
+   * untestable, and the refusal is the branch most likely to be wrong.
+   */
+  const SECOND_MOMENTS = [
+    { seg: 0, score: 58, why: "sets up the one thing that went wrong", heat: 1 },
+    { seg: 2, score: 71, why: "the measurement nobody took", heat: 2 },
+  ];
+
+  for (const m of SECOND_MOMENTS) {
+    const seg = SECOND_SEGMENTS[m.seg];
+    sql.push(
+      `INSERT OR REPLACE INTO v2_clips
+         (id,user_id,source_id,start_ms,end_ms,quote,why,score,heat,frame_r2_key,kept,origin,used_count,created_at,deleted_at)
+       VALUES (${q("fix-clip-van-" + m.seg)},${q(userId)},${q(SECOND_ID)},${seg.start_ms},${seg.end_ms},
+               ${q(seg.text)},${q(m.why)},${m.score},${m.heat},
+               ${q(`u/${userId}/frames/${SECOND_ID}/${m.seg}.jpg`)},1,${q("editor")},0,${now + 100 + m.seg},NULL);`,
     );
   }
 
@@ -731,6 +817,22 @@ async function main() {
     ["and it names the one you come back to most", /come back to most is the kettle, in 4 moments/],
   ];
 
+  /*
+   * AND THE VIDEOS TAB, which is a third reading of the same cut.
+   *
+   * It is a query parameter on the same route, so nothing crawled it until
+   * scripts/surfaces.cjs learned to expand `?tab=`. The two claims here are
+   * the ones only this tab can make: how much of each video the rules are
+   * using, and that narrowing to one of them is offered per video.
+   */
+  const videos = await (await fetch(BASE + "/p/" + PROJECT_ID + "/footage?tab=videos")).text();
+  const vidWant = [
+    ["each video says how much of it the rules use", /\d+ of \d+ moments in this cut/],
+    ["the video contributing nothing says so", /0 of 2 moments in this cut/],
+    ["and narrowing to one video is offered", /class="only-source"/],
+    ["both videos are listed", new RegExp(SECOND_TITLE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))],
+  ];
+
   const footWant = [
     ["a moment nothing keeps still offers the hand", /no rule keeps it · click to keep/],
     ["the moments say where in the recording", /font-family:'IBM Plex Mono',monospace;color:[^"]*">0:\d\d</],
@@ -744,6 +846,11 @@ async function main() {
   }
   for (const [name, re] of footWant) {
     const ok = re.test(footage);
+    if (!ok) bad += 1;
+    console.log((ok ? "  ✓ " : "  ✗ ") + name);
+  }
+  for (const [name, re] of vidWant) {
+    const ok = re.test(videos);
     if (!ok) bad += 1;
     console.log((ok ? "  ✓ " : "  ✗ ") + name);
   }
