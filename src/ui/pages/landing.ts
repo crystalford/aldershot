@@ -404,7 +404,7 @@ export function renderConfirm(token: string): string {
 function notice(d: LandingData): string {
   if (d.sentTo) {
     return `<div style="margin:20px auto 0;max-width:520px;padding:14px 16px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,201,143,0.28);font-size:13.5px;color:rgba(236,236,241,0.75);line-height:1.6">
-      Check <strong style="color:#ECECF1">${esc(d.sentTo)}</strong> — the link works once and expires in 20 minutes.
+      Check <strong data-content style="color:#ECECF1">${esc(d.sentTo)}</strong> &mdash; the link works once and expires in 20 minutes.
     </div>`;
   }
   if (d.devLink) {

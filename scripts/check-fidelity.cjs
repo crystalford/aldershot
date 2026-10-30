@@ -559,6 +559,1242 @@ function checkWiring() {
   }
 }
 
+/*
+ * THE COPY MACHINERY, AT MODULE SCOPE.
+ *
+ * All of this lived inside checkStrings, which needs a running server — so
+ * the ability to ask "is this string in a design?" was only available on a
+ * machine with one, and the landing page is a PURE FUNCTION that never
+ * needed a server at all. Two red CI runs came of that: copy written here,
+ * unverifiable here, pushed with "strings is left to CI".
+ *
+ * checkCopy below uses it without a browser. checkStrings still owns the
+ * crawl, which really does need one.
+ */
+const normalise = (s) => s.replace(/\s+/g, ' ').replace(/[\u2019']/g, "'").trim();
+const proto = normalise(PROTO.replace(/<[^>]+>/g, ' '));
+const protoRaw = normalise(PROTO);
+
+/*
+ * Exact text nodes from the prototype, so a SHORT string has to match a
+ * whole label rather than merely appear somewhere.
+ *
+ * This exists because "THE WORDS" passed while the prototype says "EDITING
+ * THE WORDS" — a substring match, and a real defect that shipped. Long prose
+ * still matches by substring, since it is often assembled from fragments,
+ * but a short label now has to be a label that exists.
+ */
+/*
+ * A SHORT string has to sit on a real boundary in the prototype — wrapped in
+ * quotes, or alone between two tags. Merely appearing somewhere is not
+ * enough: "THE WORDS" passed that way while the prototype says "EDITING THE
+ * WORDS", and the wrong pill shipped.
+ *
+ * Boundary matching rather than parsing, because scanning 4,000 lines for
+ * quote PAIRS misaligns after any odd quote and silently loses real strings —
+ * it dropped every stage-tab label when tried.
+ */
+/*
+ * Deliberate additions, each with the reason it exists.
+ *
+ * This list is the ONLY sanctioned way to add copy the prototype does not
+ * contain, and it is kept tiny on purpose: the whole value of this check is
+ * that it fails loudly on invented wording. Loosening the matcher instead
+ * would have hidden the next paraphrase along with this one.
+ */
+const SIGNED_OFF = new Map([
+  ...[
+    "EVERY TAKE IS KEPT",
+    "Use this one",
+    "in the cut",
+  ].map((t) => [
+    t,
+    "The take list, which the prototype has no UI for at all — its " +
+      "recorder is a full-screen stage and the only place it says this is " +
+      "a sentence: 'Your take — on camera or voice only. Every take is " +
+      "kept.' The build kept that promise (invariant 6: a performance is " +
+      "the one thing the engine cannot re-make) and had to invent the " +
+      "surface that makes it worth anything — seeing the takes and " +
+      "choosing one. New behaviour, flagged rather than paraphrased.",
+  ]),
+  [
+    "Connecting brings the footage in without reading it &mdash; a video is read the first time you cut with it.",
+    "The Settings design's own paragraph ends '...On the same Cloudflare " +
+      "account it binds the bucket directly, no keys. From Neolog it " +
+      "imports the transcripts already there — no transcribing twice.' " +
+      "Neither half is true of this build and both would be promises it " +
+      "does not keep: a binding is deploy-time configuration and works for " +
+      "exactly one account, so every connection uses a read-only key; and " +
+      "the owner does not trust Neolog's transcripts (it runs a workflow " +
+      "to find hallucinated ones), so footage is read here and the word " +
+      "table is deliberately not imported — see src/neolog.ts. This " +
+      "sentence says what actually happens instead, including the part " +
+      "that costs money.",
+  ],
+  [
+    "Your take goes here — sound only, no camera yet",
+    "Both landing designs say 'on camera or voice only'. The recorder asks " +
+      "for getUserMedia({ audio: true }) and nothing else, and the beat " +
+      "itself says so beside the Record control. A landing page that " +
+      "promises a camera the product does not have is not a fidelity gap " +
+      "— it is a lie, and a design does not get to overrule that. The " +
+      "camera half is deferred with its reasons in " +
+      "docs/handoff/12-DEFERRED.md.",
+  ],
+  [
+    "Sound only &mdash; no camera yet",
+    "The prototype's recorder is a full-screen stage with camera and mic " +
+      "modes, layout options and a teleprompter. The build records audio " +
+      "and nothing else — getUserMedia({ audio: true }) — and the camera " +
+      "half is deferred with its reasons in 12-DEFERRED.md. A recorder " +
+      "that does not say which it is, beside a control called 'Record " +
+      "it', is one somebody points a camera at. beforepost.ts makes the " +
+      "same move and for the same reason: naming what is not checked " +
+      "beats a tick beside it.",
+  ],
+  [
+    "Does nothing now — switch it off",
+    "The prototype says 'Does nothing now — archive it' and archiving is " +
+      "not something a rule can do here: invariant 6 is that nothing is " +
+      "deleted and rules switch off, and there is no archived state on a " +
+      "rule. A rule removed from the pane would be a cut with an " +
+      "unexplained shape. So the sentence is the prototype's and the verb " +
+      "is the one that describes the press. docs/handoff/12-DEFERRED.md.",
+  ],
+  /*
+   * THE EMPTY STATES, which this check could not see until today.
+   *
+   * Both of these render only when the account has nothing in it, and there
+   * was always something in it — so a gate that has passed for weeks had
+   * never once reached either string. They surfaced the first time a local
+   * database was emptied on purpose.
+   *
+   * Signed off rather than rewritten because the prototype has no empty
+   * states at all: every frame of it shows a populated library, which is the
+   * normal way a design is drawn and the reason this gap existed. The words
+   * say the one thing a person needs at that moment — what to do next, and
+   * roughly how long it takes — and neither invents a capability.
+   */
+  ...[
+    "Drop a file or paste a link above. An hour of footage takes a few minutes to transcribe.",
+    "Nothing here yet — upload a video and it starts transcribing.",
+  ].map((t) => [
+    t,
+    "An empty state. The prototype draws every surface populated, so it has " +
+      "no wording for a library with nothing in it, and these two were " +
+      "unreachable by this check until a local database was emptied on " +
+      "purpose. Kept as written: each says what to do next and how long it " +
+      "takes, and claims nothing the product does not do.",
+  ]),
+  /*
+   * TWO MORE OF THE SAME, and reached for the same reason: a fixture.
+   *
+   * scripts/seed-fixture.cjs seeds a transcribed source and a project cut
+   * from it, and NOTHING ELSE — no scored clips, no passes. That is a state
+   * every real account passes through in its first minute and that this
+   * check had never crawled, because the crawl always landed on a project
+   * somebody had already worked on.
+   *
+   * Both are empty states, so the reasoning above applies unchanged: the
+   * prototype draws every frame populated and has no wording for either.
+   */
+  [
+    "Press one, or say it in your own words.",
+    "An empty state: the conversation before anything has been said to it. " +
+      "The prototype only ever draws the assistant mid-conversation. The " +
+      "verbs beneath it say what it can do better than a sentence would — " +
+      "which is the mistake this line replaced — so it points at them and " +
+      "promises nothing.",
+  ],
+  [
+    "Nothing in your library yet.",
+    "An empty state: a project's Footage tab before any moment has been " +
+      "scored. Unreachable by this check until a seeded fixture gave it a " +
+      "transcribed project with no clips, which is where every account " +
+      "starts. Says what is absent and claims nothing.",
+  ],
+  ...[
+    "NOT SHORTS",
+    "Use it anyway",
+  ].map((t) => [
+    t,
+    "The lines problems() measured out of the shortlist — too short, too " +
+      "long — with the measurement that did it, and a press to force one " +
+      "in. The prototype has the section; these two labels are the build's. " +
+      "A measurement is a reason and not a veto: \"this is not a short and " +
+      "here is why\" is a different sentence from \"this is a weak short\", " +
+      "and the first one can be argued with.",
+  ]),
+  ...[
+    "Back to the cut",
+    "Take it away as text &nearr;",
+  ].map((t) => [
+    t,
+    "The Before you post sheet, which the prototype draws as an OVERLAY " +
+      "pressed open from Export and the build serves as a page — so it " +
+      "needs a way back and the prototype does not. It answered only as a " +
+      ".txt download until 28 Oct (content-disposition: attachment), which " +
+      "made the most important safety surface in the product the one " +
+      "surface with no surface: nobody about to post something opens a " +
+      "text file first. The file is still there, because a checklist you " +
+      "can hand to somebody else is worth having.",
+  ]),
+  /*
+   * THE SCOUT BOARD'S OWN COPY, signed off 28 Oct 2026 — the first day
+   * anything rendered this surface with rows in it.
+   *
+   * 510 lines that had never been drawn populated: it answered at an /api/
+   * URL no crawl reached until this week, and a real run costs YouTube
+   * quota and a string of model calls a fixture cannot spend. It is
+   * specified by docs/handoff/18-SCOUT-BUILD-SPEC.md, which says what the
+   * board must SHOW — gaps first, the balance meter, then the verified rows
+   * — and not what it must say. design/one-take/Scout.dc.html does not draw
+   * this screen.
+   */
+  ...[
+    /* Entities, not curly quotes: SIGNED_OFF is matched on the RAW rendered
+       text, which is what the page actually emits. */
+    "what's missing comes first — it's the next thing to do. Each says what was tried, so you can tell &ldquo;doesn't exist&rdquo; from &ldquo;not found yet&rdquo;.",
+    "Try an interview",
+    "Bring the capture",
+    "Make it a mission",
+    "AUTO · open feed",
+    "COUNTERPOINT",
+    "sources &nearr; &nbsp; the ledger &nearr;",
+  ].map((t) => [
+    t,
+    "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
+      "show rather than by what it must say, and drawn by no prototype. " +
+      "The three controls are the three things a person can do about a gap, " +
+      "and the first sentence is the board's whole argument: what is " +
+      "missing comes first, and each gap says what was tried so " +
+      "\"doesn't exist\" can be told from \"not found yet\".",
+  ]),
+  [
+    "NOT IN THE SOURCE",
+    "The chip a rejected find wears. It used to draw as a CROWD row — the " +
+      "words on screen with a timestamp, a credit line and a button " +
+      "offering to go and capture a quote the verifier had already searched " +
+      "for and failed to find. It is still SHOWN rather than filtered, " +
+      "because invariant 4 says \"nothing backs this\" must be reachable and " +
+      "because the rejection rate is the measured hallucination rate this " +
+      "product gates model swaps on. It just says what it is.",
+  ],
+  /*
+   * THE ORDER CHIPS, and these are the prototype's own words — they are
+   * just never ALONE in its source.
+   *
+   * The prototype builds the three chips at runtime from the same
+   * vocabulary the rule sentences use, so the file carries "Run it one
+   * thread at a time." and "so it runs one thread at a time." and never the
+   * bare label. The rendered prototype shows exactly these three chips; a
+   * check that reads the file cannot see that, and the honest answer is to
+   * say so here rather than to reword a label the design does have.
+   *
+   * "as it happened" needs no entry: it happens to appear standalone
+   * elsewhere in the same file.
+   */
+  ...[
+    "one thread at a time",
+    "sharpest line first",
+  ].map((t) => [
+    t,
+    "An order chip. The prototype RENDERS these three labels and its source " +
+      "only ever contains them inside a sentence (\"Run it one thread at a " +
+      "time.\"), because it builds the chips at runtime from the same " +
+      "vocabulary — so a check that reads the file cannot match the bare " +
+      "label. The words are the design's own; src/rules.ts ORDERS is a " +
+      "verbatim port of them.",
+  ]),
+  [
+    "Make the short",
+    "The Shorts workbench's render control. The prototype's pair is " +
+      "\"Skip it\" and \"Add it to the cut\", and the second does not apply " +
+      "here: its shorts are pulled from the library, while this shortlist " +
+      "IS the cut's own lines, so every one of them is already in it. " +
+      "Adding would do nothing, which is the class of control this build " +
+      "keeps removing. What there is to do is render it, at the shape and " +
+      "with the captions chosen above — which is also what makes those " +
+      "chips controls rather than decoration.",
+  ],
+  [
+    "No hashtags: nothing here measures what people are searching for, and a tag is a guess at that.",
+    "The same refusal src/shorts.ts makes about Trend, said where the post " +
+      "copy is. The prototype shows \"#vlog #deciding #landing\"; a tag is a " +
+      "claim about what people are looking for and nothing in this product " +
+      "measures that. Worse than Trend, because a hashtag is pasted " +
+      "straight into a post. The first draft did invent them, from " +
+      "subjectWord — which exists to diagnose an opening, not to name a " +
+      "subject — and it produced \"#so\".",
+  ],
+  [
+    "Save the cap",
+    "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
+      "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +
+      "reading \"Top-ups stop here until you raise it\" and offers no way to " +
+      "raise it. src/spend.ts stops every job at that number with a sentence " +
+      "that says \"until you raise it in Settings\", and `spend_cap_usd` was " +
+      "read by capFor and written by nothing in the whole of src/ — so the " +
+      "product told somebody to do a thing it could not do. New behaviour " +
+      "rather than a paraphrase, and the smallest thing that makes the " +
+      "existing refusal true.",
+  ],
+  /*
+   * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.
+   *
+   * Two things had to be fixed to even see these four strings: the page
+   * answered at /api/projects/:id/receipts, where no crawl goes, and when
+   * it moved to /p/:id/receipts it was registered AFTER /p/:id/:stagePath,
+   * which matched first and returned 404. So the surface that puts
+   * something on the public web had never been read by anything.
+   *
+   * No prototype draws it. One Take's export panel has the LINK to it —
+   * "Receipts for viewers ↗", which is signed off separately — and no
+   * screen behind it. The words carry the one promise that matters on a
+   * control like this: nothing is public until you press it.
+   */
+  ...[
+    "Receipts for viewers",
+    "Publish a page your viewers can read: every clip in this cut that came from somebody else, the words, the link to the original, and whether it was checked. It does not list your own footage, your rules or anything you cut.",
+    "Publish it",
+    "Nothing is public until you press this.",
+  ].map((t) => [
+    t,
+    "The receipts admin page. It is the only control in this product that " +
+      "puts something on the public web, and no prototype draws the screen " +
+      "— One Take has the link to it and nothing behind it. The copy says " +
+      "what the published page does and does not contain, and that nothing " +
+      "is public until the press.",
+  ]),
+  /*
+   * FIVE SURFACES NO PROTOTYPE DRAWS, signed off on 28 Oct 2026 — the first
+   * day anything crawled them.
+   *
+   * scripts/surfaces.cjs replaced a nine-route literal with the routes
+   * derived from src/index.ts, and these surfaced immediately: Documents,
+   * Find, the Scout board, the brief compiler's control and the labelling
+   * page had never been compared with anything. Each is checked against
+   * `design/` and is genuinely absent from all of it, for a reason per
+   * surface rather than one blanket excuse.
+   *
+   * DOCUMENTS and FIND are Footage tabs the One Take prototype does not
+   * have: it draws Videos, Highlights and Projects. Both are specified in
+   * the handoff instead (a document can stand as the proof on a line that
+   * claims it), so there are no drawn words to copy and these are the first.
+   * The Find tab's second string is a refusal — captions from a link are not
+   * built — and an honest refusal is exactly what belongs there.
+   */
+  ...[
+    "Add a document",
+    "A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.",
+    "Choose a file",
+    "No documents yet — add one and it can stand as the proof on a line that claims it.",
+    "Read the captions",
+    "Reading captions from a link isn't switched on yet.",
+  ].map((t) => [
+    t,
+    "A Footage tab the One Take prototype does not draw — it has Videos, " +
+      "Highlights and Projects. Specified in the handoff rather than drawn, " +
+      "so there are no prototype words to copy. Crawled for the first time " +
+      "on 28 Oct 2026, when the surface list stopped being nine literals.",
+  ]),
+  /*
+   * THE SCOUT BOARD. There is a `design/one-take/Scout.dc.html`, and it does
+   * not contain these strings: the board was built from
+   * docs/handoff/18-SCOUT-BUILD-SPEC.md, which specifies what it must show
+   * (gaps first, the balance meter, then the verified rows) and not what it
+   * must say. It had never been rendered by any check before 28 Oct, because
+   * it answered at /api/projects/:id/scout/board and every crawl skips /api/.
+   */
+  ...[
+    "The Scout board",
+    "no brief run yet",
+    "Nothing yet. Scout turns the brief into things a viewer could point to on camera — never a diagnosis — then searches for each, and for its opposite.",
+  ].map((t) => [
+    t,
+    "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
+      "show rather than by what it must say. design/one-take/Scout.dc.html " +
+      "does not draw this screen. The third string is the empty state and " +
+      "carries the refusal the spec insists on: Scout looks for observable " +
+      "behaviour, never a diagnosis.",
+  ]),
+  [
+    "Make it rules",
+    "The brief compiler's one control: paste a brief and it becomes rules " +
+      "you can see and switch off. The prototype has no brief box at all — " +
+      "its rules arrive from sentences in the conversation — so there is " +
+      "nothing drawn to copy. The words say what pressing it does, which is " +
+      "the whole promise of the feature: not 'apply', but that a brief " +
+      "BECOMES rules.",
+  ],
+  /*
+   * /eval, WHICH IS NOT IN ANY PROTOTYPE BY DESIGN.
+   *
+   * It is the labelling surface for Phase 0's set — two labellers answering
+   * whether a moment backs a claim — and it is a tool for building the
+   * evidence this product's retrieval is measured against, not part of the
+   * product a user buys. No prototype draws it because no user sees it.
+   * Signed off as a set rather than individually: the whole page is in this
+   * category and splitting it would imply some of it was drawn.
+   */
+  ...[
+    "What backs what",
+    "Write a claim, then say whether each moment backs it. Nothing about how well search works means anything until this exists.",
+    "Answering as",
+    "Ask the judge",
+    "Take the set away &nearr;",
+    "· every answer so far, as the file the runner reads",
+    "Find moments",
+    "CLAIMS SO FAR",
+  ].map((t) => [
+    t,
+    "The labelling surface at /eval. It builds the ~200-claim set that " +
+      "Phase 0's acceptance measures retrieval against; it is a tool for " +
+      "the people making the evidence, not part of the product a user buys, " +
+      "and no prototype draws it because no user sees it.",
+  ]),
+  ...[
+    "As recorded",
+    "Clean it up",
+  ].map((t) => [
+    t,
+    "The export panel's sound choice. The container has had a full denoise, " +
+      "de-click, presence, compression and broadcast-loudness chain since it " +
+      "was written and NOTHING EVER RAN IT — /enhance-audio had no caller in " +
+      "src/ at all. Off by default, like captions and for the same reason: " +
+      "it changes how somebody's voice sounds and a finished file cannot be " +
+      "un-processed.",
+  ]),
+  [
+    "Talk over it",
+    "B-roll with narration. The renderer has mixed a recording over a clip " +
+      "with the clip's own audio sidechain-ducked underneath since that " +
+      "branch was written, and nothing had ever handed it one \u2014 a beat was " +
+      "either a clip OR a recording, so a voiceover became a flat colour " +
+      "card and the picture was thrown away. On a voiceover beat the button " +
+      "still says \"Record it\"; this is the b-roll wording.",
+  ],
+  [
+    "Watch the cut",
+    "The editor has always played the ORIGINAL: striking a line greys it out " +
+      "and changes a number, and that is the whole feedback. Whether the cut " +
+      "actually flows could only be found out by exporting the file and " +
+      "watching it, which is the missing half of editing by text. The " +
+      "prototype has no such control because its demo cut is not playable. " +
+      "The toggle reads \"Whole video\" while it is on.",
+  ],
+  [
+    "Whole video",
+    "The same toggle, pressed. Says what it will do rather than what it is " +
+      "doing, like every other control in this product.",
+  ],
+  [
+    "Tell me what to change and I'll go through the whole transcript. Try \u201Ccut the bits where I repeat myself\u201D, \u201Ckeep only the strongest points\u201D, or \u201Cput the punchline first\u201D.",
+    "What the assistant says before you have said anything. It replaces " +
+      "nine example chips that sat in a wall down a 300px column — nine of " +
+      "anything is a list you skip rather than read — and it names the two " +
+      "verbs a pass has: selecting (keep or cut) and, now, ordering. The " +
+      "prototype has no such control, because its assistant is one input " +
+      "with no conversation behind it.",
+  ],
+  [
+    "It reads the whole transcript.",
+    "Under the composer, because a pass is not a search: it costs minutes " +
+      "and money and reads every window of the source, and the field it " +
+      "sits under looks exactly like a box you might expect to filter " +
+      "something. Saying what it does is cheaper than a surprised bill.",
+  ],
+  [
+    "Undo this",
+    "A pass rewrites the whole cut at once, and the only way back was a toast " +
+      "that expired in six seconds or Cmd-Z — which the owner does not press, " +
+      "so in practice the one action that changes everything was permanent " +
+      "the moment you looked away. Each pass now keeps the cut as it stood " +
+      "before it ran and the turn spends that snapshot once. The prototype " +
+      "has no such control because its assistant is a single input with no " +
+      "conversation behind it and nothing to take back.",
+  ],
+  ...[
+    "Empty the bin",
+    "Put it back",
+    "Delete for good",
+  ].map((t) => [
+    t,
+    "The deleted pile in Settings. Delete is a soft delete here — an edit or " +
+      "a video goes to a bin you can take it back out of — and the " +
+      "prototype has no bin at all, because nothing in it can be deleted. " +
+      "These have been shipped for a long time and were never CHECKED: the " +
+      "controls only render when the bin has something in it, and no check " +
+      "had ever put anything there. The editor gate now makes a library edit " +
+      "and deletes it again, which is what finally rendered them.",
+  ]),
+  [
+    "THEY CALLED IT NON-LINEAR \u00B7 THEN GAVE YOU A LINE",
+    "Replaces the prototype's 'NO TIMELINE \u00B7 NO SCRUBBING \u00B7 NO NLE', " +
+      "which sat directly above the headline 'The timeline is gone. Good.' " +
+      "and said the same thing twice \u2014 an eyebrow should earn the headline, " +
+      "not restate it. The replacement is the owner's own observation: " +
+      "'non-linear never made sense, now we make it make sense'. Non-linear " +
+      "editing meant random access rather than cutting tape in sequence, and " +
+      "the interface the industry shipped for it is a literal horizontal " +
+      "line you drag along. Naming that is a sharper claim than listing what " +
+      "we left out.",
+  ],
+  ...[
+    "In this cut",
+    "Ask the model",
+    "More like these",
+  ].map((t) => [
+    t,
+    "The command bar's three groups. The editor had TWO text boxes — 'Find " +
+      "a word in this cut' and 'Ask for another pass' — plus nine example " +
+      "chips and three counted clean-ups, all stacked down a 300px column " +
+      "under a video taking 62vh of it, so the two most powerful things in " +
+      "the product were below the fold behind a scrollbar at the narrowest " +
+      "width on the page: 'scrollbars to see all the options and shit... " +
+      "even without the scroll it wasn't the most elegant solution to begin " +
+      "with'. Find and Ask are the same gesture at different precision — " +
+      "'sponsor' means the twelve places it is said, 'cut the sponsor read' " +
+      "means the model decides — so they are one field, and these name what " +
+      "each answer is. The prototype has no such control because it has one " +
+      "box and a wall of chips.",
+  ]),
+  ...[
+    "Shorts",
+    "Full videos",
+  ].map((t) => [
+    t,
+    "Exports lists both kinds now, under two headings. Clipping was the " +
+      "ONLY surface that listed a finished short, so scrapping it while " +
+      "Exports asked for cuts alone would have left every short unreachable " +
+      "and still paying for its storage. Two headings rather than two tabs, " +
+      "because two tabs means two counts, and a count that disagrees with " +
+      "its list is the bug this page has already had twice.",
+  ]),
+  [
+    "Drop",
+    "Keeping a clip, where the clips are. src/projects.ts has always said " +
+      "kept 'means ONE thing: I want this moment. That is what Footage's " +
+      "Clips tab shows' — and the only place you could say so was Clipping. " +
+      "The handler and the route both outlived it with nothing rendering a " +
+      "button. The list is filtered to kept clips, so this always drops and " +
+      "undo puts it back.",
+  ],
+  [
+    "Exports",
+    "Footage's fourth tab. A finished cut lived only in the Exports strip " +
+      "inside the one edit that made it, so finding last week's meant " +
+      "remembering which edit that was — 'that should also be saved to a " +
+      "place of finished or exported or whatever'. The word is the one the " +
+      "export panel already uses.",
+  ],
+  [
+    "Nothing exported yet \u2014 finish a cut and it lands here.",
+    "The Exports tab's empty state. Says what fills it, rather than that it " +
+      "is empty.",
+  ],
+  /*
+   * THE LANDING PAGE.
+   *
+   * These are the first strings this check has ever seen from it. `/` is the
+   * landing site when signed out and Home when signed in, and the dev server
+   * has DEV_LOGIN_EMAIL set — so `/` was always Home and the whole marketing
+   * page went unchecked. Adding /landing to ROUTES surfaced thirteen strings
+   * at once: five new (the shorts section) and eight that had drifted from
+   * design/Landing.dc.html at some point with nothing to notice.
+   *
+   * Signed off collectively rather than argued line by line: this is authored
+   * marketing prose, which is a different thing from UI chrome, and the point
+   * of listing it is that from now on changing it is visible.
+   */
+  ...[
+    "VERTICAL, WITHOUT ASKING",
+    "Any line in it becomes a vertical short.",
+    "It reads the whole thing and scores what would stand alone. Press one and it cuts vertical with the captions burned in, ready to post. No brief, no timeline, no second tool \u2014 the same page you edit in.",
+    "THAT'S THE WHOLE",
+    "POINT THOUGH",
+    "ISN'T IT",
+  ].map((t) => [
+    t,
+    "The shorts half of the product, which this page did not mention at all: " +
+      "it sold 'editing is reading now' and nothing else. The pitch is " +
+      "Descript AND OpusClip and only one half was on the way in. The claim " +
+      "was rewritten when Clipping was scrapped: it used to promise 'One " +
+      "long video in. Eight shorts out.' and describe a batch that cut every " +
+      "winner unasked. That batch is gone — shorts are made one at a time " +
+      "off any line in the editor — and a landing page must not sell a " +
+      "surface that no longer exists.",
+  ]),
+  /*
+   * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
+   *
+   * The prototype's pitch is "editing is reading now" and "EDIT BY READING",
+   * and every session since has ALSO used "read" for what the machine does —
+   * "reading it", "reading it for meaning", "it starts reading". Same verb,
+   * two subjects: you read, and it reads. The owner: "this whole reading, I
+   * remember I told the last one to change it — editing is reading now does
+   * not make sense."
+   *
+   * He is right twice. Reading is passive and what you actually do is edit
+   * text, and the machine's half of the word is not in the prototype at all
+   * — earlier sessions invented it and it collided with the design's own.
+   *
+   * So the machine transcribes, and the pitch is his: "The timeline is gone.
+   * Good." A deliberate departure from design/Landing.dc.html, made by the
+   * person whose product it is.
+   */
+  ...[
+    "The timeline is gone.",
+    "Good.",
+    "CUT BY DELETING WORDS",
+    "Delete a sentence, and the shot goes with it.",
+    "You edit the words instead.",
+    "Go cut it into a video.",
+    "It takes the sentence and works out the job.",
+    "Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut \u2014 you strike what's weak, keep what's good, and it's done.",
+    "A file or a link, plus one sentence about what you want. It transcribes the whole thing \u2014 every word, timestamped.",
+    "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
+    "It shows you what it found and why. You keep, cut, and reorder in the transcript \u2014 Space plays, arrows step through.",
+    "If you can edit a sentence, you can cut a video. The editor is the transcript \u2014 strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
+  ].map((t) => [
+    t,
+    "The reading pass. The machine transcribes; you edit. One verb each, so " +
+      "the product stops using the same word for both, and the hero says " +
+      "something rather than asking to be decoded.",
+  ]),
+
+  ...[
+    "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
+    "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
+    /* Trimmed when the Adjust sheet went with Clipping. It used to promise
+       "A short is never take-it-or-leave-it — move its in and out points by
+       pointing at the words, and see the frame it opens on before you spend
+       a render", which was Clipping's trim-by-word sheet and exists nowhere
+       now. Shortening a short means striking words in the editor first. */
+    "Every render lands ready to leave: download it, or cut a short straight off any line in it at whatever shape the platform wants, captions burned in. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
+    "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
+    "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
+    "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
+    "6 clips from 2 sources \u00b7 2 of your own \u00b7 1080p MP4 \u00b7 9:04",
+  ].map((t) => [
+    t,
+    "Landing copy that already differed from design/Landing.dc.html before " +
+      "this check could see the page. Recorded as it stands rather than " +
+      "reverted \u2014 it reads better than the prototype's and is what the site " +
+      "has been serving; the value of listing it is that the next change to " +
+      "it is visible.",
+  ]),
+  ...[
+    "A minute of footage we read. A one-hour video costs roughly its length, once \u2014 and after that, cutting it, re-cutting it and exporting it cost nothing at all.",
+    "A processing minute is a minute of footage we read. Cutting, re-cutting and exporting are free, and storage is permanent on every plan.",
+  ].map((t) => [
+    t,
+    "THE PRICING PAGE WAS DESCRIBING A METER THE CODE DOES NOT KEEP. Both " +
+      "of these said a processing minute covered rendering cuts and burning " +
+      "captions. checkCap (src/plans.ts) sums usage_events WHERE " +
+      "job_type = 'transcribe' and nothing else, so a render has never once " +
+      "moved that number \u2014 and this is the page a customer reads before " +
+      "paying, which makes it the worst possible place to be wrong about " +
+      "what they are buying. The copy changed rather than the charge: " +
+      "whether a render SHOULD consume minutes is a pricing decision, and " +
+      "not one to make by quietly starting to bill for it. Exports being " +
+      "free is also the better thing to be true, so it is now said out loud " +
+      "instead of being a discrepancy.",
+  ]),
+
+  ...[
+    "Keep only the strongest points",
+    "Where I actually make the point",
+    "The funniest moments",
+    "Cut the bits where I repeat myself",
+    "Cut the false starts",
+    "Cut anything I said better later",
+    "Just the story, none of the setup",
+    "Every question I ask",
+  ].map((eg) => [
+    eg,
+    "An example instruction for the pass field. The prototype's three are " +
+      "about its own demo — a podcast with a sponsor read and a guest " +
+      "committing logical fallacies — so on a person talking to a camera " +
+      "they are instructions about things that are not there, and an " +
+      "example you cannot use teaches nothing about what the field takes. " +
+      "These are the same gesture against any video, and they show the " +
+      "range: selecting, tightening, and shaping by length or structure.",
+  ]),
+  [
+    "Good morning.",
+    "The prototype greets 'Good morning, Chris.' because its demo account " +
+      "always has a name. A real account may not — an email address with no " +
+      "separator yields no usable first name — and greeting someone by a " +
+      "mangled surname-mashup, or by the owner's name, is worse than " +
+      "dropping the vocative.",
+  ],
+  [
+    "Good morning. One video landed overnight.",
+    "The prototype's line is 'Good morning, {who}. Four videos landed " +
+      "overnight.' Both halves are interpolated: the name (see above) and " +
+      "the count, which is real data and is whatever actually landed. It " +
+      "can never match a fixed string, and rounding a real count to the " +
+      "prototype's 'four' would be a lie about the user's own library.",
+  ],
+  [
+    "Nothing here yet — upload a video and it starts reading.",
+    "The Videos tab is a deliberate departure from the prototype, which " +
+      "opens Footage on Clips; the owner's actual use is 'find the video I " +
+      "uploaded'. So the prototype has no empty state for a video library, " +
+      "and the one being used was its CLIPS line — 'Nothing kept yet, add a " +
+      "clip back' — which tells someone with no videos at all to restore a " +
+      "clip they never had. Phrased in the prototype's own voice: 'Nothing " +
+      "here yet' is its wording on Home.",
+  ],
+  [
+    "New edit",
+    "The prototype has no source page at all — clicking footage in it goes " +
+      "straight to a scored editor — so it has no word for starting a " +
+      "SECOND cut of one video. Its nearest phrasings are a heading (\"Want " +
+      "anything else from this footage?\", used verbatim above this button) " +
+      "and \"Skip the brief — edit it yourself\", which describes the first " +
+      "edit rather than another one. Two words, its own vocabulary.",
+  ],
+  [
+    "Make a short",
+    "The prototype puts shorts on a surface of their own and its verb is " +
+      "'Cut shorts from it' — a batch, on a whole video. The control this " +
+      "labels is one block, in the editor: a 9:16 export of the piece you " +
+      "are looking at. Its own word for the result is 'short', and the " +
+      "plural batch phrasing is wrong for a single block, so the noun is " +
+      "the prototype's and only the number changed. See " +
+      "docs/decisions/blocks.md — shorts are an export, not a surface.",
+  ],
+  [
+    "Close account",
+    "The prototype is a permanently-signed-in demo with no account lifecycle " +
+      "at all, so it has no string for this. It cannot be skipped: you " +
+      "cannot sell a subscription to an account nobody can close, and the " +
+      "right to erasure is not optional for anyone selling into the EU or UK.",
+  ],
+  [
+    "Keep only the good bits",
+    "Was \"Find the strong bits\". Two things were wrong with that name and " +
+      "the owner named both — \"the vocabulary and what it actually does\". " +
+      "\"Find\" promises annotation and the control DELETES: the pass returns " +
+      "action keep, and everything it did not pick is struck. A destructive " +
+      "button whose name does not say what disappears is the thing people " +
+      "are frightened of pressing, and this one is gold and sits alone. " +
+      "\"Strong\" was worse than vague, it was circular — the instruction sent " +
+      "the model the word \"strongest\" and asked it to score \"how strongly " +
+      "it matches\", with nothing anywhere saying what a good moment is. Now " +
+      "fixed in src/score.ts and held by test/strong.test.ts. The prototype " +
+      "has no word for any of this because its scoring lived on a separate " +
+      "surface — Clipping — rather than being something you ask for while " +
+      "editing. Making it an assist INSIDE the editor is the point of " +
+      "docs/decisions/blocks.md: the model marking what is strong is a " +
+      "property of the blocks you are already reading, not a destination.",
+  ],
+  [
+    "Shape it",
+    "The second of two row headings over the verbs, and the two rows are two " +
+      "different promises. Clean up is subtractive, counted and instant — " +
+      "fillers and silences are found in the transcript by code, so the " +
+      "button prints how many there are before you press it. Shape it asks " +
+      "the model for a judgement: it costs a pass, it takes minutes, and it " +
+      "can come back with nothing. Splitting them by THAT rather than by " +
+      "topic is what stops the free ones and the expensive ones reading " +
+      "alike. The prototype has no verb list at all — its assist is one field.",
+  ],
+  ...[
+    ["Start where I start", "the mic check and the false start before the first real sentence"],
+    ["Cut the tangents", "the bits that go nowhere"],
+    ["Lead with the best line", "the one reorder instruction, which the arrange pass already takes"],
+    ["Cut the hedges", "\"I think\", \"kind of\", \"if that makes sense\""],
+    ["Cut the meta", "\"sorry about the audio\", \"as I said last time\""],
+    ["Remove the sponsor read", "the ad read, which the scoring rules already refuse to keep"],
+    ["Say it once", "the same point told three times, keeping the best telling"],
+    ["Make it half as long", "a length, said as a length"],
+    ["Cut where I asked", "\"can we cut that\", \"strike that\", said on camera"],
+  ].map(([label, what]) => [
+    label,
+    "One of the verbs over the composer: " + what + ". THESE WERE REMOVED " +
+      "AND THE REMOVAL WAS THE MISTAKE. Nine example prompts were replaced " +
+      "with one sentence, on the argument that nine is \"a wall you skip " +
+      "rather than read\" — tidiness bought at the cost of the one control " +
+      "this product is about. The owner: \"if this is the result i don't " +
+      "think you understood the significance i was placing on it\". A chat " +
+      "with no suggested prompts is a discoverability failure: after two " +
+      "years of Underlord there is still no community prompt library for " +
+      "it, only the vendor's own copy, and even the chat-first product " +
+      "sells itself with chips. Six are visible and six sit behind More, " +
+      "because products converge on three to six in front and everything " +
+      "else a layer down. The prototype has none of these words — it draws " +
+      "a single field and no examples, which is the state this fixes. Every " +
+      "label is an imperative verb plus a concrete noun in the words a " +
+      "person would use, \"Cut the tangents\" over \"Edit for Clarity\"; and " +
+      "every one carries the sentence it would type, so pressing a button " +
+      "and typing it are the same act and no verb does anything the box " +
+      "cannot.",
+  ]),
+  [
+    "Duplicate",
+    "The prototype offers 'Branch a version', which it renders as an inert " +
+      "span — the feature was drawn and never built, and 'branching' is not " +
+      "what anyone calls this outside version control. The need is real: an " +
+      "edit is its cuts and beats, and there was no way to try a shorter or " +
+      "vertical one without destroying the cut you liked. Named the word " +
+      "every other editing tool uses for it.",
+  ],
+  [
+    "Sign out",
+    "The prototype is a demo that is always signed in, so it has no sign-out " +
+      "anywhere and no string for one. Real accounts need to be able to leave; " +
+      "'Sign out' is the plainest words for it and matches the voice of the " +
+      "controls beside it.",
+  ],
+  [
+    "drafting the acts",
+    "A job stage label. The prototype names a few stages ('reading it for " +
+      "meaning', 'picking out the moments') but never enumerates them, and " +
+      "essay outlining is a stage it does not cover. Written in the same " +
+      "voice as the ones it does.",
+  ],
+  /*
+   * SCOUT'S CARD IN THE EDITOR. Four strings the prototype has no words
+   * for, because One Take draws Scout in the plan flow and not in the
+   * project state — "Scout is how the video gets better than your footage
+   * alone" is the Manual's line, and the Manual weights him more heavily
+   * than the prototype does.
+   *
+   * They have rendered since Scout was wired and this check never saw
+   * them: /editor shows the most recent project, and no project in the
+   * account it runs against had a source until one was seeded. Signed
+   * off rather than rewritten — the card says what Scout does in his own
+   * terms, and there is nothing to match it against.
+   */
+  [
+    "Look outside this project",
+    "The Scout card's heading in the editor. Says where he looks, which is " +
+      "the one thing that distinguishes him from the search box above.",
+  ],
+  [
+    /* The entities, not the characters: this check reads the markup and
+       does not decode one. Same trap as "Take it elsewhere &nearr;". */
+    "Scout finds clips that aren&rsquo;t yours yet &mdash; links, never downloads. He turns the brief into things a viewer could point to on camera, and searches for each and for its opposite.",
+    "What Scout is, in the two sentences that matter: invariant 9 (links, " +
+      "never downloads) and the behaviour-first decomposition doc 18 asks " +
+      "for. Both are promises a person can hold us to.",
+  ],
+  ["Send Scout", "The press. A verb and a name, like every other control here."],
+  ["The board", "Where his findings are. The prototype's own word for it."],
+  [
+    "Take it elsewhere &nearr;",
+    "The OTIO export, in the export panel. The prototype has no interchange " +
+      "file at all — it is doc 09's escape hatch and Phase 1's last " +
+      "acceptance item, so there was no wording to follow. Says what the " +
+      "link does from the person's side rather than naming a format: " +
+      "somebody who wants this wants to take the edit somewhere, and the " +
+      "line beneath it says what they get. 'Export' was taken, by the " +
+      "button six pixels above it that makes a video.\n\n" +
+      "The entity rather than the character, because this check reads the " +
+      "markup and does not decode one. Said here so the next person to " +
+      "paste a signed-off string does not spend an evening on it.",
+  ],
+  [
+    "The cue sheet &nearr;",
+    "The cue sheet, in the export panel under the OTIO link. The prototype " +
+      "has no Before you post step at all — doc 09 does, and this is the " +
+      "first piece of it — so there was no wording to follow.\n\n" +
+      "Named rather than described, because 'cue sheet' is what the " +
+      "document is called by everyone who will ever ask for one: a " +
+      "platform reviewer, a broadcaster, somebody answering a complaint. " +
+      "Inventing a friendlier phrase would leave the person unable to say " +
+      "what they have. The sentence beside it does the explaining.\n\n" +
+      "The entity rather than the character, same trap as the line above.",
+  ],
+  [
+    "The dispute file &nearr;",
+    "The dispute file, under the cue sheet. Same reason as the line above: " +
+      "the prototype has no Before you post step for it to belong to.\n\n" +
+      "'Dispute file' is doc 09's own name for it and the name it would be " +
+      "asked for by, so it is named rather than described — but the " +
+      "sentence beside it leads on what the person gets, because most " +
+      "people reading it have never had a dispute and should still open it.",
+  ],
+  [
+    "Before you post &nearr;",
+    "Doc 09's checklist, and the first of the three links because it is the " +
+      "one read first. The prototype has no Before you post step at all, " +
+      "which is why none of these three can be matched against it.\n\n" +
+      "The phrase is doc 09's own heading and is what the step is called " +
+      "everywhere else in the handoff, so renaming it here would leave the " +
+      "product and its documentation using different words for the same " +
+      "screen.",
+  ],
+  [
+    "The whole record &nearr;",
+    "The provenance manifest, last of the four export documents because it " +
+      "is the only one written for a machine as much as for a person.\n\n" +
+      "Not called 'the provenance manifest' on the link, because nobody " +
+      "asks for one by that name until they already know what it is. It " +
+      "says what you get — the whole record — and the sentence beside it " +
+      "says what that means and what it leaves out.",
+  ],
+  [
+    "Whether it is working",
+    "Phase 8's SLO dashboard, on Settings and owner-only. Four readings, and the hard part is what is left out: a dashboard of everything measurable is one nobody reads, and the thing somebody needs at 2am is \"is it broken, and which part\" rather than a percentile.\n\nNamed as the question rather than as \"Status\" or \"Health\", because those are nouns a reader has to decode and this is the sentence they already have in their head. The prototype has no such panel and could not: it predates there being providers to watch.",
+  ],
+  [
+    "The judge, checked",
+    "The canary's reading. One synthetic claim goes through the REAL judge every sweep, with the right answer known in advance \u2014 so a provider that answers with nonsense fails it, which a liveness probe would not notice. Never checked shows a dash and asks for attention, because reporting the absence of a check as the success of one is the failure this panel exists to avoid.",
+  ],
+  [
+    "Jobs finished",
+    "Finished against died, over a day. One failed job is Tuesday \u2014 a user cancels, a provider blips \u2014 so this asks for attention only when failures are a real share of the day, unlike the row below it.",
+  ],
+  [
+    "Pieces accounted for",
+    "The reading with teeth: items that failed inside jobs which reported finishing. Invariant 7 \u2014 \"a job is complete only when every item is terminal and none failed silently. Silent partial failure is a P1.\" The completion invariant exists to make it impossible; this counts whether it is happening anyway, because a rule nobody measures is a rule that can stop applying without telling you.\n\nNo acceptable rate, so no share to clear: one piece in twenty asks for attention. \"Pieces\" rather than \"items\" because a person reading this did not write the item state machine.",
+  ],
+  [
+    "Providers answering",
+    "The breaker's state, summarised, with the shut pool named underneath. A shut pool does not stop a job \u2014 the capability falls to the model that runs without an external key \u2014 so the summary is a count and the rows beneath it carry the sentence that shut one.",
+  ],
+  [
+    "Model providers",
+    "The breaker's state, on Settings and owner-only. Phase 8 accepts on " +
+      "\"kill a provider mid-job in staging and the job completes on another " +
+      "pool\" \u2014 and a pool that is shut routes its capability to the model " +
+      "that runs without an external key, which works and is not as good.\n\n" +
+      "So the state has to be visible or the degradation is silent: a job " +
+      "that quietly finished on the free model is a job whose receipts are " +
+      "tagged with a different model, and the sentence that shut the better " +
+      "pool is the only answer to why. Invariant 3 \u2014 the reason, not a " +
+      "score. The prototype has no panel for this, and could not: it " +
+      "predates there being more than one pool.",
+  ],
+  [
+    "Answering normally.",
+    "What a healthy pool says, and a sentence rather than a blank. An " +
+      "empty line beside a pool name reads as missing information \u2014 the " +
+      "same reason \"nothing backs this\" is a sentence and not an empty " +
+      "list.",
+  ],
+  [
+    "anthropic/user",
+    "A pool is a way IN to a model, not a model: the same Claude is reached " +
+      "through the user's own key or through ours, and those fail " +
+      "separately. Named as the route rather than prettified, because the " +
+      "person reading this panel is the owner deciding whether a provider " +
+      "is down or a key is wrong, and \"Your Claude key\" would hide which " +
+      "of the two shut.",
+  ],
+  [
+    "anthropic/platform",
+    "Our own Claude key, as a pool. See anthropic/user \u2014 the split is the " +
+      "point: a 429 on somebody's own key is their account's limit and must " +
+      "never shut this one.",
+  ],
+  [
+    "workers-ai",
+    "The pool that needs no external key, and the one a shut Anthropic pool " +
+      "falls to. Listed beside the others because it can fail too, and " +
+      "because its being healthy is what makes the fallback honest.",
+  ],
+  [
+    "What goes here",
+    "Invariant 8's other half, on every line of the cut that has words.\n\n" +
+      "src/pictures.ts has been complete and half-reachable since Phase 5: " +
+      "`allowed()` refuses a generated card over a claim at the beat " +
+      "insert, so the refusal bites, and nothing in the product ever " +
+      "OFFERED a picture — so `place()` and `reasonFor()` chose between " +
+      "candidates only in their own tests. There was no surface to match " +
+      "against, because the prototype's block row has no picture control " +
+      "at all.\n\n" +
+      "Three words rather than 'Suggest a picture', because the question " +
+      "the panel answers is doc 08's: not 'what noun did the sentence " +
+      "contain' but 'why am I seeing this'. The panel leads with what was " +
+      "chosen and why, then what was refused and why, then the sources " +
+      "that have nothing behind them yet — naming documents and generated " +
+      "rather than omitting them, since an empty list and an unbuilt " +
+      "source look identical and are not.",
+  ],
+  /*
+   * ELEVEN STRINGS THAT WERE NEVER CHECKED, because they wore the mark
+   * that means "the user's footage wrote this".
+   *
+   * data-content exempts an element from this rule, for a good reason: a
+   * transcript line, a filename or a model's sentence cannot be in the
+   * prototype and must not be flagged. It had spread by copy-paste onto 46
+   * pieces of STATIC copy, so a whole row could be added to the front door
+   * and paraphrased and this check stayed green — which is what happened
+   * while the Scout row was being built. The mark is off all 46 now, 35 of
+   * them turned out to be the prototype's own words, and these eleven are
+   * the ones that genuinely are not. `content` (below) is the rule that
+   * stops it spreading again.
+   *
+   * All eleven are on two surfaces the prototype does not draw at all: the
+   * record panel after a render, and the two Settings panels about ending
+   * things. Both exist because the product sells and must be leaveable.
+   */
+  [
+    "In the editor",
+    "The nav anchor back to an open project. The prototype has one room " +
+      "and no second place to be, so it has no word for 'where you were' " +
+      "— the build does, because the editor is a route you can navigate " +
+      "away from and come back to.",
+  ],
+  [
+    "Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.",
+    "The Before you post step, which the prototype has no equivalent of " +
+      "(the same gap already signed off for \"Before you post &nearr;\").\n\n" +
+      "The second clause is the load-bearing one and is deliberately not " +
+      "softened: of the seven, some are measured and some cannot be, and a " +
+      "pre-flight that implied it had checked all seven would be the one " +
+      "kind of lie this product cannot tell.",
+  ],
+  [
+    "The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.",
+    "The OTIO escape hatch (doc 11, Phase 7). The prototype shows no " +
+      "export panel at all.\n\n" +
+      "The second sentence is a limit, said before the download rather " +
+      "than discovered in Resolve: OTIO carries the cuts, and the caption " +
+      "burn-in and the ducking are baked into the rendered file. Somebody " +
+      "who opens the timeline expecting their captions would otherwise " +
+      "find out by looking for them.",
+  ],
+  [
+    "Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.",
+    "Invariant 8's paper trail. The prototype's block row has no picture " +
+      "control, so there was nothing to match.\n\n" +
+      "\"already\" is the point: the manifest is written as the cut is " +
+      "made, not generated when somebody asks, so there is no window in " +
+      "which a picture is in the video and absent from the record.",
+  ],
+  [
+    "Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.",
+    "The cue sheet, for the same reason as the line above and with the " +
+      "same clause doing the same work. \"how much of it\" rather than a " +
+      "duration because the question a rights holder asks is proportion, " +
+      "not seconds.",
+  ],
+  [
+    "Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.",
+    "The dispute file (doc 09). Invariant 4 is that every claim keeps its " +
+      "receipt and \"nothing backs this\" must be reachable — so the file " +
+      "has to state its own gaps, and the sentence that says so is the " +
+      "last one rather than a footnote.",
+  ],
+  [
+    "A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.",
+    "The public receipts page, already signed off as a link (\"Receipts " +
+      "for viewers &nearr;\"); this is the sentence under it.\n\n" +
+      "The second sentence is there because the other four links in the " +
+      "panel give the reader a document and this one gives somebody else " +
+      "a page. Nobody should be able to press it and wonder afterwards " +
+      "whether it went out.",
+  ],
+  [
+    "Close this account",
+    "The prototype has no Settings surface and nothing that ends. The " +
+      "right to erasure is not optional for anyone selling into the EU or " +
+      "UK (docs/LAUNCH.md), so the product needs this and the design never " +
+      "drew it.",
+  ],
+  [
+    "Removes every video, edit and export, and the storage they hold. There is no bin behind this one.",
+    "The one place invariant 6 does not hold, said in the plainest words " +
+      "available. Everything else in the product switches off, waits 30 " +
+      "days, or is one undo away; this does not, and the sentence has to " +
+      "be the exception rather than sound like the rest of them.",
+  ],
+  [
+    "Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.",
+    "Invariant 6, stated where somebody acts on it. \"and every render " +
+      "made from it\" is the clause that earns the sign-off: a person " +
+      "purging a source to free space will not guess that the exports " +
+      "they kept go with it, and finding out afterwards is unrecoverable.",
+  ],
+  [
+    "The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.",
+    "The owner-only spend panel. No prototype equivalent — the design has " +
+      "no operator surface.\n\n" +
+      "The second sentence exists because a dashboard of dashes reads as " +
+      "healthy and is also what a stopped writer looks like. Saying which " +
+      "it cannot tell you is the honest version, and it is the same rule " +
+      "the SLO page follows.",
+  ],
+  ...[
+    "Four rules, sixteen cuts. Every one of them is what these rules produce from these moments — the cut is never stored, it is worked out.",
+  ].map((x) => [
+    x,
+    "THE DEMO IS LIVE AND THE DESIGN'S IS NOT, which is the whole reason this line exists." +
+    "\n\n" +
+    "The design's rules column has no caption under it. The build's resolves every combination of the four rules on the server and ships all sixteen, so clicking a rule picks a cut the rules produced rather than animating a mock-up. A stranger cannot tell those apart by looking, and the difference is invariant 1 — which is the one thing on this page neither competitor has."
+  ]),
+  ...[
+    "ONE CONVERSATION · SIX THINGS OUT",
+  ].map((x) => [
+    x,
+    "The design's eyebrow says FOUR THINGS OUT and its own card list, in the same file, has six: Cuts, Shorts, Reactions, Essays, Stories, Supercuts. The room offers all six. Rendering six cards under a label that says four would be reproducing a design bug on the only page a stranger reads, so the count follows the cards."
+  ]),
+  ...[
+    "Rules, the archive, and search by what was said",
+    "No, and it doesn't pretend to: you download the finished file, or export the edit to Resolve, Premiere or Final Cut and take it from there. Every export carries a provenance record, and a cut can have a public link that lists every source and every edit it used.",
+  ].map((x) => [
+    x,
+    "THE DESIGN PROMISES SOMETHING THIS BUILD DOES NOT HAVE, and the pricing table and the FAQ are the two places where that costs money or trust." +
+    "\n\n" +
+    "The design's Free bullet is \"Rules, recipes, and the archive\" and its FAQ answer is \"set a webhook and every finished piece POSTs to it — Zapier, Make, n8n, or your own endpoint\". Recipes do not exist: rules are keyed by project and nothing carries a set anywhere. The only webhook in this codebase is Stripe's, inbound. Both replacements say what the product does instead, and both are in 12-DEFERRED.md with what it would take to build them."
+  ]),
+  ...[
+    "Continue with Google",
+    "or use your email",
+    "Email me a link",
+    "One more tap.",
+    "Confirm it was you who asked for this link.",
+    "If you didn't ask for this, close this page — nothing has happened yet.",
+  ].map((x) => [
+    x,
+    "SIGNING IN HAS NO DESIGN. Every control in both landing designs opens the prototype app directly — there is no account, no link in an inbox and no OAuth anywhere in them, so there was nothing to match against." +
+    "\n\n" +
+    "These six strings had never been checked by anything either: the crawl's dev server is always signed in, so the sent-a-link branch never renders, and the confirmation page needs a one-time token that visiting it would spend. The copy rule reaches them because it renders the functions rather than fetching the routes." +
+    "\n\n" +
+    "The confirmation page is deliberately a form rather than an automatic sign-in: the token is spent by the POST, so a mail scanner that fetches the URL cannot burn it. That is what \"One more tap\" is apologising for."
+  ]),
+  ...[
+    "Every clip in this video is the maker's own footage.",
+    "This page lists what this video quoted and where from. It does not list the maker's own footage, and it cannot tell you whether a quote is fair — only whether the words are there, at that time, in that source.",
+  ].map((x) => [
+    x,
+    "The public receipts page, which no prototype draws — the same gap already signed off below for the link that opens it. Doc 09: \"the edit you can interrogate is a promise to the audience, not just the maker\"." +
+    "\n\n" +
+    "The second sentence is the one that matters and it is a refusal: this page can say the words were said, at that time, in that source, and it cannot say the quote is fair. A receipts page that let a reader believe otherwise would be worse than none, which is invariant 4 read the strict way."
+  ]),
+  [
+    "Receipts for viewers &nearr;",
+    "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
+      "the audience, not just the maker\". The prototype has no Before you " +
+      "post step and no public surface at all, so there was nothing to " +
+      "match.\n\n" +
+      "\"for viewers\" is doing the work in that phrase. The other four " +
+      "links in this panel give the reader a document; this one gives " +
+      "somebody else a page, and that difference has to land before the " +
+      "press, not after it.",
+  ],
+]);
+
+const SHORT = 24;
+const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const onBoundary = (t) => {
+  const re = new RegExp(`(?:"|'|>)\\s*${escapeRe(t)}\\s*(?:"|'|<)`);
+  return re.test(PROTO);
+};
+
+/* The arrow is a glyph; the prototype assembles these as "← " + surface name. */
+const strip = (t) => t.replace(/^[\u2190]\s*/, "");
+const known = (t) => {
+  if (SIGNED_OFF.has(t.trim())) return true;
+  const v = strip(t);
+  return v.length <= SHORT ? onBoundary(v) : proto.includes(v) || protoRaw.includes(v);
+};
+
+/**
+ * EVERY PIECE OF UI COPY IN ONE DOCUMENT, CHECKED AGAINST THE DESIGNS.
+ *
+ * Lifted out of checkStrings so that a page which is a pure function can
+ * be checked with no server: same extraction, same haystack, same
+ * sign-off list. `label` is what a finding is reported against — a route
+ * for the crawl, a function name for the offline pass.
+ *
+ * `seen` is shared across documents by the caller, so a string that
+ * appears on six surfaces is reported once.
+ */
+function scanCopy(html, label, seen, suspect) {
+  const body = html
+    .replace(/<script[\s\S]*?<\/script>/g, ' ')
+    .replace(/<style[\s\S]*?<\/style>/g, ' ')
+    .replace(/<title>[\s\S]*?<\/title>/g, ' ');
+for (const m of body.matchAll(/<([a-z]+)([^>]*)>([^<>]+)(?=<)/g)) {
+  if (/\bdata-content\b/.test(m[2])) continue;
+  const text = normalise(m[3]);
+  if (text.length < 8) continue;
+  // Three LETTERS, either case. This was /[a-z]{3}/, which skipped every
+  // all-caps label in the product — so the stage pills were never checked
+  // and an invented "SHORTS FROM THIS" pill shipped on a surface where the
+  // prototype has no pill at all. Timecodes and counts are still skipped,
+  // which is all the filter was ever for.
+  if (!/[A-Za-z]{3}/.test(text)) continue;
+  if (seen.has(text)) continue;
+  seen.add(text);
+  if (known(text)) continue;
+  // Strings that interpolate a value ("Welcome, Chris. …") can never match
+  // whole, because the prototype holds them as templates. Fall back to
+  // sentence fragments: every fragment long enough to carry real wording
+  // must still be found verbatim. Short fragments (a name, a count, a
+  // greeting stub) are allowed through — they are the interpolated part.
+  const fragments = text.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  /*
+   * Fragments of an interpolated string are deliberately partial, so they
+   * match by substring. The fallback below is gated so this looseness
+   * cannot also excuse a short wrong label.
+   */
+  const has = (fr) => proto.includes(fr) || protoRaw.includes(fr);
+
+  /*
+   * Only strings that plausibly interpolate get the fallback: more than
+   * one sentence, or a digit somewhere. Without this gate, a single short
+   * label like "THE WORDS" slips through by being under the fragment
+   * length threshold — which is exactly how it shipped once already.
+   */
+  const looksInterpolated = /\d/.test(text) || text.split(/(?<=[.!?])\s+/).filter(Boolean).length > 1;
+  if (!looksInterpolated) {
+    suspect.push(`${label}  "${text}"`);
+    continue;
+  }
+
+  /*
+   * Two acceptable reasons a fragment won't match whole, both distinct
+   * from paraphrasing — which is what this check exists to catch:
+   *
+   *  - INTERPOLATION. "Welcome, Chris." can never match, because the
+   *    prototype holds it as a template. Short fragments are allowed
+   *    through on the assumption that they are the interpolated part.
+   *  - TRUNCATION. The prototype's greeting is "Good morning, {who}. Four
+   *    videos landed overnight." When nothing landed overnight, rendering
+   *    only the first sentence is honest; rendering the second would be a
+   *    lie. Dropping a clause that isn't true is not rewording, so a
+   *    fragment whose stem (up to its interpolated value) appears in the
+   *    prototype is accepted.
+   */
+  /*
+   * The invariant core: strip the interpolated value from either end. A
+   * count or a name can sit at the front ("5 videos landed overnight",
+   * against the prototype's "Four videos landed overnight") or the back
+   * ("Good evening, Chris."). What must survive verbatim is the wording in
+   * between — that is the part a paraphrase would change.
+   */
+  const LEAD = /^[A-Z0-9][\w'\u2019-]*[,]?\s+/;   // "5 ", "Good "
+  const TAIL = /\s+[A-Z0-9][\w'\u2019-]*[.!?]?$/;   // " Chris."
+  const trimPunct = (x) => x.replace(/[.!?]+$/, "").trim();
+
+  /*
+   * Try dropping the interpolated value from the front, the back, or both,
+   * and require what remains to appear in the prototype verbatim. Whichever
+   * end the value sits at, the WORDING between is what a paraphrase would
+   * change, so that is what must survive. 8 characters is enough to be a
+   * real phrase and not a coincidence.
+   */
+  const cores = (fr) =>
+    [fr.replace(LEAD, ""), fr.replace(TAIL, ""), fr.replace(LEAD, "").replace(TAIL, "")]
+      .map(trimPunct)
+      .filter((x) => x.length >= 8);
+
+  const unmatched = fragments.filter(
+    (fr) => fr.length >= 18 && !has(fr) && !cores(fr).some(has),
+  );
+  if (unmatched.length === 0) continue;
+  suspect.push(`${label}  "${text}"`);
+  }
+}
+
 async function checkStrings() {
   const BASE = process.env.BASE || 'http://localhost:8787';
   /*
@@ -637,1083 +1873,6 @@ async function checkStrings() {
   }
   };
 
-  const normalise = (s) => s.replace(/\s+/g, ' ').replace(/[\u2019']/g, "'").trim();
-  const proto = normalise(PROTO.replace(/<[^>]+>/g, ' '));
-  const protoRaw = normalise(PROTO);
-
-  /*
-   * Exact text nodes from the prototype, so a SHORT string has to match a
-   * whole label rather than merely appear somewhere.
-   *
-   * This exists because "THE WORDS" passed while the prototype says "EDITING
-   * THE WORDS" — a substring match, and a real defect that shipped. Long prose
-   * still matches by substring, since it is often assembled from fragments,
-   * but a short label now has to be a label that exists.
-   */
-  /*
-   * A SHORT string has to sit on a real boundary in the prototype — wrapped in
-   * quotes, or alone between two tags. Merely appearing somewhere is not
-   * enough: "THE WORDS" passed that way while the prototype says "EDITING THE
-   * WORDS", and the wrong pill shipped.
-   *
-   * Boundary matching rather than parsing, because scanning 4,000 lines for
-   * quote PAIRS misaligns after any odd quote and silently loses real strings —
-   * it dropped every stage-tab label when tried.
-   */
-  /*
-   * Deliberate additions, each with the reason it exists.
-   *
-   * This list is the ONLY sanctioned way to add copy the prototype does not
-   * contain, and it is kept tiny on purpose: the whole value of this check is
-   * that it fails loudly on invented wording. Loosening the matcher instead
-   * would have hidden the next paraphrase along with this one.
-   */
-  const SIGNED_OFF = new Map([
-    ...[
-      "EVERY TAKE IS KEPT",
-      "Use this one",
-      "in the cut",
-    ].map((t) => [
-      t,
-      "The take list, which the prototype has no UI for at all — its " +
-        "recorder is a full-screen stage and the only place it says this is " +
-        "a sentence: 'Your take — on camera or voice only. Every take is " +
-        "kept.' The build kept that promise (invariant 6: a performance is " +
-        "the one thing the engine cannot re-make) and had to invent the " +
-        "surface that makes it worth anything — seeing the takes and " +
-        "choosing one. New behaviour, flagged rather than paraphrased.",
-    ]),
-    [
-      "Connecting brings the footage in without reading it &mdash; a video is read the first time you cut with it.",
-      "The Settings design's own paragraph ends '...On the same Cloudflare " +
-        "account it binds the bucket directly, no keys. From Neolog it " +
-        "imports the transcripts already there — no transcribing twice.' " +
-        "Neither half is true of this build and both would be promises it " +
-        "does not keep: a binding is deploy-time configuration and works for " +
-        "exactly one account, so every connection uses a read-only key; and " +
-        "the owner does not trust Neolog's transcripts (it runs a workflow " +
-        "to find hallucinated ones), so footage is read here and the word " +
-        "table is deliberately not imported — see src/neolog.ts. This " +
-        "sentence says what actually happens instead, including the part " +
-        "that costs money.",
-    ],
-    [
-      "Your take goes here — sound only, no camera yet",
-      "Both landing designs say 'on camera or voice only'. The recorder asks " +
-        "for getUserMedia({ audio: true }) and nothing else, and the beat " +
-        "itself says so beside the Record control. A landing page that " +
-        "promises a camera the product does not have is not a fidelity gap " +
-        "— it is a lie, and a design does not get to overrule that. The " +
-        "camera half is deferred with its reasons in " +
-        "docs/handoff/12-DEFERRED.md.",
-    ],
-    [
-      "Sound only &mdash; no camera yet",
-      "The prototype's recorder is a full-screen stage with camera and mic " +
-        "modes, layout options and a teleprompter. The build records audio " +
-        "and nothing else — getUserMedia({ audio: true }) — and the camera " +
-        "half is deferred with its reasons in 12-DEFERRED.md. A recorder " +
-        "that does not say which it is, beside a control called 'Record " +
-        "it', is one somebody points a camera at. beforepost.ts makes the " +
-        "same move and for the same reason: naming what is not checked " +
-        "beats a tick beside it.",
-    ],
-    [
-      "Does nothing now — switch it off",
-      "The prototype says 'Does nothing now — archive it' and archiving is " +
-        "not something a rule can do here: invariant 6 is that nothing is " +
-        "deleted and rules switch off, and there is no archived state on a " +
-        "rule. A rule removed from the pane would be a cut with an " +
-        "unexplained shape. So the sentence is the prototype's and the verb " +
-        "is the one that describes the press. docs/handoff/12-DEFERRED.md.",
-    ],
-    /*
-     * THE EMPTY STATES, which this check could not see until today.
-     *
-     * Both of these render only when the account has nothing in it, and there
-     * was always something in it — so a gate that has passed for weeks had
-     * never once reached either string. They surfaced the first time a local
-     * database was emptied on purpose.
-     *
-     * Signed off rather than rewritten because the prototype has no empty
-     * states at all: every frame of it shows a populated library, which is the
-     * normal way a design is drawn and the reason this gap existed. The words
-     * say the one thing a person needs at that moment — what to do next, and
-     * roughly how long it takes — and neither invents a capability.
-     */
-    ...[
-      "Drop a file or paste a link above. An hour of footage takes a few minutes to transcribe.",
-      "Nothing here yet — upload a video and it starts transcribing.",
-    ].map((t) => [
-      t,
-      "An empty state. The prototype draws every surface populated, so it has " +
-        "no wording for a library with nothing in it, and these two were " +
-        "unreachable by this check until a local database was emptied on " +
-        "purpose. Kept as written: each says what to do next and how long it " +
-        "takes, and claims nothing the product does not do.",
-    ]),
-    /*
-     * TWO MORE OF THE SAME, and reached for the same reason: a fixture.
-     *
-     * scripts/seed-fixture.cjs seeds a transcribed source and a project cut
-     * from it, and NOTHING ELSE — no scored clips, no passes. That is a state
-     * every real account passes through in its first minute and that this
-     * check had never crawled, because the crawl always landed on a project
-     * somebody had already worked on.
-     *
-     * Both are empty states, so the reasoning above applies unchanged: the
-     * prototype draws every frame populated and has no wording for either.
-     */
-    [
-      "Press one, or say it in your own words.",
-      "An empty state: the conversation before anything has been said to it. " +
-        "The prototype only ever draws the assistant mid-conversation. The " +
-        "verbs beneath it say what it can do better than a sentence would — " +
-        "which is the mistake this line replaced — so it points at them and " +
-        "promises nothing.",
-    ],
-    [
-      "Nothing in your library yet.",
-      "An empty state: a project's Footage tab before any moment has been " +
-        "scored. Unreachable by this check until a seeded fixture gave it a " +
-        "transcribed project with no clips, which is where every account " +
-        "starts. Says what is absent and claims nothing.",
-    ],
-    ...[
-      "NOT SHORTS",
-      "Use it anyway",
-    ].map((t) => [
-      t,
-      "The lines problems() measured out of the shortlist — too short, too " +
-        "long — with the measurement that did it, and a press to force one " +
-        "in. The prototype has the section; these two labels are the build's. " +
-        "A measurement is a reason and not a veto: \"this is not a short and " +
-        "here is why\" is a different sentence from \"this is a weak short\", " +
-        "and the first one can be argued with.",
-    ]),
-    ...[
-      "Back to the cut",
-      "Take it away as text &nearr;",
-    ].map((t) => [
-      t,
-      "The Before you post sheet, which the prototype draws as an OVERLAY " +
-        "pressed open from Export and the build serves as a page — so it " +
-        "needs a way back and the prototype does not. It answered only as a " +
-        ".txt download until 28 Oct (content-disposition: attachment), which " +
-        "made the most important safety surface in the product the one " +
-        "surface with no surface: nobody about to post something opens a " +
-        "text file first. The file is still there, because a checklist you " +
-        "can hand to somebody else is worth having.",
-    ]),
-    /*
-     * THE SCOUT BOARD'S OWN COPY, signed off 28 Oct 2026 — the first day
-     * anything rendered this surface with rows in it.
-     *
-     * 510 lines that had never been drawn populated: it answered at an /api/
-     * URL no crawl reached until this week, and a real run costs YouTube
-     * quota and a string of model calls a fixture cannot spend. It is
-     * specified by docs/handoff/18-SCOUT-BUILD-SPEC.md, which says what the
-     * board must SHOW — gaps first, the balance meter, then the verified rows
-     * — and not what it must say. design/one-take/Scout.dc.html does not draw
-     * this screen.
-     */
-    ...[
-      /* Entities, not curly quotes: SIGNED_OFF is matched on the RAW rendered
-         text, which is what the page actually emits. */
-      "what's missing comes first — it's the next thing to do. Each says what was tried, so you can tell &ldquo;doesn't exist&rdquo; from &ldquo;not found yet&rdquo;.",
-      "Try an interview",
-      "Bring the capture",
-      "Make it a mission",
-      "AUTO · open feed",
-      "COUNTERPOINT",
-      "sources &nearr; &nbsp; the ledger &nearr;",
-    ].map((t) => [
-      t,
-      "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
-        "show rather than by what it must say, and drawn by no prototype. " +
-        "The three controls are the three things a person can do about a gap, " +
-        "and the first sentence is the board's whole argument: what is " +
-        "missing comes first, and each gap says what was tried so " +
-        "\"doesn't exist\" can be told from \"not found yet\".",
-    ]),
-    [
-      "NOT IN THE SOURCE",
-      "The chip a rejected find wears. It used to draw as a CROWD row — the " +
-        "words on screen with a timestamp, a credit line and a button " +
-        "offering to go and capture a quote the verifier had already searched " +
-        "for and failed to find. It is still SHOWN rather than filtered, " +
-        "because invariant 4 says \"nothing backs this\" must be reachable and " +
-        "because the rejection rate is the measured hallucination rate this " +
-        "product gates model swaps on. It just says what it is.",
-    ],
-    /*
-     * THE ORDER CHIPS, and these are the prototype's own words — they are
-     * just never ALONE in its source.
-     *
-     * The prototype builds the three chips at runtime from the same
-     * vocabulary the rule sentences use, so the file carries "Run it one
-     * thread at a time." and "so it runs one thread at a time." and never the
-     * bare label. The rendered prototype shows exactly these three chips; a
-     * check that reads the file cannot see that, and the honest answer is to
-     * say so here rather than to reword a label the design does have.
-     *
-     * "as it happened" needs no entry: it happens to appear standalone
-     * elsewhere in the same file.
-     */
-    ...[
-      "one thread at a time",
-      "sharpest line first",
-    ].map((t) => [
-      t,
-      "An order chip. The prototype RENDERS these three labels and its source " +
-        "only ever contains them inside a sentence (\"Run it one thread at a " +
-        "time.\"), because it builds the chips at runtime from the same " +
-        "vocabulary — so a check that reads the file cannot match the bare " +
-        "label. The words are the design's own; src/rules.ts ORDERS is a " +
-        "verbatim port of them.",
-    ]),
-    [
-      "Make the short",
-      "The Shorts workbench's render control. The prototype's pair is " +
-        "\"Skip it\" and \"Add it to the cut\", and the second does not apply " +
-        "here: its shorts are pulled from the library, while this shortlist " +
-        "IS the cut's own lines, so every one of them is already in it. " +
-        "Adding would do nothing, which is the class of control this build " +
-        "keeps removing. What there is to do is render it, at the shape and " +
-        "with the captions chosen above — which is also what makes those " +
-        "chips controls rather than decoration.",
-    ],
-    [
-      "No hashtags: nothing here measures what people are searching for, and a tag is a guess at that.",
-      "The same refusal src/shorts.ts makes about Trend, said where the post " +
-        "copy is. The prototype shows \"#vlog #deciding #landing\"; a tag is a " +
-        "claim about what people are looking for and nothing in this product " +
-        "measures that. Worse than Trend, because a hashtag is pasted " +
-        "straight into a post. The first draft did invent them, from " +
-        "subjectWord — which exists to diagnose an opening, not to name a " +
-        "subject — and it produced \"#so\".",
-    ],
-    [
-      "Save the cap",
-      "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
-        "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +
-        "reading \"Top-ups stop here until you raise it\" and offers no way to " +
-        "raise it. src/spend.ts stops every job at that number with a sentence " +
-        "that says \"until you raise it in Settings\", and `spend_cap_usd` was " +
-        "read by capFor and written by nothing in the whole of src/ — so the " +
-        "product told somebody to do a thing it could not do. New behaviour " +
-        "rather than a paraphrase, and the smallest thing that makes the " +
-        "existing refusal true.",
-    ],
-    /*
-     * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.
-     *
-     * Two things had to be fixed to even see these four strings: the page
-     * answered at /api/projects/:id/receipts, where no crawl goes, and when
-     * it moved to /p/:id/receipts it was registered AFTER /p/:id/:stagePath,
-     * which matched first and returned 404. So the surface that puts
-     * something on the public web had never been read by anything.
-     *
-     * No prototype draws it. One Take's export panel has the LINK to it —
-     * "Receipts for viewers ↗", which is signed off separately — and no
-     * screen behind it. The words carry the one promise that matters on a
-     * control like this: nothing is public until you press it.
-     */
-    ...[
-      "Receipts for viewers",
-      "Publish a page your viewers can read: every clip in this cut that came from somebody else, the words, the link to the original, and whether it was checked. It does not list your own footage, your rules or anything you cut.",
-      "Publish it",
-      "Nothing is public until you press this.",
-    ].map((t) => [
-      t,
-      "The receipts admin page. It is the only control in this product that " +
-        "puts something on the public web, and no prototype draws the screen " +
-        "— One Take has the link to it and nothing behind it. The copy says " +
-        "what the published page does and does not contain, and that nothing " +
-        "is public until the press.",
-    ]),
-    /*
-     * FIVE SURFACES NO PROTOTYPE DRAWS, signed off on 28 Oct 2026 — the first
-     * day anything crawled them.
-     *
-     * scripts/surfaces.cjs replaced a nine-route literal with the routes
-     * derived from src/index.ts, and these surfaced immediately: Documents,
-     * Find, the Scout board, the brief compiler's control and the labelling
-     * page had never been compared with anything. Each is checked against
-     * `design/` and is genuinely absent from all of it, for a reason per
-     * surface rather than one blanket excuse.
-     *
-     * DOCUMENTS and FIND are Footage tabs the One Take prototype does not
-     * have: it draws Videos, Highlights and Projects. Both are specified in
-     * the handoff instead (a document can stand as the proof on a line that
-     * claims it), so there are no drawn words to copy and these are the first.
-     * The Find tab's second string is a refusal — captions from a link are not
-     * built — and an honest refusal is exactly what belongs there.
-     */
-    ...[
-      "Add a document",
-      "A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.",
-      "Choose a file",
-      "No documents yet — add one and it can stand as the proof on a line that claims it.",
-      "Read the captions",
-      "Reading captions from a link isn't switched on yet.",
-    ].map((t) => [
-      t,
-      "A Footage tab the One Take prototype does not draw — it has Videos, " +
-        "Highlights and Projects. Specified in the handoff rather than drawn, " +
-        "so there are no prototype words to copy. Crawled for the first time " +
-        "on 28 Oct 2026, when the surface list stopped being nine literals.",
-    ]),
-    /*
-     * THE SCOUT BOARD. There is a `design/one-take/Scout.dc.html`, and it does
-     * not contain these strings: the board was built from
-     * docs/handoff/18-SCOUT-BUILD-SPEC.md, which specifies what it must show
-     * (gaps first, the balance meter, then the verified rows) and not what it
-     * must say. It had never been rendered by any check before 28 Oct, because
-     * it answered at /api/projects/:id/scout/board and every crawl skips /api/.
-     */
-    ...[
-      "The Scout board",
-      "no brief run yet",
-      "Nothing yet. Scout turns the brief into things a viewer could point to on camera — never a diagnosis — then searches for each, and for its opposite.",
-    ].map((t) => [
-      t,
-      "The Scout board, specified in 18-SCOUT-BUILD-SPEC.md by what it must " +
-        "show rather than by what it must say. design/one-take/Scout.dc.html " +
-        "does not draw this screen. The third string is the empty state and " +
-        "carries the refusal the spec insists on: Scout looks for observable " +
-        "behaviour, never a diagnosis.",
-    ]),
-    [
-      "Make it rules",
-      "The brief compiler's one control: paste a brief and it becomes rules " +
-        "you can see and switch off. The prototype has no brief box at all — " +
-        "its rules arrive from sentences in the conversation — so there is " +
-        "nothing drawn to copy. The words say what pressing it does, which is " +
-        "the whole promise of the feature: not 'apply', but that a brief " +
-        "BECOMES rules.",
-    ],
-    /*
-     * /eval, WHICH IS NOT IN ANY PROTOTYPE BY DESIGN.
-     *
-     * It is the labelling surface for Phase 0's set — two labellers answering
-     * whether a moment backs a claim — and it is a tool for building the
-     * evidence this product's retrieval is measured against, not part of the
-     * product a user buys. No prototype draws it because no user sees it.
-     * Signed off as a set rather than individually: the whole page is in this
-     * category and splitting it would imply some of it was drawn.
-     */
-    ...[
-      "What backs what",
-      "Write a claim, then say whether each moment backs it. Nothing about how well search works means anything until this exists.",
-      "Answering as",
-      "Ask the judge",
-      "Take the set away &nearr;",
-      "· every answer so far, as the file the runner reads",
-      "Find moments",
-      "CLAIMS SO FAR",
-    ].map((t) => [
-      t,
-      "The labelling surface at /eval. It builds the ~200-claim set that " +
-        "Phase 0's acceptance measures retrieval against; it is a tool for " +
-        "the people making the evidence, not part of the product a user buys, " +
-        "and no prototype draws it because no user sees it.",
-    ]),
-    ...[
-      "As recorded",
-      "Clean it up",
-    ].map((t) => [
-      t,
-      "The export panel's sound choice. The container has had a full denoise, " +
-        "de-click, presence, compression and broadcast-loudness chain since it " +
-        "was written and NOTHING EVER RAN IT — /enhance-audio had no caller in " +
-        "src/ at all. Off by default, like captions and for the same reason: " +
-        "it changes how somebody's voice sounds and a finished file cannot be " +
-        "un-processed.",
-    ]),
-    [
-      "Talk over it",
-      "B-roll with narration. The renderer has mixed a recording over a clip " +
-        "with the clip's own audio sidechain-ducked underneath since that " +
-        "branch was written, and nothing had ever handed it one \u2014 a beat was " +
-        "either a clip OR a recording, so a voiceover became a flat colour " +
-        "card and the picture was thrown away. On a voiceover beat the button " +
-        "still says \"Record it\"; this is the b-roll wording.",
-    ],
-    [
-      "Watch the cut",
-      "The editor has always played the ORIGINAL: striking a line greys it out " +
-        "and changes a number, and that is the whole feedback. Whether the cut " +
-        "actually flows could only be found out by exporting the file and " +
-        "watching it, which is the missing half of editing by text. The " +
-        "prototype has no such control because its demo cut is not playable. " +
-        "The toggle reads \"Whole video\" while it is on.",
-    ],
-    [
-      "Whole video",
-      "The same toggle, pressed. Says what it will do rather than what it is " +
-        "doing, like every other control in this product.",
-    ],
-    [
-      "Tell me what to change and I'll go through the whole transcript. Try \u201Ccut the bits where I repeat myself\u201D, \u201Ckeep only the strongest points\u201D, or \u201Cput the punchline first\u201D.",
-      "What the assistant says before you have said anything. It replaces " +
-        "nine example chips that sat in a wall down a 300px column — nine of " +
-        "anything is a list you skip rather than read — and it names the two " +
-        "verbs a pass has: selecting (keep or cut) and, now, ordering. The " +
-        "prototype has no such control, because its assistant is one input " +
-        "with no conversation behind it.",
-    ],
-    [
-      "It reads the whole transcript.",
-      "Under the composer, because a pass is not a search: it costs minutes " +
-        "and money and reads every window of the source, and the field it " +
-        "sits under looks exactly like a box you might expect to filter " +
-        "something. Saying what it does is cheaper than a surprised bill.",
-    ],
-    [
-      "Undo this",
-      "A pass rewrites the whole cut at once, and the only way back was a toast " +
-        "that expired in six seconds or Cmd-Z — which the owner does not press, " +
-        "so in practice the one action that changes everything was permanent " +
-        "the moment you looked away. Each pass now keeps the cut as it stood " +
-        "before it ran and the turn spends that snapshot once. The prototype " +
-        "has no such control because its assistant is a single input with no " +
-        "conversation behind it and nothing to take back.",
-    ],
-    ...[
-      "Empty the bin",
-      "Put it back",
-      "Delete for good",
-    ].map((t) => [
-      t,
-      "The deleted pile in Settings. Delete is a soft delete here — an edit or " +
-        "a video goes to a bin you can take it back out of — and the " +
-        "prototype has no bin at all, because nothing in it can be deleted. " +
-        "These have been shipped for a long time and were never CHECKED: the " +
-        "controls only render when the bin has something in it, and no check " +
-        "had ever put anything there. The editor gate now makes a library edit " +
-        "and deletes it again, which is what finally rendered them.",
-    ]),
-    [
-      "THEY CALLED IT NON-LINEAR \u00B7 THEN GAVE YOU A LINE",
-      "Replaces the prototype's 'NO TIMELINE \u00B7 NO SCRUBBING \u00B7 NO NLE', " +
-        "which sat directly above the headline 'The timeline is gone. Good.' " +
-        "and said the same thing twice \u2014 an eyebrow should earn the headline, " +
-        "not restate it. The replacement is the owner's own observation: " +
-        "'non-linear never made sense, now we make it make sense'. Non-linear " +
-        "editing meant random access rather than cutting tape in sequence, and " +
-        "the interface the industry shipped for it is a literal horizontal " +
-        "line you drag along. Naming that is a sharper claim than listing what " +
-        "we left out.",
-    ],
-    ...[
-      "In this cut",
-      "Ask the model",
-      "More like these",
-    ].map((t) => [
-      t,
-      "The command bar's three groups. The editor had TWO text boxes — 'Find " +
-        "a word in this cut' and 'Ask for another pass' — plus nine example " +
-        "chips and three counted clean-ups, all stacked down a 300px column " +
-        "under a video taking 62vh of it, so the two most powerful things in " +
-        "the product were below the fold behind a scrollbar at the narrowest " +
-        "width on the page: 'scrollbars to see all the options and shit... " +
-        "even without the scroll it wasn't the most elegant solution to begin " +
-        "with'. Find and Ask are the same gesture at different precision — " +
-        "'sponsor' means the twelve places it is said, 'cut the sponsor read' " +
-        "means the model decides — so they are one field, and these name what " +
-        "each answer is. The prototype has no such control because it has one " +
-        "box and a wall of chips.",
-    ]),
-    ...[
-      "Shorts",
-      "Full videos",
-    ].map((t) => [
-      t,
-      "Exports lists both kinds now, under two headings. Clipping was the " +
-        "ONLY surface that listed a finished short, so scrapping it while " +
-        "Exports asked for cuts alone would have left every short unreachable " +
-        "and still paying for its storage. Two headings rather than two tabs, " +
-        "because two tabs means two counts, and a count that disagrees with " +
-        "its list is the bug this page has already had twice.",
-    ]),
-    [
-      "Drop",
-      "Keeping a clip, where the clips are. src/projects.ts has always said " +
-        "kept 'means ONE thing: I want this moment. That is what Footage's " +
-        "Clips tab shows' — and the only place you could say so was Clipping. " +
-        "The handler and the route both outlived it with nothing rendering a " +
-        "button. The list is filtered to kept clips, so this always drops and " +
-        "undo puts it back.",
-    ],
-    [
-      "Exports",
-      "Footage's fourth tab. A finished cut lived only in the Exports strip " +
-        "inside the one edit that made it, so finding last week's meant " +
-        "remembering which edit that was — 'that should also be saved to a " +
-        "place of finished or exported or whatever'. The word is the one the " +
-        "export panel already uses.",
-    ],
-    [
-      "Nothing exported yet \u2014 finish a cut and it lands here.",
-      "The Exports tab's empty state. Says what fills it, rather than that it " +
-        "is empty.",
-    ],
-    /*
-     * THE LANDING PAGE.
-     *
-     * These are the first strings this check has ever seen from it. `/` is the
-     * landing site when signed out and Home when signed in, and the dev server
-     * has DEV_LOGIN_EMAIL set — so `/` was always Home and the whole marketing
-     * page went unchecked. Adding /landing to ROUTES surfaced thirteen strings
-     * at once: five new (the shorts section) and eight that had drifted from
-     * design/Landing.dc.html at some point with nothing to notice.
-     *
-     * Signed off collectively rather than argued line by line: this is authored
-     * marketing prose, which is a different thing from UI chrome, and the point
-     * of listing it is that from now on changing it is visible.
-     */
-    ...[
-      "VERTICAL, WITHOUT ASKING",
-      "Any line in it becomes a vertical short.",
-      "It reads the whole thing and scores what would stand alone. Press one and it cuts vertical with the captions burned in, ready to post. No brief, no timeline, no second tool \u2014 the same page you edit in.",
-      "THAT'S THE WHOLE",
-      "POINT THOUGH",
-      "ISN'T IT",
-    ].map((t) => [
-      t,
-      "The shorts half of the product, which this page did not mention at all: " +
-        "it sold 'editing is reading now' and nothing else. The pitch is " +
-        "Descript AND OpusClip and only one half was on the way in. The claim " +
-        "was rewritten when Clipping was scrapped: it used to promise 'One " +
-        "long video in. Eight shorts out.' and describe a batch that cut every " +
-        "winner unasked. That batch is gone — shorts are made one at a time " +
-        "off any line in the editor — and a landing page must not sell a " +
-        "surface that no longer exists.",
-    ]),
-    /*
-     * "READING" WAS TWO DIFFERENT THINGS AT ONCE.
-     *
-     * The prototype's pitch is "editing is reading now" and "EDIT BY READING",
-     * and every session since has ALSO used "read" for what the machine does —
-     * "reading it", "reading it for meaning", "it starts reading". Same verb,
-     * two subjects: you read, and it reads. The owner: "this whole reading, I
-     * remember I told the last one to change it — editing is reading now does
-     * not make sense."
-     *
-     * He is right twice. Reading is passive and what you actually do is edit
-     * text, and the machine's half of the word is not in the prototype at all
-     * — earlier sessions invented it and it collided with the design's own.
-     *
-     * So the machine transcribes, and the pitch is his: "The timeline is gone.
-     * Good." A deliberate departure from design/Landing.dc.html, made by the
-     * person whose product it is.
-     */
-    ...[
-      "The timeline is gone.",
-      "Good.",
-      "CUT BY DELETING WORDS",
-      "Delete a sentence, and the shot goes with it.",
-      "You edit the words instead.",
-      "Go cut it into a video.",
-      "It takes the sentence and works out the job.",
-      "Drop an hour of video and say what you want out of it. Aldershot transcribes the whole thing and makes the first cut \u2014 you strike what's weak, keep what's good, and it's done.",
-      "A file or a link, plus one sentence about what you want. It transcribes the whole thing \u2014 every word, timestamped.",
-      "An hour becomes nine minutes. It cuts first; you fix anything by editing the text and striking lines.",
-      "It shows you what it found and why. You keep, cut, and reorder in the transcript \u2014 Space plays, arrows step through.",
-      "If you can edit a sentence, you can cut a video. The editor is the transcript \u2014 strike what you don't want, keep what you do. There's no timeline to learn, and the first pass is already done when you arrive.",
-    ].map((t) => [
-      t,
-      "The reading pass. The machine transcribes; you edit. One verb each, so " +
-        "the product stops using the same word for both, and the hero says " +
-        "something rather than asking to be decoded.",
-    ]),
-
-    ...[
-      "The whole video is text. Strike a line and it's out of the cut. Drag across a phrase and it goes with a count of exactly what you'll lose. Find a word and cut every place it was said \u2014 the sponsor read, the tangent, the tic \u2014 in one go. Nothing is deleted: everything is one undo away.",
-      "Every moment you keep stays in one library \u2014 timestamped, playable, and searchable by the words that were said rather than what you named the file. Months later, pull a line from a video you shot in March straight into the cut you are making today. That is how a clip becomes a supercut, and a supercut becomes an essay.",
-      /* Trimmed when the Adjust sheet went with Clipping. It used to promise
-         "A short is never take-it-or-leave-it — move its in and out points by
-         pointing at the words, and see the frame it opens on before you spend
-         a render", which was Clipping's trim-by-word sheet and exists nowhere
-         now. Shortening a short means striking words in the editor first. */
-      "Every render lands ready to leave: download it, or cut a short straight off any line in it at whatever shape the platform wants, captions burned in. Nothing you upload ever expires, and the original is never touched: an edit is a set of decisions about a video, so you can make another one from the same footage tomorrow.",
-      "\u201cFine \u2014 yes, we moved the launch before the review came in.\u201d",
-      "\u201cThe roadmap slide was aspirational. Very aspirational.\u201d",
-      "\u201cWe script the \u2018unscripted' Q&A. Everyone does.\u201d",
-      "6 clips from 2 sources \u00b7 2 of your own \u00b7 1080p MP4 \u00b7 9:04",
-    ].map((t) => [
-      t,
-      "Landing copy that already differed from design/Landing.dc.html before " +
-        "this check could see the page. Recorded as it stands rather than " +
-        "reverted \u2014 it reads better than the prototype's and is what the site " +
-        "has been serving; the value of listing it is that the next change to " +
-        "it is visible.",
-    ]),
-    ...[
-      "A minute of footage we read. A one-hour video costs roughly its length, once \u2014 and after that, cutting it, re-cutting it and exporting it cost nothing at all.",
-      "A processing minute is a minute of footage we read. Cutting, re-cutting and exporting are free, and storage is permanent on every plan.",
-    ].map((t) => [
-      t,
-      "THE PRICING PAGE WAS DESCRIBING A METER THE CODE DOES NOT KEEP. Both " +
-        "of these said a processing minute covered rendering cuts and burning " +
-        "captions. checkCap (src/plans.ts) sums usage_events WHERE " +
-        "job_type = 'transcribe' and nothing else, so a render has never once " +
-        "moved that number \u2014 and this is the page a customer reads before " +
-        "paying, which makes it the worst possible place to be wrong about " +
-        "what they are buying. The copy changed rather than the charge: " +
-        "whether a render SHOULD consume minutes is a pricing decision, and " +
-        "not one to make by quietly starting to bill for it. Exports being " +
-        "free is also the better thing to be true, so it is now said out loud " +
-        "instead of being a discrepancy.",
-    ]),
-
-    ...[
-      "Keep only the strongest points",
-      "Where I actually make the point",
-      "The funniest moments",
-      "Cut the bits where I repeat myself",
-      "Cut the false starts",
-      "Cut anything I said better later",
-      "Just the story, none of the setup",
-      "Every question I ask",
-    ].map((eg) => [
-      eg,
-      "An example instruction for the pass field. The prototype's three are " +
-        "about its own demo — a podcast with a sponsor read and a guest " +
-        "committing logical fallacies — so on a person talking to a camera " +
-        "they are instructions about things that are not there, and an " +
-        "example you cannot use teaches nothing about what the field takes. " +
-        "These are the same gesture against any video, and they show the " +
-        "range: selecting, tightening, and shaping by length or structure.",
-    ]),
-    [
-      "Good morning.",
-      "The prototype greets 'Good morning, Chris.' because its demo account " +
-        "always has a name. A real account may not — an email address with no " +
-        "separator yields no usable first name — and greeting someone by a " +
-        "mangled surname-mashup, or by the owner's name, is worse than " +
-        "dropping the vocative.",
-    ],
-    [
-      "Good morning. One video landed overnight.",
-      "The prototype's line is 'Good morning, {who}. Four videos landed " +
-        "overnight.' Both halves are interpolated: the name (see above) and " +
-        "the count, which is real data and is whatever actually landed. It " +
-        "can never match a fixed string, and rounding a real count to the " +
-        "prototype's 'four' would be a lie about the user's own library.",
-    ],
-    [
-      "Nothing here yet — upload a video and it starts reading.",
-      "The Videos tab is a deliberate departure from the prototype, which " +
-        "opens Footage on Clips; the owner's actual use is 'find the video I " +
-        "uploaded'. So the prototype has no empty state for a video library, " +
-        "and the one being used was its CLIPS line — 'Nothing kept yet, add a " +
-        "clip back' — which tells someone with no videos at all to restore a " +
-        "clip they never had. Phrased in the prototype's own voice: 'Nothing " +
-        "here yet' is its wording on Home.",
-    ],
-    [
-      "New edit",
-      "The prototype has no source page at all — clicking footage in it goes " +
-        "straight to a scored editor — so it has no word for starting a " +
-        "SECOND cut of one video. Its nearest phrasings are a heading (\"Want " +
-        "anything else from this footage?\", used verbatim above this button) " +
-        "and \"Skip the brief — edit it yourself\", which describes the first " +
-        "edit rather than another one. Two words, its own vocabulary.",
-    ],
-    [
-      "Make a short",
-      "The prototype puts shorts on a surface of their own and its verb is " +
-        "'Cut shorts from it' — a batch, on a whole video. The control this " +
-        "labels is one block, in the editor: a 9:16 export of the piece you " +
-        "are looking at. Its own word for the result is 'short', and the " +
-        "plural batch phrasing is wrong for a single block, so the noun is " +
-        "the prototype's and only the number changed. See " +
-        "docs/decisions/blocks.md — shorts are an export, not a surface.",
-    ],
-    [
-      "Close account",
-      "The prototype is a permanently-signed-in demo with no account lifecycle " +
-        "at all, so it has no string for this. It cannot be skipped: you " +
-        "cannot sell a subscription to an account nobody can close, and the " +
-        "right to erasure is not optional for anyone selling into the EU or UK.",
-    ],
-    [
-      "Keep only the good bits",
-      "Was \"Find the strong bits\". Two things were wrong with that name and " +
-        "the owner named both — \"the vocabulary and what it actually does\". " +
-        "\"Find\" promises annotation and the control DELETES: the pass returns " +
-        "action keep, and everything it did not pick is struck. A destructive " +
-        "button whose name does not say what disappears is the thing people " +
-        "are frightened of pressing, and this one is gold and sits alone. " +
-        "\"Strong\" was worse than vague, it was circular — the instruction sent " +
-        "the model the word \"strongest\" and asked it to score \"how strongly " +
-        "it matches\", with nothing anywhere saying what a good moment is. Now " +
-        "fixed in src/score.ts and held by test/strong.test.ts. The prototype " +
-        "has no word for any of this because its scoring lived on a separate " +
-        "surface — Clipping — rather than being something you ask for while " +
-        "editing. Making it an assist INSIDE the editor is the point of " +
-        "docs/decisions/blocks.md: the model marking what is strong is a " +
-        "property of the blocks you are already reading, not a destination.",
-    ],
-    [
-      "Shape it",
-      "The second of two row headings over the verbs, and the two rows are two " +
-        "different promises. Clean up is subtractive, counted and instant — " +
-        "fillers and silences are found in the transcript by code, so the " +
-        "button prints how many there are before you press it. Shape it asks " +
-        "the model for a judgement: it costs a pass, it takes minutes, and it " +
-        "can come back with nothing. Splitting them by THAT rather than by " +
-        "topic is what stops the free ones and the expensive ones reading " +
-        "alike. The prototype has no verb list at all — its assist is one field.",
-    ],
-    ...[
-      ["Start where I start", "the mic check and the false start before the first real sentence"],
-      ["Cut the tangents", "the bits that go nowhere"],
-      ["Lead with the best line", "the one reorder instruction, which the arrange pass already takes"],
-      ["Cut the hedges", "\"I think\", \"kind of\", \"if that makes sense\""],
-      ["Cut the meta", "\"sorry about the audio\", \"as I said last time\""],
-      ["Remove the sponsor read", "the ad read, which the scoring rules already refuse to keep"],
-      ["Say it once", "the same point told three times, keeping the best telling"],
-      ["Make it half as long", "a length, said as a length"],
-      ["Cut where I asked", "\"can we cut that\", \"strike that\", said on camera"],
-    ].map(([label, what]) => [
-      label,
-      "One of the verbs over the composer: " + what + ". THESE WERE REMOVED " +
-        "AND THE REMOVAL WAS THE MISTAKE. Nine example prompts were replaced " +
-        "with one sentence, on the argument that nine is \"a wall you skip " +
-        "rather than read\" — tidiness bought at the cost of the one control " +
-        "this product is about. The owner: \"if this is the result i don't " +
-        "think you understood the significance i was placing on it\". A chat " +
-        "with no suggested prompts is a discoverability failure: after two " +
-        "years of Underlord there is still no community prompt library for " +
-        "it, only the vendor's own copy, and even the chat-first product " +
-        "sells itself with chips. Six are visible and six sit behind More, " +
-        "because products converge on three to six in front and everything " +
-        "else a layer down. The prototype has none of these words — it draws " +
-        "a single field and no examples, which is the state this fixes. Every " +
-        "label is an imperative verb plus a concrete noun in the words a " +
-        "person would use, \"Cut the tangents\" over \"Edit for Clarity\"; and " +
-        "every one carries the sentence it would type, so pressing a button " +
-        "and typing it are the same act and no verb does anything the box " +
-        "cannot.",
-    ]),
-    [
-      "Duplicate",
-      "The prototype offers 'Branch a version', which it renders as an inert " +
-        "span — the feature was drawn and never built, and 'branching' is not " +
-        "what anyone calls this outside version control. The need is real: an " +
-        "edit is its cuts and beats, and there was no way to try a shorter or " +
-        "vertical one without destroying the cut you liked. Named the word " +
-        "every other editing tool uses for it.",
-    ],
-    [
-      "Sign out",
-      "The prototype is a demo that is always signed in, so it has no sign-out " +
-        "anywhere and no string for one. Real accounts need to be able to leave; " +
-        "'Sign out' is the plainest words for it and matches the voice of the " +
-        "controls beside it.",
-    ],
-    [
-      "drafting the acts",
-      "A job stage label. The prototype names a few stages ('reading it for " +
-        "meaning', 'picking out the moments') but never enumerates them, and " +
-        "essay outlining is a stage it does not cover. Written in the same " +
-        "voice as the ones it does.",
-    ],
-    /*
-     * SCOUT'S CARD IN THE EDITOR. Four strings the prototype has no words
-     * for, because One Take draws Scout in the plan flow and not in the
-     * project state — "Scout is how the video gets better than your footage
-     * alone" is the Manual's line, and the Manual weights him more heavily
-     * than the prototype does.
-     *
-     * They have rendered since Scout was wired and this check never saw
-     * them: /editor shows the most recent project, and no project in the
-     * account it runs against had a source until one was seeded. Signed
-     * off rather than rewritten — the card says what Scout does in his own
-     * terms, and there is nothing to match it against.
-     */
-    [
-      "Look outside this project",
-      "The Scout card's heading in the editor. Says where he looks, which is " +
-        "the one thing that distinguishes him from the search box above.",
-    ],
-    [
-      /* The entities, not the characters: this check reads the markup and
-         does not decode one. Same trap as "Take it elsewhere &nearr;". */
-      "Scout finds clips that aren&rsquo;t yours yet &mdash; links, never downloads. He turns the brief into things a viewer could point to on camera, and searches for each and for its opposite.",
-      "What Scout is, in the two sentences that matter: invariant 9 (links, " +
-        "never downloads) and the behaviour-first decomposition doc 18 asks " +
-        "for. Both are promises a person can hold us to.",
-    ],
-    ["Send Scout", "The press. A verb and a name, like every other control here."],
-    ["The board", "Where his findings are. The prototype's own word for it."],
-    [
-      "Take it elsewhere &nearr;",
-      "The OTIO export, in the export panel. The prototype has no interchange " +
-        "file at all — it is doc 09's escape hatch and Phase 1's last " +
-        "acceptance item, so there was no wording to follow. Says what the " +
-        "link does from the person's side rather than naming a format: " +
-        "somebody who wants this wants to take the edit somewhere, and the " +
-        "line beneath it says what they get. 'Export' was taken, by the " +
-        "button six pixels above it that makes a video.\n\n" +
-        "The entity rather than the character, because this check reads the " +
-        "markup and does not decode one. Said here so the next person to " +
-        "paste a signed-off string does not spend an evening on it.",
-    ],
-    [
-      "The cue sheet &nearr;",
-      "The cue sheet, in the export panel under the OTIO link. The prototype " +
-        "has no Before you post step at all — doc 09 does, and this is the " +
-        "first piece of it — so there was no wording to follow.\n\n" +
-        "Named rather than described, because 'cue sheet' is what the " +
-        "document is called by everyone who will ever ask for one: a " +
-        "platform reviewer, a broadcaster, somebody answering a complaint. " +
-        "Inventing a friendlier phrase would leave the person unable to say " +
-        "what they have. The sentence beside it does the explaining.\n\n" +
-        "The entity rather than the character, same trap as the line above.",
-    ],
-    [
-      "The dispute file &nearr;",
-      "The dispute file, under the cue sheet. Same reason as the line above: " +
-        "the prototype has no Before you post step for it to belong to.\n\n" +
-        "'Dispute file' is doc 09's own name for it and the name it would be " +
-        "asked for by, so it is named rather than described — but the " +
-        "sentence beside it leads on what the person gets, because most " +
-        "people reading it have never had a dispute and should still open it.",
-    ],
-    [
-      "Before you post &nearr;",
-      "Doc 09's checklist, and the first of the three links because it is the " +
-        "one read first. The prototype has no Before you post step at all, " +
-        "which is why none of these three can be matched against it.\n\n" +
-        "The phrase is doc 09's own heading and is what the step is called " +
-        "everywhere else in the handoff, so renaming it here would leave the " +
-        "product and its documentation using different words for the same " +
-        "screen.",
-    ],
-    [
-      "The whole record &nearr;",
-      "The provenance manifest, last of the four export documents because it " +
-        "is the only one written for a machine as much as for a person.\n\n" +
-        "Not called 'the provenance manifest' on the link, because nobody " +
-        "asks for one by that name until they already know what it is. It " +
-        "says what you get — the whole record — and the sentence beside it " +
-        "says what that means and what it leaves out.",
-    ],
-    [
-      "Whether it is working",
-      "Phase 8's SLO dashboard, on Settings and owner-only. Four readings, and the hard part is what is left out: a dashboard of everything measurable is one nobody reads, and the thing somebody needs at 2am is \"is it broken, and which part\" rather than a percentile.\n\nNamed as the question rather than as \"Status\" or \"Health\", because those are nouns a reader has to decode and this is the sentence they already have in their head. The prototype has no such panel and could not: it predates there being providers to watch.",
-    ],
-    [
-      "The judge, checked",
-      "The canary's reading. One synthetic claim goes through the REAL judge every sweep, with the right answer known in advance \u2014 so a provider that answers with nonsense fails it, which a liveness probe would not notice. Never checked shows a dash and asks for attention, because reporting the absence of a check as the success of one is the failure this panel exists to avoid.",
-    ],
-    [
-      "Jobs finished",
-      "Finished against died, over a day. One failed job is Tuesday \u2014 a user cancels, a provider blips \u2014 so this asks for attention only when failures are a real share of the day, unlike the row below it.",
-    ],
-    [
-      "Pieces accounted for",
-      "The reading with teeth: items that failed inside jobs which reported finishing. Invariant 7 \u2014 \"a job is complete only when every item is terminal and none failed silently. Silent partial failure is a P1.\" The completion invariant exists to make it impossible; this counts whether it is happening anyway, because a rule nobody measures is a rule that can stop applying without telling you.\n\nNo acceptable rate, so no share to clear: one piece in twenty asks for attention. \"Pieces\" rather than \"items\" because a person reading this did not write the item state machine.",
-    ],
-    [
-      "Providers answering",
-      "The breaker's state, summarised, with the shut pool named underneath. A shut pool does not stop a job \u2014 the capability falls to the model that runs without an external key \u2014 so the summary is a count and the rows beneath it carry the sentence that shut one.",
-    ],
-    [
-      "Model providers",
-      "The breaker's state, on Settings and owner-only. Phase 8 accepts on " +
-        "\"kill a provider mid-job in staging and the job completes on another " +
-        "pool\" \u2014 and a pool that is shut routes its capability to the model " +
-        "that runs without an external key, which works and is not as good.\n\n" +
-        "So the state has to be visible or the degradation is silent: a job " +
-        "that quietly finished on the free model is a job whose receipts are " +
-        "tagged with a different model, and the sentence that shut the better " +
-        "pool is the only answer to why. Invariant 3 \u2014 the reason, not a " +
-        "score. The prototype has no panel for this, and could not: it " +
-        "predates there being more than one pool.",
-    ],
-    [
-      "Answering normally.",
-      "What a healthy pool says, and a sentence rather than a blank. An " +
-        "empty line beside a pool name reads as missing information \u2014 the " +
-        "same reason \"nothing backs this\" is a sentence and not an empty " +
-        "list.",
-    ],
-    [
-      "anthropic/user",
-      "A pool is a way IN to a model, not a model: the same Claude is reached " +
-        "through the user's own key or through ours, and those fail " +
-        "separately. Named as the route rather than prettified, because the " +
-        "person reading this panel is the owner deciding whether a provider " +
-        "is down or a key is wrong, and \"Your Claude key\" would hide which " +
-        "of the two shut.",
-    ],
-    [
-      "anthropic/platform",
-      "Our own Claude key, as a pool. See anthropic/user \u2014 the split is the " +
-        "point: a 429 on somebody's own key is their account's limit and must " +
-        "never shut this one.",
-    ],
-    [
-      "workers-ai",
-      "The pool that needs no external key, and the one a shut Anthropic pool " +
-        "falls to. Listed beside the others because it can fail too, and " +
-        "because its being healthy is what makes the fallback honest.",
-    ],
-    [
-      "What goes here",
-      "Invariant 8's other half, on every line of the cut that has words.\n\n" +
-        "src/pictures.ts has been complete and half-reachable since Phase 5: " +
-        "`allowed()` refuses a generated card over a claim at the beat " +
-        "insert, so the refusal bites, and nothing in the product ever " +
-        "OFFERED a picture — so `place()` and `reasonFor()` chose between " +
-        "candidates only in their own tests. There was no surface to match " +
-        "against, because the prototype's block row has no picture control " +
-        "at all.\n\n" +
-        "Three words rather than 'Suggest a picture', because the question " +
-        "the panel answers is doc 08's: not 'what noun did the sentence " +
-        "contain' but 'why am I seeing this'. The panel leads with what was " +
-        "chosen and why, then what was refused and why, then the sources " +
-        "that have nothing behind them yet — naming documents and generated " +
-        "rather than omitting them, since an empty list and an unbuilt " +
-        "source look identical and are not.",
-    ],
-    /*
-     * ELEVEN STRINGS THAT WERE NEVER CHECKED, because they wore the mark
-     * that means "the user's footage wrote this".
-     *
-     * data-content exempts an element from this rule, for a good reason: a
-     * transcript line, a filename or a model's sentence cannot be in the
-     * prototype and must not be flagged. It had spread by copy-paste onto 46
-     * pieces of STATIC copy, so a whole row could be added to the front door
-     * and paraphrased and this check stayed green — which is what happened
-     * while the Scout row was being built. The mark is off all 46 now, 35 of
-     * them turned out to be the prototype's own words, and these eleven are
-     * the ones that genuinely are not. `content` (below) is the rule that
-     * stops it spreading again.
-     *
-     * All eleven are on two surfaces the prototype does not draw at all: the
-     * record panel after a render, and the two Settings panels about ending
-     * things. Both exist because the product sells and must be leaveable.
-     */
-    [
-      "In the editor",
-      "The nav anchor back to an open project. The prototype has one room " +
-        "and no second place to be, so it has no word for 'where you were' " +
-        "— the build does, because the editor is a route you can navigate " +
-        "away from and come back to.",
-    ],
-    [
-      "Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.",
-      "The Before you post step, which the prototype has no equivalent of " +
-        "(the same gap already signed off for \"Before you post &nearr;\").\n\n" +
-        "The second clause is the load-bearing one and is deliberately not " +
-        "softened: of the seven, some are measured and some cannot be, and a " +
-        "pre-flight that implied it had checked all seven would be the one " +
-        "kind of lie this product cannot tell.",
-    ],
-    [
-      "The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.",
-      "The OTIO escape hatch (doc 11, Phase 7). The prototype shows no " +
-        "export panel at all.\n\n" +
-        "The second sentence is a limit, said before the download rather " +
-        "than discovered in Resolve: OTIO carries the cuts, and the caption " +
-        "burn-in and the ducking are baked into the rendered file. Somebody " +
-        "who opens the timeline expecting their captions would otherwise " +
-        "find out by looking for them.",
-    ],
-    [
-      "Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.",
-      "Invariant 8's paper trail. The prototype's block row has no picture " +
-        "control, so there was nothing to match.\n\n" +
-        "\"already\" is the point: the manifest is written as the cut is " +
-        "made, not generated when somebody asks, so there is no window in " +
-        "which a picture is in the video and absent from the record.",
-    ],
-    [
-      "Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.",
-      "The cue sheet, for the same reason as the line above and with the " +
-        "same clause doing the same work. \"how much of it\" rather than a " +
-        "duration because the question a rights holder asks is proportion, " +
-        "not seconds.",
-    ],
-    [
-      "Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.",
-      "The dispute file (doc 09). Invariant 4 is that every claim keeps its " +
-        "receipt and \"nothing backs this\" must be reachable — so the file " +
-        "has to state its own gaps, and the sentence that says so is the " +
-        "last one rather than a footnote.",
-    ],
-    [
-      "A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.",
-      "The public receipts page, already signed off as a link (\"Receipts " +
-        "for viewers &nearr;\"); this is the sentence under it.\n\n" +
-        "The second sentence is there because the other four links in the " +
-        "panel give the reader a document and this one gives somebody else " +
-        "a page. Nobody should be able to press it and wonder afterwards " +
-        "whether it went out.",
-    ],
-    [
-      "Close this account",
-      "The prototype has no Settings surface and nothing that ends. The " +
-        "right to erasure is not optional for anyone selling into the EU or " +
-        "UK (docs/LAUNCH.md), so the product needs this and the design never " +
-        "drew it.",
-    ],
-    [
-      "Removes every video, edit and export, and the storage they hold. There is no bin behind this one.",
-      "The one place invariant 6 does not hold, said in the plainest words " +
-        "available. Everything else in the product switches off, waits 30 " +
-        "days, or is one undo away; this does not, and the sentence has to " +
-        "be the exception rather than sound like the rest of them.",
-    ],
-    [
-      "Deleting is reversible until you delete for good — that removes the video and every render made from it, and gives the storage back.",
-      "Invariant 6, stated where somebody acts on it. \"and every render " +
-        "made from it\" is the clause that earns the sign-off: a person " +
-        "purging a source to free space will not guess that the exports " +
-        "they kept go with it, and finding out afterwards is unrecoverable.",
-    ],
-    [
-      "The last day, from rows the product already writes. A dash means nothing happened, which is not the same as nothing going wrong.",
-      "The owner-only spend panel. No prototype equivalent — the design has " +
-        "no operator surface.\n\n" +
-        "The second sentence exists because a dashboard of dashes reads as " +
-        "healthy and is also what a stopped writer looks like. Saying which " +
-        "it cannot tell you is the honest version, and it is the same rule " +
-        "the SLO page follows.",
-    ],
-    [
-      "Receipts for viewers &nearr;",
-      "Doc 09's receipts page: \"the edit you can interrogate is a promise to " +
-        "the audience, not just the maker\". The prototype has no Before you " +
-        "post step and no public surface at all, so there was nothing to " +
-        "match.\n\n" +
-        "\"for viewers\" is doing the work in that phrase. The other four " +
-        "links in this panel give the reader a document; this one gives " +
-        "somebody else a page, and that difference has to land before the " +
-        "press, not after it.",
-    ],
-  ]);
-
-  const SHORT = 24;
-  const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const onBoundary = (t) => {
-    const re = new RegExp(`(?:"|'|>)\\s*${escapeRe(t)}\\s*(?:"|'|<)`);
-    return re.test(PROTO);
-  };
-
-  /* The arrow is a glyph; the prototype assembles these as "← " + surface name. */
-  const strip = (t) => t.replace(/^[\u2190]\s*/, "");
-  const known = (t) => {
-    if (SIGNED_OFF.has(t.trim())) return true;
-    const v = strip(t);
-    return v.length <= SHORT ? onBoundary(v) : proto.includes(v) || protoRaw.includes(v);
-  };
 
   const suspect = [];
   const seen = new Set();
@@ -1824,10 +1983,6 @@ async function checkStrings() {
 
   for (const route of routes) {
     const html = await (await fetch(BASE + route)).text();
-    const body = html
-      .replace(/<script[\s\S]*?<\/script>/g, ' ')
-      .replace(/<style[\s\S]*?<\/style>/g, ' ')
-      .replace(/<title>[\s\S]*?<\/title>/g, ' ');
     /*
      * Only UI COPY is checked. Text the user's own footage produced — a
      * transcript line, a filename, a duration, or a reason the model wrote —
@@ -1842,87 +1997,7 @@ async function checkStrings() {
     // eats the next element's opening bracket, so the scan silently sees only
     // every other element — which is how "Ask for another pass" slipped past a
     // check that reported all-clear.
-    for (const m of body.matchAll(/<([a-z]+)([^>]*)>([^<>]+)(?=<)/g)) {
-      if (/\bdata-content\b/.test(m[2])) continue;
-      const text = normalise(m[3]);
-      if (text.length < 8) continue;
-      // Three LETTERS, either case. This was /[a-z]{3}/, which skipped every
-      // all-caps label in the product — so the stage pills were never checked
-      // and an invented "SHORTS FROM THIS" pill shipped on a surface where the
-      // prototype has no pill at all. Timecodes and counts are still skipped,
-      // which is all the filter was ever for.
-      if (!/[A-Za-z]{3}/.test(text)) continue;
-      if (seen.has(text)) continue;
-      seen.add(text);
-      if (known(text)) continue;
-      // Strings that interpolate a value ("Welcome, Chris. …") can never match
-      // whole, because the prototype holds them as templates. Fall back to
-      // sentence fragments: every fragment long enough to carry real wording
-      // must still be found verbatim. Short fragments (a name, a count, a
-      // greeting stub) are allowed through — they are the interpolated part.
-      const fragments = text.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
-      /*
-       * Fragments of an interpolated string are deliberately partial, so they
-       * match by substring. The fallback below is gated so this looseness
-       * cannot also excuse a short wrong label.
-       */
-      const has = (fr) => proto.includes(fr) || protoRaw.includes(fr);
-
-      /*
-       * Only strings that plausibly interpolate get the fallback: more than
-       * one sentence, or a digit somewhere. Without this gate, a single short
-       * label like "THE WORDS" slips through by being under the fragment
-       * length threshold — which is exactly how it shipped once already.
-       */
-      const looksInterpolated = /\d/.test(text) || text.split(/(?<=[.!?])\s+/).filter(Boolean).length > 1;
-      if (!looksInterpolated) {
-        suspect.push(`${route}  "${text}"`);
-        continue;
-      }
-
-      /*
-       * Two acceptable reasons a fragment won't match whole, both distinct
-       * from paraphrasing — which is what this check exists to catch:
-       *
-       *  - INTERPOLATION. "Welcome, Chris." can never match, because the
-       *    prototype holds it as a template. Short fragments are allowed
-       *    through on the assumption that they are the interpolated part.
-       *  - TRUNCATION. The prototype's greeting is "Good morning, {who}. Four
-       *    videos landed overnight." When nothing landed overnight, rendering
-       *    only the first sentence is honest; rendering the second would be a
-       *    lie. Dropping a clause that isn't true is not rewording, so a
-       *    fragment whose stem (up to its interpolated value) appears in the
-       *    prototype is accepted.
-       */
-      /*
-       * The invariant core: strip the interpolated value from either end. A
-       * count or a name can sit at the front ("5 videos landed overnight",
-       * against the prototype's "Four videos landed overnight") or the back
-       * ("Good evening, Chris."). What must survive verbatim is the wording in
-       * between — that is the part a paraphrase would change.
-       */
-      const LEAD = /^[A-Z0-9][\w'\u2019-]*[,]?\s+/;   // "5 ", "Good "
-      const TAIL = /\s+[A-Z0-9][\w'\u2019-]*[.!?]?$/;   // " Chris."
-      const trimPunct = (x) => x.replace(/[.!?]+$/, "").trim();
-
-      /*
-       * Try dropping the interpolated value from the front, the back, or both,
-       * and require what remains to appear in the prototype verbatim. Whichever
-       * end the value sits at, the WORDING between is what a paraphrase would
-       * change, so that is what must survive. 8 characters is enough to be a
-       * real phrase and not a coincidence.
-       */
-      const cores = (fr) =>
-        [fr.replace(LEAD, ""), fr.replace(TAIL, ""), fr.replace(LEAD, "").replace(TAIL, "")]
-          .map(trimPunct)
-          .filter((x) => x.length >= 8);
-
-      const unmatched = fragments.filter(
-        (fr) => fr.length >= 18 && !has(fr) && !cores(fr).some(has),
-      );
-      if (unmatched.length === 0) continue;
-      suspect.push(`${route}  "${text}"`);
-    }
+    scanCopy(html, route, seen, suspect);
   }
 
   if (suspect.length) {
@@ -2817,6 +2892,61 @@ function checkNotes() {
   }
 }
 
+/**
+ * THE COPY ON EVERY PAGE THAT NEEDS NO SERVER.
+ *
+ * `strings` crawls a running app, so it skips — correctly — on a machine
+ * without one, and on that machine nothing checked copy at all. The landing
+ * site is a pure function of four fields. It could always have been checked
+ * here, and twice it was not: copy was written, pushed with "strings is left
+ * to CI", and CI found four strings that a single local run would have.
+ *
+ * Same extraction, same haystack, same sign-off list as the crawl — they
+ * share scanCopy. This rule covers four documents; `strings` still covers
+ * the thirty-odd that need data behind them.
+ */
+function checkCopy() {
+  const r = spawnSync('node', ['--experimental-strip-types', 'scripts/render-pages.mjs'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (r.status !== 0) {
+    fail('copy', 'The pages that need no server could not be rendered at all.', (r.stderr || '').trim().split('\n').slice(0, 10).join('\n'));
+    return;
+  }
+
+  let pages;
+  try {
+    pages = JSON.parse(r.stdout);
+  } catch {
+    fail('copy', 'scripts/render-pages.mjs printed something that is not the page list.', r.stdout.slice(0, 300));
+    return;
+  }
+  if (!Array.isArray(pages) || pages.length < 3) {
+    fail('copy', 'This rule found almost no pages, and four are serverless.', `read ${Array.isArray(pages) ? pages.length : 0}`);
+    return;
+  }
+
+  const seen = new Set();
+  const suspect = [];
+  for (const p of pages) scanCopy(p.html, p.label, seen, suspect);
+
+  if (!seen.size) {
+    fail('copy', 'No copy was extracted from any page, so this rule decided nothing.', 'the matcher is broken, not the pages');
+    return;
+  }
+  if (suspect.length) {
+    fail(
+      'copy',
+      'Copy on a signed-out page that is in none of the designs. Either a paraphrase (fix it) or new behaviour (flag it in SIGNED_OFF with the reason).',
+      suspect.join('\n'),
+    );
+  } else {
+    pass('copy', `${seen.size} strings across ${pages.length} serverless pages, every one of them a design's own`);
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -2828,6 +2958,7 @@ checkSchema();
 checkWiring();
 checkClaims();
 checkNotes();
+checkCopy();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

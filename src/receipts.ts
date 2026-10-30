@@ -190,7 +190,10 @@ export function receiptsHtml(p: ReceiptsPage): string {
   }
 </style>
 </head><body><main>
-  <h1>Receipts — ${esc(p.title)}</h1>
+  <!-- data-content: the video's own title is in this line, so the line
+       cannot be in any design. See src/ui/pages/home.ts for the same call
+       about the greeting. -->
+  <h1 data-content>Receipts &mdash; ${esc(p.title)}</h1>
   <p class="lede">${esc(summary)}</p>
   ${p.claim ? `<p class="claim">${esc(p.claim)}</p>` : ""}
   ${p.receipts.length ? `<h2>Where each quote came from</h2><ul>${rows}</ul>` : ""}
