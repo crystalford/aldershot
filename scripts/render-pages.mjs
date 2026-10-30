@@ -14,6 +14,7 @@ import { renderLanding, renderConfirm } from "../src/ui/pages/landing.ts";
 import { receiptsHtml, receiptsPage } from "../src/receipts.ts";
 import { renderCut } from "../src/ui/pages/cut.ts";
 import { renderSettings } from "../src/ui/pages/settings.ts";
+import { renderSource } from "../src/ui/pages/source.ts";
 
 /*
  * A CUT, MADE UP, FOR ITS COPY ONLY.
@@ -82,6 +83,37 @@ const cutData = (over = {}) => ({
   ...over,
 });
 
+/*
+ * A READ VIDEO, with and without an edit made from it.
+ *
+ * The second state is the one CI found by accident: the fixture grew a
+ * second video, the crawl picked it, and `/sources/:id` rendered a sentence
+ * no browser had ever shown — "Nothing cut from this yet." The first source
+ * has a project, so the empty half of that page was unreachable on every
+ * machine that had ever run the gate.
+ */
+const sourceData = (over = {}) => ({
+  source: {
+    id: "s1",
+    title: "The van, and what would not fit",
+    filename: "van.mp4",
+    duration_s: 60,
+    transcript_state: "ready",
+    poster_r2_key: null,
+    created_at: 1,
+    r2_key: "u/u1/sources/s1/original.mp4",
+    proxy_r2_key: null,
+    width: 1920,
+    height: 1080,
+  },
+  segments: [
+    { id: "s1:0", source_id: "s1", idx: 0, start_ms: 0, end_ms: 2_000, speaker: null, text: "a line of it", words: "[]" },
+  ],
+  job: null,
+  edits: [],
+  ...over,
+});
+
 const out = [
   {
     label: "renderLanding",
@@ -110,6 +142,25 @@ const out = [
     html: renderCut(cutData({ footageTab: "videos", onlySourceId: "b" })),
   },
   { label: "renderCut (footage · made)", html: renderCut(cutData({ footageTab: "made" })) },
+  {
+    /*
+     * A READ VIDEO WITH NOTHING CUT FROM IT. The state CI found by accident:
+     * the fixture grew a second video, the crawl picked it, and
+     * `/sources/:id` rendered a sentence no browser had ever shown. The
+     * first source has a project, so the empty half of that page was
+     * unreachable on every machine that had ever run the gate.
+     */
+    label: "renderSource (read, nothing cut from it)",
+    html: renderSource(sourceData()),
+  },
+  {
+    label: "renderSource (read, one edit)",
+    html: renderSource(
+      sourceData({
+        edits: [{ id: "p1", title: "whether to leave", brief: "tighten it", cuts: "[]", updated_at: 2 }],
+      }),
+    ),
+  },
   {
     /* Settings on a free account with nothing connected — the first thing
        anybody sees there, and the page whose plan hints were wrong until

@@ -1682,6 +1682,21 @@ const SIGNED_OFF = new Map([
     "The two empty states are the same gap one level down. A cut with nothing attached and an account with one project are both states the product reaches on its first day and no design draws."
   ]),
   [
+    "Nothing cut from this yet. An edit never changes the footage \u2014 you can make as many as you like.",
+    "A READ VIDEO WITH NOTHING MADE FROM IT \u2014 a state no design draws, " +
+      "because a prototype's library always has work in it.\n\n" +
+      "The sentence is invariant 5 said out loud on the page where somebody " +
+      "would doubt it: footage is read once and charged once, and an edit is " +
+      "a set of decisions ABOUT a video rather than a consumption of it. " +
+      "This is the one page where a person can see a video they paid to read " +
+      "and nothing yet to show for it, so it is where that has to be said.\n\n" +
+      "Found by CI, by accident: the fixture grew a second video, the crawl " +
+      "picked it, and this half of /sources/:id rendered for the first time " +
+      "ever. The first source has had a project since the fixture existed, " +
+      "so on every machine that has run the gate the empty branch was " +
+      "unreachable. scripts/render-pages.mjs renders both now.",
+  ],
+  [
     "Bring the footage in",
     "THE IMPORT CONTROL, which the Settings design has no equivalent for " +
       "because in the design there is nothing to press: it says a bucket on " +
@@ -2953,6 +2968,32 @@ function checkCopy() {
   }
   if (!Array.isArray(pages) || pages.length < 3) {
     fail('copy', 'This rule found almost no pages, and four are serverless.', `read ${Array.isArray(pages) ? pages.length : 0}`);
+    return;
+  }
+
+  /*
+   * EVERY PAGE THE RENDERER DECLARES HAS TO COME BACK.
+   *
+   * Two pages were added to render-pages.mjs by an edit whose anchor did not
+   * match, so they were never in the file at all — and this rule printed
+   * green over a page list two short. A missing page is silent by nature:
+   * there is no copy to find in a page that was not rendered, which is the
+   * worst possible failure mode for a rule about copy.
+   *
+   * Counting the QUOTED labels in the file is crude and catches both
+   * causes: an edit that did not apply, and a renderer that threw for one
+   * page. Quoted, because the fixtures below have a `label` field of their
+   * own and counting those made the rule disagree with itself on its first
+   * run.
+   */
+  const declared = (fs.readFileSync(path.join(ROOT, 'scripts/render-pages.mjs'), 'utf8')
+    .match(/\blabel: "/g) || []).length;
+  if (declared !== pages.length) {
+    fail(
+      'copy',
+      'The renderer declares more pages than it returned, so some page went unchecked in silence.',
+      `scripts/render-pages.mjs declares ${declared}; ${pages.length} came back`,
+    );
     return;
   }
 
