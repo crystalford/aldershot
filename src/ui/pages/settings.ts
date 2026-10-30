@@ -13,6 +13,7 @@
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import type { TrashRow } from "../../library-ops.ts";
+import { PLANS } from "../../plans.ts";
 
 export interface Meter {
   label: string;
@@ -129,12 +130,27 @@ function account(name: string | null, email: string): string {
   </div>`;
 }
 
+/*
+ * WHAT THE PLAN BUYS, from PLANS rather than from memory.
+ *
+ * Both hints were written by hand and both were wrong. They named an
+ * overnight queue, which nothing in the codebase ever queues to — no caller
+ * sets a job's overnight flag and editor-intake.ts deliberately omits the
+ * button because the queue is not provisioned. And they hardcoded 300 and
+ * 1,200, so the page a paying account reads about its own limits could
+ * disagree with the meter that enforces them.
+ *
+ * Found by the `claims` fidelity rule, which was written for the landing
+ * page and reached this one the moment Settings was added to its list: the
+ * landing page had been cleaned up and this surface was making the same
+ * promise to people who had already paid.
+ */
 function planBlock(plan: string, meters: Meter[], billingReady: boolean): string {
   const pro = plan !== "free";
-  const name = pro ? "Studio — $29/mo" : "Free";
+  const name = pro ? `Studio — $${PLANS.pro.price}/mo` : "Free";
   const hint = pro
-    ? "Overnight queue, 4K renders, and 1,200 processing minutes a month."
-    : "300 processing minutes a month. Overnight queue and 4K renders are Studio-only.";
+    ? `4K renders, ${PLANS.pro.sourceMinutes.toLocaleString("en-GB")} processing minutes a month, and ${PLANS.pro.storageGb} GB of storage.`
+    : `${PLANS.free.sourceMinutes} processing minutes a month. 4K renders are Studio-only.`;
   const btn = pro ? "Manage plan" : "Upgrade to Studio";
 
   const meterRow = (m: Meter) => {

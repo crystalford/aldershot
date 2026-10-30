@@ -150,24 +150,53 @@ nobody can check.
   compositor the render container does not have; the teleprompter and the
   countdown are client work on top of the bar that exists.
 
-- **The rest of the landing, below the hero.** `design/one-take/Landing.dc.html`
-  is now in the fidelity haystack and the hero is built from it; the sections
-  under it are still the retired design's copy, and both files are accepted
-  while that is true (see the note above `LANDING_PROTO`). What is still to
-  move, in the order it appears:
-  - **the nav** — the design names the product's own ideas (`The rules`,
-    `The archive`, `Pricing`, `Manual`); the build has `What it does`,
-    `How it works`, `Pricing`. Renaming them means renaming the sections they
-    anchor to, which is the rest of this entry.
-  - **THE RULES ARE THE FILE** — the design's worked example: a council
-    meeting, four numbered rules, and eight moments each labelled with what
-    happened to it (`out · rule 01`, `protected`, `out · over the cap`), under
-    the line "Left-out moments are kept, with the rule that removed them as
-    the reason. Nothing is deleted." Invariants 1 and 6 demonstrated rather
-    than asserted. The build has no equivalent.
-  - **Stories and Supercuts** — the room offers both as project kinds and the
-    landing lists four modes, not six.
-  - **THE ARCHIVE DIRECTS THE NEXT ONE**, the pricing tables, and the FAQ.
+- **The Manual, and "Read how it works".** The design's nav has a fourth
+  link and its closing CTA a second button, both pointing at
+  `Aldershot Manual.dc.html`. There is no manual in the product and no route
+  serves one, so both are absent rather than dead — the `promise` rule
+  exists to catch exactly that. The Manual is also the later word on what
+  the product IS (see CLAUDE.md's precedence list), so publishing it as a
+  real page is worth more than a link: it is the only document that explains
+  the conversation and Scout the way a user would meet them.
+
+- **Recipes — a rule set that starts next week's video.** The current design
+  promises them three times: in the rules section ("The same rules, saved as
+  a recipe, cut next week's video the way you cut this one"), in the Free
+  plan's features, and in the FAQ. Nothing implements them: `rules` is
+  keyed by project and there is no way to carry a set anywhere. All three
+  mentions are cut from the build, and `claims` now fails on the word. To
+  build it: a table of named rule sets per user, and an apply step on a new
+  project — the rules are already plain objects, so the work is the surface
+  and the naming, not the mechanism.
+
+- **Webhook handoff.** The design's FAQ answers "Can it post for me?" with
+  "set a webhook and every finished piece POSTs to it — Zapier, Make, n8n,
+  or your own endpoint". The only webhook in this codebase is Stripe's,
+  inbound. The answer now says what is true: you download the file, or
+  export the edit. To build it: an endpoint column per user, a signature,
+  and a POST from the render job's terminal state — with the retry and
+  dead-letter rules every other queue here already follows.
+
+- **The overnight queue.** Sold as a Studio feature by both the landing page
+  and Settings, and never built: no caller sets a job's `overnight` flag,
+  `queued_overnight` has never held a 1, and `editor-intake.ts` deliberately
+  omits the button with the reason written beside it. Both pages stopped
+  claiming it. Studio's honest list is three bullets, and that is the point —
+  the pitch is that you pay for the minutes it reads.
+
+- **Storage add-ons.** The design's line under the pricing table is "Need
+  more room? Storage add-ons, or point sources at a bucket you own." There
+  is no add-on: no price, no Stripe product, nothing that grants more room.
+  The bucket half shipped and is the whole of what is true, so that is what
+  the line says.
+
+- **Stories and Supercuts as project kinds.** Both are on the landing page
+  now and both are real things to ask for — the room offers them under "as
+  your archive grows" and the intent parser routes them — but `ProjectKind`
+  is `cut | reaction | essay | idea`, so a Story becomes a cut whose order
+  rule happens to be time. That is the right first version and it means
+  neither has a surface of its own: no date band down a Story, no count on
+  screen for a Supercut, both of which the landing page's own cards promise.
 
 - **"Open the sample cut".** The design's hero has two controls and the build
   renders one, because there is no sample cut: no route serves a public,

@@ -64,6 +64,13 @@ const ONE_TAKE_PROTO = fs.readFileSync(path.join(ROOT, 'design/one-take/Aldersho
  * passing against the file it was built from, anything written for One Take
  * passes against One Take, and copy that exists in neither still fails.
  * Drop the retired one when no section needs it.
+ *
+ * AS OF THE REBUILD, every section of the landing comes from the current
+ * design. Whether the retired file is still load-bearing is a question only
+ * `strings` can answer, and `strings` needs a running server — so it is
+ * left in, and removing it is a one-line change for whoever next runs the
+ * gate with a dev server up. Guessing green here would be the same mistake
+ * as the four strings that were "left to CI" twice.
  */
 const LANDING_PROTO = fs.readFileSync(path.join(ROOT, 'design/Landing.dc.html'), 'utf8');
 const LANDING_NOW = fs.readFileSync(path.join(ROOT, 'design/one-take/Landing.dc.html'), 'utf8');
@@ -2635,6 +2642,131 @@ function checkContent() {
   }
 }
 
+/**
+ * A CAPABILITY THE PUBLIC PAGE SELLS MUST EXIST SOMEWHERE ELSE IN src/.
+ *
+ * `strings` compares the landing page against the DESIGN, so a feature the
+ * design promises and the code has never had passes it twice over: the words
+ * match, and nothing anywhere asks whether they are true. Two were shipping
+ * when this rule was written, both in the pricing table and the FAQ —
+ * "Review links and webhook handoff", and an answer explaining that every
+ * finished piece POSTs to a webhook you set. The only webhook in the
+ * codebase is Stripe's, inbound. "Recipes" — a saved rule set that starts
+ * next week's video — is promised three times by the current design and
+ * rules are project-scoped with no way to carry them anywhere.
+ *
+ * The test is deliberately crude, because a precise one is not possible: for
+ * each noun below, if the landing page says it, something in src/ that is
+ * NOT a signed-out page has to say it too. That catches a bullet point with
+ * no implementation, which is the whole failure, and it says nothing about
+ * whether the implementation is any good.
+ *
+ * The haystack excludes the pages being checked. A rule that reads the file
+ * it is checking matches its own declarations — `reachable` did exactly that
+ * and never fired once.
+ */
+function checkClaims() {
+  /*
+   * Capability nouns, not adjectives. Each one names a thing a stranger
+   * would expect to be able to use after reading it, and each one is a word
+   * the implementation would have to use somewhere if it existed.
+   */
+  const NOUNS = [
+    /*
+     * The noun as the page says it, and what counts as evidence it exists.
+     *
+     * The evidence defaults to the noun. It is spelled out where the word
+     * alone is ambiguous: "webhook" passed this rule on its first run
+     * because Stripe's INBOUND webhook uses it, while the thing being sold
+     * is an outbound POST per finished piece, which would need somewhere to
+     * keep the endpoint. A rule that green-lights a promise on an unrelated
+     * use of the same word is the kind of check this repo keeps catching.
+     */
+    ['webhook', /webhook_url|webhook_endpoint|deliverWebhook/i],
+    ['recipe'],
+    ['review link'],
+    /* The flag exists; nothing ever sets it. Evidence is a caller. */
+    ['overnight queue', /overnight:\s*true/],
+    ['storage add-on'],
+    ['teleprompter'],
+    /* 4K is genuinely plan-gated, which is what makes it a Studio line
+       rather than a feature everybody already has. A bucket is not gated at
+       all — it is implemented for every plan, so this rule passes it and the
+       pricing table stops calling it a Studio feature. */
+    ['4K render', /mp4_4k/],
+    ['bucket you own', /presignFromBucket|importFromBucket/],
+  ];
+
+  /*
+   * The signed-out page, and Settings — the other surface that tells
+   * somebody what their money buys. Adding Settings here found the overnight
+   * queue being sold to accounts that had already paid for it.
+   */
+  const PAGES = ['src/ui/pages/landing.ts', 'src/ui/pages/settings.ts'];
+  /*
+   * THE COPY, NOT THE COMMENTS.
+   *
+   * Explaining in a comment why a promise was REMOVED must not count as
+   * making it: the first run of this rule reported webhooks, recipes and
+   * storage add-ons against a page whose only remaining mention of all
+   * three was the note saying they had been cut and why. Block comments,
+   * HTML comments and //-lines go; a line with a URL in it stays, which is
+   * why this does not just cut everything after a double slash.
+   */
+  const page = PAGES.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .split('\n')
+    .filter((l) => !/^\s*\/\//.test(l))
+    .join('\n');
+
+  /*
+   * Everything in src/ EXCEPT the pages above, which is where an
+   * implementation would have to live — and with the comments stripped,
+   * because a note is not an implementation.
+   *
+   * "Overnight queue — it works while you sleep" passed this rule on its
+   * first run, vouched for by src/ui/pages/editor-intake.ts explaining that
+   * the overnight queue is NOT provisioned and that a button which looks
+   * like it queues and does not is worse than no button. A comment saying a
+   * thing does not exist is the worst possible evidence that it does.
+   */
+  const impl = walk(path.join(ROOT, 'src'))
+    .filter((f) => !PAGES.some((p) => f.endsWith(p.replace('src/', ''))))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .split('\n')
+    .filter((l) => !/^\s*\/\//.test(l))
+    .join('\n');
+
+  const bad = [];
+  let claimed = 0;
+  for (const [noun, evidence] of NOUNS) {
+    const re = new RegExp(noun.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+    if (!re.test(page)) continue;
+    claimed += 1;
+    if (!(evidence || re).test(impl)) {
+      bad.push(
+        `"${noun}" is sold on the signed-out page and nothing else in src/ mentions it — ` +
+          'either build it or stop promising it',
+      );
+    }
+  }
+
+  if (bad.length) {
+    fail(
+      'claims',
+      'The public page sells something the product does not have. The design saying it too is not a defence.',
+      bad.join('\n'),
+    );
+  } else {
+    pass('claims', `${claimed} of ${NOUNS.length} capability nouns claimed publicly, every one of them implemented`);
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -2644,6 +2776,7 @@ checkConventions();
 checkReachable();
 checkSchema();
 checkWiring();
+checkClaims();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's
