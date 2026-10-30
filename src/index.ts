@@ -17,7 +17,7 @@ import { ensureV2Schema } from "./schema.ts";
 import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
 import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
 import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
-import { page, type View } from "./ui/shell.ts";
+import { noDevNotes, page, type View } from "./ui/shell.ts";
 import { renderBoard } from "./ui/pages/board.ts";
 import { boardFor } from "./scout-board-data.ts";
 import { createRun, diligence } from "./scout-store.ts";
@@ -4143,7 +4143,7 @@ const receiptsAdmin = async (c: Ctx) => {
   const url = live ? new URL(`/r/${live}`, c.req.url).toString() : null;
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
-  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+  const body = noDevNotes(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Receipts for viewers — ${esc(project.title || "Untitled")}</title>
 <style>
@@ -4177,7 +4177,7 @@ ${
        </form>
        <p>Nothing is public until you press this.</p>`
 }
-</main></body></html>`;
+</main></body></html>`);
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
 };
 

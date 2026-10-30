@@ -684,10 +684,36 @@ export interface PageOpts {
  * the account it runs against had none. It skipped, and four guarantees sat
  * red behind the skip.
  */
+/**
+ * THE NOTES COME OUT BEFORE THE PAGE GOES OUT.
+ *
+ * src/ui carries 66 HTML comments inside its template literals, and every
+ * one of them is a note to whoever next reads the code: why a control is a
+ * link rather than a div, which argument a line settles, what broke here
+ * before. They are worth keeping exactly where they sit — beside the markup
+ * they explain, not in a header twelve screens up.
+ *
+ * They are worth nothing in the output, and some of them are worse than
+ * nothing. The signed-out page shipped one explaining that its most
+ * prominent button had been a div that did nothing when clicked. Anybody can
+ * press view-source on a landing page.
+ *
+ * So the explanation lives in the source and the browser never sees it. This
+ * is the only reason an HTML comment in src/ui is allowed at all, and the
+ * `notes` fidelity rule makes sure every document goes through here.
+ *
+ * It takes comments and not whitespace: minifying would make the rendered
+ * HTML stop matching the source line for line, and `strings` compares
+ * rendered text against the designs for a living.
+ */
+export function noDevNotes(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 export function page(opts: PageOpts, body: string): string {
   const { title, view, screenLabel } = opts;
   const column = view === "room" || view === "cut" ? LAYOUT.room : LAYOUT.width;
-  return `<!doctype html>
+  return noDevNotes(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -710,5 +736,5 @@ ${body}
 ${overlays(body.includes('id="cut-video"'))}
 <script src="/app.js" type="module"></script>
 </body>
-</html>`;
+</html>`);
 }

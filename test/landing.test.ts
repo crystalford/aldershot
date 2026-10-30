@@ -15,6 +15,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { renderLanding, resolveDemo } from "../src/ui/pages/landing.ts";
 
 /* The bit positions, named, so a test reads as the rule it is about. */
@@ -114,4 +115,21 @@ test("the page ships all sixteen cuts, and renders the all-on one as HTML", () =
      correctly with no JavaScript. */
   assert.ok(html.includes("out · over the cap"));
   assert.ok(html.includes("3:17 from 2:50:12"));
+});
+
+test("no development note reaches the public page", () => {
+  /*
+   * An HTML comment inside a template literal ships to anyone who views
+   * source. This page used to carry seven, including one explaining that
+   * the hero's button had been a div that did nothing when clicked.
+   *
+   * The comments stay in the source, where they are worth something.
+   * src/ui/shell.ts's noDevNotes takes them out on the way to the browser
+   * and the `notes` fidelity rule holds every document to going through it.
+   */
+  assert.ok(!page().includes("<!--"), "an HTML comment reached the rendered page");
+  /* And the note itself is still in the source — the point is to keep it
+     there, not to delete it. */
+  const src = readFileSync("src/ui/pages/landing.ts", "utf8");
+  assert.ok(src.includes("<!--"), "the notes were deleted rather than stripped");
 });

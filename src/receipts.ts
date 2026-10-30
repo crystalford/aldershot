@@ -29,6 +29,7 @@
  * anything.
  */
 
+import { noDevNotes } from "./ui/shell.ts";
 import type { CueEntry } from "./cuesheet.ts";
 import type { DisputeEntry } from "./dispute.ts";
 
@@ -151,7 +152,7 @@ export function receiptsHtml(p: ReceiptsPage): string {
     ? `${p.receipts.length} clip${p.receipts.length === 1 ? "" : "s"} in this video came from somebody else. ${p.checked} of ${p.receipts.length} ${p.checked === 1 ? "has" : "have"} been checked word for word against the original.`
     : "Every clip in this video is the maker's own footage.";
 
-  return `<!doctype html>
+  return noDevNotes(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -199,5 +200,5 @@ export function receiptsHtml(p: ReceiptsPage): string {
     maker's own footage, and it cannot tell you whether a quote is fair — only
     whether the words are there, at that time, in that source.
   </footer>
-</main></body></html>`;
+</main></body></html>`);
 }

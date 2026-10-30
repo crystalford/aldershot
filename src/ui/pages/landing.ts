@@ -12,7 +12,7 @@
  * field instead, because reaching the app requires a link in your inbox.
  */
 
-import { esc } from "../shell.ts";
+import { esc, noDevNotes } from "../shell.ts";
 import { FONT_CSS } from "../fontfaces.ts";
 import { iconSearch } from "../icons.ts";
 import { PLANS } from "../../plans.ts";
@@ -367,7 +367,7 @@ function signInForm(id: string, buttonLabel: string, primary: boolean, google: b
  * automated submits a form.
  */
 export function renderConfirm(token: string): string {
-  return `<!doctype html>
+  return noDevNotes(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -389,7 +389,7 @@ export function renderConfirm(token: string): string {
     <p style="margin:18px 0 0;font-size:12px;color:rgba(236,236,241,0.3);line-height:1.6">If you didn't ask for this, close this page — nothing has happened yet.</p>
   </div>
 </div>
-</body></html>`;
+</body></html>`);
 }
 
 /**
@@ -469,7 +469,7 @@ export function renderLanding(d: LandingData): string {
   const feat = (t: string, color: string) =>
     `<div style="display:flex;gap:9px;align-items:baseline"><span style="color:${color};font-size:12px;flex:none">✓</span><span style="font-size:13px;color:rgba(236,236,241,0.65);line-height:1.5">${t}</span></div>`;
 
-  return `<!doctype html>
+  return noDevNotes(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -900,5 +900,5 @@ export function renderLanding(d: LandingData): string {
   paint();
 })();
 </script>
-</body></html>`;
+</body></html>`);
 }

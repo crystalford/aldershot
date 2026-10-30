@@ -2767,6 +2767,56 @@ function checkClaims() {
   }
 }
 
+/**
+ * NO DEVELOPMENT NOTE REACHES A BROWSER.
+ *
+ * src/ui keeps 66 HTML comments inside its template literals and they are
+ * worth keeping: each one sits beside the markup it explains. They are also
+ * shipped, and anyone can press view-source. The signed-out page carried
+ * one saying its most prominent button used to be a div that did nothing
+ * when clicked.
+ *
+ * src/ui/shell.ts exports noDevNotes for exactly this, and the only way it
+ * can be relied on is if every document goes through it. So: every template
+ * literal in src/ that opens a document has to be the argument to a
+ * noDevNotes call. Five of them do; a sixth written next week would not,
+ * and this is what says so.
+ *
+ * It checks the call rather than the output because the output needs a
+ * running server, and this has to hold on a machine with none.
+ */
+function checkNotes() {
+  const bad = [];
+  let seen = 0;
+
+  for (const f of walkAny(path.join(ROOT, 'src'), [])) {
+    if (!f.endsWith('.ts')) continue;
+    const src = fs.readFileSync(f, 'utf8');
+    /* The backtick plus doctype is what opens a document, however the
+       statement around it is written — a return, a const, an argument. */
+    for (const m of src.matchAll(/`<!doctype html>/gi)) {
+      seen += 1;
+      const before = src.slice(Math.max(0, m.index - 40), m.index);
+      if (!/noDevNotes\(\s*$/.test(before)) {
+        bad.push(
+          `${path.relative(ROOT, f)}:${src.slice(0, m.index).split('\n').length} — ` +
+            'a document that does not go through noDevNotes, so its HTML comments ship',
+        );
+      }
+    }
+  }
+
+  if (!seen) {
+    fail('notes', 'This rule found no documents at all, and src/ renders five.', 'the matcher is broken, not the code');
+    return;
+  }
+  if (bad.length) {
+    fail('notes', 'An HTML comment in a template literal is a note to the next reader of the code, not to the public.', bad.join('\n'));
+  } else {
+    pass('notes', `${seen} documents rendered, every one of them stripped of development notes`);
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -2777,6 +2827,7 @@ checkReachable();
 checkSchema();
 checkWiring();
 checkClaims();
+checkNotes();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's
