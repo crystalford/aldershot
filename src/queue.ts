@@ -243,6 +243,12 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         job_type: "proxy",
         cpu_ms: out.cpuMs,
         bytes_stored: out.bytes,
+        /* WHETHER THE MONEY BOUGHT ANYTHING. Omitted until now on the
+           reasoning that a proxy either exists or the job failed — true, and
+           it left the cost panel unable to separate container time that made
+           a copy from container time that made nothing. Decision 38 absorbs
+           these; absorbing them silently is the part that was wrong. */
+        outcome: out.ok ? "found" : "failed",
       });
 
       if (!out.ok) {

@@ -164,8 +164,18 @@ export interface UsageInput {
   stream_minutes_delivered?: number;
   /*
    * What the work produced: "found" when it did something, "empty" when it ran
-   * and produced nothing, "failed" when it died. Absent for job types where
-   * the question is meaningless — a proxy either exists or the job failed.
+   * and produced nothing, "failed" when it died.
+   *
+   * IT IS NOT OPTIONAL IN SPIRIT ANY MORE. This used to say "absent for job
+   * types where the question is meaningless — a proxy either exists or the
+   * job failed", and on that reading the proxy call site omitted it; 9,702 of
+   * the 9,703 rows in the development database have no outcome at all.
+   *
+   * The question is not meaningless, it was just not being asked. Decision 38
+   * is "charge for what drives cost; absorb the failed attempts" — so the
+   * business eats every failure, and until monthUsage read this column there
+   * was no way to see how much it was eating. That is what `wasted` below is
+   * for, and it is the whole reason a job type that can fail should say so.
    */
   outcome?: "found" | "empty" | "failed";
   /** Set when the diarization upgrade was used, which costs ~10x. */
@@ -289,23 +299,62 @@ export interface MonthRollup {
   total: number;
   lines: { job_type: string; cost: number; count: number }[];
   source_minutes: number;
+  /**
+   * What this month's spend bought nothing, in dollars and in attempts.
+   *
+   * Decision 38 absorbs failed attempts rather than charging for them, which
+   * means the business pays for all of them and nothing anywhere said how
+   * much. `outcome` had been written by five call sites and read by none —
+   * the column existed, the panel grouped by job_type alone, and the one
+   * question a cost panel is for could not be answered.
+   *
+   * Counted separately rather than deducted: `total` is still every dollar
+   * spent, because that is what the bill will say.
+   */
+  wasted: { cost: number; count: number };
 }
 
 /** The cost panel's only source (05-INFRA §Metering, phase 8). */
 export async function monthUsage(db: D1Database, userId: string, since: number): Promise<MonthRollup> {
+  /*
+   * GROUPED BY OUTCOME AS WELL AS BY TYPE, which is the only change needed
+   * to make `outcome` a column somebody reads. The per-type lines are summed
+   * back out of these rows, so the panel's existing breakdown and its
+   * headline total are the same figures they were.
+   */
   const { results } = await db
     .prepare(
-      `SELECT job_type, SUM(cost_usd) AS cost, COUNT(*) AS count, SUM(source_minutes) AS mins
+      `SELECT job_type, outcome, SUM(cost_usd) AS cost, COUNT(*) AS count, SUM(source_minutes) AS mins
          FROM usage_events WHERE user_id = ? AND created_at >= ?
-        GROUP BY job_type ORDER BY cost DESC`,
+        GROUP BY job_type, outcome ORDER BY cost DESC`,
     )
     .bind(userId, since)
-    .all<{ job_type: string; cost: number; count: number; mins: number }>();
+    .all<{ job_type: string; outcome: string | null; cost: number; count: number; mins: number }>();
 
-  const lines = (results ?? []).map((r) => ({ job_type: r.job_type, cost: r.cost ?? 0, count: r.count ?? 0 }));
+  const rows = results ?? [];
+  const byType = new Map<string, { job_type: string; cost: number; count: number }>();
+  for (const r of rows) {
+    const at = byType.get(r.job_type);
+    if (at) {
+      at.cost += r.cost ?? 0;
+      at.count += r.count ?? 0;
+    } else {
+      byType.set(r.job_type, { job_type: r.job_type, cost: r.cost ?? 0, count: r.count ?? 0 });
+    }
+  }
+  const lines = [...byType.values()].sort((a, b) => b.cost - a.cost);
+
+  /* Only "failed". An "empty" pass ran and honestly found nothing, which is
+     an answer and not a waste; a null outcome is a job type that has never
+     had anything to report. */
+  const failed = rows.filter((r) => r.outcome === "failed");
   return {
     total: lines.reduce((a, l) => a + l.cost, 0),
     lines,
-    source_minutes: (results ?? []).reduce((a, r) => a + (r.mins ?? 0), 0),
+    source_minutes: rows.reduce((a, r) => a + (r.mins ?? 0), 0),
+    wasted: {
+      cost: failed.reduce((a, r) => a + (r.cost ?? 0), 0),
+      count: failed.reduce((a, r) => a + (r.count ?? 0), 0),
+    },
   };
 }

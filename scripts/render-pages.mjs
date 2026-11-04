@@ -15,6 +15,7 @@ import { receiptsHtml, receiptsPage } from "../src/receipts.ts";
 import { renderCut } from "../src/ui/pages/cut.ts";
 import { renderSettings } from "../src/ui/pages/settings.ts";
 import { renderSource } from "../src/ui/pages/source.ts";
+import { exportPanel } from "../src/ui/pages/export.ts";
 
 /*
  * A CUT, MADE UP, FOR ITS COPY ONLY.
@@ -162,6 +163,23 @@ const out = [
     ),
   },
   {
+    /*
+     * The export panel, a pure function of a project id and a plan.
+     *
+     * Its wording about what the timeline file carries and what stays behind
+     * is read at the one moment somebody decides to take an edit elsewhere,
+     * and the only check that had ever seen it was the crawl. Both plans,
+     * because the panel's controls differ by plan and a sentence that only
+     * appears on one of them is a sentence checked on neither otherwise.
+     */
+    label: "exportPanel (free)",
+    html: exportPanel("p1", "free"),
+  },
+  {
+    label: "exportPanel (studio)",
+    html: exportPanel("p1", "pro"),
+  },
+  {
     /* Settings on a free account with nothing connected — the first thing
        anybody sees there, and the page whose plan hints were wrong until
        today. */
@@ -177,6 +195,36 @@ const out = [
       trash: [],
       cost: null,
       slo: null,
+    }),
+  },
+  {
+    /*
+     * The owner's cost panel, with spend that bought nothing.
+     *
+     * Owner-only AND conditional on there being waste, so it renders for one
+     * account in the world and only in a bad month — two conditions no crawl
+     * can satisfy. The line it carries is the figure decision 38 commits the
+     * business to absorbing.
+     */
+    label: "renderSettings (owner, a month with waste)",
+    html: renderSettings({
+      name: "Someone",
+      email: "someone@example.com",
+      plan: "pro",
+      isOwner: true,
+      connections: [],
+      meters: [],
+      billingReady: true,
+      trash: [],
+      slo: null,
+      cost: {
+        lines: [{ label: "Transcribe + align", amount: 1.2, color: "#5EB8C9", note: "per source minute" }],
+        total: 1.2,
+        finished: 2,
+        dayOfMonth: 9,
+        cache: { rows: 4, hits: 7 },
+        wasted: { cost: 0.42, count: 31 },
+      },
     }),
   },
   {
@@ -216,5 +264,36 @@ const out = [
     ),
   },
 ];
+
+/*
+ * HOW MANY PAGES THIS FILE IS SUPPOSED TO PRODUCE.
+ *
+ * Declared, so adding one is a deliberate two-line edit and a page that
+ * silently fails to arrive is an error rather than a smaller list. Both of
+ * those have happened: two entries were added by an edit whose anchor did not
+ * match, and `copy` printed ALL CLEAR over a page list two short, because
+ * there is no copy to find in a page that was not rendered.
+ *
+ * The fidelity rule used to count `label:` in this file instead, which is
+ * fragile for an obvious reason — the fixtures below have labels of their own,
+ * and the count was wrong twice before this replaced it.
+ */
+const EXPECTED = 16;
+if (out.length !== EXPECTED) {
+  console.error(
+    `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +
+      `Either a page was not added where it was meant to be, or one of them threw. ` +
+      `Built: ${out.map((p) => p.label).join(", ")}`,
+  );
+  process.exit(1);
+}
+
+/* Nothing may be empty either: a renderer that returns "" contributes no copy
+   and would otherwise pass as a page that was checked. */
+const empty = out.filter((p) => !p.html || p.html.length < 200);
+if (empty.length) {
+  console.error(`render-pages: these rendered nothing: ${empty.map((p) => p.label).join(", ")}`);
+  process.exit(1);
+}
 
 console.log(JSON.stringify(out));

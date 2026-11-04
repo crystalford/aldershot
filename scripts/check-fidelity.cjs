@@ -1551,14 +1551,26 @@ const SIGNED_OFF = new Map([
       "kind of lie this product cannot tell.",
   ],
   [
-    "The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.",
+    "The cuts as a timeline (.otio) for Resolve or Premiere, each clip named by what is said in it and carrying its quote, its source and where its timings came from. Captions, sound work and graphics are rendered rather than described, so those stay here.",
     "The OTIO escape hatch (doc 11, Phase 7). The prototype shows no " +
       "export panel at all.\n\n" +
       "The second sentence is a limit, said before the download rather " +
       "than discovered in Resolve: OTIO carries the cuts, and the caption " +
       "burn-in and the ducking are baked into the rendered file. Somebody " +
       "who opens the timeline expecting their captions would otherwise " +
-      "find out by looking for them.",
+      "find out by looking for them. It names graphics as well now, because " +
+      "the file's own metadata note names them and two sentences about the " +
+      "same file disagreeing is how somebody loses an afternoon.\n\n" +
+      "THE FIRST SENTENCE SAYS WHAT ARRIVES, which it did not before, and " +
+      "that half was the more useful one. src/otio.ts has written a receipt " +
+      "into every clip since the day the export existed \\u2014 the quote it " +
+      "contains, the source key it came from, and whether its word timings " +
+      "are forced-aligned or the recogniser's own \\u2014 and nothing in the " +
+      "product mentioned it at the moment somebody chose whether to use the " +
+      "file. Three competitors assessed this autumn hand over a project " +
+      "file (Pause makes it the entire product, at $15 to $200 a month) and " +
+      "not one of them puts provenance in it. Describing it where the " +
+      "decision is made costs a clause.",
   ],
   [
     "Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.",
@@ -1680,6 +1692,28 @@ const SIGNED_OFF = new Map([
     "The second sentence is the one that had to be written. The prototype's narrowing is page state and it never tells you it is reversible — and \"only\" is a word people have been burned by, so a control that looks like it might throw the rest of the cut away needs to say that it does not. It does not: the narrowing is its own column and the project's record of what it is made of never moves (invariant 6)." +
     "\n\n" +
     "The two empty states are the same gap one level down. A cut with nothing attached and an account with one project are both states the product reaches on its first day and no design draws."
+  ]),
+  ...[
+    "of that bought nothing &mdash;",
+    "that failed. Absorbed rather than charged on, which is what makes it worth watching.",
+  ].map((x) => [
+    x,
+    "WHAT THE MONTH SPENT AND GOT NOTHING FOR \u2014 one line on the " +
+      "owner-only cost panel, which no prototype draws because the design has " +
+      "no operator surface. Same gap already signed off for the spend panel's " +
+      "other copy below.\n\n" +
+      "Decision 38 is \"charge for what drives cost; absorb the failed " +
+      "attempts\". The business therefore eats every failure, and nothing " +
+      "anywhere said how much: `usage_events.outcome` was written by five " +
+      "call sites and read by none, and 9,702 of the 9,703 rows in the " +
+      "development database have no outcome at all. The second sentence is " +
+      "the one that earns its place \u2014 absorbing a cost is a choice, and a " +
+      "choice nobody can see the price of is not being made on purpose.\n\n" +
+      "The figures beside these words are `data-content`; the words are not, " +
+      "which is why they are here. Marking the whole sentence would have " +
+      "exempted the wording from every check in the gate, and splitting it " +
+      "so the words follow a closing tag hides them just as well \u2014 the " +
+      "extractor only reads text that follows an opening tag.",
   ]),
   [
     "Nothing cut from this yet. An edit never changes the footage \u2014 you can make as many as you like.",
@@ -2972,30 +3006,15 @@ function checkCopy() {
   }
 
   /*
-   * EVERY PAGE THE RENDERER DECLARES HAS TO COME BACK.
+   * The renderer counts its own pages.
    *
-   * Two pages were added to render-pages.mjs by an edit whose anchor did not
-   * match, so they were never in the file at all — and this rule printed
-   * green over a page list two short. A missing page is silent by nature:
-   * there is no copy to find in a page that was not rendered, which is the
-   * worst possible failure mode for a rule about copy.
-   *
-   * Counting the QUOTED labels in the file is crude and catches both
-   * causes: an edit that did not apply, and a renderer that threw for one
-   * page. Quoted, because the fixtures below have a `label` field of their
-   * own and counting those made the rule disagree with itself on its first
-   * run.
+   * This rule used to count `label:` in render-pages.mjs and compare — which
+   * was wrong twice, because the fixtures in that file carry labels of their
+   * own. scripts/render-pages.mjs declares an EXPECTED count and exits
+   * non-zero when it does not match, so a page that was never added or one
+   * that threw is a failure above, with its own message, rather than a
+   * quietly shorter list here.
    */
-  const declared = (fs.readFileSync(path.join(ROOT, 'scripts/render-pages.mjs'), 'utf8')
-    .match(/\blabel: "/g) || []).length;
-  if (declared !== pages.length) {
-    fail(
-      'copy',
-      'The renderer declares more pages than it returned, so some page went unchecked in silence.',
-      `scripts/render-pages.mjs declares ${declared}; ${pages.length} came back`,
-    );
-    return;
-  }
 
   const seen = new Set();
   const suspect = [];

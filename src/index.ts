@@ -6031,6 +6031,10 @@ app.get("/settings", async (c) => {
       finished: finished?.n ?? 0,
       dayOfMonth: now.getUTCDate(),
       cache: cacheSaved,
+      /* What the month paid for and got nothing from. Decision 38 absorbs
+         these rather than charging for them, so this is the figure the
+         business eats and the one nothing used to show. */
+      wasted: roll.wasted,
     };
   }
 

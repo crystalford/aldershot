@@ -80,6 +80,17 @@ export interface SettingsData {
      * answer would have cost depends on a token count we never spent.
      */
     cache: { rows: number; hits: number };
+    /**
+     * What the month paid for and got nothing from.
+     *
+     * Decision 38 is "charge for what drives cost; absorb the failed
+     * attempts" — so every failure is on the business, and until
+     * `monthUsage` read `usage_events.outcome` there was no way to see how
+     * much it was absorbing. One number, beside the bill, in the same place
+     * the cache saving is: a figure nobody can see is a figure nobody acts
+     * on.
+     */
+    wasted: { cost: number; count: number };
   } | null;
 }
 
@@ -255,6 +266,39 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
         cost.cache.rows === 1 ? "" : "s"
       } instead of being asked again — re-cutting the same footage does not pay for the same reading twice.</div>`
     : "";
+  /*
+   * AND WHAT THE MONTH BOUGHT NOTHING WITH.
+   *
+   * Same rule as the cache line above: it appears when it has a number, and
+   * says nothing when there is nothing to say — "$0.00 wasted" on a clean
+   * month reads as a warning rather than as the good news it is.
+   *
+   * The number it reports is the one decision 38 commits the business to
+   * eating. Nothing showed it before, and 9,702 of 9,703 rows in the
+   * development database could not have answered the question if asked.
+   */
+  /*
+   * THE NUMBERS ARE MARKED AND THE WORDS ARE NOT, which is why this is four
+   * spans rather than one sentence.
+   *
+   * `data-content` exempts a whole element from the copy check. Putting it on
+   * the sentence — which is what the cache line beside this does — would hide
+   * the WORDING from every check in the gate, and the wording is copy. But
+   * splitting it so the words come after a closing tag hides them too: the
+   * extractor reads the text immediately following an OPENING tag, so a run
+   * sitting between </span> and <span> is seen by nothing.
+   *
+   * So each static run gets its own span and each figure gets a marked one.
+   * The two sentences below are signed off in check-fidelity.cjs with the
+   * rest of this owner-only panel, which no design draws.
+   */
+  const wastedNote = cost.wasted.count
+    ? `<div style="font-size:${SIZE.secondary};color:${ACCENT.red};margin-top:10px;line-height:1.55"><span data-content>${usd(
+        cost.wasted.cost,
+      )}</span><span> of that bought nothing &mdash; </span><span data-content>${
+        cost.wasted.count
+      } attempt${cost.wasted.count === 1 ? "" : "s"}</span><span> that failed. Absorbed rather than charged on, which is what makes it worth watching.</span></div>`
+    : "";
   const max = Math.max(...cost.lines.map((l) => l.amount), 0.01);
   const perVideo = cost.finished ? cost.total / cost.finished : 0;
   const pace = cost.dayOfMonth ? (cost.total / cost.dayOfMonth) * 30 : 0;
@@ -301,6 +345,7 @@ function costPanel(cost: NonNullable<SettingsData["cost"]>): string {
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid ${C.hairline};display:flex;flex-direction:column;gap:11px">
       ${cost.lines.map(line).join("")}
     </div>
+    ${wastedNote}
     ${cacheNote}
     <div style="margin-top:18px;padding-top:16px;border-top:1px solid ${C.hairline};display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
       <span style="flex:1 1 220px;min-width:min(220px,100%);font-size:12px;color:rgba(236,236,241,0.4);line-height:1.5">Priced per source minute — the only unit that moves spend.</span>

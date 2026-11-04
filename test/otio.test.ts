@@ -15,6 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RATE, buildOtio, clipName, otioJson, type MediaInfo } from "../src/otio.ts";
 import type { Edl, EdlCut } from "../src/edl.ts";
+import { exportPanel } from "../src/ui/pages/export.ts";
 
 const cut = (over: Partial<EdlCut> = {}): EdlCut => ({
   sourceKey: "u1/a.mp4",
@@ -176,4 +177,44 @@ test("an empty cut makes an empty timeline rather than throwing", () => {
      threw would turn a 422 into a 500 the day something else called it. */
   const o = buildOtio(edl([]), opts);
   assert.equal(items(tracks(o)[0]).length, 0);
+});
+
+test("what the export panel promises is what the file carries", () => {
+  /*
+   * THE SENTENCE AND THE FILE HAVE TO AGREE.
+   *
+   * The panel's line was a disclaimer — captions and sound work stay here —
+   * and said nothing about what arrives. The useful half is that every clip
+   * carries a receipt: the quote it contains, the source it came from, and
+   * whether the word timings are forced-aligned or the recogniser's own.
+   * src/otio.ts has written that since the day the export existed and no
+   * surface mentioned it, which matters because three competitors assessed
+   * this autumn hand over a project file and none of them puts provenance
+   * in one.
+   *
+   * Pinned from both ends: the claim is read out of the panel and the three
+   * fields are read out of the file. Dropping either side goes red, which is
+   * the point — a promise about a file is worth exactly as much as the file.
+   */
+  const panel = exportPanel("p1", "free");
+  for (const claim of ["named by what is said in it", "its quote, its source and where its timings came from"]) {
+    assert.ok(panel.includes(claim), `the panel stopped claiming: ${claim}`);
+  }
+
+  const o = buildOtio(edl([cut()]), opts);
+  const first = items(tracks(o)[0])[0] as {
+    name: string;
+    metadata: { aldershot: { quote: string; sourceKey: string; timing: string } };
+  };
+  assert.ok(first.name, "a clip with no name breaks the first claim");
+  const receipt = first.metadata.aldershot;
+  assert.ok(receipt.quote, "no quote on the clip");
+  assert.ok(receipt.sourceKey, "no source on the clip");
+  assert.ok(receipt.timing, "no timing provenance on the clip");
+
+  /* And the limit is still stated, because it is still true: captions, the
+     sound chain and graphics are rendered rather than described. */
+  for (const limit of ["Captions, sound work and graphics", "rendered rather than described"]) {
+    assert.ok(panel.includes(limit), `the panel stopped admitting: ${limit}`);
+  }
 });

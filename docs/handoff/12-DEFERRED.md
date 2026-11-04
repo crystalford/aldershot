@@ -87,6 +87,46 @@ nobody can check.
   The spend cap itself IS now built and settable (28 Oct); it was enforced and
   unraisable before that.
 
+  **Evidence from the market, 4 Nov: both denominators are in use and ours is
+  the one that reads worse at a glance.** pausevfx.com ($15–$200/mo) counts
+  the OUTPUT — "1 video is about 10 minutes of final edited footage" and
+  "Only the finished edited video counts, not the hours of raw footage". We
+  count the INPUT. Three hours of raw footage making one ten-minute cut is
+  1 video to them and 180 of a free 300 to us.
+  Ours is better over time and only ours can say "every re-cut, short and
+  search from it costs nothing" — a second video from the same footage costs
+  them another video and costs us nothing. But that comparison is doing no
+  work anywhere: the landing page states our denominator and never contrasts
+  it. Whichever way the pricing decision goes, the page has to make the
+  argument, because input-metering looks like the worse deal until somebody
+  explains the second cut.
+
+- **Decisions that are rendered rather than described.** The .otio carries two
+  tracks — V1 the cuts, A1 a voiceover — and the captions, the sound chain and
+  the generated graphics are baked into the rendered file. The export panel
+  and the file's own metadata both say so, which is honest and is not the same
+  as being right.
+  **It is invariant 1 applied to the cut and nowhere else.** "A cut is
+  re-produced from rules + moments, never stored as an outcome" — and a
+  caption burn-in, a ducking curve and a composited graphic are outcomes,
+  stored. pausevfx.com, which has no invariants at all, applies the principle
+  more widely than we do because its deliverable forces it to: the product IS
+  a Premiere project, every zoom and SFX and caption arriving as its own
+  adjustable track, so nothing it decides is allowed to be unexpressible.
+  That is the lesson worth keeping: **the output format decides whether your
+  decisions have to be describable.**
+  What parity would take, roughly in order of cost: captions as a described
+  text track rather than a burn-in (the container composites them today);
+  the ducking as a curve on A1 rather than a finished mix (`src/loudness.ts`
+  normalises the programme, once, after the mix); and generated pictures as
+  referenced media with their cue-sheet entry attached rather than frames.
+  All three are render-pipeline changes and the first one is the only one with
+  a clear OTIO home, so this is a big item rather than a tidy one.
+  Not urgent, and the reason is a real one: our export's advantage is not
+  layer count, it is that every clip in it carries its quote, its source and
+  its timing provenance — which no competitor's project file does, and which
+  the panel now says out loud.
+
 - **Per-source loudness matching.** The prototype's cut carries a note
   reading "Levels matched across 3 sources". The build says "Loudness set for
   the platform" instead, because the first is a claim this render cannot keep:
@@ -243,6 +283,6 @@ Paste your own research — notes, links, an article — before an Essay's plan,
 1. **A legal and policy pack** — fair dealing (Canada) and fair use (US) for react and commentary; privacy and consent for footage of other people; provider terms on calling APIs with a customer's own key; EU labelling in practice. Read by a media lawyer.
 2. **Audio ingest measured on speech under game audio and crosstalk** — denoise, de-reverb, intelligibility scoring, ducking tools.
 3. **The pre-production ladder, observed** — ten real briefs through the plan flow, watching where people actually stop.
-4. **Competitor pricing** — Opus Clip, Captions, Kapwing, CapCut, InVideo, HeyGen, Synthesia, Pictory — before prices are final.
+4. **Competitor pricing** — Opus Clip, Captions, Kapwing, CapCut, InVideo, HeyGen, Synthesia, Pictory — before prices are final. Three read since (produce.so, kino.ai, pausevfx.com) and the pattern is worth more than the numbers: each one counts OUTPUT, keeps the NLE, and ships no provenance of any kind. Pause's terms are the sharpest version — it adds music "picked for the vibe", names no licence for it, and says "You are responsible for the content you edit and for any music, footage, or fonts you use". It adds the asset; you carry the claim. Invariants 4, 8 and 9 are the whole differentiator and nothing in this list competes on them.
 
 Already answered; do not commission again: retrieval, the gavel problem, visual supply, formats, the edit engine, strategy, Scout, the Dossier, sources, operations.

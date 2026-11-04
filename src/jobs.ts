@@ -322,6 +322,32 @@ export async function failJob(db: D1Database, id: string, error: string): Promis
     .run();
 }
 
+/**
+ * HOW MANY TIMES THIS HAS BEEN TRIED, AND FAILED.
+ *
+ * The attempt history is already in this table — one row per try, with its
+ * state and when it finished — so a caller that wants to stop retrying
+ * something hopeless needs no new column to count with.
+ *
+ * Written for proxyFirst, which had no ceiling at all: a guard that checked
+ * only `queued` and `running` made a fresh job on every page view of a video
+ * whose editing copy could not be made. 9,695 of them in the development
+ * database, one per view, each one a container start in production.
+ */
+export async function countJobsFor(
+  db: D1Database,
+  refId: string,
+  userId: string,
+  type: JobType,
+  state: JobState,
+): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE ref_id=? AND user_id=? AND type=? AND state=?`)
+    .bind(refId, userId, type, state)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export async function getJobs(db: D1Database, ids: string[]): Promise<Job[]> {
   if (!ids.length) return [];
   const marks = ids.map(() => "?").join(",");

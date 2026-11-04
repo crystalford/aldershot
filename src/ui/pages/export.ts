@@ -76,10 +76,22 @@ export function exportPanel(projectId: string, plan: string): string {
       edit already is data. It sits here rather than behind its own control
       because this is the panel a person opens when they are thinking about
       where this video goes next.
+
+      AND IT SAYS WHAT ARRIVES, not only what does not.
+      This line was a disclaimer: captions and sound work stay here. True, and
+      it left out the whole reason to take this file anywhere, which is that
+      every clip in it carries the quote it contains, which source it came
+      from, and whether its word timings are forced-aligned or the
+      recogniser's own. Competitors sell a project file as the product and
+      none of them puts provenance in one; ours has had it since the day the
+      export existed and the moment somebody chose to use it said nothing
+      about it.
+      "Graphics" is named too, because the file's own metadata note names it
+      and these two sentences disagreeing is how somebody loses an afternoon.
     -->
     <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
-      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere. Captions and sound work are rendered, not described, so they stay here.</span>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere, each clip named by what is said in it and carrying its quote, its source and where its timings came from. Captions, sound work and graphics are rendered rather than described, so those stay here.</span>
     </div>
     <!--
       THE CUE SHEET, which goes out whether anybody opens it or not.
