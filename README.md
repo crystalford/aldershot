@@ -89,9 +89,35 @@ something this repo cannot supply itself:
   What genuinely needed a daemon is the IMAGE, and a separate CI job builds it
   now, runs it, and asserts from outside the build that both approved faces
   are in it. That closes `librsvg2-bin` and the woff2→TTF conversion.
-  Still unrun: `check:align`, which wants torchaudio and the 1.26 GB MMS_FA
-  model — the image downloads it at build time, so the build covers the
-  fetch, not the aligner's output.
+  **And `check:align` has now run too** (7 Nov), which was the last check in
+  this repo that had never executed anywhere:
+
+      align: ready — 29 tokens, 16000 Hz
+      ✔ align — 9 words placed inside the hand reading, window offsets
+        honoured, stereo mixed down
+
+  The real MMS_FA model through `container/align.py` and
+  `container/align.mjs`, against the torchaudio tutorial clip with a reading
+  taken by hand. Its own header says how, and it works verbatim:
+
+      python3 -m venv /tmp/align-venv
+      /tmp/align-venv/bin/pip install --upgrade pip
+      /tmp/align-venv/bin/pip install --index-url \
+          https://download.pytorch.org/whl/cpu torch torchaudio
+      /tmp/align-venv/bin/pip install numpy soundfile
+      curl -fsSLO https://download.pytorch.org/torchaudio/tutorial-assets/\
+          Lab41-SRI-VOiCES-src-sp0307-ch127535-sg0042.wav
+      ALIGN_PYTHON=/tmp/align-venv/bin/python ALIGN_WAV=./Lab41-...wav \
+          npm run check:align
+
+  `--upgrade pip` is the one addition, and it is the same trap the Dockerfile
+  hit: an older pip resolves a torch dependency to a source distribution and
+  then cannot find a build backend on the CPU-only index.
+
+  It stays out of `npm run check` on purpose — a gate that needs a 1.26 GB
+  model is a gate people learn to skip — and out of CI for now, because the
+  container job downloads that model anyway as part of the image. Running it
+  inside the built image is the tidy version and wants a daemon to try.
 
 Everything else in `12-DEFERRED.md` is deliberate and post-launch.
 
