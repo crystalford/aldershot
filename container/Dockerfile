@@ -17,7 +17,24 @@ WORKDIR /app
 #
 # The CPU index, explicitly: the default wheel carries CUDA and is several
 # gigabytes of driver this machine has no card for.
+#
+# PIP IS UPGRADED FIRST, AND THAT LINE IS LOAD-BEARING. bookworm's venv
+# bundles pip 23.0.1, which resolves one of torch's dependencies to a SOURCE
+# distribution and then needs flit_core to build it — and `--index-url` means
+# the pytorch index is the only index there is, so:
+#
+#   Looking in indexes: https://download.pytorch.org/whl/cpu
+#   ERROR: Could not find a version that satisfies the requirement
+#          flit_core<4,>=3.11 (from versions: none)
+#
+# Four seconds into the build, the first time this image was ever built (CI
+# run #15). A newer pip takes the wheel and never asks for a build backend.
+#
+# `--extra-index-url` would also fix the resolution and is the WRONG fix: it
+# puts PyPI back in the running for torch itself, which is the multi-gigabyte
+# CUDA build this line exists to avoid.
 RUN python3 -m venv /opt/venv \
+  && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
   && /opt/venv/bin/pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
      torch torchaudio \
   && /opt/venv/bin/pip install --no-cache-dir numpy soundfile
