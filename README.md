@@ -74,12 +74,24 @@ something this repo cannot supply itself:
 - **An export opened in Resolve.** `npm run check:otio` proves the file parses
   and carries its credits and ghosts; opening it in Resolve itself needs
   Resolve.
-- **The render container, run once.** Its ffmpeg commands are measured
-  individually — `check:duck`, `check:loudness`, `check:graphics`, and the
-  card encode and concat were driven by hand — but the image has never been
-  built, because no environment used to develop this has had a docker daemon.
-  `librsvg2-bin`, the woff2→TTF font conversion and the generated-picture
-  branch are written and unrun.
+- **The render container, run once.** The ENCODER is now proved on every push:
+  `check:render` builds a source of twenty-four one-second colours, makes
+  known edits through the real API, renders, and reads the colours back out of
+  the finished file, so "second 7 was struck" is checked as "that colour is
+  absent". `check:frame` proves the 9:16 reframe and `check:otio` reads the
+  export back with the real OpenTimelineIO. All three are in CI (7 Nov).
+  **None of them ever needed docker**, which was not understood for most of
+  this project's life: `scripts/check-render.cjs` says in its own header that
+  it wants ffmpeg, a dev server and `container/render.mjs` run as a plain node
+  process, and every status report until now folded that into "no docker
+  daemon, so the render is unverified". Docker is how the encoder is shipped,
+  not how it is tested.
+  What genuinely needed a daemon is the IMAGE, and a separate CI job builds it
+  now, runs it, and asserts from outside the build that both approved faces
+  are in it. That closes `librsvg2-bin` and the woff2→TTF conversion.
+  Still unrun: `check:align`, which wants torchaudio and the 1.26 GB MMS_FA
+  model — the image downloads it at build time, so the build covers the
+  fetch, not the aligner's output.
 
 Everything else in `12-DEFERRED.md` is deliberate and post-launch.
 

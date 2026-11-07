@@ -51,7 +51,17 @@ jobs:
       # ship a config carrying it. A throwaway address: this database is
       # created empty here and thrown away with the runner.
       - name: Local dev vars
-        run: echo "DEV_LOGIN_EMAIL=ci@aldershot.invalid" > .dev.vars
+        run: |
+          {
+            echo "DEV_LOGIN_EMAIL=ci@aldershot.invalid"
+            # Where check:render finds the encoder, and where the encoder
+            # fetches the fixture from. Both are written BEFORE wrangler
+            # boots, because wrangler reads .dev.vars once at startup.
+            # 127.0.0.1 stands in for presigned R2 URLs, which need real S3
+            # credentials the local emulator does not have.
+            echo "RENDER_URL=http://127.0.0.1:8080"
+            echo "MEDIA_PUBLIC_BASE=http://127.0.0.1:8099"
+          } > .dev.vars
 
       # --local, AND IT IS NOT OPTIONAL HERE.
       #
@@ -93,8 +103,124 @@ jobs:
       - name: npm run check -- --strict
         run: bash scripts/check.sh --strict
 
+      # ── THE RENDER, WHICH NEVER NEEDED DOCKER ───────────────────────────
+      #
+      # For most of this project's life the answer to "does the export
+      # contain the cut?" was "unknown — the container has never been built,
+      # there is no docker daemon on the machine this was written on." That
+      # was in the PR body, in the handoff and in every status report.
+      #
+      # It was wrong, and scripts/check-render.cjs had said so in its own
+      # header the whole time: it needs ffmpeg, a dev server, and the encoder
+      # run as a PLAIN NODE PROCESS. Docker is how container/render.mjs is
+      # shipped to Cloudflare; it is not how it is tested. Nobody read the
+      # header, including the person who kept reporting the gap.
+      #
+      # So the one thing that could never be verified now runs on every push.
+      # ffmpeg is already on ubuntu-latest — asserted rather than installed,
+      # so its absence is a named failure and not a mysterious one.
+      - name: ffmpeg
+        run: ffmpeg -version | head -1 && ffprobe -version | head -1
+
+      # check:render needs both; check:frame spawns its own and needs neither.
+      - name: The encoder and the fixture host
+        run: |
+          set -euo pipefail
+          node container/render.mjs > /tmp/encoder.log 2>&1 &
+          echo $! > /tmp/encoder.pid
+          node scripts/check-render.cjs --serve > /tmp/fixture.log 2>&1 &
+          echo $! > /tmp/fixture.pid
+          # 404 is the right answer from both — the encoder is POST-only and
+          # the host serves files. Any answer at all means it is listening.
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:8080/ \
+               && curl -s -o /dev/null http://127.0.0.1:8099/; then
+              echo "encoder and fixture host up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "one of them never answered:"; cat /tmp/encoder.log /tmp/fixture.log; exit 1
+
+      # Twenty-four one-second colours in, known edits through the real API,
+      # and the colours read back out of the finished file. "Second 7 was
+      # struck" becomes "that colour is absent", with no OCR and no judgement.
+      - name: npm run check:render
+        run: npm run check:render
+
+      # The 9:16 reframe, which is what Shorts depends on.
+      - name: npm run check:frame
+        run: npm run check:frame
+
+      # And the escape hatch, read by the real OpenTimelineIO rather than by
+      # our own parser agreeing with itself.
+      - name: npm run check:otio
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/otio-venv
+          /tmp/otio-venv/bin/pip install -q opentimelineio
+          OTIO_PYTHON=/tmp/otio-venv/bin/python npm run check:otio
+
       # What the dev server said while all of that ran. Only on a failure,
       # because a 400-line miniflare log on a green run is a log nobody reads.
       - name: The dev server's own log
         if: failure()
         run: tail -200 /tmp/dev.log
+
+      - name: The encoder's own log
+        if: failure()
+        run: tail -100 /tmp/encoder.log || true
+
+  # ── THE IMAGE, WHICH REALLY DOES NEED A DOCKER DAEMON ─────────────────────
+  #
+  # The job above proves the ENCODER by running container/render.mjs as a node
+  # process, which is all scripts/check-render.cjs ever needed. This proves the
+  # IMAGE, which is a different claim and the one the README has correctly
+  # listed as unverified: "the image has never been built, because no
+  # environment used to develop this has had a docker daemon". Still true of
+  # the development machines; not true of a GitHub runner.
+  #
+  # The Dockerfile asserts its own hardest step — `fc-list | grep -qi
+  # "Instrument Sans"` — so a build that succeeds has proved the woff2→TTF
+  # conversion put the real faces where fontconfig finds them. Doc 08 calls
+  # the generated still "the approval checkpoint", and a picture approved in
+  # Instrument Sans and rendered in DejaVu Sans is not the picture that was
+  # approved.
+  #
+  # Its own job because it downloads torch and a 1.26 GB model, and the gate's
+  # twenty-five minutes are already spoken for.
+  #
+  # NOT RUN BEFORE IT WAS COMMITTED, and there is no honest way around that:
+  # the machine this was written on has the docker client and no daemon. This
+  # is the `--local` situation again — a stage whose first run has to be here.
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the render image
+        run: docker build -t aldershot-render container/
+
+      # And it serves. The image's CMD is `node render.mjs`, so a container
+      # that builds and then cannot answer is a container that would fail on
+      # its first real render instead of here.
+      - name: It starts and answers
+        run: |
+          set -euo pipefail
+          docker run -d --name render -p 8080:8080 aldershot-render
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:8080/render/status?id=boot; then
+              echo "the image serves"; docker rm -f render; exit 0
+            fi
+            sleep 1
+          done
+          echo "it built and never answered:"; docker logs render; exit 1
+
+      # The fonts, asserted from outside the build as well. The Dockerfile's
+      # own grep is inside a RUN and would be skipped on a cache hit.
+      - name: The approved faces are in it
+        run: |
+          set -euo pipefail
+          docker run --rm aldershot-render fc-list | grep -qi "Instrument Sans"
+          docker run --rm aldershot-render fc-list | grep -qi "IBM Plex Mono"
+          echo "both faces present"

@@ -261,6 +261,16 @@ present at t=3.0. What is NOT verified is the image build itself; there is no
 docker daemon here, so `librsvg2-bin`, the font conversion and the render
 path are written and unrun.
 
+**Corrected 7 Nov.** The last clause of that was wrong, and wrong in the
+expensive direction: the RENDER PATH never needed a docker daemon. It is
+`container/render.mjs` run as a plain node process, which is what
+`scripts/check-render.cjs` asks for in its own header and has asked for all
+along. It now runs on every push and proves the exported file contains the
+cut, colour by colour; `check:frame` and `check:otio` run beside it. The
+image build is the part that did need a daemon, and a separate CI job builds
+it, starts it and asserts the approved faces are inside it. One sentence
+conflating the two kept the render in the "unproven" column for weeks.
+
 Phase 5 is otherwise complete.
 
 ## Phase 6 — Before you post and export
