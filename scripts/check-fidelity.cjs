@@ -1731,6 +1731,23 @@ const SIGNED_OFF = new Map([
       "unreachable. scripts/render-pages.mjs renders both now.",
   ],
   [
+    "Other ways to build this",
+    "THE THIRD ANSWER AT THE ONE STOP, which the prototype has no control " +
+      "for because it has no object for one.\n\n" +
+      "The plan flow stops to ask whether the beats are right, and the only " +
+      "two answers it could take were yes and edit-the-beats. The third \u2014 " +
+      "\"this is the wrong video, and here is a better one from the same " +
+      "material\" \u2014 needs a representation of A VIDEO THAT COULD BE MADE, " +
+      "and docs/research/PASS-4-BRIEF.md records that the product has none: " +
+      "\"no way to have several, compare them, or rank them\". The word " +
+      "survives in docs/design/ only, which is marked superseded, so angles " +
+      "fell out of the product rather than being argued away.\n\n" +
+      "src/angles.ts is the object. The control is deliberately quiet and " +
+      "deliberately on demand \u2014 a slate costs three plans' worth of " +
+      "direction plus retrieval per beat, and nobody should pay that for a " +
+      "page they already agreed with.",
+  ],
+  [
     "Bring the footage in",
     "THE IMPORT CONTROL, which the Settings design has no equivalent for " +
       "because in the design there is nothing to press: it says a bucket on " +

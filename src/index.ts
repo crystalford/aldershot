@@ -122,6 +122,7 @@ import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-
 import { shouldAlign, timingForProject } from "./align-source.ts";
 import { JUDGE_VERSION } from "./judge.ts";
 import { candidatesFor } from "./beat-find.ts";
+import { draftAngles, parseAngles, priceAngles } from "./angles.ts";
 import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
@@ -3677,12 +3678,79 @@ app.get("/plan/:id", async (c) => {
  * and the flow holds here until the beats are answered. 11-BUILD-ORDER's
  * acceptance says it stops exactly once, and this is the once.
  */
+/**
+ * THREE VIDEOS THAT COULD BE MADE FROM ONE SEED.
+ *
+ * The step in front of the plan. `POST /api/plans` takes a topic and returns
+ * one claim; this takes something somebody actually starts with — a quote, a
+ * paragraph, a line from a video they want to open on — and returns a slate
+ * to choose between. See src/angles.ts for why the object had to exist.
+ *
+ * WRITES NOTHING. The plan flow's own design is that everything before the
+ * one stop is cheap and reversible and everything after it costs retrieval
+ * and produces a cut. A slate is firmly before: you look at three, you pick
+ * one, and only then does a plan exist.
+ *
+ * AND THE PRICING IS DELIBERATELY THE CHEAP SIGNAL. `candidatesFor` is
+ * retrieval alone — no judge, no rerank, which is what `/find` pays for
+ * later on the ONE angle that was chosen. Running the full compose here
+ * would be three angles by eight beats of judging to answer a question that
+ * only has to be "is there anything here about this at all". It is a weaker
+ * answer than `/find` gives and it is the honest one for the price: a beat
+ * counted as backed here can still turn out thin later, which is exactly
+ * what the one stop is for.
+ */
+app.post("/api/angles", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ text: string; source?: string; speaker?: string }>(c);
+  const text = (b.text || "").trim();
+  if (!text) return c.json({ error: "what does it start from?" }, 400);
+
+  const drafted = await draftAngles(c.env, {
+    text,
+    source: (b.source || "").trim() || null,
+    speaker: (b.speaker || "").trim() || null,
+  });
+  if (!drafted.angles.length) {
+    return c.json(
+      { error: "Couldn't find an argument in that — try a line that says something." },
+      422,
+    );
+  }
+
+  const angles = await priceAngles(drafted.angles, async (need) => {
+    const found = await candidatesFor(c.env, user.id, need);
+    return found.length > 0;
+  });
+  return c.json({ angles });
+});
+
 app.post("/api/plans", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ topic: string }>(c);
+  const b = await body<{ topic: string; claim?: string; beats?: unknown }>(c);
   const topic = (b.topic || "").trim();
   if (!topic) return c.json({ error: "what is it about?" }, 400);
+
+  /*
+   * A CHOSEN ANGLE ARRIVES ALREADY DRAFTED, and re-drafting it would throw
+   * away the thing the person just chose: they picked one of three claims,
+   * and asking the model again would answer a different question and return
+   * a fourth. The beats are re-read through the slate's own parser rather
+   * than trusted, so a hand-made request cannot post a shape the rest of the
+   * flow has never seen.
+   */
+  const chosen = b.claim ? parseAngles({ angles: [{ claim: b.claim, take: "", beats: b.beats }] })[0] : null;
+  if (chosen) {
+    const planId = await createPlan(c.env.DB, {
+      userId: user.id,
+      topic,
+      claim: chosen.claim,
+      beats: chosen.beats,
+    });
+    return c.json({ planId, claim: chosen.claim, beats: chosen.beats.length });
+  }
 
   const draft = await draftPlan(c.env, topic);
   if (!draft.beats.length) {

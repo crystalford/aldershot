@@ -3990,6 +3990,112 @@ document.querySelectorAll(".plan-cut").forEach((btn) => {
   );
 });
 
+/* ── Other ways to build this ─────────────────────────────────────────
+   The third answer at the one stop. "Yes" and "edit the beats" were the
+   only two the plan page could take; this is "that is the wrong video, and
+   here is a better one from the same material".
+
+   The slate is read-only until something is pressed: a band and the line
+   that caused it, never a score, because what the machine knows is how much
+   footage each angle already has and not which video is worth making. */
+document.querySelectorAll(".plan-angles").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const slate = document.querySelector(".angle-slate");
+    if (!slate) return;
+    const planId = btn.getAttribute("data-plan");
+    btn.disabled = true;
+    const said = btn.textContent;
+    btn.textContent = "Looking for other ways…";
+    try {
+      const res = await fetch("/api/angles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: btn.getAttribute("data-topic") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.textContent = said;
+        return;
+      }
+      const { angles } = await res.json();
+      slate.textContent = "";
+      for (const a of angles || []) {
+        const card = document.createElement("div");
+        card.className = "angle-card";
+        card.style.cssText =
+          "padding:14px 16px;border-radius:9px;background:#17171B;display:flex;flex-direction:column;gap:6px";
+
+        const claim = document.createElement("div");
+        claim.setAttribute("data-content", "");
+        claim.style.cssText = "font-size:14px;line-height:1.5;color:#ECECF1";
+        claim.textContent = a.claim;
+
+        const take = document.createElement("div");
+        take.setAttribute("data-content", "");
+        take.style.cssText = "font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.55)";
+        take.textContent = a.take;
+
+        const why = document.createElement("div");
+        why.setAttribute("data-content", "");
+        why.style.cssText = "font-size:11.5px;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace";
+        why.textContent = a.why;
+
+        const pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "angle-pick";
+        pick.style.cssText =
+          "align-self:flex-start;margin-top:4px;font-size:12px;font-weight:600;padding:6px 12px;border-radius:5px;background:#2E2E36;color:#ECECF1;border:none;cursor:pointer;font-family:inherit";
+        pick.textContent = "Build this one instead";
+        pick.addEventListener("click", async () => {
+          if (pick.disabled) return;
+          pick.disabled = true;
+          pick.textContent = "Starting…";
+          try {
+            const made = await fetch("/api/plans", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                topic: btn.getAttribute("data-topic"),
+                claim: a.claim,
+                beats: a.beats,
+              }),
+            });
+            const out = await made.json().catch(() => ({}));
+            if (!made.ok || !out.planId) {
+              window.toast(out.error || "That didn't change.");
+              pick.disabled = false;
+              pick.textContent = "Build this one instead";
+              return;
+            }
+            /* A NEW PLAN, NOT AN EDIT OF THIS ONE. Nothing is deleted
+               (invariant 6): the plan you were looking at is still there,
+               still reachable, and choosing differently costs you nothing
+               you had already decided. */
+            location.href = "/plan/" + out.planId;
+          } catch {
+            window.toast("That didn't change.");
+            pick.disabled = false;
+            pick.textContent = "Build this one instead";
+          }
+        });
+
+        card.append(claim, take, why, pick);
+        slate.appendChild(card);
+      }
+      slate.hidden = false;
+      btn.textContent = said;
+      btn.disabled = false;
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.textContent = said;
+    }
+  });
+});
+
 /* ── The footage tab: cut from one video alone, and back ──────────────
    Reversible by design: the narrowing is its own column and the project's
    record of what it is made of does not move, so pressing an active

@@ -16,6 +16,7 @@ import { renderCut } from "../src/ui/pages/cut.ts";
 import { renderSettings } from "../src/ui/pages/settings.ts";
 import { renderSource } from "../src/ui/pages/source.ts";
 import { exportPanel } from "../src/ui/pages/export.ts";
+import { renderPlan } from "../src/ui/pages/plan.ts";
 
 /*
  * A CUT, MADE UP, FOR ITS COPY ONLY.
@@ -164,6 +165,25 @@ const out = [
   },
   {
     /*
+     * The plan at the one stop, which is where the slate is offered. Its
+     * copy reached the gate only through the crawl, and the control that
+     * asks for other angles renders in this one state alone.
+     */
+    label: "renderPlan (the one stop)",
+    html: renderPlan({
+      id: "p1",
+      topic: "whether the story was written before the rockets were",
+      claim: "the account came first and the engineering was fitted to it",
+      state: "beats",
+      projectId: null,
+      beats: [
+        { id: "b1", role: "subject", name: "the claim as made", need: "the line itself", kept: true, found: 0, backed: null, gap: null },
+        { id: "b2", role: "counter", name: "the best case against", need: "somebody answering it", kept: true, found: 0, backed: null, gap: null },
+      ],
+    }),
+  },
+  {
+    /*
      * The export panel, a pure function of a project id and a plan.
      *
      * Its wording about what the timeline file carries and what stays behind
@@ -278,7 +298,7 @@ const out = [
  * fragile for an obvious reason — the fixtures below have labels of their own,
  * and the count was wrong twice before this replaced it.
  */
-const EXPECTED = 16;
+const EXPECTED = 17;
 if (out.length !== EXPECTED) {
   console.error(
     `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +

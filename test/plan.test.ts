@@ -290,11 +290,21 @@ test("thin is about what backs it, and falls back to the count when nobody check
   const page = (backed: number | null, found: number) =>
     renderPlan({ id: "p1", topic: "t", claim: "c", state: "found", projectId: null, beats: [beat(backed, found)] });
 
-  assert.match(page(1, 6), /thin/, "one backing moment out of six is a thin beat");
-  assert.doesNotMatch(page(4, 6), /thin/);
+  /*
+   * `· thin` — the badge as the row actually renders it, not the bare word.
+   *
+   * This matched /thin/ against the WHOLE PAGE, which is every word with
+   * those four letters in it: something, nothing, within, thinking. A
+   * comment added beside the action row said "three plans' worth of
+   * thinking" and turned a passing test red without touching a beat.
+   * Tightening it is not weakening it: the separator is part of the format
+   * every row uses, so a badge that regressed still fails here.
+   */
+  assert.match(page(1, 6), /· thin/, "one backing moment out of six is a thin beat");
+  assert.doesNotMatch(page(4, 6), /· thin/);
   /* And the old behaviour where nothing checked. */
-  assert.doesNotMatch(page(null, 6), /thin/);
-  assert.match(page(null, 1), /thin/);
+  assert.doesNotMatch(page(null, 6), /· thin/);
+  assert.match(page(null, 1), /· thin/);
 });
 
 test("the summary follows the rows, and only claims coverage when everything was checked", () => {

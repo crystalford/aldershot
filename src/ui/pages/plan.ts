@@ -185,6 +185,28 @@ export function renderPlan(d: PlanData): string {
             ? `<button class="plan-find" type="button" data-plan="${esc(d.id)}" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Looks right — go find it</button>`
             : `<button class="plan-cut" type="button" data-plan="${esc(d.id)}" style="font-size:${SIZE.body};font-weight:600;padding:9px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:inherit">Cut it</button>`
       }
+      <!--
+        OTHER WAYS TO BUILD IT, at the one stop and nowhere else.
+
+        The plan flow stops here to ask whether the beats are right, and
+        until now the only two answers were yes and edit-the-beats. The
+        third — "this is the wrong video, here is a better one from the same
+        material" — had no way to be said, because there was no object for a
+        video that could be made. See src/angles.ts.
+
+        ON DEMAND, NOT ON LOAD. The slate is three plans' worth of thinking
+        plus retrieval per beat; spending that every time somebody opens a
+        page they already agreed with would be paying for a question nobody
+        asked. The button is the asking.
+      -->
+      ${
+        d.state === "beats"
+          ? `<button class="plan-angles" type="button" data-plan="${esc(d.id)}" data-topic="${esc(d.topic)}" style="font-size:${SIZE.secondary};font-weight:500;padding:9px 14px;border-radius:${RADIUS.button};background:transparent;color:${C.ink45};border:none;cursor:pointer;font-family:inherit">Other ways to build this</button>`
+          : ""
+      }
     </div>
+    <!-- Filled by the client from /api/angles. Empty until asked, because a
+         panel that is always there implies three answers always exist. -->
+    <div class="angle-slate" hidden style="margin-top:16px;display:flex;flex-direction:column;gap:8px"></div>
   </div>`;
 }
