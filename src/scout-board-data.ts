@@ -199,6 +199,7 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
   }));
 
   return {
+    projectId,
     verifiedMoments,
     crowdRows,
     beats: boardBeats,

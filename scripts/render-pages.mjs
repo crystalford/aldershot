@@ -17,6 +17,7 @@ import { renderSettings } from "../src/ui/pages/settings.ts";
 import { renderSource } from "../src/ui/pages/source.ts";
 import { exportPanel } from "../src/ui/pages/export.ts";
 import { renderPlan } from "../src/ui/pages/plan.ts";
+import { renderBoard } from "../src/ui/pages/board.ts";
 
 /*
  * A CUT, MADE UP, FOR ITS COPY ONLY.
@@ -165,6 +166,39 @@ const out = [
   },
   {
     /*
+     * The Scout board with something verified, which is the only state the
+     * revision control renders in — the question it asks is meaningless
+     * against evidence that was never checked.
+     */
+    label: "renderBoard (something verified)",
+    html: renderBoard({
+      projectId: "p1",
+      verifiedMoments: 4,
+      crowdRows: 1,
+      stopped: true,
+      sourcesRead: 6,
+      sourcesLinkOnly: 2,
+      candidatesScanned: 30,
+      label: "done",
+      pct: 100,
+      /* A beat, because renderBoard returns the "Nothing yet" branch
+         without one — the first fixture had none, the control never
+         rendered, and `copy` printed green over copy it had not seen. */
+      beats: [
+        {
+          id: "sb1",
+          name: "the claim as made",
+          role: "subject",
+          behaviour: "somebody stating it on camera",
+          needMin: 2,
+          queriesTried: 4,
+          rows: [],
+        },
+      ],
+    }),
+  },
+  {
+    /*
      * The plan at the one stop, which is where the slate is offered. Its
      * copy reached the gate only through the crawl, and the control that
      * asks for other angles renders in this one state alone.
@@ -298,7 +332,7 @@ const out = [
  * fragile for an obvious reason — the fixtures below have labels of their own,
  * and the count was wrong twice before this replaced it.
  */
-const EXPECTED = 17;
+const EXPECTED = 18;
 if (out.length !== EXPECTED) {
   console.error(
     `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +

@@ -20,7 +20,7 @@ import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCoo
 import { noDevNotes, page, type View } from "./ui/shell.ts";
 import { renderBoard } from "./ui/pages/board.ts";
 import { boardFor } from "./scout-board-data.ts";
-import { createRun, diligence } from "./scout-store.ts";
+import { createRun, diligence, verifiedRows } from "./scout-store.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
@@ -123,6 +123,7 @@ import { shouldAlign, timingForProject } from "./align-source.ts";
 import { JUDGE_VERSION } from "./judge.ts";
 import { candidatesFor } from "./beat-find.ts";
 import { draftAngles, parseAngles, priceAngles } from "./angles.ts";
+import { priceRevision, proposeRevision } from "./revise.ts";
 import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
@@ -1602,6 +1603,105 @@ const scoutBoard = async (c: Ctx) => {
   const data = await boardFor(c.env.DB, project.id);
   return c.html(page({ title: "Scout", view: "room", screenLabel: "Scout", email: user.email }, renderBoard(data)));
 };
+
+/**
+ * DOES WHAT SCOUT FOUND CHANGE WHAT THE VIDEO IS ABOUT?
+ *
+ * The loop PASS-4-BRIEF says the architecture cannot run: "Scout fills a
+ * plan's gaps; it cannot change the plan's mind." A verified find can make
+ * a better claim visible than any that existed when the plan was written,
+ * and until now the run reported coverage against the beats it was given
+ * and stopped. See src/revise.ts.
+ *
+ * PROPOSES ONLY. Accepting is a second, separate act — and it makes a NEW
+ * plan rather than editing this one, so changing your mind costs nothing
+ * you had already decided (invariant 6).
+ *
+ * WHAT IT CANNOT YET SAY, and says so rather than guessing. The cost of a
+ * revision is the recorded takes hanging off beats the new claim does not
+ * want, because a performance is the one thing the engine cannot re-make.
+ * `beats` has no `plan_beat_id`, so a dropped PLAN beat cannot be mapped to
+ * the recording it produced — the number of takes genuinely at risk is not
+ * derivable today. Reporting one would be precision this does not have, so
+ * it reports zero and says the recordings exist. 12-DEFERRED carries what
+ * would close it.
+ */
+app.post("/api/projects/:id/revise", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const run = await c.env.DB
+    .prepare("SELECT id FROM scout_runs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1")
+    .bind(project.id)
+    .first<{ id: string }>();
+  if (!run) return c.json({ error: "Scout hasn't looked for anything yet." }, 422);
+
+  const plan = await c.env.DB
+    .prepare("SELECT id FROM plans WHERE project_id = ? AND user_id = ? LIMIT 1")
+    .bind(project.id, user.id)
+    .first<{ id: string }>();
+  if (!plan) return c.json({ error: "This cut wasn't made from a plan, so there is no claim to revise." }, 422);
+
+  const full = await getPlan(c.env.DB, plan.id, user.id);
+  if (!full) return c.json({ error: "not found" }, 404);
+
+  /* Verified only. A paraphrase may not have been said and a rejection is a
+     fabrication; neither is a reason to change what a video argues. */
+  const rows = await verifiedRows(c.env.DB, run.id);
+  if (!rows.length) return c.json({ error: "Nothing has been verified yet." }, 422);
+
+  /* SHORT IDS, for the reason essay.ts measured and scout-reduce.ts keeps:
+     asked to copy a 26-character ULID, a model describes the right row and
+     mistypes the reference. The quotes go out and never come back. */
+  const evidence = rows.slice(0, 40).map((r, i) => ({
+    ref: `r${i + 1}`,
+    quote: r.quoteExact,
+    source: r.sourceTitle ?? null,
+  }));
+  const beatRefs = full.beats.map((b, i) => ({ ref: `b${i + 1}`, name: b.name, need: b.need }));
+
+  const { revision } = await proposeRevision(c.env, {
+    claim: full.claim,
+    evidence,
+    beats: beatRefs,
+  });
+  if (!revision) {
+    return c.json({ revision: null, says: "What Scout found still argues the claim you have." });
+  }
+
+  const keeps = new Set(revision.keeps);
+  const cost = priceRevision(
+    beatRefs.map((b) => ({ id: b.ref, need: b.need })),
+    (need) => keeps.has(beatRefs.find((b) => b.need === need)?.ref ?? ""),
+    /* Zero, honestly: see this route's header. The recordings are reported
+       beside the cost rather than counted into it. */
+    () => 0,
+  );
+
+  const recorded = (
+    await c.env.DB
+      .prepare("SELECT COUNT(*) AS n FROM takes t JOIN beats b ON b.id = t.beat_id WHERE b.project_id = ?")
+      .bind(project.id)
+      .first<{ n: number }>()
+  )?.n ?? 0;
+
+  return c.json({
+    revision: {
+      claim: revision.claim,
+      why: revision.why,
+      /* Resolved OUR side, from the rows we sent. The model named ids; the
+         words come from the verified ledger. */
+      drivenBy: revision.drivenBy
+        .map((ref) => evidence.find((e) => e.ref === ref))
+        .filter(Boolean)
+        .map((e) => ({ quote: e!.quote, source: e!.source })),
+    },
+    cost: cost.says,
+    recorded,
+  });
+});
 
 app.get("/p/:id/scout", scoutBoard);
 

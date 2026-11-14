@@ -3990,6 +3990,91 @@ document.querySelectorAll(".plan-cut").forEach((btn) => {
   );
 });
 
+/* ── Does what Scout found change the claim? ──────────────────────────
+   The loop. Usually the answer is no, and the no is worth showing: a run
+   that found supporting evidence has told you something, and a control
+   that only ever speaks when it disagrees teaches you to dread it.
+
+   The quotes rendered here come back from OUR verified rows, resolved
+   server-side from the ids the model named. Nothing the model wrote is
+   shown as something somebody said. */
+document.querySelectorAll(".scout-revise").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const out = document.querySelector(".revise-answer");
+    if (!out) return;
+    btn.disabled = true;
+    const said = btn.textContent;
+    btn.textContent = "Reading what was found…";
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/revise", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(body.error || "That didn't change.");
+        btn.disabled = false;
+        btn.textContent = said;
+        return;
+      }
+
+      out.textContent = "";
+      if (!body.revision) {
+        const held = document.createElement("div");
+        held.setAttribute("data-content", "");
+        held.style.cssText = "font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.55)";
+        held.textContent = body.says;
+        out.appendChild(held);
+      } else {
+        const card = document.createElement("div");
+        card.style.cssText =
+          "padding:12px 14px;border-radius:9px;background:#17171B;display:flex;flex-direction:column;gap:6px";
+
+        const claim = document.createElement("div");
+        claim.setAttribute("data-content", "");
+        claim.style.cssText = "font-size:13.5px;line-height:1.5;color:#ECECF1";
+        claim.textContent = body.revision.claim;
+
+        const why = document.createElement("div");
+        why.setAttribute("data-content", "");
+        why.style.cssText = "font-size:12px;line-height:1.5;color:rgba(236,236,241,0.55)";
+        why.textContent = body.revision.why;
+
+        card.append(claim, why);
+
+        for (const d of body.revision.drivenBy || []) {
+          const q = document.createElement("div");
+          q.setAttribute("data-content", "");
+          q.style.cssText =
+            "font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.4);border-left:2px solid #2E2E36;padding-left:8px";
+          q.textContent = d.source ? d.quote + " — " + d.source : d.quote;
+          card.appendChild(q);
+        }
+
+        const cost = document.createElement("div");
+        cost.setAttribute("data-content", "");
+        cost.style.cssText = "font-size:11.5px;line-height:1.45;color:#D9B36A;margin-top:2px";
+        cost.textContent =
+          body.recorded
+            ? body.cost + " You have " + body.recorded + " recorded take" +
+              (body.recorded === 1 ? "" : "s") + " in this cut; which of them a change would strand is not tracked yet."
+            : body.cost;
+        card.appendChild(cost);
+
+        out.appendChild(card);
+      }
+      out.hidden = false;
+      btn.disabled = false;
+      btn.textContent = said;
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.textContent = said;
+    }
+  });
+});
+
 /* ── Other ways to build this ─────────────────────────────────────────
    The third answer at the one stop. "Yes" and "edit the beats" were the
    only two the plan page could take; this is "that is the wrong video, and

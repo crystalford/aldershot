@@ -160,6 +160,24 @@ nobody can check.
   counted in any explanation of why a moment is where it is. Signed off in
   `check-fidelity.cjs` with this reasoning.
 
+- **Which recorded takes a revision would strand.** `src/revise.ts` prices a
+  change of claim, and the only cost that cannot be undone by pressing
+  something is a recorded take — invariant 6 calls a performance "the one
+  thing in this product you cannot re-make". `priceRevision` counts them and
+  the route passes it zero, because it cannot honestly pass anything else:
+  `beats` has no `plan_beat_id`, so a dropped PLAN beat cannot be mapped to
+  the recording it produced. The board says the recordings exist and says
+  plainly that which of them a change would strand is not tracked.
+  What would close it: `plan_beat_id` on `beats`, written when a plan is
+  cut, and the route's `takesFor` reading through it. Small, and it turns a
+  stated unknown into the number the person actually needs.
+
+- **The loop's second turn.** A revision proposes a claim; nothing re-runs
+  Scout against it. PASS-4's Q6 is where the stopping rule for that lives —
+  "the knee of distinct-finds against queries issued" may transfer, and
+  whether angle quality follows the same curve is the open question. One
+  turn is built; the loop is not yet a loop.
+
 - **A video attached to a cut, detached again.** Footage's Videos tab now
   lists every video a cut is made of and offers "Only this" on each, which is
   reversible; what it does not offer is removing one. `scope` only ever grows

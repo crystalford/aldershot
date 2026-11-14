@@ -140,6 +140,8 @@ export interface BoardBeat {
 }
 
 export interface BoardData {
+  /** Whose board this is, so the controls on it can post somewhere. */
+  projectId?: string;
   verifiedMoments: number;
   crowdRows: number;
   beats: BoardBeat[];
@@ -533,6 +535,28 @@ export function renderBoard(d: BoardData): string {
     renderMeter(balanceMeter(d.beats)) +
     `</div></div>`;
 
+  /*
+   * DOES ANY OF THIS CHANGE WHAT THE VIDEO IS ABOUT?
+   *
+   * The loop PASS-4-BRIEF says the architecture cannot run. The board
+   * reports coverage against the beats the run was given; this is the one
+   * question it could never ask — whether the evidence argues for a
+   * different claim than the one the plan was written with.
+   *
+   * Only with something verified, because a paraphrase may not have been
+   * said and a rejection is a fabrication, and neither is a reason to
+   * change what a video argues. On demand, because it is a model call and
+   * the answer is usually no.
+   */
+  const revise =
+    d.projectId && d.verifiedMoments
+      ? `<div style="margin-bottom:14px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">` +
+        `<button class="scout-revise" type="button" data-project="${esc(d.projectId)}" ` +
+        `style="flex:none;font:500 ${SIZE.secondary} ${FONT.ui};padding:7px 13px;border-radius:${RADIUS.button};` +
+        `background:transparent;color:${C.ink45};border:none;cursor:pointer">Does this change the claim?</button>` +
+        `<div class="revise-answer" hidden style="flex:1 1 260px;min-width:min(260px,100%)"></div></div>`
+      : "";
+
   if (!d.beats.length) {
     return (
       header +
@@ -563,6 +587,6 @@ export function renderBoard(d: BoardData): string {
     `<span>sources &nearr; &nbsp; the ledger &nearr;</span></div>`;
 
   return (
-    header + renderGaps(gaps) + renderGhosts(d) + ordered.map((b) => renderBeat(b, d, byBeat.get(b.id))).join("") + footer
+    header + revise + renderGaps(gaps) + renderGhosts(d) + ordered.map((b) => renderBeat(b, d, byBeat.get(b.id))).join("") + footer
   );
 }

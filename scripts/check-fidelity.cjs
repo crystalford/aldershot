@@ -1731,6 +1731,21 @@ const SIGNED_OFF = new Map([
       "unreachable. scripts/render-pages.mjs renders both now.",
   ],
   [
+    "Does this change the claim?",
+    "THE LOOP, which PASS-4-BRIEF says the architecture cannot run: " +
+      "\"Scout fills a plan's gaps; it cannot change the plan's mind.\" The " +
+      "board reports coverage against the beats a run was given, and this " +
+      "is the one question it could never ask \u2014 whether what was found " +
+      "argues for a different claim than the one the plan was written " +
+      "with. No prototype draws it, because no prototype has the object.\n\n" +
+      "A question rather than a verdict, and on demand, because the honest " +
+      "answer is usually no and a control that only speaks when it " +
+      "disagrees is one people learn to dread. It renders only where " +
+      "something has been VERIFIED: a paraphrase may not have been said " +
+      "and a rejection is a fabrication, and neither is a reason to change " +
+      "what a video argues.",
+  ],
+  [
     "Other ways to build this",
     "THE THIRD ANSWER AT THE ONE STOP, which the prototype has no control " +
       "for because it has no object for one.\n\n" +
