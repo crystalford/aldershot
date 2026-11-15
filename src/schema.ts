@@ -1045,6 +1045,18 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
    * timings: a transcript that failed, or one stored before they were kept.
    * The milliseconds remain the fallback and remain correct.
    */
+  /*
+   * WHAT THE CUT SAID IT WOULD ADD UP TO, beside what the file measured.
+   *
+   * duration_s is the finished file, measured by the container, and that is
+   * the right value for a row that describes a video somebody can play. But
+   * it was written as `measuredS || edl.durationMs/1000`, so an unmeasured
+   * export and an export that came out exactly as promised were the same row,
+   * and an export that came out forty seconds short was a correctly described
+   * video nobody was told had changed. Keeping the promise too is what makes
+   * the difference a fact rather than a log line. See src/length.ts.
+   */
+  { table: "renders", column: "promised_s", ddl: "ALTER TABLE renders ADD COLUMN promised_s INTEGER" },
   { table: "v2_clips", column: "start_word", ddl: "ALTER TABLE v2_clips ADD COLUMN start_word INTEGER" },
   { table: "v2_clips", column: "end_word", ddl: "ALTER TABLE v2_clips ADD COLUMN end_word INTEGER" },
 

@@ -3490,6 +3490,194 @@ function checkRegister() {
   else pass('register', `${checked} writing prompts, none of them naming a genre`);
 }
 
+/*
+ * ── Invariant 2, read off the schemas ──────────────────────────────────────
+ *
+ * "The model never outputs a timestamp. It directs; a deterministic solver
+ * places." Everything else in this product leans on it: a cut is re-derived
+ * from rules and moments, timestamps derive from word ids, and an export can
+ * carry a receipt — all of which assume the model never got to place
+ * anything.
+ *
+ * It was enforced by prose. Two schemas declare a time field —
+ * src/score.ts and src/reactions.ts, both `start_ms`/`end_ms` — and what
+ * actually holds them is `groundClips`, which drops a range the transcript
+ * does not contain and snaps the rest to segment edges. reactions.ts says so
+ * only in its PROMPT: "start_ms and end_ms MUST come from the ranges shown.
+ * Never invent a timecode." A prompt is a request. Delete the groundClips
+ * call and every test in the repo still passed.
+ *
+ * So the rule is the pair, not the field: a model schema may declare a
+ * time-shaped property only in a file that grounds what comes back. The
+ * field is where the model answers; grounding is where the answer stops
+ * being believed.
+ *
+ * WHY A WORD ID IS NOT A TIME, and passes. scout-scan's `first_word_id` is
+ * positional and deliberate — "it decides WHICH, never WHEN"
+ * (src/scout-verify.ts) — and the number is thrown away outright if it falls
+ * outside the window we sent. Word ids are the sanctioned currency of
+ * invariant 2 rather than a hole in it, so this names them and counts them
+ * instead of failing them: a positional field nobody has noticed is the
+ * thing to avoid, not a positional field with a reason.
+ */
+const TIME_WORDS = new Set([
+  'ms', 's', 'sec', 'secs', 'second', 'seconds',
+  'time', 'times', 'timestamp', 'timestamps', 'timecode', 'timecodes', 'tc',
+  'start', 'end', 'begin', 'at', 'dur', 'duration',
+  'offset', 'span', 'position', 'clock', 'when', 'cue',
+]);
+/** Positional but not temporal — reported, never failed. See above. */
+const PLACE_WORDS = new Set(['word', 'words']);
+/** The deterministic solver. A schema with a time field needs one of these. */
+const GROUNDS = /\bground(?:Clips|Traced)\s*\(/;
+/* JSON Schema's own keywords, which are not property names. */
+const JSON_SCHEMA_KEYS = new Set([
+  'type', 'properties', 'items', 'required', 'enum', 'description', 'format',
+  'additionalProperties', 'minimum', 'maximum', 'minItems', 'maxItems',
+  'anyOf', 'oneOf', 'allOf', 'const', 'default', 'nullable', 'pattern',
+  'json_schema', 'schema', 'name', 'strict',
+]);
+
+/** foo_barBaz → ['foo', 'bar', 'baz'] */
+function wordsOf(key) {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function checkTimes() {
+  const bad = [];
+  const place = [];
+  let schemas = 0;
+  let grounded = 0;
+
+  for (const file of walk(path.join(ROOT, 'src'))) {
+    const rel = path.relative(ROOT, file);
+    const text = fs.readFileSync(file, 'utf8');
+
+    /*
+     * THE SCHEMA REGION, not the file.
+     *
+     * Reading the whole file would flag `clip.start_ms` on the grounded
+     * object, which is our own number and the correct thing to use. The
+     * claim is about what the MODEL may answer with, so the haystack is the
+     * declaration it answers into.
+     *
+     * Any const whose name ends in SCHEMA, to the `} as const;` that closes
+     * it. All thirteen are plain `const SCHEMA`, and a second one in the
+     * same file, or one called ANGLE_SCHEMA, is read the same way — a rule
+     * that reads only the name in use today passes the next file silently.
+     * The count is checked against the call sites regardless.
+     */
+    const regions = [];
+    for (const m of text.matchAll(/const ([A-Za-z_$][\w$]*)\s*=\s*\{/g)) {
+      if (!/schema$/i.test(m[1])) continue;
+      const to = text.indexOf('} as const;', m.index);
+      if (to < 0) {
+        bad.push(rel + ': ' + m[1] + ' has no `} as const;` — this rule could not read it, so it checked nothing');
+        continue;
+      }
+      regions.push(text.slice(m.index, to));
+    }
+    if (!regions.length) continue;
+    schemas += regions.length;
+    const grounds = GROUNDS.test(text);
+    if (grounds) grounded += 1;
+
+    for (const region of regions) {
+      /*
+       * BOTH WAYS A PROPERTY IS NAMED. `start_ms: { type: "number" }` is the
+       * declaration; `required: ["start_ms", "end_ms"]` names the same
+       * property as a string, and a schema written on one line has only the
+       * first. Neither anchor to the start of a line, because a one-line
+       * schema was the first thing this rule was broken with and it passed.
+       */
+      const keys = [...region.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*\{/g)].map((m) => m[1]);
+      for (const req of region.matchAll(/required:\s*\[([^\]]*)\]/g)) {
+        for (const q of req[1].matchAll(/["']([^"']+)["']/g)) keys.push(q[1]);
+      }
+
+      for (const key of keys) {
+        if (JSON_SCHEMA_KEYS.has(key)) continue;
+        const words = wordsOf(key);
+        if (words.some((w) => TIME_WORDS.has(w))) {
+          if (!grounds) {
+            bad.push(
+              rel + ': the model may answer with `' + key + '` and nothing here grounds it — invariant 2, ' +
+                'and a prompt asking it not to invent a timecode is a request. ' +
+                'Either take the field out of the schema (see src/scout-reduce.ts: short ids out, short ids back) ' +
+                'or pass what comes back through groundClips.',
+            );
+          }
+          continue;
+        }
+        if (words.some((w) => PLACE_WORDS.has(w)) && !place.includes(rel + ': ' + key)) {
+          place.push(rel + ': ' + key);
+        }
+      }
+    }
+  }
+
+  /*
+   * THE COUNT IS PART OF THE CLAIM. A rule that silently reads nine of
+   * fourteen schemas reports green about the five it never opened, which is
+   * the `reachable` mistake in a different coat. Every response_format call
+   * site in src/ has to be a schema this rule read.
+   */
+  const sites = [];
+  for (const file of walk(path.join(ROOT, 'src'))) {
+    /* Comments stripped: src/models.ts documents the capability in prose
+       ("Supports `response_format: { type: \"json_schema\" }`") and declares
+       no schema, and a rule that reads prose as a call site is the `reachable`
+       mistake again. */
+    const text = fs
+      .readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .filter((l) => !/^\s*\/\//.test(l))
+      .join('\n');
+    /*
+     * A CALL SITE IS NOT ONLY A `response_format`. src/judge.ts and
+     * src/classify.ts hand their schema to callReason/callRouted, which
+     * writes the response_format one layer down — so renaming judge.ts's
+     * const made the rule read twelve schemas instead of thirteen and print
+     * a green tick about it. That is the `reachable` failure exactly, and
+     * this is the line that stops it.
+     */
+    const asks =
+      /response_format:\s*\{\s*type:\s*["']json_schema["']/.test(text) ||
+      /\bcall(?:Reason|Routed)\s*\(/.test(text) ||
+      /\bcall\.schema\b/.test(text);
+    const declares = [...text.matchAll(/const ([A-Za-z_$][\w$]*)\s*=\s*\{/g)].some((m) => /schema$/i.test(m[1]));
+    if (asks && !declares) {
+      sites.push(path.relative(ROOT, file));
+    }
+  }
+  /* src/llm.ts and src/breaker.ts pass a caller's schema through and declare
+     none of their own; they are the transport, not a schema. */
+  const TRANSPORT = ['src/llm.ts', 'src/breaker.ts'];
+  for (const s of sites) {
+    if (!TRANSPORT.includes(s)) {
+      bad.push(s + ': asks a model for structured output and declares no `const SCHEMA` this rule can read');
+    }
+  }
+
+  if (!schemas) {
+    bad.push('no model schema was found in src/ at all, so this rule checked nothing');
+  }
+
+  if (bad.length) fail('times', 'A model can answer with a time.', bad.join('\n'));
+  else {
+    pass(
+      'times',
+      schemas + ' model schemas, ' + grounded + ' of them grounded' +
+        (place.length ? ' — positional, by word id and bounded: ' + place.join(', ') : ''),
+    );
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -3505,6 +3693,7 @@ checkCopy();
 checkReceiptJson();
 checkRefusals();
 checkRegister();
+checkTimes();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

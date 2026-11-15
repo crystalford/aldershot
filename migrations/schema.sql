@@ -637,6 +637,7 @@ CREATE INDEX IF NOT EXISTS scout_lexicon_by_entity ON scout_lexicon(user_id, ent
 ALTER TABLE sources ADD COLUMN connection_id TEXT;
 ALTER TABLE sources ADD COLUMN foreign_id TEXT;
 ALTER TABLE sources ADD COLUMN recorded_at INTEGER;
+ALTER TABLE renders ADD COLUMN promised_s INTEGER;
 ALTER TABLE v2_clips ADD COLUMN start_word INTEGER;
 ALTER TABLE v2_clips ADD COLUMN end_word INTEGER;
 ALTER TABLE plan_beats ADD COLUMN backed INTEGER;

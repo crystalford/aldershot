@@ -16,6 +16,7 @@ import { FRAME_MS, frameAccurate } from "./align.ts";
 import { timingForProject } from "./align-source.ts";
 import { sidecarWanted } from "./captions.ts";
 import { loudnessVerdict, parseLoudnorm } from "./loudness.ts";
+import { lengthVerdict } from "./length.ts";
 import { plan as duckPlan } from "./ducking.ts";
 import { quoteCard } from "./graphics.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
@@ -634,12 +635,34 @@ export async function runRender(
       });
     }
 
+    /*
+     * AND HOW LONG IT CAME OUT, against how long the cut said it would be.
+     *
+     * Both numbers were already here and nothing differenced them. Invariant
+     * 2: "validate and measure every edit before showing it." src/length.ts
+     * carries the reasoning and the tolerance.
+     */
+    const long = lengthVerdict({ promisedMs: built.edl.durationMs, measuredS: measuredS || null });
+    if (!long.ok) console.log(`[render] length: ${long.says}`);
+
     await env.DB
-      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=?, lufs=?, true_peak=? WHERE id=?`)
+      .prepare(
+        `UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=?, promised_s=?, lufs=?, true_peak=? WHERE id=?`,
+      )
       /* The encoder measures the finished file; the EDL only says what the cut
          was meant to add up to. They differ when a source is shorter than its
-         transcript claims, and the row should describe the video that exists. */
-      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), lufs, truePeak, renderId)
+         transcript claims, and the row should describe the video that exists —
+         so duration_s is the measurement, and promised_s keeps the promise
+         beside it rather than letting one quietly stand in for the other. */
+      .bind(
+        key,
+        size,
+        measuredS || Math.round(built.edl.durationMs / 1000),
+        Math.round(built.edl.durationMs / 1000),
+        lufs,
+        truePeak,
+        renderId,
+      )
       .run();
 
     await meter(env.DB, {

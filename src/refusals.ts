@@ -79,8 +79,21 @@ export const REFUSALS: Refusal[] = [
       "A model never decides where a cut lands. It says what the video should do; a deterministic " +
       "solver works out the times, and nothing a model returns can move one.",
     invariant: 2,
-    enforced: "an acceptance test that feeds model output through the product and checks no timestamp moved",
-    anchor: { file: "test/ask.test.ts", find: "ACCEPTANCE: nothing the model returns can move a timestamp" },
+    /*
+     * REPOINTED. This named test/ask.test.ts, whose acceptance case says in
+     * its own comment that it "cannot be made to fail" — parseJudgements has
+     * already dropped the invented fields before the assertion runs. It is a
+     * true statement and a tautology, and it was the whole of invariant 2's
+     * enforcement in this list.
+     *
+     * The gate rule is the version that holds: of thirteen model schemas,
+     * two declare a time field, and `times` fails the build if either one
+     * stops passing what comes back through the deterministic snapper. A
+     * fourteenth schema with a time field in it fails on the day it is
+     * written rather than on the day somebody notices.
+     */
+    enforced: "a gate rule over every model schema in the build: a time field only in a file that grounds it",
+    anchor: { file: "scripts/check-fidelity.cjs", find: "the model may answer with" },
   },
   {
     id: "no-scores",

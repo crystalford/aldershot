@@ -18,6 +18,7 @@
  */
 
 import type { Env } from "./env.ts";
+import { lengthVerdict } from "./length.ts";
 import { advance, failJob, finishJob, startJob } from "./jobs.ts";
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
 import { putFromResponse } from "./r2stream.ts";
@@ -149,9 +150,21 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
     const key = `u/${opts.userId}/shorts/${renderId}.mp4`;
     const size = await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
 
+    /*
+     * MEASURED, NOT ASSUMED. This wrote `Math.round(plan.durationS)` — the
+     * length the short was REQUESTED to be — so the row described the plan
+     * rather than the file, and a short that came out short said nothing at
+     * all. The container forwards the same `x-duration-s` the full export
+     * reads; there was no reason this path was not reading it.
+     */
+    const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
+    const promisedS = Math.round(plan.durationS);
+    const long = lengthVerdict({ promisedMs: plan.durationS * 1000, measuredS: measuredS || null });
+    if (!long.ok) console.log(`[short] length: ${long.says}`);
+
     await env.DB
-      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
-      .bind(key, size, Math.round(plan.durationS), renderId)
+      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=?, promised_s=? WHERE id=?`)
+      .bind(key, size, measuredS || promisedS, promisedS, renderId)
       .run();
 
     await meter(env.DB, {

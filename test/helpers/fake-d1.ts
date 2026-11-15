@@ -129,7 +129,7 @@ export function schema(db: DatabaseSync): void {
       take_verdict TEXT, take_reason TEXT, take_words TEXT);
     CREATE TABLE renders (id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, kind TEXT,
       format TEXT, aspect TEXT, caption_style TEXT, clip_id TEXT, r2_key TEXT,
-      stream_uid TEXT, duration_s INTEGER, bytes INTEGER, state TEXT, error TEXT,
+      stream_uid TEXT, duration_s INTEGER, promised_s INTEGER, bytes INTEGER, state TEXT, error TEXT,
       enhance INTEGER, lufs REAL, true_peak REAL, created_at INTEGER);
     CREATE TABLE passes (id TEXT PRIMARY KEY, project_id TEXT, source_id TEXT, n INTEGER,
       instruction TEXT, result TEXT, undo TEXT, undone_at INTEGER, first_change TEXT,
