@@ -3149,6 +3149,106 @@ function checkReceiptJson() {
   }
 }
 
+/**
+ * EVERY PUBLISHED REFUSAL IS ENFORCED BY SOMETHING THAT RUNS.
+ *
+ * /.well-known/aldershot.json says what this product will not do. A list of
+ * refusals nobody checks is marketing, and marketing in a document called
+ * "refuses" is worse than silence: it claims a spine the product does not
+ * have, to a reader who has no way to tell.
+ *
+ * So each refusal in src/refusals.ts names an anchor — a file and a string
+ * that must appear in it — and that string has to be a FAILURE MESSAGE or a
+ * TEST NAME. Both of those are code that runs. The haystack has its comments
+ * stripped, because `claims` passed on its first run vouched for by a comment
+ * explaining that the feature did not exist, and this rule would fail exactly
+ * the same way: every invariant in this repository is described in prose
+ * somewhere, so a rule that accepted prose would accept all ten and check none.
+ *
+ * It also refuses to be satisfied by src/refusals.ts itself. A rule whose
+ * haystack includes the file it is checking matches its own declarations —
+ * `reachable`'s route check did precisely that and never fired once.
+ */
+function checkRefusals() {
+  const r = spawnSync('node', ['--experimental-strip-types', 'scripts/refusals.mjs'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) {
+    return fail('refusals', 'The refusals could not be read at all.', (r.stderr || '').trim().split('\n').slice(0, 8).join('\n'));
+  }
+
+  let data;
+  try {
+    data = JSON.parse(r.stdout);
+  } catch {
+    return fail('refusals', 'scripts/refusals.mjs said something that is not JSON.', r.stdout.slice(-300));
+  }
+
+  const bad = [];
+  const { refusals, document: doc } = data;
+
+  if (!refusals.length) bad.push('there are no refusals at all — the document would be an empty boast');
+
+  /* Comments out, and the declaring file out, for the two reasons above. */
+  const strip = (t) =>
+    t
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|#)/.test(l))
+      .join('\n');
+
+  const seen = new Set();
+  for (const ref of refusals) {
+    if (seen.has(ref.id)) bad.push(`two refusals share the id "${ref.id}"`);
+    seen.add(ref.id);
+
+    const { file, find } = ref.anchor || {};
+    if (!file || !find) {
+      bad.push(`"${ref.id}" names nothing that enforces it`);
+      continue;
+    }
+    if (/^src[\\/]refusals\.ts$/.test(file)) {
+      bad.push(`"${ref.id}" is vouched for by the file that declares it, which proves nothing`);
+      continue;
+    }
+
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) {
+      bad.push(`"${ref.id}" points at ${file}, which does not exist`);
+      continue;
+    }
+    if (!strip(fs.readFileSync(full, 'utf8')).includes(find)) {
+      bad.push(
+        `"${ref.id}" claims ${file} enforces it, and that file has no such code — ` +
+          `looked for ${JSON.stringify(find.slice(0, 60))}. A comment describing the rule does not count.`,
+      );
+    }
+
+    /* The published line must actually be about the refusal: a sentence that
+       says what the product DOES is a feature, not a refusal. */
+    if (!/\bnever\b|\bno\b|\bnot\b|\bnothing\b|\brefus/i.test(ref.says)) {
+      bad.push(`"${ref.id}" does not read as a refusal: ${JSON.stringify(ref.says.slice(0, 60))}`);
+    }
+  }
+
+  /* And the anchors must not reach the reader. They are paths inside a
+     private repository: no use to anyone outside, and structure given away
+     for nothing. */
+  if (JSON.stringify(doc).includes('anchor')) {
+    bad.push('the published document carries the internal anchors — those are not for readers');
+  }
+
+  if (bad.length) {
+    fail('refusals', 'The product publishes a refusal that nothing enforces.', bad.join('\n'));
+  } else {
+    pass(
+      'refusals',
+      `${refusals.length} published refusals, every one of them enforced by a check or a test that runs`,
+    );
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -3162,6 +3262,7 @@ checkClaims();
 checkNotes();
 checkCopy();
 checkReceiptJson();
+checkRefusals();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

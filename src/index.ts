@@ -103,6 +103,7 @@ import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
 import { publishedReceipt, receiptsHtml } from "./receipts.ts";
+import { refusalsDocument } from "./refusals.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, isOrder, orderText, ruleKey, toFootageSet, type Order, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -4333,6 +4334,31 @@ app.get("/api/projects/:id/manifest", async (c) => {
  * A receipt that could drift from the ledger behind it is not a receipt, and
  * a maker who corrects an attribution should not have to republish.
  */
+/**
+ * WHAT THIS PRODUCT REFUSES TO DO.
+ *
+ * Public, unauthenticated, and deliberately boring to fetch. Every editor can
+ * list what it does, and that list is the same list everywhere and getting
+ * shorter as a model with ffmpeg does more of it for nothing. The half nobody
+ * publishes is what a tool will not do however nicely it is asked.
+ *
+ * Under /.well-known/ because that is where a machine already looks for a
+ * statement about a site, and it is not called a manifest: this product
+ * already has one of those at /api/projects/:id/manifest, and it is a
+ * different thing — the provenance of one cut rather than the shape of the
+ * product.
+ *
+ * src/refusals.ts carries the list and the proof behind each line; the gate
+ * refuses to let a refusal exist here without something that enforces it.
+ */
+app.get("/.well-known/aldershot.json", (c) =>
+  c.json(refusalsDocument(new URL(c.req.url).origin), 200, {
+    /* It changes when the product's spine changes, which is rarely. */
+    "cache-control": "public, max-age=3600",
+    "access-control-allow-origin": "*",
+  }),
+);
+
 /**
  * THE SAME RECEIPT, AS DATA.
  *
