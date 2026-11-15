@@ -267,6 +267,42 @@ nobody can check.
   URL — closest to the existing `/r/:token` receipts page, which is already
   the one surface shown to the public.
 
+## The two model numbers nothing re-measures (15 Nov 2026)
+
+Found by the invariant 2 audit and left deliberately, because the fix is a
+design decision rather than a hole to patch.
+
+Nearly every number in the product is measured on our side: `matchScore`
+against the word-level transcript, `triage_score` from six locally computed
+components, `coverage` rebuilt from rows on every read, loudness and length off
+the finished file. Two are the model's own.
+
+- **`score` (0–100)** — asked for in `src/score.ts`, clamped for range in
+  `src/grounding.ts`, stored on `v2_clips.score`, and never recomputed. No
+  percentage reaches a person, so invariant 3 holds — the comment in
+  `src/ui/pages/cut.ts` records that it used to be `${b.score}` in a badge —
+  but the WORD somebody reads (Strong / Worth a look / Long shot) is a direct
+  function of an unverified model integer against thresholds `src/shorts.ts`
+  says in its own comment are "not tuned".
+- **`heat` (0–2)** — same call, never rendered, and it has teeth. `heat >= 2`
+  is the `strong` tag, and `src/rules.ts` forbids the cap rule from dropping a
+  strong moment. An unverified model integer decides which moments a rule may
+  not remove.
+
+**Why this is not fixed in passing.** A band has to come from something, and
+every honest alternative is larger than a patch: derive it from retrieval's own
+agreement (the judge already answers backs / related / unrelated, and
+`src/plan.ts` already derives "thin" from exactly that), or from Phase 0's
+labelled set, which is the thing that would let the thresholds be tuned rather
+than asserted. Both are the same piece of work — the band stops being the
+model's opinion and becomes a measurement — and the second one is already on
+this list as the gate for everything else about retrieval.
+
+**What leaving it costs.** A moment a model liked for no reason reads as Strong,
+and the cap rule protects it. The receipt beside it is still true, because the
+receipt is the line that caused it rather than the number — so a person can
+read the reason and disagree with it, which is the whole point of invariant 3.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.
