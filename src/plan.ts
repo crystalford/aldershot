@@ -28,6 +28,7 @@ import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
 import { runRead } from "./llm.ts";
+import { plainRegister } from "./register.ts";
 
 /** What a beat is for. The prototype's own three. */
 export const ROLES = ["subject", "counter", "outside"] as const;
@@ -54,6 +55,15 @@ export interface Draft {
   tokensIn: number;
   tokensOut: number;
   model: string;
+  /**
+   * The genre word the person used, if they used one — kept, not thrown away.
+   *
+   * Invariant 10 says the writer never sees it, not that it never existed.
+   * Doc 04: "Genre is a parameter set applied after the cut is aligned, not a
+   * writing instruction." Nothing applies it yet; carrying it is what makes
+   * that possible later without asking the person again.
+   */
+  genre: string | null;
 }
 
 const SCHEMA = {
@@ -79,9 +89,21 @@ const SCHEMA = {
   required: ["claim", "beats"],
 } as const;
 
+/*
+ * A PLAIN REGISTER, WITH NO GENRE WORD IN IT.
+ *
+ * This line read "You are planning a video essay" for as long as it has
+ * existed, which is invariant 10 broken by us rather than by a user: the
+ * writer was handed the costume in the first sentence of its instructions.
+ * Decision 15 — "a genre word is a costume; the model performs it."
+ *
+ * The topic arrives through plainRegister, so a person who typed "make me a
+ * video essay about NASA" is planning NASA and the word "video essay" is
+ * stored as an edit-profile hint rather than sent.
+ */
 function systemPrompt(topic: string): string {
   return [
-    "You are planning a video essay, before any footage has been looked at.",
+    "You are planning a video, before any footage has been looked at.",
     "",
     `The topic: ${topic}`,
     "",
@@ -116,7 +138,11 @@ function systemPrompt(topic: string): string {
  * against the library, where a beat that finds nothing is marked thin rather
  * than filled with something that does not meet it.
  */
-export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
+export async function draftPlan(env: Env, rawTopic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
+  /* Invariant 10: the genre word is stored and discarded; the writer never
+     sees it. `genre` is returned so a caller can keep it — it is an edit
+     profile, which doc 04 applies after the cut is aligned. */
+  const { said: topic, genre } = plainRegister(rawTopic);
   /* Directing: what the video says. Not a place to save a call. */
   const model = resolveFor("direct", env);
   const run = (m: string, i: Record<string, unknown>) => runRead(env, "plan", m, i);
@@ -149,7 +175,7 @@ export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boole
 
   const { tokensIn, tokensOut } = usageTokens(res);
   const { claim, beats } = parsePlan(res);
-  return { claim, beats, tokensIn, tokensOut, model: model.id };
+  return { claim, beats, tokensIn, tokensOut, model: model.id, genre };
 }
 
 /**

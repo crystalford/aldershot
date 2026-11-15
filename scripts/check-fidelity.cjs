@@ -3249,6 +3249,107 @@ function checkRefusals() {
   }
 }
 
+/**
+ * NO WRITER IS HANDED A COSTUME.
+ *
+ * Invariant 10: "the genre word never reaches the writer; the user's own words
+ * win where they exist." Decision 15 gives the reason in six words — "a genre
+ * word is a costume; the model performs it" — and labs/FORMATS.md specifies
+ * the enforcement as "a deterministic lint, not a model".
+ *
+ * It was enforced by nothing, and broken by us rather than by any user:
+ * src/plan.ts opened with "You are planning a video essay" and src/essay.ts
+ * with "You are outlining a video essay", so the first sentence the writer
+ * read was the costume. A user's topic went in verbatim underneath it.
+ *
+ * This reads the body of every `systemPrompt` in src/ and fails on a costume
+ * in any of them. src/intent.ts is exempt and that exemption is doc 05's, not
+ * mine: "an intent parse decides the flow; it is the only place a genre word
+ * is read." src/register.ts is exempt because it declares the list — a rule
+ * whose haystack includes its own declarations is the mistake `reachable`
+ * made and never fired once.
+ */
+function checkRegister() {
+  const r = spawnSync('node', ['--experimental-strip-types', '-e',
+    'import("./src/register.ts").then(m => console.log(JSON.stringify(m.COSTUMES)))'],
+    { cwd: ROOT, encoding: 'utf8' });
+  if (r.status !== 0) {
+    return fail('register', 'The costume list could not be read.', (r.stderr || '').trim().split('\n').slice(0, 6).join('\n'));
+  }
+  const costumes = JSON.parse(r.stdout.trim().split('\n').pop());
+
+  /* Longest first, so "video essay" is reported rather than "essay". */
+  const ordered = [...costumes].sort((a, b) => b.length - a.length);
+  const EXEMPT = ['src/intent.ts', 'src/register.ts'];
+
+  const bad = [];
+  let checked = 0;
+  for (const file of walk(path.join(ROOT, 'src'))) {
+    const rel = path.relative(ROOT, file);
+    if (EXEMPT.includes(rel)) continue;
+
+    const text = fs.readFileSync(file, 'utf8');
+    /*
+     * THE WRITER IS THE `direct` CAPABILITY, and this product already says so.
+     *
+     * Checking every systemPrompt was too wide: Scout's expand and reduce say
+     * "compilation" because `scout_ledger.is_compilation_only` is a fact about
+     * somebody else's video, not a costume for a writer, and the judge and the
+     * classifier are not writing anything either. Invariant 10 names the
+     * writer, and resolveFor("direct") is who that is — angles, essay, plan,
+     * reactions, revise.
+     */
+    if (!/resolveFor\(\s*["']direct["']/.test(text)) continue;
+
+    /* Comments stripped: a comment explaining that a genre word must not
+       appear here is not a genre word appearing here, and the comments added
+       alongside this rule say exactly that. */
+    const clean = (t) =>
+      t
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .split('\n')
+        .filter((l) => !/^\s*\/\//.test(l))
+        .join('\n');
+
+    /*
+     * BOTH TURNS, not just the system prompt.
+     *
+     * src/essay.ts said "Outline the essay: ${topic}" in the USER message
+     * while its system prompt was clean, so a rule reading only systemPrompt
+     * would have passed it. The costume does not care which role wears it.
+     */
+    const parts = [];
+    const from = text.indexOf('function systemPrompt');
+    if (from >= 0) parts.push(text.slice(from, text.indexOf('\n}\n', from) + 1));
+    for (const m of text.matchAll(/content:\s*(`[^`]*`|"[^"]*")/g)) parts.push(m[1]);
+    if (!parts.length) continue;
+
+    const body = clean(parts.join('\n'));
+    checked += 1;
+
+    for (const costume of ordered) {
+      /* Word boundaries, so "docuseries" is not found inside another word and
+         "commentary" in "commentaries" still is. */
+      const re = new RegExp(`\\b${costume.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i');
+      const hit = re.exec(body);
+      if (hit) {
+        bad.push(
+          `${rel}: a writing prompt says "${hit[0]}" — invariant 10, and decision 15: ` +
+            'a genre word is a costume and the model performs it. Say what the video has to DO.',
+        );
+        break;
+      }
+    }
+  }
+
+  if (!checked) {
+    bad.push('nothing in src/ resolves the direct capability, so this rule checked no writer at all');
+  }
+
+  if (bad.length) fail('register', 'A writing prompt names a genre.', bad.join('\n'));
+  else pass('register', `${checked} writing prompts, none of them naming a genre`);
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -3263,6 +3364,7 @@ checkNotes();
 checkCopy();
 checkReceiptJson();
 checkRefusals();
+checkRegister();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

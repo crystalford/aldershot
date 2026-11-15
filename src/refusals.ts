@@ -21,9 +21,13 @@
  * precaution: the `claims` rule passed on its first run because a comment
  * explaining that a feature did NOT exist vouched for its existence.
  *
- * WHAT IS NOT HERE IS DELIBERATE. Invariant 10 — the genre word never reaches
- * the writer — is named nowhere in code, by any check or test, so it cannot be
- * published here. A refusal only earns a line once something enforces it.
+ * WHAT IS NOT HERE IS DELIBERATE. A refusal only earns a line once something
+ * enforces it, and that is a real constraint rather than a slogan: invariant
+ * 10 was left out of the first version of this file because it was named
+ * nowhere in any code, check or test. It is here now because writing this
+ * file is what made its absence visible, and src/register.ts and the
+ * `register` gate rule were built in answer. Invariants 4, 5 and 8 are still
+ * absent, for the same reason and until the same thing is done about them.
  */
 
 export interface Refusal {
@@ -99,6 +103,16 @@ export const REFUSALS: Refusal[] = [
     invariant: 7,
     enforced: "a reading on this product's own dashboard counting items that failed inside jobs which reported success",
     anchor: { file: "src/slo.ts", find: "failed inside a job that reported finishing — invariant 7 says" },
+  },
+  {
+    id: "no-genre-word",
+    says:
+      "No writer here is told what genre to write. Ask for a documentary and you get a video about " +
+      "your subject: the word is kept as a format setting and never reaches the model that drafts, " +
+      "because a genre word is a costume and a model handed one performs it instead of thinking.",
+    invariant: 10,
+    enforced: "a build check that fails on a genre name in any prompt sent to the drafting model",
+    anchor: { file: "scripts/check-fidelity.cjs", find: "invariant 10, and decision 15:" },
   },
   {
     id: "no-downloading",
