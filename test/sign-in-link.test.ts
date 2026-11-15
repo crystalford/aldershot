@@ -19,7 +19,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderLanding } from "../src/ui/pages/landing.ts";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { renderLanding, renderSignIn } from "../src/ui/pages/landing.ts";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every class name that some max-width media query sets `display:none` on. */
 function hiddenOnNarrow(html: string): Set<string> {
@@ -91,4 +96,75 @@ test("the form says the same box signs you in, in both states", () => {
       `google=${google}: the form does not say it is also how you come back`,
     );
   }
+});
+
+/* ---- and it goes to a page, not down the page ---- */
+
+/*
+ * THE COMPLAINT THAT CAUSED THIS.
+ *
+ * "i tried clicking sign in it just takes me to down the page to signup" —
+ * which it did. The link was href="#start", the signup form, under a button
+ * reading "Start free". The plumbing is the same either way, which is why it
+ * was built as an anchor; the person is not.
+ */
+test("the header's Sign in goes to a page, not to an anchor on this one", () => {
+  for (const google of [false, true]) {
+    const html = landing(google);
+    const link = /<a([^>]*)>Sign in<\/a>/.exec(html);
+    assert.ok(link, `google=${google}: no Sign in link`);
+    const href = /href="([^"]*)"/.exec(link[1])?.[1];
+    assert.equal(href, "/signin", `google=${google}: Sign in points at ${href}`);
+  }
+});
+
+test("the sign-in page stands up in the state the live site is in", () => {
+  /* google:false is production — the two Google secrets are unset. */
+  const page = renderSignIn({ google: false, error: null, sentTo: null, devLink: null });
+  assert.match(page, />Sign in<\/h1>/, "no heading");
+  assert.match(page, /action="\/auth\/start"/, "no email form — the only way in");
+  assert.match(page, /name="from" value="signin"/, "no from field, so a failure would answer on /");
+  assert.ok(!/Continue with Google/.test(page), "a Google button rendered with Google unconfigured");
+  assert.match(page, /No account yet\?/, "it does not say the box also makes an account");
+  assert.ok(
+    !/Already have an account/.test(page),
+    "the sign-in page tells a signed-out visitor they might already have an account, " +
+      "which is the landing's line on the wrong page",
+  );
+});
+
+/*
+ * THE REFUSAL LANDS WHERE IT WAS ASKED FOR.
+ *
+ * MAIL_FROM is unset in production, so this is the page a real person meets.
+ * Before /signin existed every outcome of /auth/start redirected to "/", which
+ * meant being told on the marketing page that sign-in is not switched on.
+ */
+test("a failure is explained on the sign-in page itself", () => {
+  const nomail = renderSignIn({ google: false, error: "nomail", sentTo: null, devLink: null });
+  assert.match(nomail, /email delivery isn't configured/);
+
+  const sent = renderSignIn({ google: false, error: null, sentTo: "someone@example.com", devLink: null });
+  assert.match(sent, /someone@example\.com/);
+  assert.match(sent, /expires in 20 minutes/);
+});
+
+/*
+ * AND THE ROUTE SENDS IT BACK HERE. Read out of src/index.ts rather than
+ * asserted about a string: the five redirects used to be literal "/" and the
+ * regression is one of them reverting.
+ */
+test("every outcome of /auth/start returns to the page it was submitted from", () => {
+  const src = readFileSync(join(ROOT, "src", "index.ts"), "utf8");
+  const start = src.indexOf('app.post("/auth/start"');
+  const body = src.slice(start, src.indexOf("\n});", start));
+
+  assert.match(body, /const back = String\(form\.from \?\? ""\) === "signin" \? "\/signin" : "\/"/);
+  const literal = [...body.matchAll(/c\.redirect\(\s*[`"]\//g)];
+  assert.equal(
+    literal.length,
+    0,
+    `${literal.length} outcome(s) still redirect to "/" literally, so a sign-in failure ` +
+      "would be explained on the marketing page",
+  );
 });

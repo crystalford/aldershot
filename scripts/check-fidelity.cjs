@@ -604,6 +604,37 @@ const protoRaw = normalise(PROTO);
  */
 const SIGNED_OFF = new Map([
   /*
+   * THE SIGN-IN PAGE, which is a page now rather than a jump.
+   *
+   * The header's "Sign in" used to scroll to the signup form, under a button
+   * reading "Start free". The plumbing is the same either way — the emailed
+   * link finds an account or makes one — which is why it was built as an
+   * anchor; but somebody who already has an account and is shown "Start free"
+   * has not been answered, and the owner said so after clicking it.
+   *
+   * No design draws any of this: the sign-off group below records that every
+   * control in both landing designs opens the prototype app directly, with no
+   * account and no inbox anywhere in them.
+   *
+   * The third string is NOT new. It has shipped since the magic-link flow was
+   * built and no fixture had ever rendered an error state, so `copy` is seeing
+   * it for the first time — the same shape as every other string in this file
+   * that turned out to be unchecked rather than wrong.
+   */
+  ...[
+    "We email you a link. There is no password to remember.",
+    "No account yet? The same link makes one.",
+    "Sign-in isn't switched on yet — email delivery isn't configured. Nothing was sent.",
+  ].map((t) => [
+    t,
+    "The /signin page. Nothing in any design draws a sign-in surface at all. " +
+      "The second line is the mirror of the landing's — whichever page you are " +
+      "on, the box does both jobs, and the sentence names the one you did not " +
+      "come for. The third is the refusal a person meets today, now said on the " +
+      "page they asked from instead of on the marketing page they get bounced to.",
+  ]),
+
+  /*
    * A WAY BACK IN, which the signed-out page did not have.
    *
    * The header was the wordmark, three section anchors and "Start free";

@@ -44,6 +44,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # R2_ACCOUNT_ID is the Cloudflare account id under another name —
+          # see the put_secret line below. It is in this block so the job's
+          # environment holds what it actually ships: without it,
+          # scripts/deploy-readout.mjs looked for R2_ACCOUNT_ID, did not find
+          # it, and printed "OFF Direct upload to storage" while the Worker had
+          # the value and /api/preflight reported it on. Two reporters
+          # disagreeing with nothing to say which was right.
+          R2_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
@@ -167,7 +175,7 @@ jobs:
 
           echo "==> Secrets"
           put_secret() { if [ -n "${2:-}" ]; then printf '%s' "$2" | npx wrangler secret put "$1"; else echo "  (skip $1 — not set)"; fi; }
-          put_secret R2_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put_secret R2_ACCOUNT_ID "${R2_ACCOUNT_ID:-}"
           put_secret R2_ACCESS_KEY_ID "${R2_ACCESS_KEY_ID:-}"
           put_secret R2_SECRET_ACCESS_KEY "${R2_SECRET_ACCESS_KEY:-}"
           # The address login links come from. Not a secret in any real sense
