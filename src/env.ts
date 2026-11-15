@@ -66,6 +66,24 @@ export interface Env {
   EMAIL?: { send(message: { to: string; from: string; subject: string; text?: string; html?: string }): Promise<unknown> };
   MAIL_FROM?: string;
 
+  /*
+   * WHOSE ACCOUNT SEES THE COST PANEL AND IS NEVER CAPPED.
+   *
+   * This was a string literal in src/user.ts. Harmless while the repository
+   * was private; on a public one it is the owner's personal address published
+   * in plain text at the top of a file, which is what address harvesters read.
+   *
+   * A SECRET, NOT A VAR — the opposite call from MAIL_FROM a few lines up, and
+   * for the opposite reason. MAIL_FROM is in every message this product sends,
+   * so hiding it protects nothing; this one appears nowhere a user can see.
+   *
+   * Unset means NOBODY is the owner, and that is safe rather than quietly
+   * wrong: reconcileUser exists precisely to bring a stale row into line with
+   * today's rule, so setting the secret later promotes the account on the next
+   * page load. scripts/deploy-readout.mjs reports it off until then.
+   */
+  OWNER_EMAIL?: string;
+
   /**
    * Sign in with Google — the primary path (src/oauth.ts). Needs no domain and
    * no mail provider, so it works before DNS does. Without these two the

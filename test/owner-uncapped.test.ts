@@ -40,7 +40,9 @@ function db(isOwner: number, usedMinutes: number) {
   d.exec(`CREATE TABLE sources (id TEXT, user_id TEXT, bytes INTEGER, deleted_at INTEGER)`);
   d.exec(`CREATE TABLE renders (user_id TEXT, bytes INTEGER, state TEXT)`);
   d.exec(`CREATE TABLE uploads (user_id TEXT, source_id TEXT, total_bytes INTEGER, state TEXT)`);
-  d.prepare(`INSERT INTO v2_users VALUES ('u1','chrisrobtelford@gmail.com',?, 'studio')`).run(isOwner);
+  /* A fixture address, not the owner's own: this file is public now, and the
+     row that matters here is is_owner, never which address set it. */
+  d.prepare(`INSERT INTO v2_users VALUES ('u1','owner@example.com',?, 'studio')`).run(isOwner);
   d.prepare(`INSERT INTO usage_events VALUES ('e1','u1','transcribe',?,0,?)`).run(usedMinutes, Date.now());
   return d;
 }

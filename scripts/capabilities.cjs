@@ -41,6 +41,22 @@ const CAPABILITIES = [
     without: 'sign-in links are refused with "email delivery isn\'t configured. Nothing was sent."',
   },
   {
+    /*
+     * The owner's own account. Added when the repository went public and the
+     * address stopped being a literal in src/user.ts.
+     *
+     * Unset is not a broken deploy — the product works, nobody is the owner,
+     * and the cost panel is simply not there. It is on this list because that
+     * is a change in behaviour nobody would otherwise be told about, which is
+     * what this list is for.
+     */
+    key: "owner",
+    name: "The owner's account",
+    needs: "OWNER_EMAIL",
+    env: ["OWNER_EMAIL"],
+    without: "no account is the owner: no cost panel, and every cap applies to it like any other.",
+  },
+  {
     key: "session_secret",
     name: "Session signing",
     needs: "SESSION_SECRET",

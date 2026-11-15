@@ -179,7 +179,16 @@ function devEmail() {
   const vars = join(__dirname, "..", ".dev.vars");
   if (!existsSync(vars)) return null;
   const m = readFileSync(vars, "utf8").match(/^DEV_LOGIN_EMAIL=(.*)$/m);
-  return m ? m[1].trim() : null;
+  /*
+   * QUOTES OFF. wrangler reads .dev.vars as dotenv and strips them; this read
+   * did not, so a file written exactly as docs/SETUP.md documents it —
+   * DEV_LOGIN_EMAIL="you@example.com" — looked up a user whose address
+   * included the quote marks and reported "no user row yet" about an account
+   * that was sitting right there. Found on a fresh container, which is the
+   * only place this path runs: an existing .dev.vars had been written
+   * unquoted by hand.
+   */
+  return m ? m[1].trim().replace(/^(['"])(.*)\1$/, "$2") : null;
 }
 
 async function main() {

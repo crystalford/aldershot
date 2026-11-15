@@ -358,7 +358,7 @@ app.post("/auth/callback", async (c) => {
   const email = await consumeToken(c.env, token);
   if (!email) return c.redirect("/?error=link", 302);
 
-  const user = await userForEmail(c.env.DB, email);
+  const user = await userForEmail(c.env.DB, email, c.env.OWNER_EMAIL);
   const secure = new URL(c.req.url).protocol === "https:";
   c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
   return c.redirect("/", 302);
@@ -400,7 +400,7 @@ app.get("/auth/google/callback", async (c) => {
   const who = await finishGoogle(c.env, code, origin);
   if (!who) return c.redirect("/?error=google", 302);
 
-  const user = await userForEmail(c.env.DB, who.email, who.name);
+  const user = await userForEmail(c.env.DB, who.email, c.env.OWNER_EMAIL, who.name);
   c.header("set-cookie", sessionCookie(await mintSession(c.env, user.id), secure));
   return c.redirect("/", 302);
 });
@@ -514,7 +514,7 @@ const homeHandler = async (c: Ctx) => {
 
   /* A stored row today's rules would not produce is corrected on the way past
      — see reconcileUser. Home is the page everybody lands on. */
-  const user = await reconcileUser(c.env.DB, visitor);
+  const user = await reconcileUser(c.env.DB, visitor, c.env.OWNER_EMAIL);
 
   /* Signed in, and they asked for Studio on the way. Clear it first, so a
      checkout that fails does not trap them in a redirect loop. */
@@ -7028,6 +7028,7 @@ app.get("/api/preflight", async (c) => {
   return c.json({
     sign_in_google: has(c.env.GOOGLE_CLIENT_ID) && has(c.env.GOOGLE_CLIENT_SECRET),
     sign_in_email: has(c.env.EMAIL) && has(c.env.MAIL_FROM),
+    owner: has(c.env.OWNER_EMAIL),
     session_secret: has(c.env.SESSION_SECRET),
     app_origin: has(c.env.APP_ORIGIN),
     billing: has(c.env.STRIPE_SECRET_KEY) && has(c.env.STRIPE_PRICE_ID),

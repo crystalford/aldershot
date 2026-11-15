@@ -47,6 +47,8 @@ test("it cannot print a value, whatever it is handed", () => {
     GOOGLE_CLIENT_ID: "zzz-client-id-SHOULDNEVERAPPEAR-1.apps.googleusercontent.com",
     GOOGLE_CLIENT_SECRET: "GOCSPX-SHOULDNEVERAPPEAR-2",
     MAIL_FROM: "SHOULDNEVERAPPEAR3@aldershot.io",
+    /* The owner's address is a secret now, so it is leak-tested like the rest. */
+    OWNER_EMAIL: "SHOULDNEVERAPPEAR11@aldershot.io",
     STRIPE_SECRET_KEY: "sk_live_SHOULDNEVERAPPEAR4",
     STRIPE_PRICE_ID: "price_SHOULDNEVERAPPEAR5",
     STRIPE_WEBHOOK_SECRET: "whsec_SHOULDNEVERAPPEAR6",
@@ -77,7 +79,7 @@ test("it cannot print a value, whatever it is handed", () => {
     assert.match(out, /What this deploy switched on/, `${label}: printed nothing`);
   }
 
-  assert.match(readout(secrets), /All 8 are configured/);
+  assert.match(readout(secrets), /All 9 are configured/);
   /* The half-set run must genuinely have taken the OFF path, or this whole
      test is still only checking the easy branch. */
   assert.match(readout(half), /^  OFF /m, "the half-set run produced no OFF line to leak into");
@@ -88,7 +90,7 @@ test("an absence is named, with what it costs", () => {
   assert.match(out, /OFF Email sign-in — needs MAIL_FROM/);
   assert.match(out, /email delivery isn't configured/, "it named the gap without saying what it costs");
   assert.match(out, /OFF Google sign-in — needs GOOGLE_CLIENT_ID \+ GOOGLE_CLIENT_SECRET/);
-  assert.match(out, /6 of 8 are off/);
+  assert.match(out, /7 of 9 are off/);
 });
 
 /*
