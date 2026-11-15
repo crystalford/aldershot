@@ -38,6 +38,10 @@ async function main() {
   const { buildOtio, otioJson } = await import("../src/otio.ts");
 
   const src = (over) => ({
+    /* Every cut names the block that decided it. Overridden per cut below:
+       the point is that each clip comes back carrying its OWN id, not that
+       one id survives. */
+    blockId: "s:0",
     sourceKey: "u1/a.mp4",
     previewKey: "u1/a.edit.mp4",
     start_ms: 0,
@@ -53,10 +57,19 @@ async function main() {
    * ordinary case parses.
    */
   const cuts = [
-    src({ start_ms: 1_000, end_ms: 3_000, text: "the honest version is I don't like who I am here" }),
-    src({ start_ms: 10_000, end_ms: 12_500, text: "every plan I make is a plan to be somewhere else", voiceKey: "u1/v.webm" }),
-    src({ start_ms: 0, end_ms: 4_000, text: "narration over the house", audioOnly: true, voiceKey: "u1/v2.webm" }),
-    src({ start_ms: 20_000, end_ms: 21_000, text: "and then I stopped talking" }),
+    src({ blockId: "s:0", start_ms: 1_000, end_ms: 3_000, text: "the honest version is I don't like who I am here" }),
+    /*
+     * ITS OWN TIMING, DIFFERENT FROM THE PROJECT'S.
+     *
+     * An edit assembled from the library mixes a forced-aligned source with a
+     * caption-timed one, and the exporter stamped the project's single answer
+     * on every clip — overstating the worse and understating the better. This
+     * clip says "caption" while the timeline says "forced", so the read-back
+     * below fails if the per-cut value is dropped at the boundary.
+     */
+    src({ blockId: "s:1", start_ms: 10_000, end_ms: 12_500, text: "every plan I make is a plan to be somewhere else", voiceKey: "u1/v.webm", timing: "caption" }),
+    src({ blockId: "b:take-1", start_ms: 0, end_ms: 4_000, text: "narration over the house", audioOnly: true, voiceKey: "u1/v2.webm" }),
+    src({ blockId: "s:2", start_ms: 20_000, end_ms: 21_000, text: "and then I stopped talking" }),
   ];
   const edl = { cuts, durationMs: cuts.reduce((n, c) => n + (c.end_ms - c.start_ms), 0) };
   const media = new Map([
@@ -77,6 +90,12 @@ async function main() {
     audioKinds: ["Gap", "Clip", "Clip"],
     firstClip: { start: 1_000, duration: 2_000, url: "tuesday.mp4" },
     timing: "forced",
+    /* The three picture-track clips, each naming its own block. The gap is not
+       a clip and contributes nothing. */
+    blockIds: ["s:0", "s:1", "s:2"],
+    /* And the second one keeps the timing IT was cut with, not the
+       timeline's. */
+    timings: ["forced", "caption", "forced"],
   };
 
   const out = spawnSync(PY, ["-I", "-", file], { input: READER, encoding: "utf8" });
@@ -105,9 +124,14 @@ async function main() {
   same("what is on the sound track", got.audioKinds, expected.audioKinds);
   same("the first clip's source range and media", got.firstClip, expected.firstClip);
   same("the receipt on the first clip", got.timing, expected.timing);
+  same("the block each clip came from", got.blockIds, expected.blockIds);
+  same("the timing each clip was cut with", got.timings, expected.timings);
 
   if (bad) return fail(`${bad} thing(s) did not survive the round trip`);
-  console.log("✔ otio — OpenTimelineIO reads it back: four cuts, the voice track, and the receipts intact");
+  console.log(
+    "✔ otio — OpenTimelineIO reads it back: four cuts, the voice track, the receipts intact, " +
+      "and every clip naming the block and the timing it was cut with",
+  );
 }
 
 /*
@@ -140,6 +164,12 @@ print(json.dumps({
         "url": first.media_reference.target_url,
     },
     "timing": first.metadata["aldershot"]["timing"],
+    # .get, not [], so a field the exporter stopped writing comes back as a
+    # null in the diff below rather than as a Python traceback that reads like
+    # the reader itself is broken. This block is PYTHON: a /* */ comment here
+    # is a SyntaxError, which is how the first version of this line failed.
+    "blockIds": [i.metadata["aldershot"].get("blockId") for i in video if isinstance(i, otio.schema.Clip)],
+    "timings": [i.metadata["aldershot"].get("timing") for i in video if isinstance(i, otio.schema.Clip)],
 }))
 `;
 

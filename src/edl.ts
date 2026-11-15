@@ -14,9 +14,25 @@
 import { type Cut, type StoredWord, wordStartMs, wordEndMs } from "./cuts.ts";
 import { cuesFromWords, stretch, wrap } from "./captions.ts";
 import { blockRanges, type Block } from "./blocks.ts";
-import type { Timing } from "./align.ts";
+import type { Timing, TimingSource } from "./align.ts";
 
 export interface EdlCut {
+  /**
+   * WHICH BLOCK THIS CAME FROM. Stable within a project: "s:12" for a
+   * segment, "b:<beatId>" for a beat (src/blocks.ts).
+   *
+   * Required, because a cut without it cannot be traced back to the decision
+   * that produced it — and the EDL is the artifact this product hands out,
+   * over /api/projects/:id/edl and as OTIO. It went out for months carrying
+   * two R2 keys, a quote and a time range, and no way to ask "why is this
+   * here": not a block, not a moment, not a rule. The quote was rebuilt from
+   * the block's own words, so even the text could not be matched back to a row.
+   *
+   * One block yields SEVERAL cuts when words are struck out of its middle, so
+   * this is not unique across an EDL and is not meant to be. It identifies the
+   * decision, not the range.
+   */
+  blockId: string;
   /** R2 key of the source to cut from. The MASTER — a render reads this. */
   sourceKey: string;
   /**
@@ -78,6 +94,23 @@ export interface EdlCut {
    * exported at all, which is the one thing Build exists to produce.
    */
   audioOnly?: boolean;
+  /**
+   * WHAT THE WORD TIMINGS WERE WORTH WHERE THIS CUT'S EDGES CAME FROM.
+   *
+   * Present only on a footage cut, because only there did a timing decide
+   * anything: blockRanges moves a boundary into the silence beside the words
+   * with forced timings and leaves it on the phoneme without them. A card has
+   * no words from a source and a recording plays its own full length, so
+   * neither carries one rather than carrying a default that asserts something
+   * nobody said.
+   *
+   * Absent also when the caller passed no timing at all — then blockRanges
+   * used its recogniser default, but the CALLER expressed no opinion, and
+   * writing "recogniser" here would put an opinion in the export that no
+   * caller held. src/otio.ts falls back to the project-level value, which is
+   * the honest wider answer.
+   */
+  timing?: TimingSource;
 }
 
 export interface Edl {
@@ -187,6 +220,7 @@ export function buildEdl(
       if (!block.mediaKey) {
         if (block.origin !== "generated" || !block.text?.trim()) continue;
         out.push({
+          blockId: block.id,
           /* No file. The container draws this one. */
           sourceKey: "",
           previewKey: "",
@@ -200,6 +234,7 @@ export function buildEdl(
       }
       const audioOnly = block.origin === "voice";
       out.push({
+        blockId: block.id,
         sourceKey: block.mediaKey,
         previewKey: block.previewKey || block.mediaKey,
         start_ms: 0,
@@ -226,6 +261,7 @@ export function buildEdl(
     for (const range of blockRanges(block, cuts, timing)) {
       if (range.end_ms <= range.start_ms) continue;
       out.push({
+        blockId: block.id,
         /*
          * A footage block usually plays from THIS project's video — but a clip
          * pulled from another one carries its own key, and cutting its
@@ -240,6 +276,8 @@ export function buildEdl(
         end_ms: range.end_ms,
         text: textForRange(block, range.start_ms, range.end_ms),
         ...(block.words.length ? { words: wordsForRange(block, range.start_ms, range.end_ms) } : {}),
+        /* Only what the caller actually said. See the field's note. */
+        ...(timing ? { timing: timing.source } : {}),
       });
     }
   }
@@ -310,7 +348,27 @@ export interface CaptionCue {
  * captions were never wired: the numbers existed but only in a form that could
  * be written to a file.
  */
-export function captionCues(edl: Edl): CaptionCue[] {
+/**
+ * What captionCues actually reads: a run of timed text, not an edit decision.
+ *
+ * It took an `Edl` and read four of its fields, so src/short-render.ts had to
+ * invent whole EdlCuts — with a sourceKey and a previewKey set to the same
+ * file and a comment apologising for both — out of transcript segments that
+ * are not cuts of anything. Then `blockId` became required and those invented
+ * cuts had no block to name, because there is no block: they are lines of a
+ * transcript being timed against a short's clock.
+ *
+ * Narrowing the parameter was the fix rather than inventing an id. An EDL is
+ * still assignable to this, so the real caller is unchanged.
+ */
+export interface TimedText {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  words?: StoredWord[];
+}
+
+export function captionCues(edl: { cuts: TimedText[] }): CaptionCue[] {
   const cues: CaptionCue[] = [];
   let outMs = 0;
 

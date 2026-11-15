@@ -18,6 +18,8 @@ import type { Edl, EdlCut } from "../src/edl.ts";
 import { exportPanel } from "../src/ui/pages/export.ts";
 
 const cut = (over: Partial<EdlCut> = {}): EdlCut => ({
+  /* Every cut names the block it came from; see EdlCut.blockId. */
+  blockId: "s:1",
   sourceKey: "u1/a.mp4",
   previewKey: "u1/a.edit.mp4",
   start_ms: 1_000,

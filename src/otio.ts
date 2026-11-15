@@ -110,10 +110,30 @@ function clip(c: EdlCut, opts: OtioOpts, info: MediaInfo | undefined) {
     metadata: {
       aldershot: {
         sourceKey: c.sourceKey,
+        /*
+         * WHICH BLOCK DECIDED THIS CLIP.
+         *
+         * The one thing this file could not previously say. It carried the
+         * key, the quote and the range — everything about WHAT was cut, and
+         * nothing about WHY — so an edit opened in Resolve could not be asked
+         * which block, moment or rule put a clip where it is. The receipt
+         * travelled; the decision did not.
+         */
+        blockId: c.blockId,
         /* Which words, and what the times behind them are worth. A receipt
            that travels with the clip. */
         quote: c.text,
-        timing: opts.timing,
+        /*
+         * THE CUT'S OWN TIMING WHERE IT HAS ONE.
+         *
+         * This was the project-level value on every clip, which is wrong the
+         * moment an edit draws on more than one video — a library cut mixes a
+         * forced-aligned source with a caption-timed one, and stamping one
+         * answer over both overstates the worse and understates the better.
+         * The project value stays as the fallback, for the clips where no
+         * timing governed anything (a card, a recording).
+         */
+        timing: c.timing ?? opts.timing,
         ...(c.voiceKey ? { voiceOver: c.voiceKey } : {}),
       },
     },
