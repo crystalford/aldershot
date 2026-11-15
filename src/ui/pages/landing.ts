@@ -356,6 +356,14 @@ function signInForm(id: string, buttonLabel: string, primary: boolean, google: b
       <input name="email" type="email" required placeholder="you@example.com" aria-label="Your email" style="flex:0 1 260px;min-width:min(220px,100%);background:#1A1A1F;border:none;outline:none;color:#ECECF1;font-size:14px;padding:12px 14px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);font-family:inherit"/>
       <button type="submit" style="flex:none;font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:${primary && !google ? "#ECECF1" : "#232329"};color:${primary && !google ? "#131316" : "#ECECF1"};white-space:nowrap;border:none;cursor:pointer;font-family:inherit">${google ? "Email me a link" : buttonLabel}</button>
     </form>
+    <!--
+      AND THE SAME BOX IS HOW YOU COME BACK.
+      The button says "Start free", which is true for a new account and
+      actively misleading for an old one — there is no other way in, and
+      somebody who has used this before would reasonably assume the signup
+      field is not for them. One line, where the decision is made.
+    -->
+    <div style="font-size:12px;color:rgba(236,236,241,0.32);margin-top:10px">Already have an account? Same box — we email you a link.</div>
   </div>`;
 }
 
@@ -507,6 +515,25 @@ export function renderLanding(d: LandingData): string {
         <a class="nav-anchor" href="#rules" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">The rules</a>
         <a class="nav-anchor" href="#archive" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">The archive</a>
         <a class="nav-anchor" href="#pricing" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Pricing</a>
+        <!--
+          SIGN IN, for somebody who already has an account.
+          There was nothing. The header was the wordmark, three section
+          anchors and "Start free", every CTA on the page pointed at the same
+          signup form, and the words "sign in" appeared nowhere on the
+          rendered page except inside an error banner after a failed attempt.
+          A returning visitor had nothing to look for.
+
+          It goes to #start because there is nothing else to build: the
+          emailed link finds an existing account or creates one (src/user.ts),
+          so this is labelling, not a second route. The line under the form
+          says the same thing where the confusion actually is.
+
+          NOT class="nav-anchor". That class is display:none under 640px —
+          the comment above the media query says the anchors are "what a phone
+          needs least" — and this is the one control a returning visitor needs
+          most. On a phone the header is now the wordmark, Sign in, Start free.
+        -->
+        <a href="#start" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Sign in</a>
         <a href="#start" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
       </div>
     </div>

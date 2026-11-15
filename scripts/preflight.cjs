@@ -23,59 +23,16 @@
 const BASE = process.env.BASE || "http://localhost:8787";
 
 /*
- * Ordered by what it stops. Sign-in first, because an account nobody can
- * create is the one failure that makes every other one moot.
+ * THE LIST LIVES IN scripts/capabilities.cjs.
+ *
+ * It was declared here, and scripts/deploy-readout.mjs needed the same eight
+ * names, the same prose and the same ordering. Two copies of a readiness list
+ * drift, and then one of them is lying about what is switched on with nothing
+ * to say which. The shared file carries the environment variable names too,
+ * which this script does not need — it asks the running deployment instead of
+ * reading its own environment, and that is the whole difference between them.
  */
-const WANTED = [
-  {
-    key: "sign_in_google",
-    name: "Google sign-in",
-    needs: "GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET",
-    without: "no Google button at all. Needs no domain, so it is the cheapest way in.",
-  },
-  {
-    key: "sign_in_email",
-    name: "Email sign-in",
-    needs: "MAIL_FROM + a verified sending domain",
-    without: 'sign-in links are refused with "email delivery isn\'t configured. Nothing was sent."',
-  },
-  {
-    key: "session_secret",
-    name: "Session signing",
-    needs: "SESSION_SECRET",
-    without: "sessions cannot be signed, so nobody stays signed in. The deploy generates one.",
-  },
-  {
-    key: "app_origin",
-    name: "The public address",
-    needs: "APP_ORIGIN",
-    without: "links in emails and OAuth redirects are built from whatever host the request arrived on.",
-  },
-  {
-    key: "billing",
-    name: "Payments",
-    needs: "STRIPE_SECRET_KEY + STRIPE_PRICE_ID",
-    without: "no upgrade control is rendered anywhere. Everyone stays on Free.",
-  },
-  {
-    key: "billing_webhook",
-    name: "The billing webhook",
-    needs: "STRIPE_WEBHOOK_SECRET",
-    without: "a payment takes the money and never grants the plan — the plan is granted by the webhook, not the redirect.",
-  },
-  {
-    key: "storage_signing",
-    name: "Direct upload to storage",
-    needs: "R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY + R2_ACCOUNT_ID",
-    without: "large uploads cannot be signed for the browser.",
-  },
-  {
-    key: "frontier_model",
-    name: "The upgrade model",
-    needs: "ANTHROPIC_API_KEY",
-    without: "every role falls back to its Workers AI default, which is the designed behaviour and not a failure.",
-  },
-];
+const { CAPABILITIES: WANTED } = require("./capabilities.cjs");
 
 (async () => {
   let got;

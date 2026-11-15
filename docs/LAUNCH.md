@@ -56,9 +56,13 @@ Without these the Google button says so rather than failing.
 Buy it and add it to Cloudflare. Then:
 
 - Workers → aldershot → Settings → Domains & Routes → add `app.<yourdomain>`.
-- Repo secret `APP_ORIGIN` = `https://app.<yourdomain>` (no trailing slash).
+- Change `APP_ORIGIN` in `wrangler.jsonc`'s `vars` to `https://app.<yourdomain>`
+  (no trailing slash). It is committed, not a secret — it is a public URL that
+  appears in every login email. **Do not add a repo secret of that name**: the
+  deploy writes secrets after `wrangler deploy`, so it would silently become
+  the real source and the committed value would be a lie.
 
-`APP_ORIGIN` is what login links and OAuth redirects are built from. Set it
+`APP_ORIGIN` is what login links and OAuth redirects are built from. Change it
 and the Google redirect URI has to be updated to match.
 
 ## 2b. Email sign-in — WAITS FOR THE DOMAIN
