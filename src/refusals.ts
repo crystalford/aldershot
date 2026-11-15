@@ -21,13 +21,27 @@
  * precaution: the `claims` rule passed on its first run because a comment
  * explaining that a feature did NOT exist vouched for its existence.
  *
- * WHAT IS NOT HERE IS DELIBERATE. A refusal only earns a line once something
- * enforces it, and that is a real constraint rather than a slogan: invariant
- * 10 was left out of the first version of this file because it was named
- * nowhere in any code, check or test. It is here now because writing this
- * file is what made its absence visible, and src/register.ts and the
- * `register` gate rule were built in answer. Invariants 4, 5 and 8 are still
- * absent, for the same reason and until the same thing is done about them.
+ * WHAT IS NOT HERE IS DELIBERATE, and the method for deciding has been wrong
+ * once already.
+ *
+ * A refusal earns a line only once something enforces it. The first version of
+ * this file worked that out by searching the code for the INVARIANT NUMBER,
+ * which finds what names an invariant rather than what enforces one — so it
+ * reported invariants 4, 5 and 8 as unenforced when in fact:
+ *
+ *   4  src/ask.ts refuses to present unbacked material as an answer, with two
+ *      acceptance tests on it.
+ *   8  hasNoRaster is asserted on the live render path, in the gate, and in
+ *      tests with negative cases. Three enforcements, naming the invariant in
+ *      none of them.
+ *   5  genuinely was not enforced, and the search for it found a hole rather
+ *      than a gap in the paperwork: the retry route could re-read and re-charge
+ *      a video that had already been read. That is now src/jobs.ts's
+ *      reReadRefusedBecause.
+ *
+ * Invariant 10 was correctly reported, which is the only reason the method
+ * survived long enough to be wrong about three. Judge by enforcement, never by
+ * citation.
  */
 
 export interface Refusal {
@@ -94,6 +108,42 @@ export const REFUSALS: Refusal[] = [
       file: "test/library-ops.test.ts",
       find: "deleting a video takes its edits and restore brings them back together",
     },
+  },
+  {
+    id: "unbacked-is-an-answer",
+    says:
+      "A question with nothing behind it is answered with nothing, not with the nearest thing to " +
+      "hand. \"Nothing backs this\" is a result this product can reach and will say.",
+    invariant: 4,
+    enforced: "an acceptance test that a near miss is never returned as an answer",
+    anchor: { file: "test/ask.test.ts", find: "ACCEPTANCE: a near miss is never an answer" },
+  },
+  {
+    id: "read-once",
+    says:
+      "Your footage is read once and charged once. Editing it afterwards costs nothing, and nothing " +
+      "re-reads a video you have already paid to have read.",
+    invariant: 5,
+    enforced: "a guard on the only route that can start a second read, with a test for each way of asking twice",
+    anchor: { file: "src/jobs.ts", find: "a read is already running" },
+  },
+  {
+    id: "no-photoreal",
+    says:
+      "A generated picture is never a photograph of anything. Graphics here are drawn as code and " +
+      "carry a label saying so, and a raster cannot reach one — the export checks on the way out.",
+    invariant: 8,
+    enforced: "an assertion on the live path that no raster, data URI or linked image is inside a generated picture",
+    /*
+     * THE CALL, NOT THE DEFINITION.
+     *
+     * This first pointed at `export function hasNoRaster` in src/graphics.ts,
+     * which proves the check was WRITTEN, not that anything runs it — and that
+     * function's own comment says "exported so the render path CAN assert it".
+     * An anchor on a definition is the same weak evidence as an anchor on a
+     * comment. This is the message the live route logs when it refuses.
+     */
+    anchor: { file: "src/index.ts", find: "[graphic] a raster reached a generated picture" },
   },
   {
     id: "no-silent-failure",

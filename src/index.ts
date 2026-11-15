@@ -109,7 +109,7 @@ import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
 import { requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, getJobs, latestJobFor, recentlyFinished, reapStaleJobs } from "./jobs.ts";
+import { activeJobs, createJob, getJobs, latestJobFor, recentlyFinished, reReadRefusedBecause, reapStaleJobs } from "./jobs.ts";
 import { transcribeOnce } from "./transcribe.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
@@ -1497,12 +1497,40 @@ app.get("/media/*", async (c) => {
   });
 });
 
-/** Re-read a source that failed, keeping everything the user already gave us. */
+/**
+ * Re-read a source that failed, keeping everything the user already gave us.
+ *
+ * AND ONLY ONE THAT FAILED. Invariant 5 is "footage is read and charged once;
+ * editing is free", and a read is the expensive thing in this product — the
+ * cost panel prices it per source minute. This route checked that the source
+ * existed and nothing else, so a POST against a video that had already been
+ * read read it again and charged for it again, and two presses ran two reads
+ * at once.
+ *
+ * It was safe in practice only because src/ui/pages/source.ts renders the
+ * Retry form when `transcript_state === "failed"` and never otherwise. That is
+ * the UI being the guard, which is the same mistake as the proxy storm — where
+ * `failed` was missing from a queued/running check and 9,695 jobs came of it —
+ * and it is the thing docs/decisions/claude-skill.md warns about in so many
+ * words: invariants "enforced partly by the fact that the only caller is this
+ * product's own pages".
+ *
+ * Both refusals redirect rather than erroring, because this is a form post and
+ * the page it lands on says what the state is: a finished transcript, or a
+ * read already in progress. There is nothing to report because nothing failed
+ * — there was simply nothing to do.
+ */
 app.post("/api/sources/:id/retry", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
+
+  /* Read once, charged once. The guard is in src/jobs.ts so that it can be
+     tested — see reReadRefusedBecause. */
+  if (await reReadRefusedBecause(c.env.DB, src, user.id)) {
+    return c.redirect(`/sources/${src.id}`, 303);
+  }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
   await dispatch(c.env, c.executionCtx, {

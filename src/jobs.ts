@@ -584,3 +584,30 @@ export async function recentlyFinished(
     .all<Job>();
   return results ?? [];
 }
+
+/**
+ * WHY A RE-READ WOULD BE REFUSED, OR NULL TO GO AHEAD.
+ *
+ * Invariant 5: "footage is read and charged once; editing is free." A read is
+ * the expensive operation here — the cost panel prices it per source minute —
+ * so the two ways of paying for the same minutes twice are a source that has
+ * already been read, and a second request while the first read is in flight.
+ *
+ * It lives here rather than inline in the route because a guard inside
+ * src/index.ts cannot be tested: that file's import graph reaches a .woff2 and
+ * node's type stripper refuses it. The proxy guard learned the same lesson the
+ * expensive way — its missing `failed` state put 9,695 jobs in one database,
+ * and no test could have caught it while the condition was an inline `if`.
+ */
+export async function reReadRefusedBecause(
+  db: D1Database,
+  source: { id: string; transcript_state?: string | null },
+  userId: string,
+): Promise<"already read" | "a read is already running" | null> {
+  if (source.transcript_state === "ready") return "already read";
+  const inFlight = await latestJobFor(db, source.id, userId, ["transcribe"]);
+  if (inFlight && (inFlight.state === "queued" || inFlight.state === "running")) {
+    return "a read is already running";
+  }
+  return null;
+}
