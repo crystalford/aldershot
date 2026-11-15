@@ -95,31 +95,19 @@ jobs:
           node -e 'const fs=require("fs");let s=fs.readFileSync("wrangler.jsonc","utf8");s=s.replace(/("database_id":\s*")TODO(")/,`$1${process.argv[1]}$2`);fs.writeFileSync("wrangler.jsonc",s)' "$DB_ID"
           # tables are created lazily by ensureSchema() on first request — no migration step needed
 
-          echo "==> Queues (look up by name; create if missing)"
-          # The deploy FAILS outright on a queue named in wrangler.jsonc that
-          # does not exist — "Queue \"aldershot-jobs-dlq\" does not exist" —
-          # so adding a consumer to that file is a deploy-breaking change
-          # unless the queue is provisioned first. D1 is already handled this
-          # way a few lines up; queues were not, and the dead-letter queue
-          # broke the first deploy after it was added.
+          echo "==> Queues (ask about each one; create only what is absent)"
+          # This was ten lines of inline shell that listed every queue, parsed
+          # the JSON, and fell back to an empty list when the parse failed — so
+          # every queue looked absent, the create was attempted, and Cloudflare
+          # refused a name it already had. Deploy runs 237 and 238 both died
+          # here in thirty seconds and two merges never reached production.
           #
-          # `queues create` on an existing queue errors harmlessly, so the
-          # listing decides and the create is only attempted when it is
-          # genuinely absent.
-          QUEUES="$(npx wrangler queues list --json 2>/dev/null || echo '[]')"
-          for q in aldershot-jobs aldershot-jobs-dlq; do
-            if printf '%s' "$QUEUES" | node -e '
-              let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
-                let j; try { j=JSON.parse(s) } catch { j=[] }
-                const a=Array.isArray(j)?j:(j.result||j.queues||[]);
-                process.exit(a.some(x=>x.queue_name===process.argv[1]||x.name===process.argv[1])?0:1);
-              })' "$q"; then
-              echo "  $q is there"
-            else
-              echo "  creating $q"
-              npx wrangler queues create "$q"
-            fi
-          done
+          # It is a script now for the reason it went wrong: logic reachable
+          # only by pushing to main is logic nothing can test. scripts/
+          # ensure-queues.sh is driven by test/ensure-queues.test.ts with a
+          # stub wrangler, including the taken-name error that broke those two
+          # runs. Its header has the rest.
+          bash scripts/ensure-queues.sh aldershot-jobs aldershot-jobs-dlq
 
           echo "==> Storage CORS (first, so it lands regardless of the deploy step)"
           node scripts/set-cors.mjs || true
