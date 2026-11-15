@@ -12,7 +12,7 @@
  */
 
 import type { Env } from "./env.ts";
-import { groundClips, parseClips, usageTokens } from "./grounding.ts";
+import { groundTraced, parseClips, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
 import type { Segment } from "./sources.ts";
 import { runRead } from "./llm.ts";
@@ -111,15 +111,23 @@ export async function placeReactions(
   });
 
   const raw = parseClips(res);
-  // Ground the ranges the same way as everywhere else, then carry the drafted
-  // line across by position — grounding drops invented timecodes, so the two
-  // lists are matched on the range that survived rather than on index.
-  const grounded = groundClips(raw, segments);
-  const sayFor = new Map(
-    raw
-      .filter((r) => typeof r.start_ms === "number")
-      .map((r) => [Math.round(Number(r.start_ms)), String((r as { say?: string }).say ?? "")]),
-  );
+  /*
+   * THE RANGES ARE GROUNDED AND THE DRAFTED LINES RIDE ALONG BY INDEX.
+   *
+   * Invariant 2 for the ranges: groundTraced drops a range the transcript
+   * does not contain and snaps the rest to segment edges, so nothing the
+   * model typed as a millisecond reaches a beat. The prompt below also asks
+   * it not to invent a timecode, and that line is politeness — this call is
+   * the enforcement, and `times` in the gate is what keeps the two together.
+   *
+   * The lines used to be matched back by the model's OWN start_ms, with a
+   * two-second fallback to the nearest draft. So a model that shifted its
+   * milliseconds — exactly what grounding exists to tolerate — handed the
+   * creator a sentence written about a different clip. `from` is our index
+   * into the list we parsed, so the pairing is the one the model actually
+   * made rather than one re-derived from a number we do not trust.
+   */
+  const grounded = groundTraced(raw, segments);
 
   const beats: ReactionBeat[] = [];
   for (const clip of grounded) {
@@ -130,27 +138,10 @@ export async function placeReactions(
       quote: clip.quote,
       why: clip.why ?? undefined,
     });
-    // Nearest drafted line for this range — the grounded start may have been
-    // clamped to the transcript's own bounds.
-    const say = sayFor.get(clip.start_ms) ?? nearest(sayFor, clip.start_ms);
-    beats.push({ kind: "react", say: say || "" });
+    const say = String((raw[clip.from] as { say?: string } | undefined)?.say ?? "").trim();
+    beats.push({ kind: "react", say });
   }
 
   const { tokensIn, tokensOut } = usageTokens(res);
   return { beats, tokensIn, tokensOut, model: model.id };
-}
-
-function nearest(map: Map<number, string>, target: number): string {
-  let best = "";
-  let bestDelta = Infinity;
-  for (const [ms, say] of map) {
-    const delta = Math.abs(ms - target);
-    if (delta < bestDelta) {
-      bestDelta = delta;
-      best = say;
-    }
-  }
-  // Only trust it if it is genuinely the same moment; a line drafted for a
-  // different clip is worse than no line at all.
-  return bestDelta <= 2000 ? best : "";
 }

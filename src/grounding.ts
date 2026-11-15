@@ -128,12 +128,42 @@ export function parseClips(response: unknown): Partial<ScoredClip>[] {
  * invented is not evidence of anything.
  */
 export function groundClips(raw: Partial<ScoredClip>[], segments: Segment[]): ScoredClip[] {
+  /* The index is bookkeeping for the caller that needs it; nobody else should
+     have to carry it, and it is not a field a model can put anything in. */
+  return groundTraced(raw, segments).map(({ from: _from, ...clip }) => clip);
+}
+
+/**
+ * A grounded clip, and which entry of the model's list it was grounded from.
+ *
+ * `from` is OUR number — an index into the array we parsed — not anything the
+ * model said. It exists because grounding drops entries and re-snaps edges,
+ * so position in the output does not match position in the input, and a
+ * caller with its own per-clip text to carry across had nothing to match on.
+ */
+export interface TracedClip extends ScoredClip {
+  from: number;
+}
+
+/**
+ * Grounding, with the correspondence kept.
+ *
+ * src/reactions.ts drafts a line to say after each clip and had to re-find
+ * which line belonged to which clip AFTER grounding. It did that by keying
+ * the drafted lines on the MODEL'S OWN start_ms and looking up the grounded
+ * one, falling back to whichever draft was within two seconds — so a model
+ * that moved its own milliseconds moved which sentence a creator was handed
+ * to say about which clip. The timestamp was never in danger; the words
+ * were, which is worse, because a confident line about the wrong clip reads
+ * exactly like a line about the right one.
+ */
+export function groundTraced(raw: Partial<ScoredClip>[], segments: Segment[]): TracedClip[] {
   if (!segments.length) return [];
   const firstMs = segments[0].start_ms;
   const lastMs = segments[segments.length - 1].end_ms;
 
-  const out: ScoredClip[] = [];
-  for (const c of raw) {
+  const out: TracedClip[] = [];
+  for (const [from, c] of raw.entries()) {
     const start = Number(c.start_ms);
     const end = Number(c.end_ms);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
@@ -159,6 +189,7 @@ export function groundClips(raw: Partial<ScoredClip>[], segments: Segment[]): Sc
       why: String(c.why ?? "").trim(),
       score: clamp(Number(c.score), 0, 100, 0),
       heat: clamp(Number(c.heat), 0, 2, 0),
+      from,
     });
   }
 
@@ -179,8 +210,8 @@ export function groundClips(raw: Partial<ScoredClip>[], segments: Segment[]): Sc
  * clip was wholly contained in its predecessor and is dropped — its content is
  * already in the cut.
  */
-function dedupeOverlaps(clips: ScoredClip[], segments: Segment[]): ScoredClip[] {
-  const out: ScoredClip[] = [];
+function dedupeOverlaps(clips: TracedClip[], segments: Segment[]): TracedClip[] {
+  const out: TracedClip[] = [];
   let lastEnd = -1;
 
   for (const c of clips) {
