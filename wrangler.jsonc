@@ -145,17 +145,30 @@
     { "tag": "v2", "new_sqlite_classes": ["AudioContainer"] }
   ],
 
-  // NOTE: there is deliberately no "vars" block here.
+  // ONE VAR, AND THE RULE ABOUT WHAT MAY NOT JOIN IT.
   //
   // DEV_LOGIN_EMAIL — which disables authentication — lives in .dev.vars,
   // which `wrangler dev` reads and `wrangler deploy` never uploads. Putting it
   // here would ship it: the deploy publishes this file as written, and one
   // stale line would leave the live site treating every visitor as the owner.
-  // The deploy workflow greps for it as a second line of defence.
+  // The deploy workflow greps for it as a second line of defence, and
+  // test/app-origin.test.ts holds that this block never grows a secret.
   //
-  // Production secrets are set out of band, never committed:
-  //   npx wrangler secret put SESSION_SECRET
-  //   npx wrangler secret put RESEND_API_KEY
+  // This said "there is deliberately no vars block here" and the reasoning was
+  // entirely about that one variable's CONTENT, not about the block existing.
+  // APP_ORIGIN is https://aldershot.io. It is printed in every login email and
+  // registered with Google as a redirect URI; it is not a secret in any sense,
+  // and it was a repo secret, which meant the owner had to set it by hand
+  // before Google sign-in could work. Worse, the deploy wrote it AFTER
+  // `wrangler deploy`, so a secret of that name would land on top of this and
+  // nothing would detect two sources for one name.
+  //
+  // Real secrets are still set out of band, never committed:
+  //   npx wrangler secret put SESSION_SECRET      (the deploy generates it)
+  //   npx wrangler secret put MAIL_FROM           (and verify the domain)
+  "vars": {
+    "APP_ORIGIN": "https://aldershot.io"
+  },
 
   // Clip embeddings — meaning search over the clip library (src/library.ts
   // reads, src/embeddings.ts writes) and Threads' semantic clustering

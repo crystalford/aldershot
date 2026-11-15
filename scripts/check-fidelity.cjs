@@ -604,6 +604,41 @@ const protoRaw = normalise(PROTO);
  */
 const SIGNED_OFF = new Map([
   /*
+   * A WAY BACK IN, which the signed-out page did not have.
+   *
+   * The header was the wordmark, three section anchors and "Start free";
+   * every CTA on the page pointed at the same signup form; and because
+   * GOOGLE_CLIENT_ID is unset in production the form's button reads "Start
+   * free" rather than "Email me a link", with no "or use your email" line
+   * either. The words "sign in" appeared nowhere on the rendered page except
+   * inside an error banner after a failed attempt. Somebody who already had
+   * an account had nothing to look for and no reason to think the signup
+   * field was for them.
+   *
+   * Both of these are labelling rather than behaviour: the emailed link finds
+   * an existing account or creates one, so there is no second route. They are
+   * the same gap the group below records — "SIGNING IN HAS NO DESIGN" — named
+   * again rather than smuggled in.
+   *
+   * "Sign in" is also here because `copy` cannot see it: scanCopy skips text
+   * shorter than eight characters, so every label of seven or fewer is
+   * invisible to that rule. Signed off by hand so the record is complete even
+   * where the check cannot reach.
+   */
+  ...[
+    "Sign in",
+    "Already have an account? Same box — we email you a link.",
+  ].map((t) => [
+    t,
+    "The returning-user path on the signed-out page. No design draws it: " +
+      "every control in both landing designs opens the prototype app " +
+      "directly, with no account and no inbox anywhere in them. The header " +
+      "link deliberately does NOT carry class=\"nav-anchor\", which is " +
+      "display:none under 640px — on a phone it would hide the one control a " +
+      "returning visitor is looking for.",
+  ]),
+
+  /*
    * DECLARING A SECTION, which the plan flow could not take as an answer.
    *
    * The one stop asks whether a model's beats are right and the only replies

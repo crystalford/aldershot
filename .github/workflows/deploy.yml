@@ -48,7 +48,6 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          APP_ORIGIN: ${{ secrets.APP_ORIGIN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -176,7 +175,12 @@ jobs:
           # rides with the rest rather than being hardcoded.
           put_secret MAIL_FROM "${MAIL_FROM:-}"
           put_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
-          put_secret APP_ORIGIN "${APP_ORIGIN:-}"
+          # APP_ORIGIN is NOT here any more: it is https://aldershot.io, a
+          # public URL, and it is committed in wrangler.jsonc's vars. It used
+          # to be a repo secret, which was a category error and also a hazard
+          # — this step runs AFTER `wrangler deploy`, so a secret of that name
+          # would land on top of the committed var and nothing in the repo
+          # detects two sources for one name.
           put_secret GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"
           put_secret GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
           # Billing. Absent until there is a Stripe account; every surface that
@@ -197,3 +201,15 @@ jobs:
           else
             head -c 32 /dev/urandom | base64 | tr -d '\n' | npx wrangler secret put SESSION_SECRET
           fi
+
+          # WHAT THIS DEPLOY ACTUALLY SWITCHED ON, said without being asked.
+          #
+          # /api/preflight is the readiness report and it is owner-only, so
+          # reading it needs a session and getting a session needs the sign-in
+          # it reports on. MAIL_FROM was empty for a month, nobody could sign
+          # in to aldershot.io — including the owner — and the only way to find
+          # that out was reading the tail of a failed deploy's log by hand.
+          #
+          # It prints names and states, never values, and test/
+          # deploy-readout.test.ts feeds it secret-shaped input to hold that.
+          node scripts/deploy-readout.mjs
