@@ -22,6 +22,7 @@
  * nothing, and reading cannot find those.
  */
 const { chromium } = require('playwright');
+const { chromeOptions } = require('./chrome.cjs');
 
 const BASE = process.env.BASE || 'http://localhost:8787';
 const WIDTH = Number(process.env.WIDTH || 1360);
@@ -51,7 +52,7 @@ async function surfaces(page) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const browser = await chromium.launch(chromeOptions());
   const page = await browser.newPage({ viewport: { width: WIDTH, height: 1000 } });
 
   const problems = [];

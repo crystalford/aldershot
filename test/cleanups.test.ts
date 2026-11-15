@@ -101,7 +101,7 @@ test("the editor's runtime agrees with what the render will build", () => {
 
   const block = {
     id: "s:0", origin: "footage" as const, start_ms: seg.start_ms, end_ms: seg.end_ms,
-    text: "", words: JSON.parse(seg.words), struck: false, score: null, why: null,
+    text: "", words: JSON.parse(seg.words), struck: false, score: null, why: null, label: null,
     mediaKey: null, previewKey: null, voiceKey: null, posterKey: null,
   };
   const fromEditor = blockRanges(block, cuts).reduce((n, r) => n + (r.end_ms - r.start_ms), 0);
@@ -129,7 +129,7 @@ test("and what reaches ffmpeg is the tightened line, in two pieces", () => {
   const block = {
     id: "s:0", origin: "footage" as const, start_ms: seg.start_ms, end_ms: seg.end_ms,
     text: "word one two three", words: JSON.parse(seg.words), struck: false,
-    score: null, why: null, mediaKey: null, previewKey: null, voiceKey: null, posterKey: null,
+    score: null, why: null, label: null, mediaKey: null, previewKey: null, voiceKey: null, posterKey: null,
   };
 
   const plain = buildEdl("src.mp4", [block], []);

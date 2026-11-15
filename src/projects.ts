@@ -42,6 +42,14 @@ export interface Project {
   cuts: string | null;
   /** The arrangement: block ids in sequence. Null means never rearranged. */
   block_order: string | null;
+  /**
+   * Narrowed to this one video, or null for every video it is made of.
+   *
+   * Separate from `scope` on purpose: see the column's comment in
+   * src/schema.ts and scopeOf below. Clearing it restores the whole cut
+   * without re-attaching anything.
+   */
+  only_source_id: string | null;
 }
 
 export interface Beat {
@@ -56,6 +64,17 @@ export interface Beat {
   dur_ms: number | null;
   media_r2_key: string | null;
   recorded_at: number | null;
+  /**
+   * What the recorded take turned out to be, once it has been aligned.
+   *
+   * Null is "nobody has looked yet", which is a different fact from a take
+   * that does not read its line — see src/take.ts. `SELECT *` carries them,
+   * so there is nothing to add to the query; they are declared here so a
+   * reader can see they exist.
+   */
+  take_verdict?: string | null;
+  take_reason?: string | null;
+  take_words?: string | null;
 }
 
 export interface Clip {
@@ -92,14 +111,17 @@ export function titleFromBrief(brief: string, fallback: string): string {
 }
 
 /**
- * The sources a project is scoped to, or null for the whole library.
+ * THE VIDEOS A CUT IS MADE OF, or null for the whole library.
  *
  * Parsed rather than trusted: this is a TEXT column and a malformed value
  * would otherwise throw on whichever page read it next. A scope that cannot
  * be read is the same as no scope, which is the behaviour every project made
  * before the column existed already has.
+ *
+ * This is the ATTACHED set and it only grows. `scopeOf` is what the engine
+ * reads, and that narrows this by `only_source_id` when one is set.
  */
-export function scopeOf(project: { scope?: string | null }): string[] | null {
+export function attachedScope(project: { scope?: string | null }): string[] | null {
   if (!project.scope) return null;
   try {
     const ids = JSON.parse(project.scope) as unknown;
@@ -109,6 +131,29 @@ export function scopeOf(project: { scope?: string | null }): string[] | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The sources the engine should cut from, which is what every caller wants.
+ *
+ * `only_source_id` narrows it to one video. That is a REVERSIBLE view of the
+ * project, not a change to what it is made of: attachedScope still lists
+ * every video attached, so clearing the narrowing brings the rest of the cut
+ * back rather than needing it re-attached (invariant 6).
+ *
+ * A narrowing to a video that is not attached is ignored. It cannot happen
+ * through the route, which checks, but a stale row after a detach would
+ * otherwise produce a cut from nothing and look like an engine fault.
+ */
+export function scopeOf(project: {
+  scope?: string | null;
+  only_source_id?: string | null;
+}): string[] | null {
+  const attached = attachedScope(project);
+  const only = project.only_source_id;
+  if (!only) return attached;
+  if (attached && !attached.includes(only)) return attached;
+  return [only];
 }
 
 export async function createProject(
@@ -132,6 +177,8 @@ export async function createProject(
     source_id: opts.source_id ?? null,
     brief: opts.brief ?? null,
     scope: opts.scope?.length ? JSON.stringify(opts.scope) : null,
+    /* A new cut is never narrowed: it is made of everything it was given. */
+    only_source_id: null,
     has_acts: opts.kind === "essay" ? 1 : 0,
     runtime_s: null,
     pct: 0,
@@ -176,10 +223,35 @@ export async function getProject(db: D1Database, id: string, userId: string): Pr
  * renamed it" — so every video you merely opened would reappear in Projects,
  * which is the exact complaint that made untouched edits stop listing.
  */
+/*
+ * `IS`, NOT `=`, AND THAT IS THE WHOLE POINT.
+ *
+ * `cut_title` is null on any source whose auto-naming failed — src/naming.ts
+ * says so in as many words: "a source that could not be named keeps a null
+ * cut_title". With `=`, comparing a real title against that null is NULL, not
+ * false, so the whole OR chain came out NULL whenever both other branches were
+ * false. `NOT NULL` is NULL too, so TOUCHED went NULL and the row failed its
+ * own WHERE clause: **a cut you had named yourself did not appear in Projects
+ * at all**, as long as its source had never been given a cut_title and the
+ * edit had no brief, cuts, beats or renders to short-circuit the OR.
+ *
+ * It hid for as long as it did because almost every real project has one of
+ * those four, and because only ONE of the two uses can see it: the reap
+ * (`AND ${UNNAMED}`) is unaffected, since every row it means to collapse makes
+ * an earlier branch of the OR true and SQL short-circuits there. It takes the
+ * `NOT` in TOUCHED to turn an unknown into a dropped row.
+ *
+ * Found by scripts/seed-fixture.cjs checking its own work through the product
+ * instead of reading back its INSERTs: the cut page rendered all 163 words and
+ * /api/projects did not list the project.
+ *
+ * SQLite's `IS` is null-safe equality, so every branch is now true or false
+ * and never NULL.
+ */
 const UNNAMED = `(
   title = 'Untitled cut'
-  OR title = (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id)
-  OR title = (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id)
+  OR title IS (SELECT s.title FROM sources s WHERE s.id = v2_projects.source_id)
+  OR title IS (SELECT s.cut_title FROM sources s WHERE s.id = v2_projects.source_id)
 )`;
 
 /**
@@ -566,6 +638,105 @@ export async function setBeatMedia(
     )
     .bind(key, Date.now(), durMs || null, beatId, userId)
     .run();
+  if ((meta?.changes ?? 0) === 0) return false;
+
+  /*
+   * AND THE TAKE IS KEPT.
+   *
+   * The UPDATE above is the whole of what this used to do, which meant a
+   * second recording overwrote the first and the first was gone. Invariant
+   * 6 — and a performance is the one thing the engine cannot re-make.
+   *
+   * After the ownership check, not before: a row written for a beat that
+   * turned out not to be yours would be a stranger's recording filed under
+   * your account, which is the bug the check above exists for.
+   */
+  await db
+    .prepare(
+      `INSERT INTO takes (id, beat_id, r2_key, dur_ms, created_at)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET r2_key=excluded.r2_key, dur_ms=excluded.dur_ms`,
+    )
+    .bind(takeId(beatId, key), beatId, key, durMs || null, Date.now())
+    .run();
+  return true;
+}
+
+/*
+ * A TAKE'S ID IS ITS BEAT AND ITS KEY.
+ *
+ * Derived rather than random so that saving the same recording twice — a
+ * retried upload, a double-fired handler — is one take and not two. The
+ * same reasoning as every other `INSERT OR REPLACE` in this codebase: the
+ * write has to be safe to repeat.
+ */
+export const takeId = (beatId: string, key: string) => `t:${beatId}:${key}`;
+
+export interface Take {
+  id: string;
+  r2_key: string;
+  dur_ms: number | null;
+  verdict: string | null;
+  reason: string | null;
+  created_at: number;
+  /** The one the beat points at — see the takes table's own comment. */
+  chosen: boolean;
+}
+
+/** Every take on a beat, newest first, and which one the cut is using. */
+export async function listTakes(
+  db: D1Database,
+  beatId: string,
+  userId: string,
+): Promise<Take[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, t.r2_key, t.dur_ms, t.verdict, t.reason, t.created_at,
+              CASE WHEN t.r2_key = b.media_r2_key THEN 1 ELSE 0 END AS chosen
+         FROM takes t
+         JOIN beats b ON b.id = t.beat_id
+         JOIN v2_projects p ON p.id = b.project_id
+        WHERE t.beat_id = ? AND p.user_id = ? AND p.deleted_at IS NULL
+        ORDER BY t.created_at DESC`,
+    )
+    .bind(beatId, userId)
+    .all<Omit<Take, "chosen"> & { chosen: number }>();
+  return (results ?? []).map((r) => ({ ...r, chosen: Boolean(r.chosen) }));
+}
+
+/**
+ * Use this take instead.
+ *
+ * Points the beat at it and mirrors its length and verdict, because the
+ * editor and the renderer read those from the beat. Nothing is thrown away:
+ * the take you were using is still a row, still in R2, and one press from
+ * being chosen again.
+ */
+export async function chooseTake(
+  db: D1Database,
+  beatId: string,
+  takeRowId: string,
+  userId: string,
+): Promise<boolean> {
+  const take = await db
+    .prepare(
+      `SELECT t.r2_key, t.dur_ms, t.verdict, t.reason
+         FROM takes t
+         JOIN beats b ON b.id = t.beat_id
+         JOIN v2_projects p ON p.id = b.project_id
+        WHERE t.id = ? AND t.beat_id = ? AND p.user_id = ? AND p.deleted_at IS NULL`,
+    )
+    .bind(takeRowId, beatId, userId)
+    .first<{ r2_key: string; dur_ms: number | null; verdict: string | null; reason: string | null }>();
+  if (!take) return false;
+
+  const { meta } = await db
+    .prepare(
+      `UPDATE beats SET media_r2_key=?, dur_ms=COALESCE(?, dur_ms),
+              take_verdict=?, take_reason=? WHERE id=?`,
+    )
+    .bind(take.r2_key, take.dur_ms, take.verdict, take.reason, beatId)
+    .run();
   return (meta?.changes ?? 0) > 0;
 }
 
@@ -759,4 +930,78 @@ export async function getBeats(db: D1Database, projectId: string): Promise<Beat[
     .bind(projectId)
     .all<Beat>();
   return results ?? [];
+}
+
+/**
+ * THE VIDEOS THIS CUT IS MADE OF, in the order it first uses them.
+ *
+ * One Take's title row carries a small lettered square per video — A, B, C
+ * — coloured, with the video's name and length in its title. They are
+ * positional labels, not initials: A is the first video you hear.
+ *
+ * FIRST USE, which is why it is MIN(idx) rather than a name or a date. Two
+ * videos called "Tuesday" would be indistinguishable by title, and the
+ * letter has to mean something a person can follow down the page.
+ *
+ * A cut of one recording has no clip beats at all — it is segments of its
+ * own source — so the caller passes that source id and gets the one chip.
+ */
+export interface CutSource {
+  id: string;
+  title: string;
+  duration_s: number | null;
+}
+
+export async function sourcesInCut(
+  db: D1Database,
+  projectId: string,
+  ownSourceId: string | null,
+): Promise<CutSource[]> {
+  if (ownSourceId) {
+    const own = await db
+      .prepare(`SELECT id, title, duration_s FROM sources WHERE id = ?`)
+      .bind(ownSourceId)
+      .first<CutSource>();
+    return own ? [own] : [];
+  }
+  const { results } = await db
+    .prepare(
+      `SELECT s.id AS id, s.title AS title, s.duration_s AS duration_s
+         FROM beats b
+         JOIN v2_clips c ON c.id = b.clip_id
+         JOIN sources s ON s.id = c.source_id
+        WHERE b.project_id = ?
+        GROUP BY s.id
+        ORDER BY MIN(b.idx)`,
+    )
+    .bind(projectId)
+    .all<CutSource>();
+  return results ?? [];
+}
+
+
+/**
+ * WHICH VIDEO EACH BLOCK COMES FROM, keyed by block id.
+ *
+ * The strip under the player draws one segment per block, coloured by its
+ * source, and the lettered chips beside the title use the same colours in
+ * the same order — so a person can see that the third segment is from video
+ * B without reading anything. That only works if both read the same list.
+ *
+ * Beats only. A cut of one recording is segments of its own source and has
+ * no beats at all; the caller handles that case with the project's own
+ * source id, exactly as `sourcesInCut` does.
+ */
+export async function blockSources(db: D1Database, projectId: string): Promise<Record<string, string>> {
+  const { results } = await db
+    .prepare(
+      `SELECT b.id AS beat_id, c.source_id AS source_id
+         FROM beats b JOIN v2_clips c ON c.id = b.clip_id
+        WHERE b.project_id = ?`,
+    )
+    .bind(projectId)
+    .all<{ beat_id: string; source_id: string }>();
+  const out: Record<string, string> = {};
+  for (const r of results ?? []) out[`b:${r.beat_id}`] = r.source_id;
+  return out;
 }

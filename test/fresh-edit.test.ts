@@ -22,7 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { fakeD1, schema } from "./helpers/fake-d1.ts";
+import { schema } from "./helpers/fake-d1.ts";
 import { TOUCHED } from "../src/projects.ts";
 
 function world() {

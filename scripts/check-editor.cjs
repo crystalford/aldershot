@@ -26,11 +26,18 @@
  * would leave somebody's edit cut. It refuses any BASE that is not loopback.
  */
 const { chromium } = require("playwright");
+const { chromeOptions } = require("./chrome.cjs");
 
 const BASE = process.env.BASE || "http://localhost:8787";
-const CHROME = process.env.CHROME || "/opt/pw-browsers/chromium";
 
 const bad = [];
+/** What went unchecked, and why — read by the exit code at the bottom. */
+const SKIPS = [];
+const skipped = (why) => {
+  SKIPS.push(why);
+  console.log("⚠ editor — SKIPPED: " + why + ".");
+};
+
 const say = (ok, name, detail) => {
   if (ok) return console.log("    ✓ " + name);
   bad.push(detail ? name + " — " + detail : name);
@@ -50,13 +57,22 @@ async function main() {
   try {
     await fetch(BASE + "/api/projects");
   } catch {
-    console.log("⚠ editor — SKIPPED: no dev server at " + BASE);
-    console.log("    Run `npx wrangler dev --port 8787 --enable-containers=false` and re-run.");
+    skipped("no dev server at " + BASE);
+    console.log("    Run `npx wrangler dev --local --port 8787 --enable-containers=false` and re-run.");
     return;
   }
 
-  const browser = await chromium.launch({ executablePath: CHROME });
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const browser = await chromium.launch(chromeOptions());
+  /*
+   * 1440, WHICH IS THE MEASURE THE DESIGN IS DRAWN AT.
+   *
+   * One Take is three columns — direction 400, the thing itself, the player
+   * 300 — and LAYOUT.room is min(1440px,100%) because 960 cannot hold them.
+   * Checking at 1280 checked a width where the player correctly folds
+   * underneath, and then asserted it was beside. The narrow cases below set
+   * their own viewports, which is where folding belongs.
+   */
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
 
   const errs = [];
@@ -102,7 +118,8 @@ async function main() {
     }
   }
   if (!project) {
-    console.log("⚠ editor — SKIPPED: no transcribed project in this account to drive.");
+    skipped("no transcribed project in this account to drive");
+    console.log("    Run `node scripts/seed-fixture.cjs` and re-run.");
     await browser.close();
     return;
   }
@@ -111,21 +128,31 @@ async function main() {
 
   const $ = (fn, arg) => page.evaluate(fn, arg);
 
-  /* ── The shape: a document, and an assistant ───────────────────────────
-     The point of the column is that it needs no explaining. So the things
-     asserted here are the ones that make it legible: a composer you can see
-     without opening anything, under a conversation, under the video. */
+  /* ── The shape: THREE COLUMNS ──────────────────────────────────────────
+     Direction on the left, the document in the middle, the player on the
+     right. One Take's shape, and what the prototype renders.
+
+     THIS CHECK DESCRIBED THE OLD ONE FOR WEEKS. It asserted a two-column
+     editor with the video inside the assistant — the layout the room
+     replaced — and it never once failed, because it needs a transcribed
+     project to drive and the account it runs against had none. Four
+     guarantees sat red behind a skip. Seeding one is what surfaced them,
+     and the code was right every time: the player moved on purpose and
+     cut.ts says so where it moved from. */
   say(
     await $(() => {
       const doc = document.querySelector(".editor-doc");
       const asst = document.querySelector(".asst");
-      if (!doc || !asst) return false;
-      /* Document on the left and wider than the assistant beside it. */
+      const player = document.querySelector(".editor-player");
+      if (!doc || !asst || !player) return false;
       const d = doc.getBoundingClientRect();
       const a = asst.getBoundingClientRect();
-      return d.left < a.left && d.width > a.width;
+      const p = player.getBoundingClientRect();
+      /* Direction, then the document, then the player — and the document is
+         the widest, because the transcript is the work. */
+      return a.left < d.left && d.left < p.left && d.width > a.width;
     }),
-    "the transcript is the wide column, the assistant the narrow one beside it",
+    "direction, the transcript, and the player — in that order, widest in the middle",
   );
   say(
     await $(() => {
@@ -145,19 +172,35 @@ async function main() {
       const talk = document.querySelector(".asst-talk");
       const foot = document.querySelector(".asst-foot");
       if (!top || !talk || !foot) return false;
-      /* Video, then conversation, then composer — the order that makes it
-         read as a chat rather than a panel of controls. */
-      return top.getBoundingClientRect().bottom <= talk.getBoundingClientRect().top + 2
-        && talk.getBoundingClientRect().bottom <= foot.getBoundingClientRect().top + 2;
+      /*
+       * Rules, then conversation, then composer — the order that makes it
+       * read as a chat rather than a panel of controls.
+       *
+       * ASSERTED AS ORDER, NOT AS GEOMETRY. This compared bounding rects,
+       * which is a proxy that holds only while all three sit in one
+       * unclipped flow. The direction column is now one scroller with the
+       * composer OUTSIDE it, the way the prototype has it, so a long
+       * conversation's rect runs well past the composer's while being, in
+       * every sense a person would mean, above it. The claim was always
+       * about order; this is the claim.
+       *
+       * The composer's own geometry is still asserted, twice: "visible
+       * without opening anything" above, and the export-bar overlap below.
+       * Those are what the rect comparison was standing in for.
+       */
+      const before = (a, b) =>
+        (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      if (!before(top, talk) || !before(talk, foot)) return false;
+      /* And the composer is not inside the scrolling part, or it scrolls
+         away — which is the failure this layout exists to prevent. */
+      const scroll = document.querySelector(".asst-scroll");
+      return !!scroll && !scroll.contains(foot) && scroll.contains(talk);
     }),
-    "video above the conversation, conversation above the composer",
+    "rules above the conversation, conversation above the composer",
   );
   say(
-    await $(() => {
-      const v = document.querySelector(".asst-top #cut-video");
-      return !!v;
-    }),
-    "the video sits with the assistant",
+    await $(() => !!document.querySelector(".editor-player #cut-video")),
+    "the player is its own column",
   );
   say(
     await $(() => {
@@ -177,6 +220,11 @@ async function main() {
        * and the Show me / Undo beneath, which measures about 190px. One
        * exchange visible is not a conversation, and 88px — which is what a
        * full-width 16:9 video left — is not even one.
+       *
+       * THE VIDEO IS NOT ABOVE IT ANY MORE — it is the third column — so
+       * the room is the rules above and the composer below. The floor is
+       * the same because the thing being measured is the same: can you see
+       * two exchanges without scrolling.
        */
       return talk.getBoundingClientRect().height >= 185;
     }),
@@ -184,7 +232,7 @@ async function main() {
   );
   say(
     await $(() => {
-      const v = document.querySelector(".asst-top #cut-video");
+      const v = document.querySelector(".editor-player #cut-video");
       if (!v) return false;
       /*
        * THE PICTURE IS NOT CROPPED, AND NOT STRETCHED.
@@ -387,29 +435,22 @@ async function main() {
   );
 
   /*
-   * THE COMPOSER IS NEVER UNDER THE EXPORT BAR.
+   * THE EXPORT BAR IS GONE, and these two assertions with it.
    *
-   * The bar is sticky-bottom and paints over whatever is beneath it, and the
-   * assistant column is sticky-top — whose offset only applies once the page
-   * has scrolled. Sized from the nav alone, the composer sat under the bar at
-   * the top of the page and was unusable until you scrolled. Checked in both
-   * states because they are genuinely different geometries.
+   * They checked that the composer never ended up underneath a sticky strip
+   * across the bottom of the page — and they were right to: it had, by two
+   * pixels at the top of the page, and the measurement they printed is what
+   * found it. But One Take has no bottom bar at all. Its Export is in the
+   * title row, which never scrolls away, and the build's is there now too.
+   *
+   * What they were protecting is still protected. "the composer is visible
+   * without opening anything" above asserts the control is on screen, and
+   * "the conversation has room for two exchanges" asserts that the column
+   * above it has not been crushed to make space. Keeping a check about the
+   * geometry of a bar that does not exist would be a green tick measuring
+   * nothing, which is the failure this file's own header is about.
    */
-  for (const where of ["at the top", "scrolled"]) {
-    if (where === "scrolled") {
-      await page.evaluate(() => window.scrollTo(0, 600));
-      await page.waitForTimeout(250);
-    }
-    say(
-      await $(() => {
-        const foot = document.querySelector(".asst-foot");
-        const bar = document.querySelector("#cut-runtime").closest("div");
-        if (!foot || !bar) return false;
-        return foot.getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1;
-      }),
-      "the composer clears the export bar (" + where + ")",
-    );
-  }
+
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(250);
 
@@ -588,13 +629,27 @@ async function main() {
          * than everyone else's. The assembly writes itself into the
          * conversation as the first turn.
          */
-        say(
-          await $(() => {
-            const t = document.querySelector(".asst-talk");
-            return !!t && /moments? from \d+ video/.test(t.textContent);
-          }),
-          "the conversation opens with what it pulled and from how many videos",
-        );
+        /*
+         * TWO FACTS, ASKED FOR SEPARATELY.
+         *
+         * This used to be one regex — /moments? from \d+ video/ — which also
+         * demanded the two sit next to each other. They never have to:
+         * src/assemble.ts builds the line as describe() + " · from N videos",
+         * and describe() puts the runtime and the rules in between, so the
+         * real sentence reads "4 of 5 moments · 0:20 · one thread at a time ·
+         * from 1 video". The assertion was pinning the gap between two facts
+         * rather than the facts.
+         *
+         * It had never run to find out. The brief is built from a word in
+         * whatever project this check happened to drive, and until there was a
+         * seeded fixture that word matched nothing in the library, so /api/begin
+         * answered 422 and this whole block skipped with a warning.
+         */
+        const opening = await $(() => (document.querySelector(".asst-talk") || {}).textContent || "");
+        say(/\bmoments?\b/.test(opening), "the conversation opens with what it pulled",
+          "no count of moments in the first turn");
+        say(/from \d+ video/.test(opening), "and from how many videos",
+          "blocks from several places with no account of where they came from");
         say(
           await $(() => {
             const turn = document.querySelector(".turn");
@@ -602,9 +657,18 @@ async function main() {
           }),
           "with a Show me, and no Undo — there is no earlier state to go back to",
         );
+        /*
+         * AND IT IS IN THE PLAYER COLUMN, not the rail.
+         *
+         * This looked in `.asst` because the player used to sit at the top of
+         * the assistant column — src/ui/pages/cut.ts says so where it moved it
+         * out: "it used to sit at the top of the assistant, which made one
+         * column do two jobs". The line back to the footage went with it. The
+         * assertion kept naming the rail and never ran to find out.
+         */
         say(
-          await $(() => /in your library/.test(document.querySelector(".asst").textContent)),
-          "and the rail says it is made of the library rather than one video",
+          await $(() => /in your library/.test((document.querySelector(".editor-player") || {}).textContent || "")),
+          "and the line under the player says it is made of the library rather than one video",
         );
 
         /*
@@ -767,7 +831,26 @@ async function main() {
   console.log("✔ editor — the assistant reads as one, find finds, and striking undoes");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    /*
+     * 78 MEANS "PASSED, BUT SOMETHING WENT UNCHECKED".
+     *
+     * This used to return 0 on a skip, and so did the string rule in
+     * check-fidelity.cjs — so `scripts/check.sh` could print ALL CHECKS
+     * PASSED having rendered no HTML and driven no editor. The skip itself
+     * is right (a check that goes red for an absent server teaches people
+     * to ignore red); what was wrong is that the skip was invisible to the
+     * one command whose exit code is supposed to be the answer.
+     *
+     * So: 0 means checked and fine, 1 means checked and wrong, 78 means not
+     * checked. check.sh names every 78 in its summary and fails on one
+     * under --strict, which is what CI runs. 78 is EX_CONFIG from sysexits,
+     * which is close enough to "your environment, not your code".
+     */
+    if (SKIPS.length) process.exit(78);
+  })
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

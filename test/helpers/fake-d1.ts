@@ -80,34 +80,57 @@ export function fakeR2(seed: Record<string, number> = {}) {
 }
 
 /** The tables library-ops touches, in the shape src/schema.ts creates them. */
+/*
+ * KEPT HONEST BY test/fake-schema.test.ts.
+ *
+ * These statements are written by hand while migrations/schema.sql is
+ * generated from the code that runs, so they drift — and the drift is
+ * invisible until a query reaches a column the fixture never heard of and
+ * fails with an error about SQL inside whatever was really being tested.
+ * `v2_projects.scope` was real for weeks before anything noticed. That test
+ * fails if a table declared here is missing a column the real one has, and
+ * it is how the eight above were found.
+ */
 export function schema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE v2_users (id TEXT PRIMARY KEY, email TEXT, name TEXT, plan TEXT,
-      is_owner INTEGER DEFAULT 0, created_at INTEGER, stripe_customer_id TEXT);
+      is_owner INTEGER DEFAULT 0, spend_cap_usd REAL, created_at INTEGER, stripe_customer_id TEXT,
+      /* Stripe does not guarantee event order; see applyEvent. */
+      billing_event_at INTEGER,
+      outside_pref TEXT, ask_mode TEXT);
+    CREATE TABLE connections (id TEXT PRIMARY KEY, user_id TEXT, provider TEXT,
+      endpoint TEXT, bucket TEXT, region TEXT, access_key_id TEXT, secret_sealed TEXT,
+      foreign_db TEXT, last_import_at INTEGER, created_at INTEGER);
     CREATE TABLE sources (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, filename TEXT,
-      origin TEXT, r2_key TEXT, proxy_r2_key TEXT, duration_s INTEGER, width INTEGER, height INTEGER,
+      origin TEXT, r2_key TEXT, proxy_r2_key TEXT, stream_uid TEXT,
+      duration_s INTEGER, width INTEGER, height INTEGER,
       transcript_state TEXT, poster_r2_key TEXT, cut_title TEXT, brief TEXT, bytes INTEGER,
+      timing_source TEXT, aligned_at INTEGER,
+      connection_id TEXT, foreign_id TEXT, recorded_at INTEGER,
       created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE segments (id TEXT PRIMARY KEY, source_id TEXT, idx INTEGER,
       start_ms INTEGER, end_ms INTEGER, speaker TEXT, text TEXT, words TEXT);
     CREATE TABLE v2_projects (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, kind TEXT,
       source_id TEXT, brief TEXT, has_acts INTEGER DEFAULT 0, runtime_s INTEGER,
-      pct INTEGER DEFAULT 0, next_action TEXT, poster_r2_key TEXT, cuts TEXT, block_order TEXT,
+      pct INTEGER DEFAULT 0, next_action TEXT, poster_r2_key TEXT, cuts TEXT, block_order TEXT, only_source_id TEXT,
+      scope TEXT,
       archived_at INTEGER, created_at INTEGER, updated_at INTEGER, deleted_at INTEGER);
     CREATE TABLE v2_clips (id TEXT PRIMARY KEY, user_id TEXT, source_id TEXT,
-      start_ms INTEGER, end_ms INTEGER, quote TEXT, why TEXT, score INTEGER, heat INTEGER,
+      start_ms INTEGER, end_ms INTEGER, start_word INTEGER, end_word INTEGER,
+      quote TEXT, why TEXT, score INTEGER, heat INTEGER,
       frame_r2_key TEXT, kept INTEGER DEFAULT 0, origin TEXT, used_count INTEGER DEFAULT 0,
-      created_at INTEGER, deleted_at INTEGER);
+      embedded_at INTEGER, created_at INTEGER, deleted_at INTEGER);
     CREATE TABLE v2_threads (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, summary TEXT,
       clip_count INTEGER, created_at INTEGER);
     CREATE TABLE v2_clip_threads (clip_id TEXT, thread_id TEXT, confidence REAL);
     CREATE TABLE beats (id TEXT PRIMARY KEY, project_id TEXT, idx INTEGER, kind TEXT,
       act TEXT, clip_id TEXT, text TEXT, struck TEXT, dur_ms INTEGER,
-      media_r2_key TEXT, recorded_at INTEGER);
+      media_r2_key TEXT, recorded_at INTEGER,
+      take_verdict TEXT, take_reason TEXT, take_words TEXT);
     CREATE TABLE renders (id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, kind TEXT,
       format TEXT, aspect TEXT, caption_style TEXT, clip_id TEXT, r2_key TEXT,
       stream_uid TEXT, duration_s INTEGER, bytes INTEGER, state TEXT, error TEXT,
-      created_at INTEGER);
+      enhance INTEGER, lufs REAL, true_peak REAL, created_at INTEGER);
     CREATE TABLE passes (id TEXT PRIMARY KEY, project_id TEXT, source_id TEXT, n INTEGER,
       instruction TEXT, result TEXT, undo TEXT, undone_at INTEGER, first_change TEXT,
       model TEXT, tokens_in INTEGER, tokens_out INTEGER, created_at INTEGER);
@@ -127,5 +150,52 @@ export function schema(db: DatabaseSync): void {
       bytes INTEGER, created_at INTEGER, PRIMARY KEY (source_id, part_number));
     CREATE TABLE auth_tokens (token_hash TEXT PRIMARY KEY, email TEXT,
       expires_at INTEGER, created_at INTEGER);
+
+    /*
+     * THE PUBLISHED RECEIPT AND EVERYTHING IT READS.
+     *
+     * publishedReceipt is the one function whose whole job is to build what
+     * strangers and machines see, and it joins across seven tables to do it.
+     * Testing it against canned rows would test nothing: the join IS the
+     * behaviour, and what must not appear on a public page is decided by which
+     * columns these queries select.
+     */
+    CREATE TABLE receipt_pages (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+      token TEXT NOT NULL, published_at INTEGER NOT NULL, revoked_at INTEGER);
+    CREATE TABLE plans (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic TEXT NOT NULL,
+      claim TEXT, state TEXT NOT NULL DEFAULT 'beats', project_id TEXT,
+      created_at INTEGER NOT NULL);
+    /* A plan's beats, each need a retrieval query. backed and by_user are
+       ADDED_COLUMNS in src/schema.ts, not part of its CREATE, and both have to
+       be here or a query reaching them fails from inside whatever is really
+       being tested. (No backticks in this comment: it sits inside the SQL
+       template literal, and one would end it.) */
+    CREATE TABLE plan_beats (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, idx INTEGER NOT NULL,
+      role TEXT NOT NULL, name TEXT NOT NULL, need TEXT NOT NULL,
+      kept INTEGER NOT NULL DEFAULT 1, found TEXT, backed INTEGER, by_user INTEGER,
+      UNIQUE(plan_id, idx));
+    CREATE TABLE scout_missions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+      ledger_id TEXT NOT NULL, in_s REAL NOT NULL, out_s REAL NOT NULL, quote TEXT NOT NULL,
+      url_at_in TEXT, state TEXT NOT NULL DEFAULT 'scouted', how TEXT, verdict TEXT,
+      coverage REAL, offset_s REAL, fail_reason TEXT, created_at INTEGER NOT NULL,
+      expires_at INTEGER);
+    CREATE TABLE scout_ledger (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, beat_id TEXT,
+      role TEXT NOT NULL, source_id TEXT NOT NULL, quote_exact TEXT NOT NULL,
+      quote_norm TEXT NOT NULL, word_span_json TEXT NOT NULL, t_start_s REAL NOT NULL,
+      t_end_s REAL NOT NULL, context_before TEXT, context_after TEXT, found_by_family TEXT,
+      verify TEXT NOT NULL DEFAULT 'rejected', match_score REAL,
+      crowd_signals_n INTEGER NOT NULL DEFAULT 0, original_of TEXT,
+      is_compilation_only INTEGER NOT NULL DEFAULT 0, model_version TEXT,
+      verified_at INTEGER, created_at INTEGER NOT NULL);
+    CREATE TABLE scout_sources (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, adapter TEXT NOT NULL,
+      external_id TEXT NOT NULL, url TEXT NOT NULL, title TEXT, channel TEXT,
+      published_at INTEGER, duration_s INTEGER, kind TEXT,
+      transcript TEXT NOT NULL DEFAULT 'none', transcript_url TEXT, licence TEXT,
+      triage_score REAL, scanned INTEGER NOT NULL DEFAULT 0, yield_n INTEGER NOT NULL DEFAULT 0,
+      dead_end INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL, expires_at INTEGER,
+      UNIQUE(run_id, adapter, external_id));
+    CREATE TABLE scout_attributions (id TEXT PRIMARY KEY, ledger_id TEXT NOT NULL,
+      credit_text TEXT NOT NULL, url TEXT, platform TEXT, date INTEGER, chain_parent TEXT,
+      removed INTEGER NOT NULL DEFAULT 0);
   `);
 }

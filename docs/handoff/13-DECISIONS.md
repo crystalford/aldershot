@@ -63,8 +63,24 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 36. **Done means every item is accounted for.** *300 processed, 200 didn't, nobody knew — that is the failure to design against.*
 37. **Same model, another pool, before another model.** *Same weights, no drift.*
 38. **Meter footage-hours and landed generated seconds at ~3× cost; a spend cap.** *Charge for what drives cost; absorb the failed attempts.*
+
+    **And show what is being absorbed** (31 Oct). "Absorb the failed attempts"
+    makes every failure the business's, which is right — and for as long as
+    nothing counted them, the figure this decision commits to paying was
+    invisible. `usage_events.outcome` existed, five call sites wrote it, and
+    `monthUsage` — commented as "the cost panel's only source" — grouped by
+    `job_type` alone, so no reader existed anywhere. In the development
+    database 9,702 of 9,703 rows have no outcome at all, and the one question
+    a cost panel is for could not be answered from them.
+    The rollup groups by outcome now and the panel carries one line: what the
+    month spent and got nothing for. Not deducted from the total, because the
+    total is what the bill will say.
 39. **BYOK covers direction and reading; never falls back to our bill without opt-in.** *Blame attribution is a copy rule.*
 40. **Models are rented parts.** Contracts, an eval router, content-addressed invalidation. *Price per capability falls ~50× a year.*
+
+43. **Forced alignment runs in the render container, on torchaudio's MMS_FA, over ~30-second windows.** *A container because the Worker cannot hold a model or a file; MMS_FA because it is an aligner rather than an ASR model repurposed, and the product will not stay English; windows because a wav2vec2 forward pass over an hour of audio does not fit in any machine we would rent. Measured in the sandbox: a 20.1 ms frame step — the ≈20 ms the handoff claims — and agreement with `WAV2VEC2_ASR_BASE_960H` inside one frame on the same clip.*
+
+**The counter-argument**, since it is a real one: MMS_FA is 1.26 GB against the English model's 378 MB, which is 900 MB of image, of CI, and of cold start for a product whose owner's footage is in English. The answer is that the capability contract in `src/align.ts` makes this a model swap rather than a rewrite, so the cheap model is one line away the day cold starts matter — and the expensive one is the one that does not have to be revisited when somebody uploads a podcast in Portuguese.
 
 ## Position
 

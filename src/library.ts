@@ -148,6 +148,51 @@ export async function searchExact(db: D1Database, userId: string, query: string,
 }
 
 /**
+ * EVERY MOMENT THAT SAYS ANY OF THESE WORDS, across the whole library.
+ *
+ * The candidate set for BM25, and the reason it exists is a hole rather
+ * than a refinement. The words retriever used to rank `listMoments(…, 200)`
+ * — the two hundred most recent moments — so on a library of thousands it
+ * was blind to everything older. The comment in src/assemble.ts celebrates
+ * letting words run beside the vector so "a proper name, a number, a piece
+ * of jargon" can surface what the embedding missed, and that was true only
+ * of footage read this month.
+ *
+ * OR, not AND, which is the difference from `searchExact` above: a brief is
+ * a sentence, and no single moment contains all of it. Narrowing is right
+ * for a search box and wrong for retrieval, where the ranker decides and
+ * the matcher only has to not miss anything.
+ *
+ * STILL `LIKE`, so "rent" matches "different" here — deliberately. This is
+ * the recall half and a few extra candidates cost nothing; `bm25` tokenises
+ * both sides and drops them, which is where precision belongs. Doing it
+ * with SQL alone would need an FTS index this product does not have.
+ */
+export async function searchAny(
+  db: D1Database,
+  userId: string,
+  terms: string[],
+  limit = 400,
+): Promise<Moment[]> {
+  /* Six is the ceiling searchExact already uses, and the reason is the same:
+     every term is two LIKEs over every row, and a brief's seventh content
+     word adds candidates nobody will read. */
+  const want = [...new Set(terms.filter((t) => t.length > 2))].slice(0, 6);
+  if (!want.length) return [];
+
+  const where = want.map(() => `(LOWER(c.quote) LIKE ? OR LOWER(s.title) LIKE ?)`).join(" OR ");
+  const binds: unknown[] = [userId];
+  for (const t of want) binds.push(`%${t}%`, `%${t}%`);
+  binds.push(limit);
+
+  const { results } = await db
+    .prepare(`${SELECT_MOMENTS} AND (${where}) ORDER BY c.created_at DESC LIMIT ?`)
+    .bind(...binds)
+    .all<Moment>();
+  return results ?? [];
+}
+
+/**
  * Meaning search — embeddings, via Vectorize.
  *
  * Returns null when the index does not answer, so the caller can say so

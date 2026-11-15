@@ -24,7 +24,7 @@
  */
 
 import type { Env } from "./env.ts";
-import { createJob, latestJobFor } from "./jobs.ts";
+import { countJobsFor, createJob, latestJobFor } from "./jobs.ts";
 import { dispatch } from "./queue.ts";
 import { encoderFor } from "./encode.ts";
 import { presignGet } from "./r2sign.ts";
@@ -260,6 +260,17 @@ export async function backfillProxies(env: Env, limit = 0): Promise<number> {
 
 
 /**
+ * How many times an editing copy is attempted before the product stops, and
+ * how long it waits between tries.
+ *
+ * Exported so test/proxy-retry.test.ts drives the real numbers rather than
+ * its own, and so the ceiling is a value somebody can find rather than a
+ * literal buried in a guard.
+ */
+export const PROXY_ATTEMPTS = 3;
+export const PROXY_RETRY_AFTER_MS = 60 * 60 * 1000;
+
+/**
  * THE VIDEO YOU JUST OPENED GOES FIRST.
  *
  * backfillProxies works a backlog off two an hour, deliberately, so a large
@@ -276,6 +287,21 @@ export async function backfillProxies(env: Env, limit = 0): Promise<number> {
  * checks for a proxy job already queued or running before making a second
  * one. Every failure is swallowed, because not getting a faster copy is a
  * slower edit and never a broken page.
+ *
+ * AND IT GIVES UP. The guard above tested `queued` and `running` and not
+ * `failed`, so a video whose copy could not be made got a NEW job on every
+ * single view of its cut page, for the life of the account. The development
+ * database holds 9,695 of them against three videos — one per page view —
+ * and in production each one is a container start, a usage row and a
+ * dead-letter candidate, for a file that may never be copyable: a corrupt
+ * upload, a codec ffmpeg will not open, a bucket whose read access was
+ * revoked.
+ *
+ * So: three attempts, an hour apart, then it stops. The numbers are below
+ * with the reasoning. The count comes out of the jobs table, which already
+ * holds one row per try, and it is only asked for on the path where the last
+ * attempt failed — a healthy source gets its copy first time and pays one
+ * query, exactly as before.
  */
 export async function proxyFirst(
   env: Env,
@@ -288,8 +314,33 @@ export async function proxyFirst(
   if (src.r2_key.endsWith(".edit.mp4")) return;
 
   try {
-    const running = await latestJobFor(env.DB, src.id, src.user_id, ["proxy"]);
-    if (running && (running.state === "queued" || running.state === "running")) return;
+    const last = await latestJobFor(env.DB, src.id, src.user_id, ["proxy"]);
+    if (last && (last.state === "queued" || last.state === "running")) return;
+
+    if (last?.state === "failed") {
+      /*
+       * BACK OFF, THEN GIVE UP.
+       *
+       * An hour, because the failures worth retrying are the transient ones
+       * — a cold container, an R2 blip, a timeout under load — and those
+       * clear in minutes, not days. Anything still failing an hour later is
+       * very likely the file.
+       *
+       * Three, because the first retry catches almost all of the transient
+       * cases and the second catches the unlucky ones; a fourth has never
+       * been the difference between a copy and no copy, and the whole point
+       * is a ceiling that exists.
+       *
+       * `finished_at ?? created_at`: a job reaped as stale may never have
+       * been given a finish time, and treating that as "no time at all"
+       * would make the backoff fire immediately — which is the bug again.
+       */
+      const since = Date.now() - (last.finished_at ?? last.created_at);
+      if (since < PROXY_RETRY_AFTER_MS) return;
+
+      const failures = await countJobsFor(env.DB, src.id, src.user_id, "proxy", "failed");
+      if (failures >= PROXY_ATTEMPTS) return;
+    }
 
     const job = await createJob(env.DB, { user_id: src.user_id, type: "proxy", ref_id: src.id });
     await dispatch(env, ctx, { type: "proxy", jobId: job.id, userId: src.user_id, sourceId: src.id });

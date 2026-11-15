@@ -16,6 +16,13 @@
 CREATE TABLE IF NOT EXISTS v2_users (
     id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT,
     plan TEXT NOT NULL DEFAULT 'free',
+    /*
+     * The monthly spend cap, in dollars. NULL is "never set", which is not
+     * the same as no cap: src/spend.ts reads it as DEFAULT_CAP_USD, because
+     * a cap that only protects the people who went looking for it protects
+     * nobody.
+     */
+    spend_cap_usd REAL,
     is_owner INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
@@ -126,6 +133,24 @@ CREATE TABLE IF NOT EXISTS rules (
     clip_ids TEXT,
     ord TEXT,
     secs INTEGER,
+    /*
+     * THE KIND-SPECIFIC REST, AS JSON.
+     *
+     * The data model (doc 03) writes a rule as kind + params, and for a while
+     * this table had no params at all: tag, clip_ids, ord and secs were every
+     * field any kind could carry. The kinds added since carry more — len a
+     * window, count a number, a subject rule the words it matches — and all
+     * three were written nowhere and came back undefined, which compute()
+     * reads as "no window", "no limit" and "no words": a rule that still reads
+     * correctly in the pane and has no effect on the cut. Invariant 1 says the
+     * rules ARE the cut, so a rule that does not survive a reload is not a
+     * rule, and this one failed silently in both directions.
+     *
+     * The four columns above stay columns because they are the fields shared
+     * across kinds. This one is the per-kind remainder, and avoid (topic, re)
+     * and fx (fx, scope) land here when they are built.
+     */
+    params TEXT,
     hand INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
@@ -134,6 +159,29 @@ CREATE TABLE IF NOT EXISTS rules (
   );
 
 CREATE INDEX IF NOT EXISTS rules_by_project ON rules(project_id, idx);
+
+CREATE TABLE IF NOT EXISTS takes (
+    id TEXT PRIMARY KEY,
+    beat_id TEXT NOT NULL REFERENCES beats(id),
+    r2_key TEXT NOT NULL,
+    dur_ms INTEGER,
+    verdict TEXT, reason TEXT, words TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS takes_by_beat ON takes(beat_id, created_at);
+
+CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    endpoint TEXT NOT NULL, bucket TEXT NOT NULL, region TEXT,
+    access_key_id TEXT NOT NULL, secret_sealed TEXT NOT NULL,
+    foreign_db TEXT,
+    last_import_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS connections_by_user ON connections(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS plans (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
@@ -173,6 +221,44 @@ CREATE TABLE IF NOT EXISTS eval_labels (
     PRIMARY KEY (claim_id, clip_id)
   );
 
+CREATE TABLE IF NOT EXISTS eval_judgements (
+    claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+    clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+    labeller TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (claim_id, clip_id, labeller)
+  );
+
+CREATE INDEX IF NOT EXISTS eval_judgements_by_claim ON eval_judgements(claim_id, labeller);
+
+CREATE TABLE IF NOT EXISTS eval_machine (
+    claim_id TEXT NOT NULL REFERENCES eval_claims(id),
+    clip_id TEXT NOT NULL REFERENCES v2_clips(id),
+    version TEXT NOT NULL,
+    model TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    /* What it said before the structural rule downgraded it, and whether
+       that happened — the two together are how you see a judge that
+       asserts support it cannot point at. */
+    raw TEXT NOT NULL,
+    downgraded INTEGER NOT NULL DEFAULT 0,
+    /* Whether the model said anything about this moment at all. An
+       unanswered one is recorded as unrelated so a short answer cannot
+       shrink the set, and that is an inference rather than a verdict.
+       NO BACKTICKS IN HERE: these statements are template literals, and
+       one around a word ends the string and takes the table with it. */
+    answered INTEGER NOT NULL DEFAULT 1,
+    /* Rebuilt from our own text on our side of the call, never written by
+       the model. See src/judge.ts. */
+    line TEXT,
+    why TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (claim_id, clip_id, version)
+  );
+
+CREATE INDEX IF NOT EXISTS eval_machine_by_claim ON eval_machine(claim_id, version);
+
 CREATE TABLE IF NOT EXISTS renders (
     id TEXT PRIMARY KEY, project_id TEXT REFERENCES v2_projects(id), user_id TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -180,6 +266,15 @@ CREATE TABLE IF NOT EXISTS renders (
     aspect TEXT NOT NULL DEFAULT '16:9',
     caption_style TEXT, r2_key TEXT, stream_uid TEXT,
     duration_s INTEGER, bytes INTEGER,
+    /*
+     * HOW LOUD IT CAME OUT, measured on the finished file by the container.
+     *
+     * Doc 09 asks for this to be checked on every export rather than offered
+     * as a fix, so it is measured whether or not the export was enhanced and
+     * NULL means "not measured", which loudnessVerdict reports as its own
+     * answer rather than as a pass.
+     */
+    lufs REAL, true_peak REAL,
     state TEXT NOT NULL DEFAULT 'queued',
     error TEXT, created_at INTEGER NOT NULL
   );
@@ -350,6 +445,16 @@ CREATE TABLE IF NOT EXISTS scout_sources (
     duration_s INTEGER,
     kind TEXT,
     transcript TEXT NOT NULL DEFAULT 'none',
+    /*
+     * WHERE THE WORDS ARE, for a source that published some.
+     *
+     * The transcript column above is a STATE — native, transcribed, none —
+     * and the scan phase needs an address, not a state. Without it the run
+     * knew a podcast episode had a readable transcript and had no way to
+     * reach it, which is most of why the scan phase has never run. Null for
+     * every adapter that publishes none, which is all of them but one.
+     */
+    transcript_url TEXT,
     licence TEXT,
     triage_score REAL,
     scanned INTEGER NOT NULL DEFAULT 0,
@@ -360,6 +465,55 @@ CREATE TABLE IF NOT EXISTS scout_sources (
   );
 
 CREATE INDEX IF NOT EXISTS scout_sources_by_run ON scout_sources(run_id, triage_score);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES v2_users(id),
+    title TEXT NOT NULL,
+    /* What it shows, in the maker's words. Null until they say. */
+    note TEXT,
+    filename TEXT,
+    media_type TEXT NOT NULL,
+    r2_key TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    removed_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS documents_by_user ON documents(user_id, removed_at, created_at);
+
+CREATE TABLE IF NOT EXISTS call_cache (
+    key TEXT PRIMARY KEY,
+    capability TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    body TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS call_cache_by_age ON call_cache(created_at);
+
+CREATE TABLE IF NOT EXISTS canary_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    verdict TEXT NOT NULL,
+    says TEXT NOT NULL,
+    model TEXT,
+    ms INTEGER NOT NULL
+  );
+
+CREATE INDEX IF NOT EXISTS canary_runs_by_time ON canary_runs(at);
+
+CREATE TABLE IF NOT EXISTS pool_health (
+    pool TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL DEFAULT 0,
+    window_started_at INTEGER NOT NULL DEFAULT 0,
+    /* Null means the pool is open for business. */
+    opened_at INTEGER,
+    last_says TEXT,
+    last_at INTEGER NOT NULL
+  );
 
 CREATE TABLE IF NOT EXISTS scout_ledger (
     id TEXT PRIMARY KEY,
@@ -379,10 +533,39 @@ CREATE TABLE IF NOT EXISTS scout_ledger (
     original_of TEXT REFERENCES scout_ledger(id),
     is_compilation_only INTEGER NOT NULL DEFAULT 0,
     model_version TEXT,
+    /*
+     * WHEN THE VERIFIER LOOKED, and null when it has not.
+     *
+     * Every row is written by the scan with verify 'rejected', because
+     * nothing has checked it and 'rejected' is the only verdict nobody has
+     * asserted. That made a checked-and-genuinely-rejected row
+     * indistinguishable from an unchecked one, so the verify phase would
+     * have re-read the same hallucination every round for ever.
+     *
+     * A timestamp rather than a boolean: the rejection rate is per model
+     * and prompt version and WHEN it was measured is half of what makes
+     * two rates comparable.
+     */
+    verified_at INTEGER,
     created_at INTEGER NOT NULL
   );
 
 CREATE INDEX IF NOT EXISTS scout_ledger_by_beat ON scout_ledger(beat_id, verify);
+
+CREATE TABLE IF NOT EXISTS scout_seeds (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES scout_runs(id),
+    round INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    support INTEGER NOT NULL,
+    why TEXT NOT NULL,
+    queries_n INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(run_id, kind, value)
+  );
+
+CREATE INDEX IF NOT EXISTS scout_seeds_by_run ON scout_seeds(run_id, round);
 
 CREATE TABLE IF NOT EXISTS scout_crowd (
     id TEXT PRIMARY KEY,
@@ -414,6 +597,18 @@ CREATE TABLE IF NOT EXISTS scout_missions (
 
 CREATE INDEX IF NOT EXISTS scout_missions_by_project ON scout_missions(project_id, state);
 
+CREATE UNIQUE INDEX IF NOT EXISTS scout_missions_one_per_cut ON scout_missions(project_id, ledger_id);
+
+CREATE TABLE IF NOT EXISTS receipt_pages (
+    project_id TEXT PRIMARY KEY REFERENCES v2_projects(id),
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    published_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS receipt_pages_by_token ON receipt_pages(token);
+
 CREATE TABLE IF NOT EXISTS scout_attributions (
     id TEXT PRIMARY KEY,
     ledger_id TEXT NOT NULL REFERENCES scout_ledger(id),
@@ -439,10 +634,21 @@ CREATE TABLE IF NOT EXISTS scout_lexicon (
 CREATE INDEX IF NOT EXISTS scout_lexicon_by_entity ON scout_lexicon(user_id, entity, source_count);
 
 -- Added after the fact (ADDED_COLUMNS; applied only where missing).
+ALTER TABLE sources ADD COLUMN connection_id TEXT;
+ALTER TABLE sources ADD COLUMN foreign_id TEXT;
+ALTER TABLE sources ADD COLUMN recorded_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN start_word INTEGER;
 ALTER TABLE v2_clips ADD COLUMN end_word INTEGER;
+ALTER TABLE plan_beats ADD COLUMN backed INTEGER;
+ALTER TABLE plan_beats ADD COLUMN by_user INTEGER;
+ALTER TABLE beats ADD COLUMN take_verdict TEXT;
+ALTER TABLE beats ADD COLUMN take_reason TEXT;
+ALTER TABLE beats ADD COLUMN take_words TEXT;
+ALTER TABLE sources ADD COLUMN timing_source TEXT;
+ALTER TABLE sources ADD COLUMN aligned_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER;
 ALTER TABLE v2_projects ADD COLUMN scope TEXT;
+ALTER TABLE v2_projects ADD COLUMN only_source_id TEXT;
 ALTER TABLE v2_projects ADD COLUMN cuts TEXT;
 ALTER TABLE uploads ADD COLUMN mode TEXT NOT NULL DEFAULT 'worker';
 ALTER TABLE v2_users ADD COLUMN stripe_customer_id TEXT;
@@ -457,3 +663,15 @@ ALTER TABLE passes ADD COLUMN undo TEXT;
 ALTER TABLE passes ADD COLUMN undone_at INTEGER;
 ALTER TABLE usage_events ADD COLUMN outcome TEXT;
 ALTER TABLE passes ADD COLUMN first_change TEXT;
+ALTER TABLE rules ADD COLUMN params TEXT;
+ALTER TABLE renders ADD COLUMN lufs REAL;
+ALTER TABLE renders ADD COLUMN true_peak REAL;
+ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;
+ALTER TABLE v2_users ADD COLUMN billing_event_at INTEGER;
+ALTER TABLE v2_users ADD COLUMN outside_pref TEXT;
+ALTER TABLE v2_users ADD COLUMN ask_mode TEXT;
+ALTER TABLE scout_sources ADD COLUMN transcript_url TEXT;
+ALTER TABLE scout_ledger ADD COLUMN verified_at INTEGER;
+
+-- Indexes over those columns (ADDED_INDEXES; created after the ALTERs).
+CREATE INDEX IF NOT EXISTS scout_ledger_unverified ON scout_ledger(run_id, verified_at);

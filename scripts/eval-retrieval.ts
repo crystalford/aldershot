@@ -2,7 +2,7 @@
 /**
  * HOW GOOD IS MEANING SEARCH, ON YOUR OWN LIBRARY?
  *
- *   npm run eval                 needs `npx wrangler dev --port 8787` running
+ *   npm run eval                 needs `npx wrangler dev --local --port 8787` running
  *   npm run eval -- --limit 50
  *   npm run eval -- --exact      the keyword baseline meaning search must beat
  *
@@ -108,7 +108,7 @@ async function main() {
     await fetch(`${BASE}/api/health`);
   } catch {
     console.log("⚠ no dev server at " + BASE);
-    console.log("  Run `npx wrangler dev --port 8787 --enable-containers=false` and re-run.\n");
+    console.log("  Run `npx wrangler dev --local --port 8787 --enable-containers=false` and re-run.\n");
     return;
   }
 

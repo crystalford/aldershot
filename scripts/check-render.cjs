@@ -18,7 +18,7 @@
  * NEEDS, and says so plainly rather than failing obscurely:
  *   ffmpeg + ffprobe on PATH        (apt-get install ffmpeg)
  *   the encoder                     node container/render.mjs
- *   a dev server                    npx wrangler dev --port 8787 --enable-containers=false
+ *   a dev server                    npx wrangler dev --local --port 8787 --enable-containers=false
  *   a static host for the fixture   node scripts/check-render.cjs --serve
  *   in .dev.vars:                   RENDER_URL=http://127.0.0.1:8080
  *                                   MEDIA_PUBLIC_BASE=http://127.0.0.1:8099

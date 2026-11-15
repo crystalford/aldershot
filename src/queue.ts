@@ -26,8 +26,12 @@
 import type { Env } from "./env.ts";
 import type { Plan } from "./plans.ts";
 import { advance, failJob, finishJob, getJobs, startJob } from "./jobs.ts";
+import { alignSource } from "./align-source.ts";
+import { runJudge } from "./judge-run.ts";
+import { runTake } from "./take-run.ts";
 import { attachProxy } from "./proxy.ts";
 import { meter } from "./usage.ts";
+import { nearingCap, underCap } from "./spend.ts";
 import { getSource } from "./sources.ts";
 import { readSource } from "./ingest.ts";
 import { runShortRender } from "./short-render.ts";
@@ -120,6 +124,30 @@ export type JobMessage =
    * behind it. See src/proxy.ts.
    */
   | { type: "proxy"; jobId: string; userId: string; sourceId: string }
+  /*
+   * LINING UP THE WORDS, once per source.
+   *
+   * It runs on attach rather than on cut (see src/align-source.ts for why it
+   * is not where doc 17 puts it), which means it is started by a link press
+   * and must be cheap to ask for twice. `needsAlignment` is the guard and it
+   * is checked again HERE, because the question is answered at dispatch time
+   * and answered by rows that a second attach may have changed since.
+   */
+  | { type: "align"; jobId: string; userId: string; sourceId: string }
+  /*
+   * THE JUDGE, over the whole eval set at once.
+   *
+   * A job rather than a request because it is one model call per claim and
+   * the set is meant to reach two hundred judgements — minutes of calls,
+   * which is a thing to watch finish rather than a page to hold open.
+   */
+  | { type: "judge"; jobId: string; userId: string }
+  /*
+   * ALIGNING A RECORDED TAKE to the line it was meant to be. A job because
+   * it is a container call; the recording is already stored and already
+   * usable, so this only ever improves what is known about it.
+   */
+  | { type: "take"; jobId: string; userId: string; beatId: string }
   | { type: "reactions"; jobId: string; userId: string; projectId: string; about: string }
   | { type: "outline"; jobId: string; userId: string; projectId: string; topic: string }
   /*
@@ -215,6 +243,12 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
         job_type: "proxy",
         cpu_ms: out.cpuMs,
         bytes_stored: out.bytes,
+        /* WHETHER THE MONEY BOUGHT ANYTHING. Omitted until now on the
+           reasoning that a proxy either exists or the job failed — true, and
+           it left the cost panel unable to separate container time that made
+           a copy from container time that made nothing. Decision 38 absorbs
+           these; absorbing them silently is the part that was wrong. */
+        outcome: out.ok ? "found" : "failed",
       });
 
       if (!out.ok) {
@@ -250,6 +284,96 @@ export async function runJob(env: Env, msg: JobMessage): Promise<void> {
       /* Nothing more to do: the run's own row already says why. */
       return void (await finishJob(env.DB, msg.jobId));
     }
+    case "align": {
+      const src = await getSource(env.DB, msg.sourceId, msg.userId);
+      if (!src) return void (await failJob(env.DB, msg.jobId, "That video is no longer here."));
+      await startJob(env.DB, msg.jobId, "lining up the words");
+      const out = await alignSource(env, msg.sourceId, (label, pct) =>
+        void advance(env.DB, msg.jobId, pct, label),
+      );
+      /*
+       * A RUN THAT PLACED NOTHING IS A FAILURE, and says so.
+       *
+       * alignSource already refuses to write `forced` in that case, so the
+       * timings are still honest either way. This is the other half: a job
+       * that finished green over a source that is no better than it was is
+       * exactly the silent partial failure invariant 7 calls a P1.
+       */
+      if (!out.aligned) {
+        return void (await failJob(
+          env.DB,
+          msg.jobId,
+          "Couldn't line up the words. The cut still works, on the recogniser's own timings.",
+        ));
+      }
+      /*
+       * A PARTIAL RUN FINISHES, AND SAYS SO.
+       *
+       * Not a failure: most of the video did line up and those timings are
+       * better than they were. But it is not a clean success either, and the
+       * source has correctly refused to claim frame accuracy — so the job
+       * saying nothing would leave that refusal with no explanation anywhere
+       * a person could find it.
+       */
+      if (out.failedWindows) {
+        console.log(
+          `[align] ${msg.sourceId}: ${out.failedWindows} window(s) came back empty — ` +
+            `${out.aligned} words lined up, ${out.kept} left on the recogniser's timings, ` +
+            `so this source does not claim frame accuracy`,
+        );
+        await advance(
+          env.DB,
+          msg.jobId,
+          100,
+          "lined up most of it — some of the video kept its original timings",
+        );
+      }
+      return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "judge": {
+      await startJob(env.DB, msg.jobId, "reading the claims");
+      const out = await runJudge(env, msg.userId, {
+        onProgress: (done, total) =>
+          void advance(env.DB, msg.jobId, Math.round((done / total) * 100), "judging"),
+      });
+      await meter(env.DB, {
+        user_id: msg.userId,
+        job_id: msg.jobId,
+        job_type: "judge",
+        tokens_in: out.tokensIn,
+        tokens_out: out.tokensOut,
+        /* Empty when it looked and found nothing to answer about, which is
+           a different fact from a run that failed. The model it used is in
+           every row it wrote (eval_machine.model), where it belongs — a
+           usage row is about cost. */
+        outcome: out.judged ? "found" : "empty",
+      });
+      /* Nothing judged is a failure, not a quiet success: the set is there
+         and nobody has an answer about it. */
+      if (!out.judged) {
+        return void (await failJob(
+          env.DB,
+          msg.jobId,
+          out.claims ? "The judge answered nothing." : "Nothing has been labelled yet.",
+        ));
+      }
+      return void (await finishJob(env.DB, msg.jobId));
+    }
+    case "take": {
+      await startJob(env.DB, msg.jobId, "lining up the take");
+      const take = await runTake(env, msg.userId, msg.beatId);
+      /*
+       * A TAKE THAT DOES NOT READ THE LINE IS A FINISHED JOB, not a failed
+       * one. The recording is stored, usable, and now carries what it
+       * turned out to be — which is the result. Failing here would put a
+       * red line against a take the person may well want.
+       */
+      await finishJob(env.DB, msg.jobId);
+      if (take.verdict !== "matches") {
+        console.log(`[take] ${msg.beatId}: ${take.verdict} — ${take.reason}`);
+      }
+      return;
+    }
     case "reactions":
       return await runReactions(env, msg);
     case "outline":
@@ -269,6 +393,30 @@ export async function dispatch(
   ctx: { waitUntil(p: Promise<unknown>): void },
   msg: JobMessage,
 ): Promise<void> {
+  /*
+   * THE SPEND CAP, AT THE ONE DOOR EVERY JOB GOES THROUGH.
+   *
+   * doc 10: "a monthly spend cap per account; nothing runs past it without
+   * the user raising it". Metering was entirely retrospective — every job
+   * wrote what it cost and nothing ever read those rows back to decide
+   * anything — so an account could run up any bill at all and the first
+   * anybody would know was the invoice.
+   *
+   * Here rather than at each call site because there are a dozen of those
+   * and they will keep arriving; dispatch is the only thing all of them have
+   * in common. The job row is already written by the time we get here, so
+   * the refusal lands on the job the person is watching, with the sentence
+   * that says what to do about it.
+   */
+  const cap = await underCap(env.DB, msg.userId);
+  if (!cap.allowed) {
+    await failJob(env.DB, msg.jobId, cap.says);
+    return;
+  }
+  if (nearingCap(cap)) {
+    console.log(`[spend] ${msg.userId} is at ${cap.says}`);
+  }
+
   if (env.JOBS) {
     await env.JOBS.send(msg);
     return;

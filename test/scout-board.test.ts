@@ -11,6 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ACCENT, C } from "../src/ui/tokens.ts";
+import { kindOf } from "../src/scout-board-data.ts";
 import {
   ACQ_CHIP,
   ACQ_STATES,
@@ -151,9 +152,21 @@ test("ACCEPTANCE: there are two meters, and they answer different questions", ()
       ],
     }),
   ];
+  /*
+   * "IN HAND", AND THIS TEST USED TO PIN "verified".
+   *
+   * Changed on evidence, 28 Oct, the first time the board was rendered with
+   * rows: it drew "0 of 3 verified" directly beside the subhead's "1 verified
+   * moment", and the two numbers count different things — this meter counts
+   * ACQUISITION (do you have the footage), the subhead counts the VERDICT (is
+   * the quote real). No reader could reconcile them. ACQ_CHIP already took
+   * care over exactly this: its own label is "ACQUIRED · VERIFIED".
+   *
+   * The meter's claim is unchanged; only the word it uses for it.
+   */
   const sourced = sourcedMeter(mixed);
   assert.equal(sourced.label, "SOURCED");
-  assert.equal(sourced.text, "2 of 4 verified");
+  assert.equal(sourced.text, "2 of 4 in hand");
   assert.equal(sourced.pct, 50);
   /* And the second, dimmer segment is the one out on a mission — neither in
      hand nor a dead end, which a single bar would have to call one or other. */
@@ -500,4 +513,125 @@ test("nothing a user typed is rendered unescaped", () => {
   assert.ok(!/<img onerror/.test(html));
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /a &amp; b/);
+});
+
+/* ── The ghosts in this cut ─────────────────────────────────────────────── */
+
+const ghost = (over: Partial<NonNullable<BoardData["ghosts"]>[number]> = {}) => ({
+  ledgerId: "L1",
+  quote: "give me five dollars",
+  inS: 754,
+  url: "https://www.youtube.com/watch?v=v1&t=754s",
+  state: "scouted",
+  ...over,
+});
+
+test("the board says what this cut is carrying that is not footage", () => {
+  const html = renderBoard(board({ ghosts: [ghost()] }));
+  assert.match(html, /1 ghost in this cut/);
+  /* The link at the in-point IS the product here: invariant 9 means we do
+     not fetch it, so the only move available is the place and the time. */
+  assert.match(html, /open at 12:34/);
+  assert.match(html, /t=754s/);
+});
+
+test("a ghost that has been grabbed is not still owed", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ state: "matched" })] }));
+  assert.doesNotMatch(html, /ghost in this cut/, "match-back is what closes it");
+});
+
+test("a cut with no ghosts says nothing about ghosts", () => {
+  assert.doesNotMatch(renderBoard(board()), /ghost/);
+  assert.doesNotMatch(renderBoard(board({ ghosts: [] })), /ghost/);
+});
+
+test("a find with no link says so rather than offering a dead one", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ url: null })] }));
+  assert.match(html, /no link/);
+  assert.doesNotMatch(html, /open at/);
+});
+
+test("over an hour in, the clock keeps its hours", () => {
+  const html = renderBoard(board({ ghosts: [ghost({ inS: 7_438 })] }));
+  /* 2:03:58 — a Twitch VOD timestamp, which 123:58 would be read as wrong. */
+  assert.match(html, /open at 2:03:58/);
+});
+
+/* ── Found the first time this board was rendered with rows in it ───────── */
+
+/**
+ * The board was 510 lines that nothing had ever drawn populated: it answered
+ * at an /api/ URL no crawl reached until this week, and a real run needs
+ * YouTube quota and a string of model calls a fixture cannot spend. The
+ * moment `scripts/seed-fixture.cjs` wrote one in, four things were wrong.
+ */
+
+test("a quote the verifier could not find says so, and does not look like a find", () => {
+  /*
+   * THE ONE THAT MATTERS. A rejection is the verifier having searched the
+   * source and not found the quote — the model made it up. It used to draw
+   * as a CROWD row: the words on screen with a timestamp, a credit line and
+   * a button offering to go and capture it.
+   *
+   * It is still SHOWN, because invariant 4 says "nothing backs this" has to
+   * be reachable and because the rejection rate is the measured
+   * hallucination rate this product gates model swaps on. It just says what
+   * it is.
+   */
+  assert.equal(CROWD_CHIP.unbacked.label, "NOT IN THE SOURCE");
+  assert.equal(CROWD_CHIP.unbacked.color, ACCENT.red);
+
+  /* And it is a different thing from a near-miss, which is what CROWD is. */
+  assert.notEqual(CROWD_CHIP.unbacked.label, CROWD_CHIP.crowd.label);
+});
+
+test("one query is a query", () => {
+  const [gap] = gapsOf(board({ beats: [beat({ rows: [], queriesTried: 1, familiesTried: 1 })] }));
+  assert.match(gap.why, /1 query tried/);
+  assert.doesNotMatch(gap.why, /1 queries/);
+});
+
+test("the families are counted, not asserted", () => {
+  /*
+   * It read "across three families" — a hardcoded number beside a computed
+   * one, and wrong: FAMILIES in src/scout-adapters.ts has five. It told a
+   * person a fact about their own run that was not true of it.
+   */
+  const two = gapsOf(board({ beats: [beat({ rows: [row()], queriesTried: 6, familiesTried: 2 })] }));
+  assert.match(two[0].why, /6 queries tried across 2 families/);
+  assert.doesNotMatch(two[0].why, /three families/);
+
+  /* One family is not "across 1 families" — it says nothing instead. */
+  const one = gapsOf(board({ beats: [beat({ rows: [row()], queriesTried: 4, familiesTried: 1 })] }));
+  assert.match(one[0].why, /4 queries tried\./);
+  assert.doesNotMatch(one[0].why, /across/);
+});
+
+test("SOURCED says what it counts, which is not the same word as the verdict", () => {
+  /*
+   * This meter counts rows whose ACQUISITION state is owned or matched —
+   * whether you have the footage. The subhead beside it counts rows whose
+   * VERDICT is verified — whether the quote is real. Both said "verified",
+   * so the board rendered "0 of 3 verified" next to "1 verified moment".
+   */
+  const m = sourcedMeter([beat({ rows: [row({ acq: "scouted" }), row({ acq: "owned" })] })]);
+  assert.match(m.text, /1 of 2 in hand/);
+  assert.doesNotMatch(m.text, /verified/);
+});
+
+test("a checked rejection is unbacked; an unchecked one is still only a lead", () => {
+  /*
+   * THE DECISION, NAMED. This was a ternary inside a map and the test for it
+   * could only reach the CHIPS — so restoring the bug, drawing a rejection as
+   * a crowd row, failed nothing at all.
+   *
+   * verified_at is the difference. The scan writes every find as `rejected`
+   * because nothing has looked yet, so a row is only a fabrication once
+   * somebody looked and came back empty. A row still waiting on the verifier
+   * is a lead, and calling it a lie would be its own kind of wrong.
+   */
+  assert.equal(kindOf("verified", 1), "verified");
+  assert.equal(kindOf("rejected", 1), "unbacked", "checked, and not there");
+  assert.equal(kindOf("rejected", null), "crowd", "not checked yet");
+  assert.equal(kindOf("paraphrase", 1), "crowd", "a near-miss is worth a look");
 });

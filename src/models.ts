@@ -162,8 +162,273 @@ export const EMBED: ModelSpec = {
   native: true,
   
 };
-/** Anthropic model used for the upgraded path. */
-export const ANTHROPIC_REASON = "claude-sonnet-5";
+/* ── The Anthropic models, newest family ────────────────────────────────── */
+
+/**
+ * The most capable model available, for the work the product rests on.
+ *
+ * `claude-sonnet-5` was named here and is a family behind. That mattered less
+ * when nothing could call it — src/llm.ts is the first thing in this codebase
+ * that actually can.
+ */
+export const ANTHROPIC_BEST = "claude-opus-5-5";
+
+/*
+ * THERE IS NO MIDDLE ANTHROPIC TIER HERE, and one was written and deleted.
+ *
+ * Sonnet 5.5 would be the obvious "good enough for the less critical calls"
+ * option, and nothing in this file wants it: load-bearing work takes the best
+ * there is, long-context work stays on the 1M-window model for reasons that
+ * are about the window rather than the power, and the one latency-sensitive
+ * call wants the fastest thing available. A third constant with no caller is
+ * a decision nobody has made yet, sitting where it looks like one somebody
+ * did.
+ */
+
+/** Kept as the name the rest of the code used before capabilities existed. */
+export const ANTHROPIC_REASON = ANTHROPIC_BEST;
+
+/* ── What a call is FOR, which is what decides the model ─────────────────── */
+
+/**
+ * CAPABILITIES, NOT TIERS.
+ *
+ * There was one reasoning role and a binary tier, so every reasoning call in
+ * the product shared one model and the only question was "better or not".
+ * That was the right shape when the product cut blocks and asked a model to
+ * score them. It is the wrong shape now: the reasoning layer IS the editing,
+ * and the calls in it do not resemble each other.
+ *
+ * Deciding whether a clip backs a claim is invariant 4 — a wrong answer is a
+ * receipt that lies, on a page published to strangers. Naming a project is a
+ * title. Treating those as one decision means either overpaying for titles or
+ * underpowering the thing the product's honesty rests on, and for a long time
+ * it was the second.
+ *
+ * `loadBearing` is the word that decides. It does not mean important; it
+ * means an invariant depends on the answer being right.
+ */
+export type Capability = "judge" | "classify" | "direct" | "read" | "name" | "arrange";
+
+/**
+ * HOW HARD THE MODEL THINKS, which is a second axis and was not being used.
+ *
+ * `output_config.effort` is a per-request setting on Claude, GA and needing
+ * no beta header, and the Anthropic branch of callReason was not sending it
+ * at all. That is not a neutral omission: Opus 5.5 defaults to `medium`,
+ * one level BELOW the `high` its predecessor defaulted to, so every
+ * load-bearing call in this product — the judge that IS invariant 4, the
+ * classifier invariant 8 rests on, the director that decides what the video
+ * says — has been running the frontier model at middling depth because
+ * nobody named a level.
+ *
+ * AND IT IS THE CHEAPER AXIS TO ROUTE ON. A second model means a second
+ * prompt cache: caches are model-scoped, so a cascade across two models
+ * forfeits every cached prefix the other one built. Effort moves the depth
+ * without moving the namespace. Anthropic's own guidance is to measure the
+ * best model at lower effort BEFORE building a multi-model cascade, and this
+ * is what makes that measurable here.
+ *
+ * Anthropic only — Workers AI has no equivalent, so a resolved Workers AI
+ * model carries no effort and the field is absent rather than defaulted.
+ */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface CapabilitySpec {
+  /** Why this one gets what it gets. Read by nothing; read by people. */
+  why: string;
+  /** An invariant depends on this answer being right. */
+  loadBearing: boolean;
+  /**
+   * Needs the whole transcript in one window.
+   *
+   * A QUALITY argument, not a cost one. A 1M-token window reads a two-hour
+   * transcript in one piece; a 200k window reads it in chunks and cannot see
+   * across the joins. For "which moments carry this subject", the model that
+   * sees all of it at once is doing the better job even when it is the
+   * smaller model.
+   */
+  longContext: boolean;
+  /**
+   * The depth this capability is worth, from the published ladder: a minimum
+   * of `high` for intelligence-sensitive work, `max` only where correctness
+   * matters more than cost AND measurement shows headroom at the level
+   * below, `low` for simple or latency-bound calls.
+   *
+   * NOT MEASURED YET, and the honest reason is that the only capability with
+   * an eval set is `judge`, whose set is currently saturated — it cannot
+   * tell two efforts apart any more than it can tell two models apart. So
+   * these come from the ladder and the invariant each capability carries,
+   * they are recorded here rather than buried in a call site, and
+   * `npm run eval:model -- --effort` is what will turn them into numbers.
+   */
+  effort: Effort;
+  /**
+   * HOW MUCH THE ANSWER MAY WANDER, and nothing here was setting it.
+   *
+   * Every model call in this product ran at the provider's default sampling
+   * temperature, which is not zero. So the judge was nondeterministic, and
+   * the adversarial set caught it: the SAME model over the SAME 40
+   * judgements, twice in one evening, returned 0.0% false support and then
+   * 11.1%. Not two models differing. One model disagreeing with itself by
+   * more than any swap would need to show.
+   *
+   * That is two problems and the eval is the smaller one. A verdict that
+   * flickers is a receipt that sits under a claim today and is gone
+   * tomorrow — invariant 4 failing in the direction nobody checks, because
+   * "every claim keeps its receipt" means it keeps the same one.
+   *
+   * A CAPABILITY WHOSE ANSWER IS A DECISION GETS ZERO. judge, classify and
+   * arrange return a choice from a fixed set and there is no reading of
+   * "creative" that applies to them. `direct` and `name` write prose, where
+   * sampling is the point, and `read` has no eval set to justify a change.
+   *
+   * WORKERS AI ONLY, and null means "do not send it". Anthropic removed the
+   * sampling parameters on the current models — Opus 5.5, Opus 5, Sonnet
+   * 5.5 and the Fable line all 400 on `temperature` — so a Claude judge
+   * cannot be pinned this way and its variance has to be handled by running
+   * the set more than once instead. src/llm.ts refuses to put it on that
+   * wire at all.
+   */
+  temperature: number | null;
+}
+
+export const CAPABILITIES: Record<Capability, CapabilitySpec> = {
+  judge: {
+    why: "Decides whether a clip backs a claim. Invariant 4 — a wrong answer is a receipt that lies.",
+    loadBearing: true,
+    longContext: false,
+    /* The deepest setting any capability gets. A receipt that lies is the
+       worst thing this product can do, and the near-miss separation it is
+       asked for is the hardest reading in it. */
+    effort: "xhigh",
+    /* A receipt that changes its mind between two runs is worse than no
+       receipt, and this answer IS invariant 4. */
+    temperature: 0,
+  },
+  classify: {
+    why: "Decides what job a line's picture has, which decides whether a generated picture may sit over a claim. Invariant 8.",
+    loadBearing: true,
+    longContext: false,
+    /* Load-bearing, but it is a small question over a fixed set of answers
+       rather than a reading. `high` is the floor for anything an invariant
+       rests on; the depth above that buys nothing on a choice this narrow. */
+    effort: "high",
+    /* Five fixed kinds, and invariant 8 turns on which one comes back. */
+    temperature: 0,
+  },
+  direct: {
+    why: "Decides what the video says: the claim, the beats, the order. Wrong here and the cut argues something nobody meant.",
+    loadBearing: true,
+    longContext: false,
+    /* Open-ended and consequential: there is no schema that catches a claim
+       nobody meant, only a person reading it afterwards. */
+    effort: "xhigh",
+    /* Prose, and the one capability where a second opinion is worth having:
+       a claim and its beats are a draft a person then edits. */
+    temperature: null,
+  },
+  read: {
+    why: "Reads a whole transcript and says which moments carry the subject. Wants the whole thing in one window more than it wants raw power.",
+    loadBearing: false,
+    longContext: true,
+    /* Never reaches Anthropic — longContext pins it to the 1M-window Workers
+       AI model — so this is the value it WOULD take, recorded rather than
+       left to look like an oversight. Reading a transcript for subject is
+       breadth, not depth. */
+    effort: "medium",
+    /* Which moments carry the subject is a judgement over a long transcript
+       rather than a fixed choice. Left at the provider's default until
+       something measures it — there is no eval set for `read`. */
+    temperature: null,
+  },
+  arrange: {
+    why: "Puts kept moments in an order. A deterministic solver places; this only suggests.",
+    loadBearing: false,
+    longContext: false,
+    /* Invariant 2: it suggests and a solver places, and permutationOf
+       repairs whatever comes back. Depth here is paid for an answer that is
+       then validated anyway. */
+    effort: "low",
+    /* An order is a decision. permutationOf repairs it either way, but a cut
+       that arranges itself differently on two identical runs is a cut nobody
+       can reason about — invariant 1 says it is re-produced from rules. */
+    temperature: 0,
+  },
+  name: {
+    why: "Titles and short labels, with somebody waiting on the result. Latency is the quality that matters here.",
+    loadBearing: false,
+    longContext: false,
+    /* Effort costs time, and a better title two seconds later is a worse
+       product. The one place where the lowest setting is the RIGHT one
+       rather than the cheap one. */
+    effort: "low",
+    /* A title is prose, written once and then stored. */
+    temperature: null,
+  },
+};
+
+/**
+ * The model for a capability.
+ *
+ * Load-bearing work gets the best model there is, and falls back to the best
+ * available WITHOUT a key rather than to the cheap default — the point of the
+ * fallback is to stay as close to the intended quality as the configuration
+ * allows, not to quietly become something else.
+ *
+ * Long-context work stays on the 1M-window model on purpose, which is the one
+ * place in here where the biggest model is not the best choice. See
+ * `longContext` above.
+ */
+export function resolveFor(cap: Capability, env: { ANTHROPIC_API_KEY?: string }): Resolved {
+  const spec = CAPABILITIES[cap];
+
+  if (spec.longContext) {
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
+  }
+
+  if (spec.loadBearing) {
+    if (env.ANTHROPIC_API_KEY) {
+      /*
+       * NO TEMPERATURE ON THIS BRANCH, however much the capability wants
+       * one. Opus 5.5, Opus 5, Sonnet 5.5 and the Fable line all return a
+       * 400 for `temperature`, so pinning a Claude judge is not available
+       * and its run-to-run variance has to be measured rather than removed.
+       * See eval/README.md.
+       */
+      return {
+        provider: "anthropic",
+        id: ANTHROPIC_BEST,
+        context: 200_000,
+        jsonSchema: true,
+        diarizes: false,
+        effort: spec.effort,
+      };
+    }
+    return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
+  }
+
+  if (cap === "name") {
+    /* Fast on purpose. Somebody is watching a box where a title should
+       appear, and a better title two seconds later is a worse product.
+
+       NOT REVISITED, AND IT SHOULD BE. This stays on Workers AI even when a
+       key exists, which was the right call when the Anthropic branch meant
+       the frontier tier. Haiku 5.5 is $0.10/$0.50 per million with a 1M
+       window — cheaper per token than most of the Workers AI catalog and
+       built for exactly this — so the latency argument above is now the
+       only thing holding the choice, and nobody has timed the two. There is
+       no eval set for `name`, which is why this is a comment and not a
+       change: the one lesson of the judge is that an unmeasured swap is a
+       guess with a changelog entry. */
+    return { provider: "workers-ai", id: REASON.id, context: REASON.context, jsonSchema: true, diarizes: false, ...temp(spec) };
+  }
+
+  return { provider: "workers-ai", id: REASON_UPGRADE.id, context: REASON_UPGRADE.context, jsonSchema: true, diarizes: false, ...temp(spec) };
+}
+
+/** The capability's temperature, or nothing at all when it has none. */
+const temp = (spec: CapabilitySpec) => (spec.temperature === null ? {} : { temperature: spec.temperature });
 
 /**
  * The reasoning upgrade WITHOUT an external account.
@@ -192,6 +457,23 @@ export interface Resolved {
   jsonSchema: boolean;
   /** Whether this choice returns speaker labels. Only the upgrade tier does. */
   diarizes: boolean;
+  /**
+   * How hard to think, where the provider has a setting for it.
+   *
+   * ABSENT ON WORKERS AI, not defaulted: there is no equivalent parameter
+   * there, and a field carrying "medium" into a provider that cannot read it
+   * would be a setting nobody applies that everybody can see.
+   */
+  effort?: Effort;
+  /**
+   * Sampling temperature, where the provider accepts one.
+   *
+   * ABSENT RATHER THAN DEFAULTED, and absent for two different reasons:
+   * a capability that writes prose does not want it pinned, and Anthropic
+   * rejects the parameter outright on every current model. Either way the
+   * field is missing and src/llm.ts sends nothing.
+   */
+  temperature?: number;
 }
 
 /**

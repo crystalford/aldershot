@@ -19,8 +19,9 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import { meter } from "./usage.ts";
+import { runRead } from "./llm.ts";
 
 /**
  * Openers that carry no information about the piece.
@@ -153,8 +154,8 @@ export async function nameCut(env: Env, text: string): Promise<{ title: string; 
   }
 
   try {
-    const model = resolveModel("reason", env, "default");
-    const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+    const model = resolveFor("name", env);
+    const run = (m: string, i: Record<string, unknown>) => runRead(env, "name", m, i);
     const res = await run(model.id, {
       messages: [
         { role: "system", content: SYSTEM },
@@ -168,8 +169,16 @@ export async function nameCut(env: Env, text: string): Promise<{ title: string; 
        * spends tokens thinking before it answers, so a budget sized for the
        * ANSWER cuts the model off mid-thought and the answer never arrives.
        * assistantText drops the thinking; the budget has to allow for it.
+       *
+       * 512 WAS THE SAME GUESS, SIXTEEN TIMES LARGER. It was never checked:
+       * the fix was "bigger than 32", and whether a title took 500 tokens
+       * of thought or 3000 was nobody's measurement. src/judge.ts has since
+       * been caught at 2000 and again at 5300 on this model family. A title
+       * is the cheapest call in the product and it falls back to the
+       * filename when it fails, so the cost of generosity here is nothing
+       * and the cost of meanness is every cut being called untitled.mp4.
        */
-      max_tokens: 512,
+      max_tokens: 4000,
     });
     const { tokensIn, tokensOut } = usageTokens(res);
     return { title: cleanModelTitle(assistantText(res)) || local, tokensIn, tokensOut };

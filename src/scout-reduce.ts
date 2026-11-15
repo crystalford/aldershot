@@ -30,6 +30,7 @@ import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
 import type { Verdict } from "./scout-verify.ts";
+import { runRead } from "./llm.ts";
 
 /** A verified find, as this file needs it. The shape of a `scout_ledger` row. */
 export interface LedgerRow {
@@ -409,7 +410,7 @@ export async function reduce(env: Env, rows: LedgerRow[]): Promise<Reduction> {
   }
 
   const ids = shortIds(usable);
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "reduce", m, i);
 
   const res = await run(model.id, {
     messages: [

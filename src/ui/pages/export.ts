@@ -14,7 +14,7 @@
  * validates against and the two cannot drift apart.
  */
 
-import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
+import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { CAPTION_STYLES, FORMATS, RENDER_ASPECTS } from "../../render-job.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
@@ -58,7 +58,84 @@ export function exportPanel(projectId: string, plan: string): string {
     </div>
     <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:8px 18px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Export</button>
-      <span data-content style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
+      <span style="font-size:${SIZE.meta};color:${C.ink32}">Nothing renders until you say so.</span>
+    </div>
+    <!--
+      THE CHECKLIST, first of the three because it is the one read first.
+      It says what Aldershot checked and what it cannot check at all — three
+      of doc 09's seven lines have nothing behind them in this product, and
+      a tick beside them would be worse than no checklist.
+    -->
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/p/${esc(projectId)}/before-post" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Before you post &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Seven things worth knowing before this goes out, and a straight answer about the ones nothing here can check.</span>
+    </div>
+    <!--
+      THE WAY OUT, beside the way to a finished file.
+      A timeline is not a render: it needs no job and no waiting, because the
+      edit already is data. It sits here rather than behind its own control
+      because this is the panel a person opens when they are thinking about
+      where this video goes next.
+
+      AND IT SAYS WHAT ARRIVES, not only what does not.
+      This line was a disclaimer: captions and sound work stay here. True, and
+      it left out the whole reason to take this file anywhere, which is that
+      every clip in it carries the quote it contains, which source it came
+      from, and whether its word timings are forced-aligned or the
+      recogniser's own. Competitors sell a project file as the product and
+      none of them puts provenance in one; ours has had it since the day the
+      export existed and the moment somebody chose to use it said nothing
+      about it.
+      "Graphics" is named too, because the file's own metadata note names it
+      and these two sentences disagreeing is how somebody loses an afternoon.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/timeline.otio" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Take it elsewhere &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere, each clip named by what is said in it and carrying its quote, its source and where its timings came from. Captions, sound work and graphics are rendered rather than described, so those stay here.</span>
+    </div>
+    <!--
+      THE CUE SHEET, which goes out whether anybody opens it or not.
+      It is here to be read, not to be switched on: the label on a generated
+      picture and this document both come from the beat's kind, so there is
+      nothing to tick and nothing that can be forgotten. A cut with no
+      generated or stock pictures gets a cue sheet saying exactly that,
+      because "there are none" is an answer somebody may have to show.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/cuesheet" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The cue sheet &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every picture in here that isn't your own footage — what it shows, how it was made, when. It ships with the file already.</span>
+    </div>
+    <!--
+      THE DISPUTE FILE. Same shape, different question: the cue sheet is about
+      pictures nobody filmed, this is about footage somebody else did. It is
+      written as the cut is made rather than when a claim arrives, which is
+      doc 09's whole point about it, so the link is here from the first
+      external clip onwards and not behind a "prepare" step.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/dispute" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The dispute file &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Everything in here that came from somebody else — where from, how much of it, and what the credit said. Written as you cut, not when somebody asks.</span>
+    </div>
+    <!--
+      THE MANIFEST. The only one of the four written for a machine as much as
+      a person, which is why it is last: a platform ingesting it, a lawyer's
+      tooling diffing two cuts, a later version of this reading it back. It
+      carries what it cannot cover in the file itself.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/manifest" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">The whole record &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">Every source, every rule, and what each rule left out — as a file another tool can read. It says what it doesn't cover, too.</span>
+    </div>
+    <!--
+      THE ONE THAT FACES OUTWARD, and the only control in this product that
+      puts anything on the public web. It goes last and leads with "for
+      viewers", because the other four are for the person reading this and
+      this one is not. Nothing is published by pressing Export: the link goes
+      to a page with a button on it.
+    -->
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/p/${esc(projectId)}/receipts" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Receipts for viewers &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">A page your audience can read: what you quoted, where from, and whether it was checked. Nothing is public until you publish it.</span>
     </div>
   </form>`;
 }

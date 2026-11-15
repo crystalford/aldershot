@@ -107,16 +107,13 @@ export async function runShortRender(env: Env, opts: ShortRenderOpts): Promise<v
       const segments = await getSegments(env.DB, clip.source_id);
       const covered = segments.filter((sg) => sg.end_ms > clip.start_ms && sg.start_ms < clip.end_ms);
       captions = captionCues({
+        /* Lines of a transcript, timed — not cuts. captionCues takes exactly
+           that now (its TimedText), so there is nothing to invent here. */
         cuts: covered.map((sg) => ({
-          sourceKey: clip.source_key,
-          /* Captions only — nothing here is played, so the two keys are the
-             same file. captionCues reads the text and the timings. */
-          previewKey: clip.source_key,
           start_ms: Math.max(sg.start_ms, clip.start_ms),
           end_ms: Math.min(sg.end_ms, clip.end_ms),
           text: sg.text,
         })),
-        durationMs: clip.end_ms - clip.start_ms,
       });
     }
 

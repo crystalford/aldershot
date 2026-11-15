@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseRules, honestReply, WHAT_PARSES } from "../src/rule-parse.ts";
+import { parseRules, honestReply, capText, WHAT_PARSES } from "../src/rule-parse.ts";
 
 const kinds = (s: string) => parseRules(s).rules.map((r) => r.kind).sort();
 const first = (s: string, kind: string) => parseRules(s).rules.find((r) => r.kind === kind);
@@ -105,4 +105,47 @@ test("a sentence that parses reports nothing unparsed", () => {
   const out = parseRules("two minutes on the gym stuff, one thread at a time");
   assert.deepEqual(out.unparsed, []);
   assert.deepEqual(kinds("two minutes on the gym stuff, one thread at a time"), ["cap", "order"]);
+});
+
+/**
+ * A RULE HAS TO SAY WHAT IT DOES.
+ *
+ * "keep it under 30 seconds" made a cap of 30 seconds and called itself
+ * "Keep it under 1 minute." — the text rounded to whole minutes and `|| 1`
+ * floored every sub-minute cap at one. The rule was right and its own name
+ * was wrong, which is the worst way round: invariant 1 makes the rules the
+ * source of truth, and the person deciding whether to switch one off reads
+ * the words, not the seconds.
+ *
+ * Found by putting the rule in front of somebody to agree to — the
+ * composer's Ask mode shows a rule's own text in its proposal.
+ */
+test("a length rule is named in the unit it was asked for", () => {
+  const capOf = (sentence: string) => {
+    const r = parseRules(sentence).rules.find((x) => x.kind === "cap");
+    assert.ok(r, `"${sentence}" should make a cap`);
+    return r;
+  };
+
+  const half = capOf("keep it under 30 seconds");
+  assert.equal(half.kind === "cap" ? half.secs : 0, 30);
+  assert.equal(half.text, "Keep it under 30 seconds.");
+  assert.ok(!/minute/.test(half.text ?? ""), "30 seconds is not a minute");
+
+  const one = capOf("keep it under a minute");
+  assert.equal(one.text, "Keep it under 1 minute.");
+
+  const three = capOf("make it under three minutes");
+  assert.equal(three.text, "Keep it under 3 minutes.");
+});
+
+test("a length that is not whole minutes stays in seconds", () => {
+  /* 90 seconds is "a minute and a half" to a person and "1 minute" to a
+     rounder. Rather than lie by a third, it says 90 seconds. */
+  assert.equal(capText(90_000), "Keep it under 90 seconds.");
+  assert.equal(capText(59_000), "Keep it under 59 seconds.");
+  assert.equal(capText(60_000), "Keep it under 1 minute.");
+  assert.equal(capText(120_000), "Keep it under 2 minutes.");
+  /* And nothing ever reads "under 0 seconds", which is not a rule. */
+  assert.equal(capText(0), "Keep it under 1 second.");
 });

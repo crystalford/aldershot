@@ -17,30 +17,29 @@ import { ensureV2Schema } from "./schema.ts";
 import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
 import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
 import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
-import { page, type ShortsCtx, type View } from "./ui/shell.ts";
+import { noDevNotes, page, type View } from "./ui/shell.ts";
 import { renderBoard } from "./ui/pages/board.ts";
 import { boardFor } from "./scout-board-data.ts";
-import { createRun, diligence } from "./scout-store.ts";
+import { createRun, diligence, verifiedRows } from "./scout-store.ts";
 import { renderHome } from "./ui/pages/home.ts";
-import { emptyState, pageHeading } from "./ui/pages/empty.ts";
 import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
 import { exportPanel, exportsStrip } from "./ui/pages/export.ts";
-import { blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, putBeats, saveClips, saveCuts, setKept, toggleBeatStruck, scopeOf, createProject, titleFromBrief } from "./projects.ts";
+import { blockSources, blocksForProject, cutClips, getProject, listClipsForSource, listProjects, overlapFraction, saveClips, saveCuts, setKept, sourcesInCut, toggleBeatStruck, scopeOf, attachedScope, createProject, titleFromBrief } from "./projects.ts";
 import { applyEvent, billingReady, checkoutUrl, portalUrl, verifyWebhook } from "./billing.ts";
 import { mayReadMedia } from "./media-auth.ts";
 import { quickSearch } from "./search.ts";
-import { buildBlocks, moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
-import { buildSummary, renderBlockSlice, renderCut, type CutView } from "./ui/pages/cut.ts";
+import { moveBlock, parseOrder, runtimeMs, serialiseOrder, type Block } from "./blocks.ts";
+import { buildSummary, renderBlockSlice, renderCut, type CutView, type ProjFootTab } from "./ui/pages/cut.ts";
+import { previewFromRules } from "./assemble.ts";
 import { FONT_FILES } from "./ui/fontbytes.ts";
 import { checkStorage, storedBytes } from "./storage.ts";
 import { LIMITS, rateLimit, reapRateLimits } from "./ratelimit.ts";
 import { nameSourceCut, nameUnnamedSources } from "./naming.ts";
 import { createShortRender } from "./short-render.ts";
 import { cleanTitle, closeAccount, duplicateProject, listTrash, purge, rename, restore, softDelete } from "./library-ops.ts";
-import { renderProjects } from "./ui/pages/projects.ts";
 import { renderEditorIntake } from "./ui/pages/editor-intake.ts";
 import { renderSettings } from "./ui/pages/settings.ts";
 import { ACCENT, C } from "./ui/tokens.ts";
@@ -51,13 +50,16 @@ const ACCENT_GOLD = ACCENT.gold;
 const ACCENT_GREEN = ACCENT.green;
 const ACCENT_VIOLET = ACCENT.violet;
 const ACCENT_RED = ACCENT.red;
-import { deleteBeat, getBeats, insertBeat, moveBeat, setBeatMedia } from "./projects.ts";
-import { placeReactions } from "./reactions.ts";
-import { draftOutline, type EssayBeat } from "./essay.ts";
-import { draftPlan, findForBeats } from "./plan.ts";
-import { createPlan, getPlan, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
-import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, parseWords, pauseCuts, phraseCuts, runtimeAfterCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, wordEndMs, wordStartMs, type Cut } from "./cuts.ts";
-import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, runRender, type Aspect, type Format } from "./render-job.ts";
+import { chooseTake, deleteBeat, getBeats, insertBeat, listTakes, moveBeat, setBeatMedia } from "./projects.ts";
+import { listBucket } from "./bucket.ts";
+import { importFromBucket, listConnections, saveConnection, usableConnection } from "./connections.ts";
+import { ROLES, draftPlan, findForBeats, needAdvice, type Role } from "./plan.ts";
+import { readIntent } from "./intent.ts";
+import { addBeat, createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
+import { setCap, underCap } from "./spend.ts";
+import { renderBeforePost } from "./ui/pages/beforepost.ts";
+import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
+import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
 import { encoderFor } from "./encode.ts";
 import { CLIENT_JS } from "./ui/client.ts";
 import { SW_JS } from "./ui/sw.ts";
@@ -68,28 +70,67 @@ import { consume, dispatch } from "./queue.ts";
 import { reapUsedAudio } from "./audio.ts";
 import { proxyFirst, backfillProxies } from "./proxy.ts";
 import { backfillClipIndex, reapClipIndex } from "./embeddings.ts";
+import { rethread, staleThreadUsers } from "./threads.ts";
 import { loadRules, saveRules } from "./rule-store.ts";
 import { honestReply, parseRules } from "./rule-parse.ts";
-import { applyRule, compute, effectLine, fmt as fmtSecs, ruleKey, toFootageSet, type Rule } from "./rules.ts";
+import { compileBrief, shortlistDiff } from "./brief.ts";
+import { UNSURE, classify } from "./classify.ts";
+import { allowed, type Move, type Source as PictureSource } from "./pictures.ts";
+import { cueSheetFor, cueSheetText } from "./cuesheet.ts";
+import { commentary, disputeFor, disputeText, usedSeconds } from "./dispute.ts";
+import { beforePost, checklistText } from "./beforepost.ts";
+import { overTheLimit, sidecarWanted } from "./captions.ts";
+import { captionCues } from "./edl.ts";
+import { loudnessVerdict } from "./loudness.ts";
+import { answerLead, ask } from "./ask.ts";
+import { emptyNote, offerFor } from "./picture-supply.ts";
+import { hasNoRaster, quoteCard } from "./graphics.ts";
+
+import { saved as savedCalls } from "./call-cache.ts";
+import { itemProgress } from "./jobs.ts";
+import { recordCanary, runCanary } from "./canary.ts";
+import { slo as sloFor } from "./slo.ts";
+import {
+  MAX_BYTES,
+  addDocument,
+  getDocument,
+  isDocumentType,
+  listDocuments,
+  markDocument,
+  removeDocument,
+} from "./documents.ts";
+import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
+import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
+import { judge } from "./judge.ts";
+import { publishedReceipt, receiptsHtml } from "./receipts.ts";
+import { refusalsDocument } from "./refusals.ts";
+import { applyRule, compute, effectLine, fmt as fmtSecs, isOrder, orderText, ruleKey, toFootageSet, type Order, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
-import { readSource, requeueTransientReads } from "./ingest.ts";
+import { requeueTransientReads } from "./ingest.ts";
 import { abortUpload, completeUpload, partSizeFor, startUpload, uploadPart } from "./upload.ts";
-import { activeJobs, createJob, failJob, finishJob, getJobs, latestJobFor, recentlyFinished, startJob, reapStaleJobs } from "./jobs.ts";
+import { activeJobs, createJob, getJobs, latestJobFor, recentlyFinished, reReadRefusedBecause, reapStaleJobs } from "./jobs.ts";
 import { transcribeOnce } from "./transcribe.ts";
 import { meter, monthUsage } from "./usage.ts";
 import { TTS } from "./models.ts";
 import { wavDurationMs } from "./mp3.ts";
-import { begin, runScore } from "./begin.ts";
-import { wantsArrange } from "./arrange.ts";
+import { begin } from "./begin.ts";
 import { assembleFromLibrary, CANDIDATE_POOL, inScope, recomputeFromRules } from "./assemble.ts";
-import { renderRoom, type RoomTab } from "./ui/pages/room.ts";
+import { momentsShown, renderRoom, type RoomTab, type Who } from "./ui/pages/room.ts";
+import { readPref, resolvePress, writePref } from "./outside.ts";
+import { announces, applies, readMode, resolvePress as resolveModePress, writeMode } from "./decide.ts";
+import { externalMoments, countExternal, minesOwn, openMissions } from "./scout-external.ts";
+import { shouldAlign, timingForProject } from "./align-source.ts";
+import { JUDGE_VERSION } from "./judge.ts";
+import { candidatesFor } from "./beat-find.ts";
+import { draftAngles, parseAngles, priceAngles } from "./angles.ts";
+import { priceRevision, proposeRevision } from "./revise.ts";
+import { otioJson } from "./otio.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
-import { isVerdict, type Verdict } from "./eval-set.ts";
+import { LEGACY_LABELLER, isVerdict, labellerName, setProgress, type Verdict } from "./eval-set.ts";
 import { findMaterial } from "./assemble.ts";
 import { claimPassUndo, passLog, recordPass } from "./passes.ts";
-import { intentLabel, readIntent } from "./intent.ts";
 
 export { AudioContainer, RenderContainer } from "./render.ts";
 
@@ -127,6 +168,17 @@ async function body<T extends object>(c: { req: { json<U>(): Promise<U> } }): Pr
  * is the honest instruction for something that is different on every request.
  * Static assets keep their own long cache — this only covers HTML.
  */
+/**
+ * Which of Footage's three tabs a `?tab=` means.
+ *
+ * Anything else is Highlights, which is what the tab showed before the other
+ * two existed — so an old link, a typo and a crawler all land somewhere real
+ * rather than on an empty panel.
+ */
+function footageTabFrom(raw: string | undefined): ProjFootTab {
+  return raw === "videos" || raw === "made" ? raw : "moments";
+}
+
 app.use("*", async (c, next) => {
   await next();
   const type = c.res.headers.get("content-type") || "";
@@ -210,9 +262,8 @@ function surface(
   title: string,
   body: string,
   email: string | null,
-  shortsCtx: ShortsCtx = "nav",
 ) {
-  return page({ title, view, screenLabel, shortsCtx, email }, body);
+  return page({ title, view, screenLabel, email }, body);
 }
 
 /* ── Auth ──────────────────────────────────────────────────────────────
@@ -663,6 +714,24 @@ const homeHandler = async (c: Ctx) => {
  */
 app.get("/home", homeHandler);
 app.get("/", async (c) => {
+  /*
+   * THE SCHEMA FIRST, BECAUSE THIS ROUTE ASKS A QUESTION BEFORE DELEGATING.
+   *
+   * Both handlers below ensure the schema as their first statement. This one
+   * has to read the database to decide WHICH of them to call — and so it was
+   * the only route in the product that queried before anything had created
+   * the tables. On a database with no schema, every page answered 200 and
+   * `/` answered 500: the front door, and the first URL anybody visits,
+   * including on a fresh deployment.
+   *
+   * Found by CI on a clean runner, where the D1 is created empty. It cannot
+   * be found on a machine that has ever run the app once, which is every
+   * machine this was written on.
+   *
+   * It is free to call twice — ensureV2Schema returns on a memo after the
+   * first — so the handlers keep their own calls and do not depend on this.
+   */
+  await ensureV2Schema(c.env.DB);
   const visitor = await currentUser(c.env, c.req.header("cookie"));
   return visitor ? roomHandler(c) : homeHandler(c);
 });
@@ -721,14 +790,20 @@ async function editRows(db: D1Database, userId: string) {
   return rows;
 }
 
-app.get("/projects", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const rows = await editRows(c.env.DB, user.id);
-  return c.html(
-    surface("projects", "Projects", "Projects — Aldershot", renderProjects(rows), user.email),
-  );
-});
+/*
+ * PROJECTS IS A TAB OF THE ROOM, so this is where the old page goes.
+ *
+ * 02-SCREENS.md: "Home, Footage and Projects were three pages describing one
+ * library." The room folded all three in and has carried a `projects` tab
+ * since; this page was left mounted and linked to from nowhere — no href in
+ * src/ui/ pointed at it, so it was a surface with no door, rendering a second
+ * answer to a question the room already answers.
+ *
+ * A redirect rather than a deletion: the URL is three years of nobody's
+ * bookmarks and one of somebody's, it costs a line, and it lands on the same
+ * list. 303 and not 302 — this is "that page is now over here", permanently.
+ */
+app.get("/projects", (c) => c.redirect("/?tab=projects", 303));
 
 /**
  * THE ROOM — One Take's front door, with no project open.
@@ -749,6 +824,17 @@ const roomHandler = async (c: Ctx) => {
   const t = c.req.query("tab");
   const tab: RoomTab = t === "highlights" ? "highlights" : t === "projects" ? "projects" : "videos";
   const q = (c.req.query("q") || "").trim();
+  /*
+   * MINE · EXTERNAL · ALL.
+   *
+   * "all" is the default, as it is in the prototype — a person who has never
+   * run Scout should not have to find a filter to see their own footage, and
+   * a person who has should not have to go looking for what it found. An
+   * unknown value falls back to all rather than refusing: it is a view, and
+   * a bookmarked link with a typo in it should show the library.
+   */
+  const w = c.req.query("who");
+  const who: Who = w === "mine" ? "mine" : w === "external" ? "external" : "all";
 
   /*
    * WHAT IS ATTACHED, from the URL.
@@ -760,19 +846,27 @@ const roomHandler = async (c: Ctx) => {
    * a video that is not there.
    */
   const attachParam = (c.req.query("attach") || "").split(",").filter(Boolean);
+  /* The ghost list, kept apart from the source list for the reason RoomData
+     says: a ledger id is not a source id and must not be scoped against. */
+  const extParam = (c.req.query("ext") || "").split(",").filter(Boolean);
   /* Which retriever the person asked for. Both still run and fuse — this
      says which one they chose to see first, and whether to say the index is
      off. "exact" means they asked for the words, so the notice is not news. */
   const mode: "meaning" | "exact" = c.req.query("mode") === "exact" ? "exact" : "meaning";
 
-  const [sources, projects, threads, clipsPer, momentCount, jobs] = await Promise.all([
-    listSources(c.env.DB, user.id, "newest"),
-    listProjects(c.env.DB, user.id),
-    listThreads(c.env.DB, user.id),
-    clipCountsBySource(c.env.DB, user.id),
-    countMoments(c.env.DB, user.id),
-    activeJobs(c.env.DB, user.id),
-  ]);
+  const [sources, projects, threads, clipsPer, momentCount, jobs, externalCount, outsidePref, askMode, recent] =
+    await Promise.all([
+      listSources(c.env.DB, user.id, "newest"),
+      listProjects(c.env.DB, user.id),
+      listThreads(c.env.DB, user.id),
+      clipCountsBySource(c.env.DB, user.id),
+      countMoments(c.env.DB, user.id),
+      activeJobs(c.env.DB, user.id),
+      countExternal(c.env.DB, user.id),
+      readPref(c.env.DB, user.id),
+      readMode(c.env.DB, user.id),
+      recentlyFinished(c.env.DB, user.id),
+    ]);
 
   /*
    * A JOB WITH NOTHING TO NAME IS NOT SHOWN.
@@ -782,16 +876,45 @@ const roomHandler = async (c: Ctx) => {
    * the person cannot find. Better to say nothing about it than to say that.
    */
   const sourceById = new Map(sources.map((s) => [s.id, s]));
-  const working = jobs
+  /*
+   * PER-ITEM PROGRESS WHERE THE JOB HAS ITEMS, and the job's own pct where
+   * it does not.
+   *
+   * `pct` is written by whatever stage is running, so a stage that reported
+   * ninety per cent and then died leaves a job claiming nine tenths of work
+   * that never happened. A count of item rows cannot say that. This moved
+   * here from the bell, which was the only thing reading it.
+   */
+  const working = await Promise.all(
+    jobs
+      .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
+      .map(async (j) => ({
+        label:
+          sourceById.get(j.ref_id ?? "")?.title ??
+          projects.find((p) => p.id === j.ref_id)?.title ??
+          "a video",
+        type: j.type,
+        stage: j.stage_label ?? "working on",
+        pct: j.pct,
+        says: (await itemProgress(c.env.DB, j.id))?.says ?? null,
+      })),
+  );
+
+  /*
+   * AND WHAT FINISHED, which only the bell used to show.
+   *
+   * Named by the same rule the running list follows: a job whose ref_id
+   * matches no source and no project would read as "a video", which is news
+   * about something the person cannot find.
+   */
+  const finished = recent
     .filter((j) => !j.ref_id || sourceById.has(j.ref_id) || projects.some((p) => p.id === j.ref_id))
     .map((j) => ({
       label:
         sourceById.get(j.ref_id ?? "")?.title ??
         projects.find((p) => p.id === j.ref_id)?.title ??
         "a video",
-      type: j.type,
-      stage: j.stage_label ?? "working on",
-      pct: j.pct,
+      failed: j.state === "failed",
     }));
 
   /*
@@ -832,17 +955,88 @@ const roomHandler = async (c: Ctx) => {
   const mine = new Set(sources.map((s) => s.id));
   const attached = attachParam.filter((id) => mine.has(id));
 
+  /*
+   * ONE LIST, TWO PROVENANCES.
+   *
+   * Doc 18: an external moment "uses the same table and engine as the user's
+   * own moments". It does not literally share v2_clips — nothing was
+   * downloaded, so there is no clip — but it shares the LIST, and the filter
+   * is how a person stops it being lost among six hundred of their own.
+   *
+   * Only read when it could be shown. Under Mine the query is not run at
+   * all, which keeps the common case at the cost it was before this landed.
+   */
+  const externals =
+    who === "mine" || tab !== "highlights" ? [] : await externalMoments(c.env.DB, user.id, 60);
+  const extAttached = extParam.filter((id) => externals.some((e) => e.id === id));
+
+  /*
+   * A SEARCH FILTERS THE EXTERNAL ROWS TOO, on their words.
+   *
+   * findMaterial searches v2_clips, which these are not in, so a search with
+   * externals showing would otherwise have returned every find regardless of
+   * the query — the Highlights list claiming nine matches and showing forty.
+   * Matching the quote is the honest version of the same thing until the
+   * ledger is indexed.
+   */
+  const extTerms = q.toLowerCase().split(/\s+/).filter((x) => x.length > 1);
+  const extHits = extTerms.length
+    ? externals.filter((e) => {
+        const hay = `${e.quote} ${e.source_title}`.toLowerCase();
+        return extTerms.every((term) => hay.includes(term));
+      })
+    : externals;
+
+  const mineCards = moments.map((m) => ({
+    id: m.id,
+    quote: m.quote,
+    frame_r2_key: m.frame_r2_key,
+    source_title: m.source_title,
+    thread_name: m.thread_name,
+    provenance: "mine" as const,
+    at_s: m.start_ms / 1000,
+    dur_s: (m.end_ms - m.start_ms) / 1000,
+    attached: attached.includes(m.id),
+  }));
+  const extCards0 = extHits.map((e) => ({
+    id: e.id,
+    quote: e.quote,
+    frame_r2_key: e.frame_r2_key,
+    source_title: e.source_title,
+    thread_name: null,
+    provenance: "external" as const,
+    acq: e.acq,
+    host: e.host,
+    at_s: e.t_start_s,
+    attached: extAttached.includes(e.id),
+  }));
+  /*
+   * THE TAB'S COUNT IS THE LENGTH OF THE LIST UNDER IT.
+   *
+   * This file already says it twice: "a count that disagrees with its list is
+   * a bug this product has already had twice". It had it a third time — the
+   * Highlights tab read the user's own moments while the list showed three
+   * finds beside them, so a library with nothing of its own said 0 over
+   * three cards. The count is what is shown, and `who` decides what that is.
+   */
+  const shown =
+    who === "external" ? extCards0 : who === "mine" ? mineCards : [...mineCards, ...extCards0];
+  const shownCount = momentsShown(who, momentCount, externalCount);
+
   return c.html(
     page(
       { title: "Your footage — Aldershot", view: "room", screenLabel: "The room", email: user.email },
       renderRoom({
         tab,
+        outsidePref,
+        askMode,
         attached,
         q,
         mode,
         meaningUnavailable: mode === "exact" ? false : meaningUnavailable,
-        threadNames: threads.map((t) => t.name),
+        threads: threads.map((t) => ({ name: t.name, moments: t.clip_count })),
         working,
+        finished,
         sources: sources.map((s) => ({
           id: s.id,
           title: s.title,
@@ -851,20 +1045,41 @@ const roomHandler = async (c: Ctx) => {
           duration_s: s.duration_s,
           clips: clipsPer.get(s.id) ?? 0,
         })),
-        moments: moments.map((m) => ({
-          id: m.id,
-          quote: m.quote,
-          frame_r2_key: m.frame_r2_key,
-          source_title: m.source_title,
-          thread_name: m.thread_name,
-        })),
+        who,
+        ext: extAttached,
+        moments: shown,
         projects: projects.map((p) => ({
           id: p.id,
           title: p.title,
           kind: p.kind,
           updated_at: p.updated_at,
         })),
-        counts: { sources: sources.length, moments: momentCount, threads: threads.length },
+        switch: projects.map((p) => ({
+          id: p.id,
+          title: p.title,
+          runtime_s: p.runtime_s,
+          poster_r2_key: p.poster_r2_key,
+          updated_at: p.updated_at,
+        })),
+        counts: {
+          /*
+           * READ, NOT UPLOADED.
+           *
+           * This was sources.length, and the title row says "N videos read"
+           * over it. On the only account where the two differ — a new one
+           * whose first upload failed — it read "1 video read · 0 moments"
+           * above a line saying that video didn't finish, which is the page
+           * contradicting itself about the one thing that had happened.
+           *
+           * Found by driving the first run as somebody who had just signed
+           * up (scripts/walk.cjs --fresh). Every check before it ran on an
+           * account where every source had already been read, so the two
+           * numbers were always the same number.
+           */
+          sources: sources.filter((s) => s.transcript_state === "ready").length,
+          moments: shownCount,
+          external: externalCount,
+        },
       }),
     ),
   );
@@ -882,9 +1097,12 @@ const roomHandler = async (c: Ctx) => {
  * a surface before its replacement covers it is how a product loses features
  * quietly. It goes when the room covers it, not before.
  *
- * /room stays as an alias so anything already linking to it keeps working.
+ * /ROOM IS GONE, 28 Oct 2026. The line here used to read "/room stays as an
+ * alias so anything already linking to it keeps working", and named its own
+ * condition two paragraphs up: "/room becomes / once nothing points at them".
+ * Nothing does — no href in src/ui/ contains it — so it was a second URL for
+ * one surface that no crawl reached and no person could arrive at.
  */
-app.get("/room", roomHandler);
 
 app.get("/footage", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -904,6 +1122,7 @@ app.get("/footage", async (c) => {
     : t === "edits" ? "edits"
     : t === "exports" ? "exports"
     : t === "find" ? "find"
+    : t === "documents" ? "documents"
     : "sources";
   /*
    * Default to what actually works.
@@ -983,6 +1202,9 @@ app.get("/footage", async (c) => {
      the tab bar shows the number and a count that disagrees with its list is
      worse than no count. */
   const edits = await editRows(c.env.DB, user.id);
+  /* Same rule again: the count on whatever tab you are on, the list only
+     where it is shown. */
+  const docs = await listDocuments(c.env.DB, user.id);
 
   return c.html(
     surface(
@@ -991,6 +1213,18 @@ app.get("/footage", async (c) => {
       "Footage — Aldershot",
       renderFootageFull({
         tab,
+        documentCount: docs.length,
+        ...(tab === "documents"
+          ? {
+              documents: docs.map((d) => ({
+                id: d.id,
+                title: d.title,
+                note: d.note,
+                mediaType: d.mediaType,
+                bytes: d.bytes,
+              })),
+            }
+          : {}),
         exports: finished.map((r) => ({
           id: r.id, r2_key: r.r2_key, duration_s: r.duration_s, bytes: r.bytes,
           format: r.format, aspect: r.aspect, created_at: r.created_at,
@@ -1021,6 +1255,10 @@ app.get("/footage", async (c) => {
  * the null check being forgotten somewhere.
  */
 async function requireUser(c: Ctx) {
+  /* Every caller does this first by convention, and `/` is what a convention
+     costs when somebody writes the one route that does not follow it. Here it
+     is the function's job instead, and it is a memo hit for all of them. */
+  await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env, c.req.header("cookie"));
   if (user) return user;
 
@@ -1032,28 +1270,15 @@ async function requireUser(c: Ctx) {
   });
 }
 
-/**
- * Where the user came in from, as [label, href].
+/*
+ * `cameFrom` was here, and is gone with the back link it fed.
  *
- * The prototype keeps this as `cameFrom` state and renders "← " + its label,
- * so the editor sends you back where you actually were. Server-rendered there
- * is no such state, so the Referer carries it — and when it is absent or
- * off-site the answer is Home, which is the prototype's own default.
+ * It read the Referer to work out what "← " should say, because the
+ * prototype keeps that as state and the server has none. One Take has no
+ * back link in the editor: the WORDMARK closes the project, and its title
+ * says so. A link that guesses where you came from, beside a mark that
+ * knows where you are going, is two answers to one question.
  */
-function cameFrom(referer: string | undefined): [string, string] {
-  const path = (() => {
-    try {
-      return new URL(referer ?? "").pathname;
-    } catch {
-      return "";
-    }
-  })();
-
-  if (path.startsWith("/footage") || path.startsWith("/sources/")) return ["Footage", "/footage?tab=sources"];
-  if (path.startsWith("/clipping")) return ["Clipping", "/clipping"];
-  if (path.startsWith("/projects")) return ["Projects", "/projects"];
-  return ["Home", "/"];
-}
 
 /**
  * Opening a video.
@@ -1214,6 +1439,10 @@ app.post("/api/sources/:id/poster", async (c) => {
 app.get("/media/*", async (c) => {
   const key = c.req.path.replace(/^\/media\//, "");
 
+  /* The same cold-database hole as `/`: this reads the user directly rather
+     than through requireUser, because a redirect is the wrong answer to a
+     subresource fetch. A 500 is a worse one. */
+  await ensureV2Schema(c.env.DB);
   const user = await currentUser(c.env, c.req.header("cookie"));
   if (!user || !(await mayReadMedia(c.env.DB, user.id, key))) return c.notFound();
 
@@ -1268,12 +1497,40 @@ app.get("/media/*", async (c) => {
   });
 });
 
-/** Re-read a source that failed, keeping everything the user already gave us. */
+/**
+ * Re-read a source that failed, keeping everything the user already gave us.
+ *
+ * AND ONLY ONE THAT FAILED. Invariant 5 is "footage is read and charged once;
+ * editing is free", and a read is the expensive thing in this product — the
+ * cost panel prices it per source minute. This route checked that the source
+ * existed and nothing else, so a POST against a video that had already been
+ * read read it again and charged for it again, and two presses ran two reads
+ * at once.
+ *
+ * It was safe in practice only because src/ui/pages/source.ts renders the
+ * Retry form when `transcript_state === "failed"` and never otherwise. That is
+ * the UI being the guard, which is the same mistake as the proxy storm — where
+ * `failed` was missing from a queued/running check and 9,695 jobs came of it —
+ * and it is the thing docs/decisions/claude-skill.md warns about in so many
+ * words: invariants "enforced partly by the fact that the only caller is this
+ * product's own pages".
+ *
+ * Both refusals redirect rather than erroring, because this is a form post and
+ * the page it lands on says what the state is: a finished transcript, or a
+ * read already in progress. There is nothing to report because nothing failed
+ * — there was simply nothing to do.
+ */
 app.post("/api/sources/:id/retry", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const src = await getSource(c.env.DB, c.req.param("id"), user.id);
   if (!src) return c.json({ error: "not found" }, 404);
+
+  /* Read once, charged once. The guard is in src/jobs.ts so that it can be
+     tested — see reReadRefusedBecause. */
+  if (await reReadRefusedBecause(c.env.DB, src, user.id)) {
+    return c.redirect(`/sources/${src.id}`, 303);
+  }
 
   const job = await createJob(c.env.DB, { user_id: user.id, type: "transcribe", ref_id: src.id });
   await dispatch(c.env, c.executionCtx, {
@@ -1351,15 +1608,135 @@ app.get("/api/projects/:id/scout/runs/:rid", async (c) => {
   return c.json({ run, diligence: await diligence(c.env.DB, String(run.id)) });
 });
 
-app.get("/api/projects/:id/scout/board", async (c) => {
+/**
+ * THE SCOUT BOARD, at a URL a person can be at.
+ *
+ * It lived at /api/projects/:id/scout/board and returned a full HTML document,
+ * which is why nothing ever looked at it: 510 lines of surface, tested as a
+ * function, never once rendered in a browser by any check. Every crawl in this
+ * repo skips /api/ — correctly, because everything else under it answers with
+ * JSON — so putting a page there put it outside the only thing that would have
+ * noticed. Not a cosmetic problem: a page at a machine URL is a page with no
+ * checks, which is exactly the condition every defect found this month shared.
+ *
+ * scripts/check-fidelity.cjs has a `page-url` rule now so this cannot recur.
+ */
+const scoutBoard = async (c: Ctx) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  /* A standalone handler is not typed to its own path, so the param is
+     string | undefined here where an inline one would be string. */
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return c.notFound();
+
+  const data = await boardFor(c.env.DB, project.id);
+  return c.html(page({ title: "Scout", view: "room", screenLabel: "Scout", email: user.email }, renderBoard(data)));
+};
+
+/**
+ * DOES WHAT SCOUT FOUND CHANGE WHAT THE VIDEO IS ABOUT?
+ *
+ * The loop PASS-4-BRIEF says the architecture cannot run: "Scout fills a
+ * plan's gaps; it cannot change the plan's mind." A verified find can make
+ * a better claim visible than any that existed when the plan was written,
+ * and until now the run reported coverage against the beats it was given
+ * and stopped. See src/revise.ts.
+ *
+ * PROPOSES ONLY. Accepting is a second, separate act — and it makes a NEW
+ * plan rather than editing this one, so changing your mind costs nothing
+ * you had already decided (invariant 6).
+ *
+ * WHAT IT CANNOT YET SAY, and says so rather than guessing. The cost of a
+ * revision is the recorded takes hanging off beats the new claim does not
+ * want, because a performance is the one thing the engine cannot re-make.
+ * `beats` has no `plan_beat_id`, so a dropped PLAN beat cannot be mapped to
+ * the recording it produced — the number of takes genuinely at risk is not
+ * derivable today. Reporting one would be precision this does not have, so
+ * it reports zero and says the recordings exist. 12-DEFERRED carries what
+ * would close it.
+ */
+app.post("/api/projects/:id/revise", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const data = await boardFor(c.env.DB, project.id);
-  return c.html(page({ title: "Scout", view: "room", screenLabel: "Scout", email: user.email }, renderBoard(data)));
+  const run = await c.env.DB
+    .prepare("SELECT id FROM scout_runs WHERE project_id = ? ORDER BY created_at DESC LIMIT 1")
+    .bind(project.id)
+    .first<{ id: string }>();
+  if (!run) return c.json({ error: "Scout hasn't looked for anything yet." }, 422);
+
+  const plan = await c.env.DB
+    .prepare("SELECT id FROM plans WHERE project_id = ? AND user_id = ? LIMIT 1")
+    .bind(project.id, user.id)
+    .first<{ id: string }>();
+  if (!plan) return c.json({ error: "This cut wasn't made from a plan, so there is no claim to revise." }, 422);
+
+  const full = await getPlan(c.env.DB, plan.id, user.id);
+  if (!full) return c.json({ error: "not found" }, 404);
+
+  /* Verified only. A paraphrase may not have been said and a rejection is a
+     fabrication; neither is a reason to change what a video argues. */
+  const rows = await verifiedRows(c.env.DB, run.id);
+  if (!rows.length) return c.json({ error: "Nothing has been verified yet." }, 422);
+
+  /* SHORT IDS, for the reason essay.ts measured and scout-reduce.ts keeps:
+     asked to copy a 26-character ULID, a model describes the right row and
+     mistypes the reference. The quotes go out and never come back. */
+  const evidence = rows.slice(0, 40).map((r, i) => ({
+    ref: `r${i + 1}`,
+    quote: r.quoteExact,
+    source: r.sourceTitle ?? null,
+  }));
+  const beatRefs = full.beats.map((b, i) => ({ ref: `b${i + 1}`, name: b.name, need: b.need }));
+
+  const { revision } = await proposeRevision(c.env, {
+    claim: full.claim,
+    evidence,
+    beats: beatRefs,
+  });
+  if (!revision) {
+    return c.json({ revision: null, says: "What Scout found still argues the claim you have." });
+  }
+
+  const keeps = new Set(revision.keeps);
+  const cost = priceRevision(
+    beatRefs.map((b) => ({ id: b.ref, need: b.need })),
+    (need) => keeps.has(beatRefs.find((b) => b.need === need)?.ref ?? ""),
+    /* Zero, honestly: see this route's header. The recordings are reported
+       beside the cost rather than counted into it. */
+    () => 0,
+  );
+
+  const recorded = (
+    await c.env.DB
+      .prepare("SELECT COUNT(*) AS n FROM takes t JOIN beats b ON b.id = t.beat_id WHERE b.project_id = ?")
+      .bind(project.id)
+      .first<{ n: number }>()
+  )?.n ?? 0;
+
+  return c.json({
+    revision: {
+      claim: revision.claim,
+      why: revision.why,
+      /* Resolved OUR side, from the rows we sent. The model named ids; the
+         words come from the verified ledger. */
+      drivenBy: revision.drivenBy
+        .map((ref) => evidence.find((e) => e.ref === ref))
+        .filter(Boolean)
+        .map((e) => ({ quote: e!.quote, source: e!.source })),
+    },
+    cost: cost.says,
+    recorded,
+  });
 });
+
+app.get("/p/:id/scout", scoutBoard);
+
+/* The old address, which cut.ts linked to and anybody's history may hold. 303
+   rather than serving both: two URLs for one page is how the crawl missed it. */
+app.get("/api/projects/:id/scout/board", (c) => c.redirect(`/p/${c.req.param("id") ?? ""}/scout`, 303));
 
 /*
  * CLIPPING IS GONE.
@@ -1412,6 +1789,47 @@ const EDITOR_PATHS = new Set(["cut", "pick", "build", "script", "shorts", "foota
  * src/blocks.ts, which is the single place that says what a cut IS — so this
  * and the renderer cannot disagree about it.
  */
+/*
+ * BEFORE THE CATCH-ALL, and that ordering is the whole route.
+ *
+ * /p/:id/:stagePath matches /p/<id>/receipts too, and `receipts` is not in
+ * EDITOR_PATHS, so it answered c.notFound(). Registered after it, this page
+ * 404'd on every request — found by scripts/walk.cjs the first time it walked
+ * the surface list it now derives, which is exactly the class of defect a
+ * walk catches and a unit test does not. /p/:id/scout escaped it only because
+ * it happened to be registered further up the file.
+ *
+ * The handler itself is receiptsAdmin, defined with the receipts endpoints
+ * further down; this is only where it is mounted.
+ */
+app.get("/p/:id/receipts", (c) => receiptsAdmin(c));
+
+/**
+ * THE SHEET, AS A PAGE.
+ *
+ * It answered only as a .txt download — `content-disposition: attachment` —
+ * so the most important safety surface in the product was the one surface
+ * with no surface. Nobody about to post something opens a text file first.
+ *
+ * The text file stays at the /api/ path below, because a checklist you can
+ * hand to somebody else is worth having. It is no longer the only way to read
+ * it.
+ */
+app.get("/p/:id/before-post", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return c.notFound();
+  const lines = await beforePostFor(c as Ctx, project, user.id);
+  return c.html(
+    page(
+      { title: `Before you post — ${project.title}`, view: "room", screenLabel: "Before you post", email: user.email },
+      renderBeforePost({ projectId: project.id, title: project.title, lines }),
+    ),
+  );
+});
+
+
 app.get("/p/:id/:stagePath", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -1427,6 +1845,9 @@ app.get("/p/:id/:stagePath", async (c) => {
   const view: CutView =
     stage === "footage" || c.req.query("view") === "footage" ? "footage"
     : stage === "script" || c.req.query("view") === "script" ? "script"
+    /* `shorts` was already in EDITOR_PATHS and rendered the blocks view —
+       a tab the product answered and did not have. It has one now. */
+    : stage === "shorts" || c.req.query("view") === "shorts" ? "shorts"
     : "blocks";
 
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
@@ -1465,9 +1886,32 @@ app.get("/p/:id/:stagePath", async (c) => {
 
   return c.html(
     page(
-      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", shortsCtx: "editor", email: user.email },
+      { title: `${project.title} — Aldershot`, view: "cut", screenLabel: "Cutting room", email: user.email },
       renderCut({
         projectId: project.id,
+        /* The videos this cut is made of, for the lettered chips beside the
+           title. A cut of one recording is that recording; an assembled one
+           is whatever its beats pull from, in the order it uses them. */
+        sources: await sourcesInCut(c.env.DB, project.id, project.source_id),
+        /* Which video each block is from, for the strip under the player —
+           the same ordered list the chips colour by, so the two agree. */
+        blockSource: await blockSources(c.env.DB, project.id),
+        /* Every project, for the switcher beside the title — the caret the
+           prototype puts there, which the build had no control for. */
+        projects: (await listProjects(c.env.DB, user.id)).map((p) => ({
+          id: p.id,
+          title: p.title,
+          runtime_s: p.runtime_s,
+          poster_r2_key: p.poster_r2_key,
+          updated_at: p.updated_at,
+        })),
+        askMode: await readMode(c.env.DB, user.id),
+        /* Which short the workbench is showing. A URL rather than client
+           state: the back button works, a link to one short is a link to one
+           short, and the crawl can reach it. */
+        shortId: c.req.query("short") ?? null,
+        shortLen: c.req.query("len") ?? null,
+        shortCount: Number(c.req.query("count")) || null,
         title: project.title,
         sourceId: source?.id ?? null,
         sourceTitle: source?.title ?? null,
@@ -1480,6 +1924,29 @@ app.get("/p/:id/:stagePath", async (c) => {
         posterKey: source?.poster_r2_key ?? null,
         blocks,
         beats,
+        /*
+         * THE TAKES, only where there is more than one to choose between.
+         *
+         * A list of one is a list of nothing, and the rest of this product
+         * goes absent rather than printing a count of one. Loaded per
+         * recorded beat rather than in one query because a cut has a handful
+         * of beats, not hundreds, and the join is per beat by design — see
+         * listTakes, which checks ownership through the project on each.
+         */
+        takes: Object.fromEntries(
+          (
+            await Promise.all(
+              beats
+                .filter((bt) => bt.media_r2_key)
+                .map(async (bt) => [bt.id, await listTakes(c.env.DB, bt.id, user.id)] as const),
+            )
+          )
+            .filter(([, list]) => list.length > 1)
+            .map(([id, list]) => [
+              id,
+              list.map((t) => ({ id: t.id, dur_ms: t.dur_ms, verdict: t.verdict, chosen: t.chosen })),
+            ]),
+        ),
         cuts,
         view,
         windowSize: BLOCK_WINDOW,
@@ -1531,7 +1998,6 @@ app.get("/p/:id/:stagePath", async (c) => {
         runtimeMs: runtimeMs(blocks, cuts),
         keptCount: blocks.filter((b: Block) => !b.struck).length,
         plan: user.plan,
-        cameFrom: cameFrom(c.req.header("referer")),
         job,
         passes,
         /*
@@ -1553,7 +2019,7 @@ app.get("/p/:id/:stagePath", async (c) => {
            * points at the wrong line. Computing twice would let them.
            */
           const stored = await loadRules(c.env.DB, project.id);
-          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {} };
+          if (!stored.length) return { rules: [], moments: [], addable: [], blockRule: {}, blockContested: {} };
 
           /* Attached footage only. Without this the Footage tab lists every
              moment in the library against a cut that can only ever draw on
@@ -1579,12 +2045,28 @@ app.get("/p/:id/:stagePath", async (c) => {
            * a cut without one already draws on everything, so there is
            * nothing to add and a control offering to would do nothing.
            */
-          const scope = scopeOf(project);
+          /* attachedScope: a cut narrowed to one video has not stopped
+             being made of the others, so they must not be offered as
+             things to attach. */
+          const scope = attachedScope(project);
+          /*
+           * One listing, two answers: what this cut is made of, and what it
+           * is not. Footage's Videos tab needs the first — including a video
+           * attached and contributing nothing, which is the row that tab
+           * exists for — and `addable` is the second.
+           *
+           * A cut with no scope is made of the whole library, so that is
+           * what it lists. Read sources only: an unread one has no moments
+           * to count and a row saying "0 of 0" would read as a video the
+           * rules rejected rather than one nothing has looked at yet.
+           */
+          const library = await listSources(c.env.DB, user.id, "newest");
           const addable = scope
-            ? (await listSources(c.env.DB, user.id, "newest"))
-                .filter((x) => !scope.includes(x.id))
-                .map((x) => ({ id: x.id, title: x.title }))
+            ? library.filter((x) => !scope.includes(x.id)).map((x) => ({ id: x.id, title: x.title }))
             : [];
+          const cutSources = (scope ? library.filter((x) => scope.includes(x.id)) : library)
+            .filter((x) => x.transcript_state === "ready")
+            .map((x) => ({ id: x.id, title: x.title, duration_s: x.duration_s ?? null }));
 
           /*
            * WHICH RULE PUT EACH BLOCK HERE, keyed by block id.
@@ -1606,12 +2088,110 @@ app.get("/p/:id/:stagePath", async (c) => {
             ]),
           );
           const blockRule: Record<string, string> = {};
+          /*
+           * AND WHICH BLOCKS THE NOTE IS TALKING ABOUT.
+           *
+           * The cut's own line says "2 judgement calls — marked in the
+           * blocks", so the blocks have to carry the mark or the sentence
+           * sends somebody looking for something that is not there. A beat's
+           * clip_id IS the moment's id, which is the same join blockRule
+           * above already makes.
+           */
+          const contested = new Set(judged.filter((m) => m.contest).map((m) => String(m.id)));
+          const blockContested: Record<string, true> = {};
+          /*
+           * AND WHAT THE DISAGREEMENT WAS, for the block to say it.
+           *
+           * The gold edge marks a judgement call and names nothing. The
+           * rules pane settles the two rules IN GENERAL — "whenever these
+           * two disagree, this one is right" — and this is the other half:
+           * one moment, in front of you, with the two rules named and both
+           * answers a press away. A hand decision overrides every rule above
+           * it, which is why the second control can exist at all.
+           */
+          const judgeOf = new Map<string, { k: string; d: string; kept: boolean; byHand: boolean }>();
+          for (const m of judged) {
+            if (!m.contest) continue;
+            /*
+             * AND WHETHER A HAND IS HOLDING IT, which is not the same as a
+             * rule winning.
+             *
+             * A hand decision overrides every rule above it, so once you
+             * have answered this call the rules are no longer deciding —
+             * and the panel was still naming one of them as the winner.
+             * Caught by driving it: pressing Keep it moved the moment to
+             * "in · kept by hand" and the panel went on saying rule 01 was
+             * winning.
+             */
+            const held = m.in ? m.byId : m.dropId;
+            judgeOf.set(String(m.id), {
+              k: numberOf(m.contest.k),
+              d: numberOf(m.contest.d),
+              kept: m.in,
+              byHand: held !== null && isHand(held),
+            });
+          }
+          const blockJudgement: Record<
+            string,
+            { k: string; d: string; kept: boolean; byHand: boolean; momentId: string }
+          > = {};
+          const judgeBlock = (blockId: string, momentId: string) => {
+            const j = judgeOf.get(momentId);
+            if (j) blockJudgement[blockId] = { ...j, momentId };
+          };
           for (const bt of beats) {
             if (bt.clip_id && ruleOf.get(bt.clip_id)) blockRule[`b:${bt.id}`] = ruleOf.get(bt.clip_id)!;
+            if (bt.clip_id && contested.has(String(bt.clip_id))) blockContested[`b:${bt.id}`] = true;
+            if (bt.clip_id) judgeBlock(`b:${bt.id}`, String(bt.clip_id));
+          }
+
+          /*
+           * AND THE SAME JOIN FOR A CUT OF ONE VIDEO, which is most of them.
+           *
+           * The loop above walks BEATS, and a beat carries the moment's id in
+           * clip_id. A cut with a source of its own has no beats at all — its
+           * blocks come straight from the transcript's segments and are
+           * identified `s:<idx>`. So on the commonest shape of cut in the
+           * product, neither the rule chip nor the gold judgement mark could
+           * ever appear: blockRule and blockContested were both empty, always,
+           * and the cut's own note went on promising "marked in the blocks".
+           *
+           * Found the first time a fixture had rules that disagreed AND a
+           * single source — the note rendered, the mark did not.
+           *
+           * Matched on the moment's MIDPOINT falling inside the block. A
+           * moment is a range of the same recording the segments came from, so
+           * one segment contains it; the midpoint is what survives the edges
+           * being trimmed by a breathing rule or a struck word at either end.
+           */
+          /* The engine's Moment carries ts/dur, not milliseconds — the POOL
+             these were built from has the range, so the join goes through it
+             by id rather than converting "m:ss" back into a number. */
+          const rangeOf = new Map(pool.map((x) => [String(x.id), x]));
+          for (const m of judged) {
+            const r = rangeOf.get(String(m.id));
+            if (!r) continue;
+            const mid = (r.start_ms + r.end_ms) / 2;
+            const b = blocks.find(
+              (x) => x.origin === "footage" && x.start_ms <= mid && mid <= x.end_ms,
+            );
+            if (!b) continue;
+            const rule = ruleOf.get(String(m.id));
+            if (rule && !blockRule[b.id]) blockRule[b.id] = rule;
+            if (m.contest) blockContested[b.id] = true;
+            judgeBlock(b.id, String(m.id));
           }
 
           return {
+            blockContested,
+            blockJudgement,
             addable,
+            /* Which of Footage's three tabs, and whether this cut is
+               narrowed to one video. The tab is in the URL so a link to
+               Videos arrives at Videos. */
+            footageTab: footageTabFrom(c.req.query("tab")),
+            cutSources,
+            onlySourceId: project.only_source_id ?? null,
             blockRule,
             rules: stored.map((r) => ({
               id: String(r.id),
@@ -1619,12 +2199,65 @@ app.get("/p/:id/:stagePath", async (c) => {
               on: r.on,
               hand: Boolean(r.hand),
               effect: effectLine(stored, r, { set }),
+              /* For the one kind with alternatives — an order rule offers
+                 the other two orders as chips. */
+              kind: r.kind,
+              order: r.order,
+              /* The moment a hand fix is about, so the undo beside it has
+                 something to post to. Rules proper have no cid. */
+              cid: r.cid === undefined || r.cid === null ? null : String(r.cid),
             })),
             moments: judged.map((m) => ({
               id: String(m.id),
               quote: m.text,
               source_title: titles.get(String(m.id)) ?? "",
               in: m.in,
+              /*
+               * THE DISAGREEMENT, CARRIED THROUGH.
+               *
+               * src/rules.ts records `contest` whenever a keep rule and a drop
+               * rule both matched a moment, and it had been computed and
+               * thrown away here: nothing in src/ui/ had ever seen it, so a
+               * cut where two of your own rules disagree looked exactly like
+               * one where they do not. That is the opposite of what the rules
+               * pane is for.
+               */
+              contest: m.contest
+                ? {
+                    k: numberOf(m.contest.k),
+                    d: numberOf(m.contest.d),
+                    /* The id as well as the number: the number is what a
+                       person reads, the id is what the flip control posts. */
+                    kId: String(m.contest.k),
+                  }
+                : null,
+              /*
+               * THE SAME TWO FACTS AS A COUNT CAN BE MADE FROM.
+               *
+               * `note` below says it in words, and the pane needs to know
+               * that rule 02 took out four moments and that rule 03 took out
+               * none and kept none. Reading the number back out of the
+               * sentence would make the two disagree the first time the
+               * sentence changed. A hand decision is not a rule, so it is
+               * null here and stays visible in the sentence.
+               */
+              byRule: m.in && m.byId !== null && !isHand(m.byId) ? String(m.byId) : null,
+              dropRule: !m.in && m.dropId !== null && !isHand(m.dropId) ? String(m.dropId) : null,
+              /* Which recording, where in it, how long, and what thread —
+                 the row's identity. The engine's Moment carries ts/dur as
+                 text; the POOL has the milliseconds these are formatted
+                 from, which is the same source the Words gutter reads. */
+              ...(() => {
+                const r = rangeOf.get(String(m.id));
+                return r
+                  ? {
+                      sourceId: r.source_id,
+                      startMs: r.start_ms,
+                      durMs: r.end_ms - r.start_ms,
+                      thread: r.thread_name,
+                    }
+                  : {};
+              })(),
               note: m.in
                 ? m.byId === null
                   ? "in · kept by hand"
@@ -1632,7 +2265,12 @@ app.get("/p/:id/:stagePath", async (c) => {
                     ? "in · kept by hand"
                     : `in · rule ${numberOf(m.byId)}`
                 : m.dropId === null
-                  ? "out · no rule keeps it"
+                  /* THE PROMISE WAS MISSING ON THE ONE ROW THAT MOST NEEDED
+                     IT. A moment no rule keeps can still be kept by hand —
+                     a hand decision overrides every rule above it — and this
+                     said so for a moment a rule dropped and not for one
+                     nothing claimed. The prototype offers it on both. */
+                  ? "out · no rule keeps it · click to keep"
                   : isHand(m.dropId)
                     ? "out · by hand · click to keep"
                     : `out · rule ${numberOf(m.dropId)} · click to keep`,
@@ -1726,6 +2364,10 @@ app.post("/api/passes/:passId/undo", async (c) => {
   if (snap.rules) {
     let restored: Rule[];
     let scope: string[] | null;
+    /* undefined means "this pass did not touch it"; null means "it cleared
+       it", and those are different instructions to the UPDATE below. */
+    let restoreOnly: string | null | undefined;
+    let restoreAttached: string[] | null = null;
     try {
       restored = JSON.parse(snap.rules) as Rule[];
       /*
@@ -1734,7 +2376,22 @@ app.post("/api/passes/:passId/undo", async (c) => {
        * what it was, and that is what goes back. Restoring only the rules
        * would undo an "Added that video" pass and leave the video added.
        */
-      scope = snap.scope == null ? scopeOf(project) : (JSON.parse(snap.scope) as string[] | null);
+      /*
+       * THE NARROWING, the same way and for the same reason.
+       *
+       * A pass that narrowed the cut to one video carries what the
+       * narrowing WAS, and that is what goes back. Without this, undoing
+       * "Only one video" would restore the rules and leave the cut looking
+       * at one video — which is the attach defect again, one column over.
+       */
+      const only =
+        snap.only == null
+          ? project.only_source_id
+          : (JSON.parse(snap.only) as string | null);
+      const attached = snap.scope == null ? attachedScope(project) : (JSON.parse(snap.scope) as string[] | null);
+      scope = scopeOf({ scope: attached?.length ? JSON.stringify(attached) : null, only_source_id: only });
+      restoreOnly = snap.only == null ? undefined : only;
+      restoreAttached = attached;
     } catch {
       return c.json({ error: "that one can't be taken back" }, 422);
     }
@@ -1744,7 +2401,13 @@ app.post("/api/passes/:passId/undo", async (c) => {
     if (snap.scope != null) {
       await c.env.DB
         .prepare(`UPDATE v2_projects SET scope=?, updated_at=? WHERE id=? AND user_id=?`)
-        .bind(scope?.length ? JSON.stringify(scope) : null, Date.now(), project.id, user.id)
+        .bind(restoreAttached?.length ? JSON.stringify(restoreAttached) : null, Date.now(), project.id, user.id)
+        .run();
+    }
+    if (restoreOnly !== undefined) {
+      await c.env.DB
+        .prepare(`UPDATE v2_projects SET only_source_id=?, updated_at=? WHERE id=? AND user_id=?`)
+        .bind(restoreOnly, Date.now(), project.id, user.id)
         .run();
     }
     return c.json({ ok: true, kept: out.kept, secs: out.secs });
@@ -1775,10 +2438,10 @@ app.post("/api/projects/:id/blocks/move", async (c) => {
   if (!b.block) return c.json({ error: "which block?" }, 400);
   const dir = (b.dir ?? 1) < 0 ? -1 : 1;
 
-  const [segments, beats] = await Promise.all([
-    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
-    getBeats(c.env.DB, project.id),
-  ]);
+  /* The beats were read here too and thrown away — three handlers each paid
+     a round trip for a list nothing looked at. blocksForProject is what reads
+     them now, and it reads them itself. */
+  const segments = project.source_id ? await getSegments(c.env.DB, project.source_id) : [];
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments })).blocks;
 
   const before = { cuts: project.cuts ?? null, order: project.block_order ?? null };
@@ -1844,10 +2507,7 @@ app.get("/api/projects/:id/blocks", async (c) => {
   /* Only for its poster. A library edit has no own source and each block
      carries its own frame, so null here is a working state. */
   const source = project.source_id ? await getSource(c.env.DB, project.source_id, user.id) : null;
-  const [segments, beats] = await Promise.all([
-    project.source_id ? getSegments(c.env.DB, project.source_id) : Promise.resolve([]),
-    getBeats(c.env.DB, project.id),
-  ]);
+  const segments = project.source_id ? await getSegments(c.env.DB, project.source_id) : [];
   const cuts = parseCuts(project.cuts);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
@@ -1960,11 +2620,7 @@ app.post("/api/projects/:id/blocks/short", async (c) => {
   const source = await getSource(c.env.DB, project.source_id, user.id);
   if (!source) return c.json({ error: "not found" }, 404);
 
-  const [segments, beats] = await Promise.all([
-    getSegments(c.env.DB, source.id),
-    getBeats(c.env.DB, project.id),
-  ]);
-  const cuts = parseCuts(project.cuts);
+  const segments = await getSegments(c.env.DB, source.id);
   const blocks = (await blocksForProject(c.env.DB, project, user.id, { segments, posterKey: source?.poster_r2_key ?? null })).blocks;
 
   const block = blocks.find((x) => x.id === b.block);
@@ -2334,11 +2990,83 @@ app.post("/api/projects/:id/rules/:ruleId", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ on: boolean }>(c);
+  const b = await body<{ on?: boolean; order?: string; wins?: boolean }>(c);
   const ruleId = c.req.param("ruleId");
   const rules = await loadRules(c.env.DB, project.id);
   const rule = rules.find((r) => String(r.id) === ruleId);
   if (!rule) return c.json({ error: "no such rule" }, 404);
+
+  /*
+   * TWO THINGS YOU CAN DO TO A RULE: switch it, or — for the one kind that
+   * has alternatives — choose a different one of them.
+   *
+   * An order rule is a choice of three rather than a yes/no, and the pane
+   * offers the other two as chips. The sentence changes with the choice,
+   * because the rule IS the sentence (the comment on Rule.text says so), and
+   * it comes from orderText so a rule made by pressing a chip and one made
+   * by typing "run it as it happened" are the same rule.
+   */
+  if (b.order !== undefined) {
+    if (rule.kind !== "order") return c.json({ error: "that rule has no order" }, 422);
+    if (!isOrder(b.order)) return c.json({ error: "no such order" }, 422);
+    if (rule.order === b.order) return c.json({ ok: true, unchanged: true });
+
+    const reordered = rules.map((r) =>
+      String(r.id) === ruleId ? { ...r, order: b.order as Order, text: orderText(b.order as Order) } : r,
+    );
+    const done = await recomputeFromRules(c.env, {
+      userId: user.id,
+      projectId: project.id,
+      rules: reordered,
+      scope: scopeOf(project),
+    });
+    if (!done) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, reordered);
+    await recordPass(c.env.DB, {
+      projectId: project.id,
+      sourceId: null,
+      instruction: orderText(b.order as Order),
+      result: `${done.kept} moment${done.kept === 1 ? "" : "s"} · ${fmtSecs(done.secs)}`,
+      firstChange: null,
+    }).catch(() => {});
+    return c.json({ ok: true, kept: done.kept, secs: done.secs });
+  }
+
+  /*
+   * THREE THINGS NOW: switch it, reorder it, or let it WIN.
+   *
+   * `wins` settles a disagreement. src/rules.ts records a contest whenever a
+   * keep rule and a drop rule both match a moment, and by default the drop
+   * takes it — taking out beats keeping unless you say otherwise. Setting
+   * `wins` on the KEEP rule reverses that, which is the "Let 01 win" control
+   * in the conflicts panel.
+   *
+   * It is a property of the rule and not of the moment on purpose: the
+   * decision is "whenever these two disagree, this one is right", which is a
+   * rule about rules. Saying it per moment would be making the same judgement
+   * call over and over, which is what the rules exist to stop.
+   */
+  if (b.wins !== undefined) {
+    const wins = Boolean(b.wins);
+    if (Boolean(rule.wins) === wins) return c.json({ ok: true, unchanged: true });
+    const flipped = rules.map((r) => (String(r.id) === ruleId ? { ...r, wins } : r));
+    const done = await recomputeFromRules(c.env, {
+      userId: user.id,
+      projectId: project.id,
+      rules: flipped,
+      scope: scopeOf(project),
+    });
+    if (!done) return c.json({ error: "there is no footage left to cut from" }, 422);
+    await saveRules(c.env.DB, project.id, flipped);
+    await recordPass(c.env.DB, {
+      projectId: project.id,
+      sourceId: null,
+      instruction: wins ? `Keeping wins: ${rule.text ?? rule.kind}` : `Taking out wins again`,
+      result: `${done.kept} moment${done.kept === 1 ? "" : "s"} · ${fmtSecs(done.secs)}`,
+      firstChange: null,
+    }).catch(() => {});
+    return c.json({ ok: true, kept: done.kept, secs: done.secs });
+  }
 
   const on = Boolean(b.on);
   if (rule.on === on) return c.json({ ok: true, unchanged: true });
@@ -2441,7 +3169,10 @@ app.post("/api/projects/:id/attach", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const scope = scopeOf(project);
+  /* attachedScope, not scopeOf: this appends, and appending to a cut that is
+     narrowed to one video would write [that one, the new one] into the
+     project's record of what it is made of and lose the rest. */
+  const scope = attachedScope(project);
   if (!scope) return c.json({ error: "this cut already draws on everything you have" }, 422);
 
   const b = await body<{ sourceId: string }>(c);
@@ -2468,6 +3199,28 @@ app.post("/api/projects/:id/attach", async (c) => {
     .bind(JSON.stringify(next), Date.now(), project.id, user.id)
     .run();
 
+  /*
+   * ATTACHING IS THE SIGNAL THAT THIS FOOTAGE WILL BE CUT.
+   *
+   * So it is where forced alignment starts — not at the cut, where doc 17
+   * puts it and where a person who has just pressed a button would wait ten
+   * minutes for word timings they never asked about. In the background, and
+   * idempotent: the same video attached to four projects is aligned once.
+   *
+   * It does not block the attach and cannot fail it. A cut on recogniser
+   * timings is a cut; a cut that would not happen because a background job
+   * could not be queued is not.
+   */
+  if (await shouldAlign(c.env, src.id)) {
+    const job = await createJob(c.env.DB, { user_id: user.id, type: "align", ref_id: src.id });
+    await dispatch(c.env, c.executionCtx, {
+      type: "align",
+      jobId: job.id,
+      userId: user.id,
+      sourceId: src.id,
+    }).catch(() => {});
+  }
+
   await recordPass(c.env.DB, {
     projectId: project.id,
     sourceId: null,
@@ -2485,6 +3238,86 @@ app.post("/api/projects/:id/attach", async (c) => {
 });
 
 /**
+ * ONLY THIS VIDEO, and back again.
+ *
+ * The one control in the prototype's project Footage tab that the build had
+ * no route for, and the engine has supported it since the scope column
+ * existed: `inScope` filters the candidate pool, so a cut narrowed to one
+ * video is a cut the solver can already produce. There was simply no way to
+ * ask for it.
+ *
+ * NOTHING IS LOST BY PRESSING IT. The narrowing is its own column and the
+ * project's record of what it is made of does not move, so sending null
+ * brings every attached video back without re-attaching anything. That is
+ * the difference between this and writing a single id into `scope`, which
+ * is what the obvious version would have done and what invariant 6 forbids.
+ *
+ * It recomputes before it writes, like every other rule change: if the
+ * narrowed cut would be empty the narrowing is refused and the cut on screen
+ * is still the cut in the database.
+ */
+app.post("/api/projects/:id/only", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ sourceId: string | null }>(c);
+  const wanted = typeof b.sourceId === "string" ? b.sourceId.trim() : null;
+
+  /* Checked against this project's own videos, for the same reason attach
+     checks: a filter that takes arbitrary strings is a way to ask about
+     somebody else's library. */
+  const attached = attachedScope(project);
+  if (wanted) {
+    const src = await getSource(c.env.DB, wanted, user.id);
+    if (!src) return c.json({ error: "that video isn't here" }, 404);
+    if (attached && !attached.includes(wanted)) {
+      return c.json({ error: "this cut isn't made from that video" }, 422);
+    }
+  }
+
+  const rules = await loadRules(c.env.DB, project.id);
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules,
+    scope: scopeOf({ scope: project.scope, only_source_id: wanted }),
+  });
+  if (!out) {
+    return c.json(
+      { error: wanted ? "there is nothing in that video this cut's rules would keep" : "there is nothing to cut" },
+      422,
+    );
+  }
+
+  await c.env.DB
+    .prepare(`UPDATE v2_projects SET only_source_id=?, updated_at=? WHERE id=? AND user_id=?`)
+    .bind(wanted, Date.now(), project.id, user.id)
+    .run();
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: wanted ? "Only one video" : "Every video again",
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    /* The rules are what re-produces the cut and the OLD narrowing is what
+       this pass changed. Undoing without it would restore the rules and
+       leave the cut looking at one video — the same defect the attach pass
+       had and the reason that one carries its scope. */
+    undo: {
+      cuts: null,
+      order: null,
+      rules: JSON.stringify(rules),
+      only: JSON.stringify(project.only_source_id ?? null),
+    },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({ ok: true, only: wanted, kept: out.kept, secs: out.secs });
+});
+
+/**
  * LABELLING: what backs what.
  *
  * Phase 0's eval set, made from inside the product because the footage is.
@@ -2496,27 +3329,93 @@ app.post("/api/projects/:id/attach", async (c) => {
  * ones that teach a threshold to answer "nothing here backs this", and a set
  * without them teaches the opposite.
  */
+/*
+ * EVERY JUDGEMENT IN THIS USER'S SET, FROM BOTH TABLES.
+ *
+ * eval_judgements carries the labeller; eval_labels predates it and cannot
+ * (its key is claim and clip alone — see src/schema.ts). Rows that have no
+ * successor are read under LEGACY_LABELLER rather than attributed to
+ * whoever is labelling now, because an agreement figure between a person
+ * and their own unnamed earlier answers would be reported as agreement
+ * between two people.
+ */
+const EVERY_JUDGEMENT = `
+  SELECT j.claim_id AS claim_id, j.clip_id AS clip_id, j.labeller AS labeller, j.verdict AS verdict
+    FROM eval_judgements j JOIN eval_claims c ON c.id = j.claim_id
+   WHERE c.user_id = ?
+  UNION ALL
+  SELECT l.claim_id, l.clip_id, '${LEGACY_LABELLER}', l.verdict
+    FROM eval_labels l JOIN eval_claims c ON c.id = l.claim_id
+   WHERE c.user_id = ?
+     AND NOT EXISTS (SELECT 1 FROM eval_judgements j
+                      WHERE j.claim_id = l.claim_id AND j.clip_id = l.clip_id)`;
+
 app.get("/eval", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const text = (c.req.query("claim") || "").trim();
+  /* Who is answering. A name rather than an account: a claim belongs to the
+     user who wrote it, so two labellers is two people at one keyboard. */
+  const by = labellerName(c.req.query("by"), user.email.split("@")[0] || "me");
 
-  const [claims, counted] = await Promise.all([
+  const [claims, every] = await Promise.all([
     c.env.DB
       .prepare(
-        `SELECT c.id, c.text, (SELECT COUNT(*) FROM eval_labels l WHERE l.claim_id = c.id) AS judged
+        `SELECT c.id, c.text,
+                (SELECT COUNT(DISTINCT l.clip_id) FROM eval_labels l WHERE l.claim_id = c.id)
+              + (SELECT COUNT(DISTINCT j.clip_id) FROM eval_judgements j
+                   WHERE j.claim_id = c.id
+                     AND NOT EXISTS (SELECT 1 FROM eval_labels l2
+                                      WHERE l2.claim_id = j.claim_id AND l2.clip_id = j.clip_id)) AS judged
            FROM eval_claims c WHERE c.user_id=? ORDER BY c.created_at DESC LIMIT 40`,
       )
       .bind(user.id)
       .all<{ id: string; text: string; judged: number }>(),
     c.env.DB
-      .prepare(
-        `SELECT COUNT(*) AS n FROM eval_labels l
-           JOIN eval_claims c ON c.id = l.claim_id WHERE c.user_id=?`,
-      )
-      .bind(user.id)
-      .first<{ n: number }>(),
+      .prepare(EVERY_JUDGEMENT)
+      .bind(user.id, user.id)
+      .all<{ claim_id: string; clip_id: string; labeller: string; verdict: string }>(),
   ]);
+
+  const progress = setProgress(
+    (every.results ?? []).map((r) => ({ claimId: r.claim_id, clipId: r.clip_id, labeller: r.labeller })),
+  );
+
+  /*
+   * HOW OFTEN THE JUDGE AGREED WITH A PERSON, as two counts.
+   *
+   * Counted here rather than per row, and never handed to the page per
+   * moment: a verdict beside something you are about to answer is an
+   * anchor, and the agreement between a person and a judge they were shown
+   * measures the anchor.
+   *
+   * "Agreed with a person" means it matched ANY labeller's answer for that
+   * pair, which is the generous reading and the honest one while the set
+   * has disagreements in it — holding the judge to a verdict two people
+   * could not settle would be scoring it on a question with no answer.
+   */
+  const { results: machineRows } = await c.env.DB
+    .prepare(
+      `SELECT m.claim_id, m.clip_id, m.verdict FROM eval_machine m
+         JOIN eval_claims c ON c.id = m.claim_id
+        WHERE c.user_id = ? AND m.version = ?`,
+    )
+    .bind(user.id, JUDGE_VERSION)
+    .all<{ claim_id: string; clip_id: string; verdict: string }>();
+
+  const humanSaid = new Map<string, Set<string>>();
+  for (const r of every.results ?? []) {
+    const key = `${r.claim_id}\u0000${r.clip_id}`;
+    humanSaid.set(key, (humanSaid.get(key) ?? new Set()).add(r.verdict));
+  }
+  const machine = (machineRows ?? []).length
+    ? {
+        judged: (machineRows ?? []).length,
+        agreed: (machineRows ?? []).filter((m) =>
+          humanSaid.get(`${m.claim_id}\u0000${m.clip_id}`)?.has(m.verdict),
+        ).length,
+      }
+    : null;
 
   let claim: { id: string; text: string } | null = null;
   let candidates: EvalData["candidates"] = [];
@@ -2542,17 +3441,26 @@ app.get("/eval", async (c) => {
     const moments = found.how === "recent" ? [] : found.moments;
     foundNothing = moments.length === 0;
 
-    const { results: said } = await c.env.DB
-      .prepare(`SELECT clip_id, verdict FROM eval_labels WHERE claim_id=?`)
-      .bind(claim.id)
-      .all<{ clip_id: string; verdict: string }>();
-    const byClip = new Map((said ?? []).map((r) => [r.clip_id, r.verdict]));
+    /* THIS labeller's answers, not everyone's: the page is somebody making
+       up their own mind, and showing them what the other person said is the
+       one thing that would make the agreement figure meaningless. */
+    const open = claim;
+    const mine = (every.results ?? []).filter((r) => r.claim_id === open.id && r.labeller === by);
+    const byClip = new Map(mine.map((r) => [r.clip_id, r.verdict]));
+    /* How many OTHERS have answered each one, which is honest to show and
+       does not say what they answered. */
+    const others = new Map<string, number>();
+    for (const r of every.results ?? []) {
+      if (r.claim_id !== open.id || r.labeller === by) continue;
+      others.set(r.clip_id, (others.get(r.clip_id) ?? 0) + 1);
+    }
 
     candidates = moments.map((m) => ({
       id: m.id,
       quote: m.quote,
       sourceTitle: m.source_title,
       verdict: isVerdict(byClip.get(m.id)) ? (byClip.get(m.id) as Verdict) : null,
+      alsoJudged: others.get(m.id) ?? 0,
     }));
   }
 
@@ -2563,7 +3471,11 @@ app.get("/eval", async (c) => {
         claim,
         candidates,
         claims: claims.results ?? [],
-        labels: counted?.n ?? 0,
+        labels: progress.judgements,
+        labeller: by,
+        labellers: progress.labellers,
+        doubleJudged: progress.doubleJudged,
+        machine,
         foundNothing,
       }),
     ),
@@ -2572,10 +3484,252 @@ app.get("/eval", async (c) => {
 
 /** One judgement. Replaces any earlier answer — changing your mind is a
     correction, not a second opinion. */
+/**
+ * THE SET, AS A FILE.
+ *
+ * Phase 0's acceptance says "the set EXISTS IN THE REPO with a runner" — not
+ * in a database on one machine. A set that lives only in D1 cannot be
+ * reviewed in a diff, cannot be checked out beside the code it is measuring,
+ * and cannot be re-run against a model six months from now to see whether a
+ * number moved.
+ *
+ * JSONL, one claim per line: appendable, diffable, and readable without
+ * this product. Every judgement carries the quote and the word span beside
+ * the id, because an id is only meaningful next to the database it came
+ * from and the whole point of a file is to outlive one.
+ *
+ * WHAT COMES OUT IS SOMEBODY'S TRANSCRIPT. It is their own footage and
+ * their own words, so this hands it to them and does not decide where it
+ * goes; committing it is a choice the person makes.
+ */
+/**
+ * ASK THE JUDGE ABOUT EVERYTHING THAT HAS BEEN LABELLED.
+ *
+ * One model call per claim, over exactly the pairs a person has answered —
+ * see src/judge-run.ts for why it is the human judgements rather than
+ * today's retrieval that sets the question list.
+ *
+ * A JOB, because the set is meant to reach two hundred judgements and that
+ * is minutes of calls. The page shows it running like any other work in
+ * this product.
+ */
+/**
+ * SCORE ONE CLAIM, SYNCHRONOUSLY, OPTIONALLY ON A NAMED MODEL.
+ *
+ * The eval runner walks eval/adversarial.jsonl and asks this per claim. It
+ * runs the SHIPPING judge — same prompts, same schema, same structural
+ * downgrade — because an eval against a reimplementation measures the
+ * reimplementation. The only thing it overrides is which model answers.
+ *
+ * OWNER ONLY WHEN A MODEL IS NAMED. The id reaches an inference binding and
+ * spends money, and "try this model" is a thing the person paying for the
+ * product gets to say rather than anybody with an account. Without a model
+ * it is the ordinary judge on the ordinary capability, and anybody may ask
+ * for that.
+ *
+ * Synchronous rather than a job: the runner wants an answer per claim to
+ * aggregate, and a queue would make it poll nineteen times for work that
+ * takes one call each.
+ */
+app.post("/api/eval/score", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const body = await c.req.json<{
+    claim?: string;
+    candidates?: Array<{ id?: string; quote?: string; sourceTitle?: string }>;
+    model?: string;
+    effort?: string;
+  }>().catch(() => null);
+
+  const claim = body?.claim?.trim();
+  const candidates = (body?.candidates ?? [])
+    .filter((x) => x?.id && x?.quote)
+    .map((x) => ({ id: String(x.id), quote: String(x.quote), sourceTitle: String(x.sourceTitle ?? "") }));
+  if (!claim || !candidates.length) return c.json({ error: "a claim and at least one candidate" }, 422);
+
+  let model: ReturnType<typeof asCandidateModel> | undefined;
+  if (body?.model) {
+    if (!user.is_owner) return c.json({ error: "naming a model is owner-only" }, 403);
+    if (!isModelId(body.model)) return c.json({ error: "that is not a model id" }, 422);
+    /* An effort without a model would be an effort on whatever the
+       capability resolved to, which is a run nobody could name afterwards. */
+    if (body.effort !== undefined && !isEffort(body.effort)) {
+      return c.json({ error: "that is not an effort level" }, 422);
+    }
+    model = asCandidateModel(body.model, body.effort as Parameters<typeof asCandidateModel>[1]);
+  } else if (body?.effort !== undefined) {
+    return c.json({ error: "an effort needs a model to go with it" }, 422);
+  }
+
+  const out = await judge(c.env, claim, candidates, model ? { model } : {});
+  return c.json({
+    model: out.model,
+    /* Echoed so a scored run can be labelled by what actually ran, not by
+       what was asked for. */
+    effort: model?.effort ?? null,
+    tokensIn: out.tokensIn,
+    tokensOut: out.tokensOut,
+    /* A degraded answer, named. `unanswered` above zero means some of the
+       verdicts below are the default rather than a judgement, and a score
+       computed over them is a score of the call failing. */
+    unanswered: out.unanswered,
+    reasked: out.reasked,
+    /* The shipping shape, including what the structural downgrade did: a
+       `backs` that pointed at nothing is a different answer from a `related`
+       the model chose, and an eval that flattened them would hide the one
+       rule the judge applies on the way out. */
+    judgements: out.judgements.map((j) => ({
+      clipId: j.id,
+      verdict: j.said,
+      raw: j.raw,
+      downgraded: j.downgraded,
+      why: j.why,
+      /* Whether the model said anything about this clip AT ALL. An
+         unanswered clip is scored `unrelated`, which is the honest default
+         and an indistinguishable one: a report that cannot tell "it is a
+         different subject" from "it never looked" sends you to fix the
+         wrong thing. The first measurement did exactly that. */
+      answered: j.answered,
+    })),
+  });
+});
+
+app.post("/api/eval/judge", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const judged = await c.env.DB
+    .prepare(
+      `SELECT COUNT(*) AS n FROM eval_claims c
+        WHERE c.user_id = ?
+          AND (EXISTS (SELECT 1 FROM eval_judgements j WHERE j.claim_id = c.id)
+            OR EXISTS (SELECT 1 FROM eval_labels l WHERE l.claim_id = c.id))`,
+    )
+    .bind(user.id)
+    .first<{ n: number }>();
+  /* Refused rather than queued: a job that can only report "nothing to do"
+     is a thing somebody has to watch finish to learn what they could have
+     been told immediately. */
+  if (!judged?.n) return c.json({ error: "nothing has been labelled yet" }, 422);
+
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "judge", ref_id: null });
+  await dispatch(c.env, c.executionCtx, { type: "judge", jobId: job.id, userId: user.id });
+  return c.json({ ok: true, jobId: job.id, claims: judged.n });
+});
+
+app.get("/api/eval/export", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const [claims, judgements, machine] = await Promise.all([
+    c.env.DB
+      .prepare("SELECT id, text, created_at FROM eval_claims WHERE user_id=? ORDER BY created_at")
+      .bind(user.id)
+      .all<{ id: string; text: string; created_at: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT j.claim_id, j.clip_id, j.labeller, j.verdict,
+                cl.quote AS quote, cl.start_word AS start_word, cl.end_word AS end_word,
+                s.title AS source_title
+           FROM (${EVERY_JUDGEMENT}) j
+           LEFT JOIN v2_clips cl ON cl.id = j.clip_id
+           LEFT JOIN sources s ON s.id = cl.source_id`,
+      )
+      .bind(user.id, user.id)
+      .all<{
+        claim_id: string;
+        clip_id: string;
+        labeller: string;
+        verdict: string;
+        quote: string | null;
+        start_word: number | null;
+        end_word: number | null;
+        source_title: string | null;
+      }>(),
+    /* What the judge said, so the file carries both answers and
+       `npm run eval:set` can compute the judge's two figures without a
+       database, a model or a network. */
+    c.env.DB
+      .prepare(
+        `SELECT m.claim_id, m.clip_id, m.version, m.model, m.verdict, m.raw, m.downgraded, m.line, m.why
+           FROM eval_machine m JOIN eval_claims c ON c.id = m.claim_id
+          WHERE c.user_id = ?`,
+      )
+      .bind(user.id)
+      .all<{
+        claim_id: string;
+        clip_id: string;
+        version: string;
+        model: string;
+        verdict: string;
+        raw: string;
+        downgraded: number;
+        line: string | null;
+        why: string | null;
+      }>(),
+  ]);
+
+  const saidBy = new Map<string, (typeof machine.results)[number]>();
+  for (const m of machine.results ?? []) saidBy.set(`${m.claim_id}\u0000${m.clip_id}`, m);
+
+  const byClaim = new Map<string, typeof judgements.results>();
+  for (const j of judgements.results ?? []) {
+    const list = byClaim.get(j.claim_id) ?? [];
+    list.push(j);
+    byClaim.set(j.claim_id, list);
+  }
+
+  const lines = (claims.results ?? []).map((cl) =>
+    JSON.stringify({
+      claimId: cl.id,
+      claim: cl.text,
+      at: cl.created_at,
+      /*
+       * WHAT THE JUDGE SAID, once per claim rather than once per labeller:
+       * it answered the pair, not the person, and repeating it under each
+       * labeller would make a set with two labellers look like two
+       * judgements from the model.
+       */
+      machine: [...new Set((byClaim.get(cl.id) ?? []).map((j) => j.clip_id))]
+        .map((clipId) => saidBy.get(`${cl.id}\u0000${clipId}`))
+        .filter((m) => m)
+        .map((m) => ({
+          clipId: m!.clip_id,
+          verdict: m!.verdict,
+          raw: m!.raw,
+          downgraded: Boolean(m!.downgraded),
+          line: m!.line,
+          why: m!.why,
+          version: m!.version,
+          model: m!.model,
+        })),
+      judgements: (byClaim.get(cl.id) ?? []).map((j) => ({
+        clipId: j.clip_id,
+        labeller: j.labeller,
+        verdict: j.verdict,
+        quote: j.quote ?? "",
+        sourceTitle: j.source_title ?? "",
+        /* The backing utterance as a WORD SPAN, which is what Phase 0 asks
+           for and what survives a re-alignment — milliseconds do not. Null
+           on a moment scored before spans were written. */
+        span: j.start_word === null || j.end_word === null ? null : [j.start_word, j.end_word],
+      })),
+    }),
+  );
+
+  return new Response(lines.join("\n") + (lines.length ? "\n" : ""), {
+    headers: {
+      "content-type": "application/x-ndjson",
+      "content-disposition": 'attachment; filename="eval-set.jsonl"',
+    },
+  });
+});
+
 app.post("/api/eval/:claimId/:clipId", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ verdict: string }>(c);
+  const b = await body<{ verdict: string; by?: string }>(c);
   if (!isVerdict(b.verdict)) return c.json({ error: "no such answer" }, 400);
 
   /* Ownership is checked on the CLAIM, which carries the user — a label row
@@ -2586,12 +3740,18 @@ app.post("/api/eval/:claimId/:clipId", async (c) => {
     .first<{ id: string }>();
   if (!owns) return c.json({ error: "not found" }, 404);
 
+  /* The labeller rides on the body because the page knows who is answering
+     and the row's key needs it. Same cleaning as the page does, so "ann" and
+     "ann " cannot become two labellers who agree perfectly. */
+  const by = labellerName(b.by, user.email.split("@")[0] || "me");
+
   await c.env.DB
     .prepare(
-      `INSERT INTO eval_labels (claim_id,clip_id,verdict,created_at) VALUES (?,?,?,?)
-         ON CONFLICT(claim_id,clip_id) DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
+      `INSERT INTO eval_judgements (claim_id,clip_id,labeller,verdict,created_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(claim_id,clip_id,labeller)
+         DO UPDATE SET verdict=excluded.verdict, created_at=excluded.created_at`,
     )
-    .bind(c.req.param("claimId"), c.req.param("clipId"), b.verdict, Date.now())
+    .bind(c.req.param("claimId"), c.req.param("clipId"), by, b.verdict, Date.now())
     .run();
 
   return c.json({ ok: true });
@@ -2620,11 +3780,33 @@ app.get("/plan/:id", async (c) => {
           need: b.need,
           kept: b.kept,
           found: b.found.length,
+          backed: b.backed,
           /* The same sentence findForBeats gives, recomputed rather than
              stored: it is a fact about what this product can do, not about
              this plan, and storing it would freeze today's answer into a row
-             that outlives it. */
-          gap: b.role === "outside" ? "a voice that isn't yours — nothing here can find that yet" : null,
+             that outlives it.
+             The other gap — "nothing here says it" — IS about this plan and
+             is derived from the stored count, so it survives a reload the
+             way the thin mark does. */
+          gap:
+            b.role === "outside"
+              ? "a voice that isn't yours — nothing here can find that yet"
+              : b.backed === 0 && b.found.length
+                ? "nothing here says it — the moments are about it, not of it"
+                : null,
+          byUser: b.byUser,
+          /*
+           * COMPUTED HERE, AND SO IT PERSISTS.
+           *
+           * The advice is a property of the sentence, not of the moment it
+           * was typed — a need that names a motive will still name one
+           * tomorrow. Returning it only from the POST would have shown it
+           * once and lost it on the next page load, which is the wrong
+           * lifetime for something the person may want to come back and fix.
+           * Recomputed rather than stored, like `gap` above and for the same
+           * reason: it is a fact about the words, derivable from them.
+           */
+          advice: b.byUser ? needAdvice(b) : null,
         })),
       }),
     ),
@@ -2638,12 +3820,79 @@ app.get("/plan/:id", async (c) => {
  * and the flow holds here until the beats are answered. 11-BUILD-ORDER's
  * acceptance says it stops exactly once, and this is the once.
  */
+/**
+ * THREE VIDEOS THAT COULD BE MADE FROM ONE SEED.
+ *
+ * The step in front of the plan. `POST /api/plans` takes a topic and returns
+ * one claim; this takes something somebody actually starts with — a quote, a
+ * paragraph, a line from a video they want to open on — and returns a slate
+ * to choose between. See src/angles.ts for why the object had to exist.
+ *
+ * WRITES NOTHING. The plan flow's own design is that everything before the
+ * one stop is cheap and reversible and everything after it costs retrieval
+ * and produces a cut. A slate is firmly before: you look at three, you pick
+ * one, and only then does a plan exist.
+ *
+ * AND THE PRICING IS DELIBERATELY THE CHEAP SIGNAL. `candidatesFor` is
+ * retrieval alone — no judge, no rerank, which is what `/find` pays for
+ * later on the ONE angle that was chosen. Running the full compose here
+ * would be three angles by eight beats of judging to answer a question that
+ * only has to be "is there anything here about this at all". It is a weaker
+ * answer than `/find` gives and it is the honest one for the price: a beat
+ * counted as backed here can still turn out thin later, which is exactly
+ * what the one stop is for.
+ */
+app.post("/api/angles", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ text: string; source?: string; speaker?: string }>(c);
+  const text = (b.text || "").trim();
+  if (!text) return c.json({ error: "what does it start from?" }, 400);
+
+  const drafted = await draftAngles(c.env, {
+    text,
+    source: (b.source || "").trim() || null,
+    speaker: (b.speaker || "").trim() || null,
+  });
+  if (!drafted.angles.length) {
+    return c.json(
+      { error: "Couldn't find an argument in that — try a line that says something." },
+      422,
+    );
+  }
+
+  const angles = await priceAngles(drafted.angles, async (need) => {
+    const found = await candidatesFor(c.env, user.id, need);
+    return found.length > 0;
+  });
+  return c.json({ angles });
+});
+
 app.post("/api/plans", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ topic: string }>(c);
+  const b = await body<{ topic: string; claim?: string; beats?: unknown }>(c);
   const topic = (b.topic || "").trim();
   if (!topic) return c.json({ error: "what is it about?" }, 400);
+
+  /*
+   * A CHOSEN ANGLE ARRIVES ALREADY DRAFTED, and re-drafting it would throw
+   * away the thing the person just chose: they picked one of three claims,
+   * and asking the model again would answer a different question and return
+   * a fourth. The beats are re-read through the slate's own parser rather
+   * than trusted, so a hand-made request cannot post a shape the rest of the
+   * flow has never seen.
+   */
+  const chosen = b.claim ? parseAngles({ angles: [{ claim: b.claim, take: "", beats: b.beats }] })[0] : null;
+  if (chosen) {
+    const planId = await createPlan(c.env.DB, {
+      userId: user.id,
+      topic,
+      claim: chosen.claim,
+      beats: chosen.beats,
+    });
+    return c.json({ planId, claim: chosen.claim, beats: chosen.beats.length });
+  }
 
   const draft = await draftPlan(c.env, topic);
   if (!draft.beats.length) {
@@ -2657,6 +3906,60 @@ app.post("/api/plans", async (c) => {
     beats: draft.beats,
   });
   return c.json({ planId, claim: draft.claim, beats: draft.beats.length });
+});
+
+/**
+ * The plans this person has started.
+ *
+ * Added because nothing listed them: a plan you walked away from was still in
+ * the database, still unfinished, and reachable only by the URL you no longer
+ * had. See listPlans. It is also what lets scripts/surfaces.cjs reach
+ * /plan/:id, which no crawl could before — a page the product could not list
+ * is a page no check can find either.
+ */
+app.get("/api/plans", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ plans: await listPlans(c.env.DB, user.id) });
+});
+
+/**
+ * DECLARE A SECTION, IN YOUR OWN WORDS, INTO A PLAN THAT ALREADY EXISTS.
+ *
+ * Until this route, a plan's beats were whatever a model drafted at the moment
+ * it was made, and the only thing anybody could do to them afterwards was keep
+ * or cut: `createPlan` writes every beat in one INSERT. So a plan could not
+ * grow. Somebody who knew their piece needed a section on orbital mechanics
+ * had no way to say so, which is the opposite of invariant 10's "the user's
+ * own words win where they exist" at the one point where their words are the
+ * whole contribution.
+ *
+ * `need` is stored exactly as typed, because it IS the retrieval query. What
+ * the on-camera stoplist makes of it comes back as `advice` for the page to
+ * show beside the row — never as a refusal. See needAdvice in src/plan.ts for
+ * why a model's sentence is rejected there and a person's is not.
+ */
+app.post("/api/plans/:id/beats", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ name?: string; need?: string; role?: string }>(c);
+  const name = String(b.name ?? "").trim();
+  const need = String(b.need ?? "").trim();
+  /* Both, because a section with no name cannot be referred to and one with
+     nothing to show cannot be searched for. */
+  if (!name || !need) {
+    return c.json({ error: "a section needs a name and what it has to show" }, 422);
+  }
+
+  const beat = await addBeat(c.env.DB, plan.id, {
+    name,
+    need,
+    role: (ROLES as readonly string[]).includes(String(b.role)) ? (b.role as Role) : undefined,
+  });
+  return c.json({ beat, advice: needAdvice(beat) });
 });
 
 /** Keep or cut one beat — the answer to the stop, beat by beat. */
@@ -2688,21 +3991,46 @@ app.post("/api/plans/:id/find", async (c) => {
   const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
   if (!plan) return c.json({ error: "not found" }, 404);
 
-  const kept = plan.beats.filter((x) => x.kept);
-  if (!kept.length) return c.json({ error: "every beat is cut — keep at least one" }, 422);
+  /*
+   * ONE BEAT, OR ALL OF THEM.
+   *
+   * Topping up one section had to re-pay for every other one, which is the
+   * difference between a plan you can come back to and a plan you run once.
+   * Absent `beatId`, this is exactly what it always was.
+   */
+  const scope = await body<{ beatId?: string }>(c).catch(() => ({}) as { beatId?: string });
+  const only = scope.beatId;
+  if (only && !plan.beats.some((x) => x.id === only)) {
+    return c.json({ error: "no such beat" }, 404);
+  }
 
-  const found = await findForBeats(kept, async (need) => {
-    const out = await findMaterial(c.env, user.id, need, 6);
-    /* "Your most recent" is findMaterial answering a brief that matched
-       nothing. A beat's need is a search, not a brief, so that fallback is
-       the same lie here as it is in the room's search box: nothing found. */
-    return out.how === "recent" ? [] : out.moments.map((m) => m.id);
-  });
+  const kept = plan.beats.filter((x) => x.kept && (!only || x.id === only));
+  if (!kept.length) {
+    return c.json(
+      { error: only ? "that section is cut — keep it first" : "every beat is cut — keep at least one" },
+      422,
+    );
+  }
 
-  await setFound(c.env.DB, plan.id, new Map(found.map((f) => [f.beatId, f.clipIds])));
+  /* The compose — retrieval, the judge, the rerank — is src/beat-find.ts,
+     where the degradation can be tested: a judge that throws must cost the
+     ordering and the coverage, never the beat. */
+  const found = await findForBeats(kept, (need) => candidatesFor(c.env, user.id, need));
+
+  await setFound(
+    c.env.DB,
+    plan.id,
+    new Map(found.map((f) => [f.beatId, { ids: f.clipIds, backed: f.backed }])),
+  );
   return c.json({
     ok: true,
-    beats: found.map((f) => ({ beatId: f.beatId, found: f.clipIds.length, thin: f.thin, gap: f.gap })),
+    beats: found.map((f) => ({
+      beatId: f.beatId,
+      found: f.clipIds.length,
+      backed: f.backed,
+      thin: f.thin,
+      gap: f.gap,
+    })),
   });
 });
 
@@ -2781,6 +4109,525 @@ app.post("/api/plans/:id/cut", async (c) => {
   return c.json({ ok: true, projectId: project.id, href: `/p/${project.id}/cut`, kept: out.kept });
 });
 
+/**
+ * THIS CUT, AS A TIMELINE SOMEBODY ELSE'S EDITOR CAN OPEN.
+ *
+ * Doc 09's escape hatch and Phase 1's last acceptance item. It is a GET that
+ * downloads, because that is what an escape hatch should be: no job, no
+ * queue, no waiting — the edit is already data, and this is the data.
+ *
+ * Built from `edlForProject`, which is the SAME function the render uses. A
+ * second path to "what is in this cut" would be a second answer, and the
+ * whole claim of an interchange file is that it is the film you were just
+ * watching.
+ */
+app.get("/api/projects/:id/timeline.otio", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const built = await edlForProject(c.env, project, user.id);
+  if (!built || !built.edl.cuts.length) {
+    return c.json({ error: "there is nothing in this cut to export yet" }, 422);
+  }
+
+  /*
+   * WHAT EACH CLIP'S FILE IS CALLED, so an editor can relink it.
+   *
+   * The timeline points at filenames rather than at our storage — every URL
+   * this product could write is presigned and expires, and an .otio that
+   * relinks to nothing next week is worse than one that asks to be pointed
+   * at a folder. So the names have to come from somewhere, and the somewhere
+   * is the user's own sources.
+   */
+  const sources = await listSources(c.env.DB, user.id, "newest");
+  const media = new Map(
+    sources.map((s) => [
+      s.r2_key,
+      { name: s.filename || `${s.title}.mp4`, durationMs: s.duration_s ? s.duration_s * 1000 : null },
+    ]),
+  );
+
+  const timing = await timingForProject(c.env, project.id);
+  const body = otioJson(built.edl, { name: project.title, media, timing: timing.source });
+  return new Response(body, {
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="${(project.title || "timeline").replace(/[^\w.\- ]/g, "_")}.otio"`,
+    },
+  });
+});
+
+/**
+ * THE CUE SHEET, which ships with the file.
+ *
+ * Doc 09 lists it among the export formats beside the subtitle file and the
+ * provenance manifest, and Phase 6 accepts on it arriving "without user
+ * action" — so there is no setting and nothing to tick. A cut with no
+ * generated or stock pictures gets a document that says so, rather than a
+ * 404: "there are none" is an answer somebody may need to show.
+ */
+app.get("/api/projects/:id/cuesheet", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const entries = await cueSheetFor(c.env.DB, project.id);
+  const name = (project.title || "cue-sheet").replace(/[^\w.\- ]/g, "_");
+  return new Response(cueSheetText(entries, project.title || "Untitled"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "content-disposition": `attachment; filename="${name} cue sheet.txt"`,
+    },
+  });
+});
+
+/**
+ * THE DISPUTE FILE, assembled as the video is made.
+ *
+ * Doc 09 is emphatic that this exists BEFORE a claim arrives, not after one:
+ * a document written in answer to a complaint is written by somebody with a
+ * reason to shade it, and it lands weeks late. Nothing here is computed on
+ * demand except the division — the ledger, the missions and the attributions
+ * were all written as the cut was built.
+ *
+ * The runtime comes from the same EDL the render is built from, so the ratio
+ * is about the file somebody would actually publish rather than about the
+ * blocks on the page. Where there is no EDL to measure, the file says the
+ * runtime is not known rather than reporting nought to one.
+ */
+app.get("/api/projects/:id/dispute", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const entries = await disputeFor(c.env.DB, project.id);
+  const built = entries.length ? await edlForProject(c.env, project, user.id) : null;
+  const totalS = built ? built.edl.durationMs / 1000 : null;
+  const clipS = entries.reduce((n, e) => n + usedSeconds(e), 0);
+
+  const name = (project.title || "dispute-file").replace(/[^\w.\- ]/g, "_");
+  return new Response(
+    disputeText(entries, commentary(totalS, clipS), project.title || "Untitled"),
+    {
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "content-disposition": `attachment; filename="${name} dispute file.txt"`,
+      },
+    },
+  );
+});
+
+/**
+ * BEFORE YOU POST.
+ *
+ * Doc 09's checklist, assembled from everything that was written down as the
+ * cut was made — the dispute file's rows, the cue sheet's, the captions the
+ * EDL produces, and the loudness of the last export of this project.
+ *
+ * NOTHING IS COMPUTED SPECIALLY FOR IT and nothing is asked of a model. If a
+ * line here could only be answered by going and looking at the video now,
+ * that line would be a promise this product makes once and breaks whenever
+ * the job is slow.
+ *
+ * THE LOUDNESS IS THE LAST RENDER'S, and is "not measured" before there is
+ * one. A cut that has never been exported has no loudness — the number is a
+ * property of a finished file, not of a plan — and saying so is better than
+ * predicting it.
+ */
+/**
+ * THE CHECKLIST, COMPUTED. Shared by the page and the text file.
+ *
+ * Two callers and one computation, so the sheet somebody reads and the file
+ * they hand to a lawyer can never disagree about what was checked.
+ */
+async function beforePostFor(c: Ctx, project: Awaited<ReturnType<typeof getProject>> & object, userId: string) {
+  const user = { id: userId };
+  const external = await disputeFor(c.env.DB, project.id);
+  const pictures = await cueSheetFor(c.env.DB, project.id);
+  const built = await edlForProject(c.env, project, user.id);
+  const cues = built ? captionCues(built.edl) : [];
+
+  const last = await c.env.DB
+    .prepare(
+      `SELECT lufs, true_peak, caption_style FROM renders
+        WHERE project_id=? AND user_id=? AND state='ready'
+        ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(project.id, user.id)
+    .first<{ lufs: number | null; true_peak: number | null; caption_style: string | null }>();
+
+  const lines = beforePost({
+    external,
+    commentary: commentary(
+      built ? built.edl.durationMs / 1000 : null,
+      external.reduce((n, e) => n + usedSeconds(e), 0),
+    ),
+    pictures,
+    loudness: loudnessVerdict({
+      lufs: last?.lufs ?? null,
+      truePeak: last?.true_peak ?? null,
+      lra: null,
+    }),
+    tooFast: overTheLimit(cues),
+    sidecar: sidecarWanted(last?.caption_style ?? null),
+    cueCount: cues.length,
+    everRendered: Boolean(last),
+    hasClaim: Boolean(
+      await c.env.DB
+        .prepare(`SELECT 1 AS n FROM plans WHERE project_id=? AND user_id=? AND claim IS NOT NULL LIMIT 1`)
+        .bind(project.id, user.id)
+        .first<{ n: number }>(),
+    ),
+  });
+
+  return lines;
+}
+
+app.get("/api/projects/:id/before-post", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+  const lines = await beforePostFor(c as Ctx, project, user.id);
+
+  const name = (project.title || "before-you-post").replace(/[^\w.\- ]/g, "_");
+  return new Response(checklistText(lines, project.title || "Untitled"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "content-disposition": `attachment; filename="${name} before you post.txt"`,
+    },
+  });
+});
+
+/**
+ * THE PROVENANCE MANIFEST.
+ *
+ * Doc 09's Provenance record row, which it marks "always on". Every source,
+ * every edit, and what was left out and by which rule — the rules being the
+ * edits, because invariant 1 says a cut IS its rules.
+ *
+ * The left-out list is computed from the same compute() the editor's Footage
+ * tab reads, over the same scoped pool, so the manifest and the screen cannot
+ * disagree about which rule removed what. Computing it any other way would
+ * make this a second opinion about the cut rather than a record of it.
+ */
+app.get("/api/projects/:id/manifest", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const rules = await loadRules(c.env.DB, project.id);
+  const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
+  const judged = rules.length ? compute(rules, { set: toFootageSet(pool, momentTags) }).st : [];
+
+  /* What each rule says, by its own name, so leftOut reads in the person's
+     words rather than in rule ids. */
+  const saysOf = new Map(rules.map((r, n) => [String(r.id), r.text ?? `rule ${n + 1}`]));
+  const leftOut: LeftOut[] = judged
+    .filter((m) => !m.in && m.dropId !== null)
+    .map((m) => ({
+      momentId: String(m.id),
+      text: m.text,
+      rule: saysOf.get(String(m.dropId)) ?? "a rule that is no longer in the set",
+    }));
+
+  const external = await disputeFor(c.env.DB, project.id);
+  const pictures = await cueSheetFor(c.env.DB, project.id);
+
+  /* The sources this cut actually draws on: the user's own, plus whoever the
+     external clips belong to. */
+  const own = await listSources(c.env.DB, user.id, "newest");
+  const used = new Set(pool.map((m) => m.source_id));
+  const sources: ManifestSource[] = own
+    .filter((srcRow) => used.has(srcRow.id) || srcRow.id === project.source_id)
+    .map((srcRow) => ({ id: srcRow.id, title: srcRow.title, from: "yours" }));
+  for (const e of external) {
+    sources.push({
+      id: e.ledgerId,
+      title: e.sourceTitle ?? e.channel ?? "an external clip",
+      from: e.platform ?? "elsewhere",
+      ...(e.url ? { url: e.url } : {}),
+    });
+  }
+
+  /* The claim and its beats, where this cut came from a plan. */
+  const planRow = await c.env.DB
+    .prepare(`SELECT id, claim FROM plans WHERE project_id=? AND user_id=? LIMIT 1`)
+    .bind(project.id, user.id)
+    .first<{ id: string; claim: string | null }>();
+  let claim: Parameters<typeof buildManifest>[0]["claim"] = null;
+  if (planRow?.claim) {
+    const { results } = await c.env.DB
+      .prepare(`SELECT name, need, found FROM plan_beats WHERE plan_id=? AND kept=1 ORDER BY idx`)
+      .bind(planRow.id)
+      .all<{ name: string; need: string; found: string | null }>();
+    claim = {
+      text: planRow.claim,
+      beats: (results ?? []).map((b) => ({
+        name: b.name,
+        need: b.need,
+        found: b.found ? (JSON.parse(b.found) as string[]) : [],
+      })),
+    };
+  }
+
+  const built = await edlForProject(c.env, project, user.id);
+
+  /*
+   * AND WHAT WAS STRUCK, which for most cuts is the whole of the editing.
+   *
+   * `leftOut` above covers moments a rule removed, and on a cut made by
+   * striking text it is empty — there are no scored moments, so the engine
+   * judged nothing. buildBlocks is the one place that says what a cut IS, so
+   * the struck blocks come from there, exactly as the render does.
+   */
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const struckOut = blocks
+    .filter((b) => b.struck && b.text.trim())
+    .map((b) => ({ blockId: b.id, text: b.text.trim() }));
+
+  const body = manifestJson(
+    buildManifest({
+      projectId: project.id,
+      title: project.title || "Untitled",
+      runtimeS: built ? Math.round(built.edl.durationMs / 1000) : null,
+      sources,
+      rules,
+      leftOut,
+      struckOut,
+      pictures,
+      external,
+      claim,
+      madeAt: Date.now(),
+    }),
+  );
+
+  const name = (project.title || "manifest").replace(/[^\w.\- ]/g, "_");
+  return new Response(body, {
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="${name} provenance.json"`,
+    },
+  });
+});
+
+/**
+ * THE RECEIPTS PAGE A VIEWER READS.
+ *
+ * PUBLIC, and deliberately the only thing here that is. No requireUser, no
+ * cookie, no referrer check: a link in a video description has to work for
+ * somebody who has never heard of this product, on a phone, in one tap.
+ *
+ * The token is the whole of the authorisation and it is unguessable; a
+ * revoked page is gone, and an unknown token is a plain 404 rather than
+ * anything that distinguishes "never existed" from "taken down". Somebody
+ * guessing tokens learns nothing either way.
+ *
+ * It is rebuilt from the rows on every request rather than stored as HTML.
+ * A receipt that could drift from the ledger behind it is not a receipt, and
+ * a maker who corrects an attribution should not have to republish.
+ */
+/**
+ * WHAT THIS PRODUCT REFUSES TO DO.
+ *
+ * Public, unauthenticated, and deliberately boring to fetch. Every editor can
+ * list what it does, and that list is the same list everywhere and getting
+ * shorter as a model with ffmpeg does more of it for nothing. The half nobody
+ * publishes is what a tool will not do however nicely it is asked.
+ *
+ * Under /.well-known/ because that is where a machine already looks for a
+ * statement about a site, and it is not called a manifest: this product
+ * already has one of those at /api/projects/:id/manifest, and it is a
+ * different thing — the provenance of one cut rather than the shape of the
+ * product.
+ *
+ * src/refusals.ts carries the list and the proof behind each line; the gate
+ * refuses to let a refusal exist here without something that enforces it.
+ */
+app.get("/.well-known/aldershot.json", (c) =>
+  c.json(refusalsDocument(new URL(c.req.url).origin), 200, {
+    /* It changes when the product's spine changes, which is rarely. */
+    "cache-control": "public, max-age=3600",
+    "access-control-allow-origin": "*",
+  }),
+);
+
+/**
+ * THE SAME RECEIPT, AS DATA.
+ *
+ * The editing layer is a commodity and the evidence is not. This route is the
+ * evidence, addressable: a cut's receipts, citable by URL, readable by anything,
+ * and revocable by the maker at any moment. That last property is the one that
+ * matters and the reason this is a URL rather than a payload somebody can keep
+ * — a receipt that can be detached from its subject is not a receipt, so the
+ * only way to hold one is to hold a link the maker can switch off.
+ *
+ * A SEPARATE URL RATHER THAN `Accept` NEGOTIATION. The HTML below is served
+ * `cache-control: public, max-age=300` with no `Vary`, so a shared cache that
+ * had seen one content type would serve it to readers who asked for the other.
+ * Adding `Vary: Accept` would fix that and give up most of the caching; a
+ * second address costs nothing and can be pasted into a citation.
+ *
+ * CORS is open because the resource is public by token and this route reads no
+ * cookie, so there is no credential for a browser to attach to a cross-origin
+ * read. It is registered before the page route: no token contains a dot.
+ */
+app.get("/r/:file{[0-9a-z]+\\.json}", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const page = await publishedReceipt(c.env.DB, c.req.param("file").replace(/\.json$/, ""));
+  if (!page) return c.json({ error: "There is no receipts page here." }, 404);
+  return c.json(page, 200, {
+    "cache-control": "public, max-age=300",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex",
+    "access-control-allow-origin": "*",
+  });
+});
+
+app.get("/r/:token", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const page = await publishedReceipt(c.env.DB, c.req.param("token"));
+  if (!page) return c.text("There is no receipts page here.", 404);
+
+  return new Response(receiptsHtml(page), {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      /* Fresh enough that a corrected credit shows up, cheap enough that a
+         link in a popular description does not re-read the ledger per view. */
+      "cache-control": "public, max-age=300",
+      "referrer-policy": "no-referrer",
+      "x-robots-tag": "noindex",
+    },
+  });
+});
+
+/**
+ * Publish the receipts page, or take it down.
+ *
+ * A form post rather than a fetch, so this needs nothing in client.ts — and
+ * because publishing something to the public web should feel like pressing a
+ * button on a page rather than like a thing that happened while you were
+ * looking elsewhere.
+ */
+app.post("/api/projects/:id/receipts", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const form = await c.req.formData().catch(() => null);
+  const wants = String(form?.get("do") ?? "publish");
+
+  if (wants === "revoke") {
+    /* Revoked, not deleted: a page that was never published and a page
+       somebody took down are different facts, and only one of them is worth
+       being able to answer a question about later. */
+    await c.env.DB
+      .prepare(`UPDATE receipt_pages SET revoked_at=? WHERE project_id=? AND user_id=?`)
+      .bind(Date.now(), project.id, user.id)
+      .run();
+  } else {
+    /*
+     * A NEW TOKEN EVERY TIME IT IS PUBLISHED.
+     *
+     * Republishing after a revoke has to mint a fresh one, or the old link
+     * in somebody's cached description comes back to life the moment the
+     * maker changes their mind twice.
+     */
+    const token = `${ulid()}${Math.random().toString(36).slice(2, 10)}`.toLowerCase();
+    await c.env.DB
+      .prepare(
+        `INSERT INTO receipt_pages (project_id, user_id, token, published_at, revoked_at)
+         VALUES (?,?,?,?,NULL)
+         ON CONFLICT(project_id) DO UPDATE SET token=excluded.token,
+           published_at=excluded.published_at, revoked_at=NULL`,
+      )
+      .bind(project.id, user.id, token, Date.now())
+      .run();
+  }
+  return c.redirect(`/api/projects/${project.id}/receipts`, 303);
+});
+
+/**
+ * Where the maker manages it: the state, the link, and the one press.
+ *
+ * A small page of its own rather than a panel in the editor, because it is
+ * the only control in this product that puts something on the public web and
+ * it should be somewhere a person arrives on purpose.
+ */
+/*
+ * AT /p/:id/receipts, FOR THE REASON THE COMMENT ABOVE ALREADY GIVES.
+ *
+ * "A small page of its own ... somewhere a person arrives on purpose" — and it
+ * answered at /api/projects/:id/receipts, which is not somewhere a person
+ * arrives at all. Second one found the same day as the Scout board, by the
+ * same derived inventory, for the same reason: every crawl in this repo skips
+ * /api/, so a page there has no checks on it.
+ *
+ * The POST stays under /api/: publishing and revoking are actions, and that
+ * is where actions belong. Only the page moved.
+ */
+const receiptsAdmin = async (c: Ctx) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  /* string | undefined on a standalone handler, string on an inline one. */
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const row = await c.env.DB
+    .prepare(`SELECT token, revoked_at FROM receipt_pages WHERE project_id=? AND user_id=?`)
+    .bind(project.id, user.id)
+    .first<{ token: string; revoked_at: number | null }>();
+  const live = row && row.revoked_at === null ? row.token : null;
+  const url = live ? new URL(`/r/${live}`, c.req.url).toString() : null;
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
+  const body = noDevNotes(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Receipts for viewers — ${esc(project.title || "Untitled")}</title>
+<style>
+  body{margin:0;padding:40px 20px;background:#131316;color:#ececf1;
+       font:16px/1.65 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:620px;margin:0 auto}
+  h1{font-size:22px;letter-spacing:-0.02em;margin:0 0 10px}
+  p{color:rgba(236,236,241,0.6)}
+  code{display:block;padding:12px 14px;margin:18px 0;border-radius:8px;
+       background:rgba(255,255,255,0.05);word-break:break-all;color:#d8b96a}
+  button{font:inherit;font-weight:600;padding:9px 18px;border:0;border-radius:8px;cursor:pointer}
+  .go{background:#ececf1;color:#131316}
+  .stop{background:rgba(255,255,255,0.08);color:#ececf1}
+  a{color:#d8b96a}
+</style></head><body><main>
+<h1>Receipts for viewers</h1>
+${
+  url
+    ? `<p>This page is live. Anyone with the link can read what this video quoted and where from — nothing else about your footage is on it.</p>
+       <code>${esc(url)}</code>
+       <p><a href="${esc(url)}">Open it &nearr;</a></p>
+       <form method="post" action="/api/projects/${esc(project.id)}/receipts">
+         <input type="hidden" name="do" value="revoke">
+         <button class="stop" type="submit">Take it down</button>
+       </form>
+       <p>Taking it down stops the link working. Publishing again makes a new link, so the old one stays dead.</p>`
+    : `<p>Publish a page your viewers can read: every clip in this cut that came from somebody else, the words, the link to the original, and whether it was checked. It does not list your own footage, your rules or anything you cut.</p>
+       <form method="post" action="/api/projects/${esc(project.id)}/receipts">
+         <input type="hidden" name="do" value="publish">
+         <button class="go" type="submit">Publish it</button>
+       </form>
+       <p>Nothing is public until you press this.</p>`
+}
+</main></body></html>`);
+  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
+};
+
+/* The old address, which export.ts linked to. 303, like the Scout board's. */
+app.get("/api/projects/:id/receipts", (c) => c.redirect(`/p/${c.req.param("id") ?? ""}/receipts`, 303));
+
 app.get("/api/projects/:id/renders", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -2823,6 +4670,46 @@ app.post("/api/projects/:id/beats", async (c) => {
   const existing = await getBeats(c.env.DB, project.id);
   const at = b.at == null ? existing.length : Number(b.at);
 
+  /*
+   * INVARIANT 8, AT THE ONE PLACE IT CAN BITE TODAY.
+   *
+   * "Generated is never photoreal and never over a claim or its proof."
+   * `generated` and `stock` are two of the five kinds this route accepts,
+   * so this is where a picture that is not the user's own footage actually
+   * enters a cut — and the line it lands against decides whether it may.
+   *
+   * CLASSIFIED HERE RATHER THAN STORED, because the answer is needed
+   * exactly once, at the moment of the insert, and a stored move goes
+   * stale the moment somebody edits the line it was about. The whole cut
+   * goes into the call because a move is a statement about a line IN
+   * CONTEXT — a turn is only a turn against what came before it.
+   *
+   * AND IT REFUSES WHEN IT DOES NOT KNOW. An unanswered line is `claim`
+   * (src/classify.ts), which wants the speaker's own footage and nothing
+   * else — so a failed or skipped classification costs a generated card,
+   * never a generated card over somebody's proof. That is the direction
+   * the invariant demands.
+   */
+  if (kind === "generated" || kind === "stock") {
+    const source: PictureSource = kind === "generated" ? "generated" : "world";
+    const lines = (await blocksForProject(c.env.DB, project, user.id)).blocks
+      .filter((x) => x.text.trim())
+      .map((x) => ({ id: x.id, text: x.text }));
+    /* The line it lands against: the one at the seam, or the last one when
+       it is going on the end. */
+    const against = lines[Math.min(at, lines.length - 1)];
+    if (against) {
+      let move: Move = UNSURE;
+      try {
+        move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+      } catch {
+        /* Unknown, which is `claim`, which refuses. */
+      }
+      const no = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" });
+      if (no.reason) return c.json({ error: no.reason }, 422);
+    }
+  }
+
   const beats = await insertBeat(c.env.DB, project.id, at, {
     kind,
     act: b.act ?? null,
@@ -2830,6 +4717,120 @@ app.post("/api/projects/:id/beats", async (c) => {
     clip_id: b.clipId ?? null,
   });
   return c.json({ beats });
+});
+
+/**
+ * WHAT COULD GO ON THIS LINE.
+ *
+ * The other half of invariant 8. `allowed()` has bitten at the insert above
+ * since it was written — ask for a generated card over a claim and you are
+ * refused — and nothing ever OFFERED a picture, so `place()` and
+ * `reasonFor()` had no candidates and lived only in their tests.
+ *
+ * The move comes from the same `classify` call the insert uses, over the
+ * whole cut, because a move is a statement about a line IN CONTEXT. An
+ * unanswered line is `claim`, which wants the speaker's own footage and
+ * refuses the rest — so a failed classification costs an offer, never a
+ * generated card over somebody's proof.
+ *
+ * GET, because it spends one model call and returns no change. The answer
+ * includes everything refused with the reason each was: doc 08's premise is
+ * that the picture answers "why am I seeing this", and the alternatives are
+ * half of that answer.
+ */
+app.get("/api/projects/:id/pictures", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const blockId = c.req.query("block") || "";
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const lines = blocks.filter((x) => x.text.trim()).map((x) => ({ id: x.id, text: x.text }));
+  const against = lines.find((x) => x.id === blockId);
+  if (!against) return c.json({ error: "no such line in this cut" }, 404);
+
+  let move: Move = UNSURE;
+  try {
+    move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+  } catch {
+    /* Unknown is `claim`, which is the most restrictive move. The offer
+       comes back short rather than permissive. */
+  }
+
+  /*
+   * WHAT THIS CUT HAS ALREADY SHOWN, so a reprise costs something.
+   *
+   * The FILE behind every block that renders from one, which is what the
+   * novelty penalty is about and what the candidates key on. A null
+   * mediaKey is this project's own source — left out, because a cut is
+   * mostly its own footage and penalising that would penalise everything.
+   * `place()` waives the penalty on a TURN, the one move that means "this,
+   * again, differently".
+   */
+  const seen = new Set(
+    blocks.map((b) => b.mediaKey).filter((k): k is string => !!k),
+  );
+
+  const offer = await offerFor(c.env, user.id, { line: against.text, move, seen });
+  /* The card's own link, which only this route knows: the supply makes the
+     candidate, the project and the block say where to fetch it from. */
+  const href = `/api/projects/${encodeURIComponent(project.id)}/graphic?block=${encodeURIComponent(against.id)}`;
+  const considered = offer.considered.map((c2) => (c2.source === "generated" ? { ...c2, href } : c2));
+  return c.json({
+    ...offer,
+    considered,
+    placed: offer.placed.picture?.source === "generated"
+      ? { ...offer.placed, picture: { ...offer.placed.picture, href } }
+      : offer.placed,
+    note: emptyNote(offer.empty),
+  });
+});
+
+/**
+ * THE GENERATED PICTURE FOR A LINE, drawn in code.
+ *
+ * Invariant 8's last clause: "graphics are code, never pixels". Doc 08 is
+ * blunt about why — "no diffusion model draws a word or a number (they
+ * can't)" — so the generated tier is an SVG built by arithmetic from our
+ * own design tokens, and "never photoreal" is structural rather than a
+ * policy somebody could break.
+ *
+ * SVG OUT, AND CHECKED ON THE WAY. `hasNoRaster` is asserted here rather
+ * than trusted: it is the one claim in this product that can be proved by
+ * looking at the bytes, so it is.
+ *
+ * The label is drawn by src/graphics.ts' shared frame, so it cannot be left
+ * off by this route or any other.
+ */
+app.get("/api/projects/:id/graphic", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const blockId = c.req.query("block") || "";
+  const { blocks } = await blocksForProject(c.env.DB, project, user.id);
+  const block = blocks.find((b) => b.id === blockId);
+  if (!block || !block.text.trim()) return c.json({ error: "no such line in this cut" }, 404);
+
+  const out = quoteCard({ quote: block.text.trim(), said: project.title });
+  if (!out.svg) return c.json({ error: out.refused[0]?.reason ?? "nothing to draw" }, 422);
+  if (!hasNoRaster(out.svg)) {
+    /* Unreachable by construction, and the one assertion worth paying for:
+       a raster here would be a photoreal generated picture, which decision
+       26 forbids outright. Louder than a comment. */
+    console.error("[graphic] a raster reached a generated picture");
+    return c.json({ error: "that picture could not be made" }, 500);
+  }
+
+  return new Response(out.svg, {
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      /* Deterministic from the line, so it caches like a static file. */
+      "cache-control": "private, max-age=3600",
+    },
+  });
 });
 
 /**
@@ -2870,22 +4871,34 @@ app.post("/api/projects/:id/beats/:beatId", async (c) => {
   }
 
   /*
-   * "Redo" — throw the take away so Record comes back.
+   * "Redo" — put the beat back to unrecorded so Record comes back.
    *
-   * The recording is deleted from R2 rather than merely unlinked. It is being
-   * explicitly discarded by the person who made it, and an unlinked object is
-   * invisible to every cleanup path in the product, so leaving it would mean
-   * every abandoned take billed forever with nothing able to find it again.
+   * IT NO LONGER DELETES THE RECORDING, and the argument that said it should
+   * is worth keeping because it was right about its own world:
+   *
+   *   "The recording is deleted from R2 rather than merely unlinked. It is
+   *    being explicitly discarded by the person who made it, and an unlinked
+   *    object is invisible to every cleanup path in the product, so leaving
+   *    it would mean every abandoned take billed forever with nothing able to
+   *    find it again."
+   *
+   * The load-bearing half is "invisible to every cleanup path". That was true
+   * when a beat had one media key and nothing else recorded the object's
+   * existence — unlinking really did orphan it. It is not true now: the take
+   * is a row in `takes`, so it is findable, countable and sweepable like
+   * everything else.
+   *
+   * And the other half does not survive invariant 6. "Explicitly discarded by
+   * the person who made it" describes striking a line and switching off a
+   * rule too, and neither of those destroys anything. A performance is the
+   * one thing in this product the engine cannot re-make — you have to say it
+   * again — so it is the last thing that should be the only one deleted on
+   * the spot.
    */
   if (b.clearMedia) {
-    const beat = await c.env.DB
-      .prepare(`SELECT media_r2_key FROM beats WHERE id=? AND project_id=?`)
-      .bind(beatId, project.id)
-      .first<{ media_r2_key: string | null }>();
-
-    if (beat?.media_r2_key) await c.env.MEDIA.delete(beat.media_r2_key).catch(() => {});
     await c.env.DB
-      .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL WHERE id=? AND project_id=?`)
+      .prepare(`UPDATE beats SET media_r2_key=NULL, recorded_at=NULL, dur_ms=NULL,
+                       take_verdict=NULL, take_reason=NULL WHERE id=? AND project_id=?`)
       .bind(beatId, project.id)
       .run();
     return c.json({ ok: true });
@@ -2895,6 +4908,40 @@ app.post("/api/projects/:id/beats/:beatId", async (c) => {
     .prepare(`UPDATE beats SET text=? WHERE id=? AND project_id=?`)
     .bind(b.text ?? null, beatId, project.id)
     .run();
+  return c.json({ ok: true });
+});
+
+/**
+ * USE THIS TAKE INSTEAD.
+ *
+ * Every recording on a beat is kept (see the `takes` table), and this is how
+ * you change your mind. It points the beat at a take you already made;
+ * nothing is created and nothing is thrown away, so it is as reversible as
+ * every other decision in the product — press the other one.
+ */
+app.post("/api/projects/:id/beats/:beatId/takes", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  /*
+   * THE TAKE ID TRAVELS IN THE BODY, NOT THE PATH.
+   *
+   * It was `/takes/:takeId`, and the id is derived from the recording's R2
+   * key — `t:<beat>:u/<user>/takes/<beat>/2.wav` — which has slashes in it.
+   * A path parameter never matches across a slash, so the route could not be
+   * hit at all: Hono's own 404, before any of this ran.
+   *
+   * Found by pressing the button in a browser. Nothing else would have: the
+   * handler is correct, the markup is correct, the id is correct, and the
+   * URL they combine into cannot exist.
+   */
+  const { take } = await body<{ take?: string }>(c);
+  if (!take) return c.json({ error: "which take?" }, 422);
+
+  const ok = await chooseTake(c.env.DB, c.req.param("beatId"), take, user.id);
+  if (!ok) return c.json({ error: "that take isn't here any more" }, 404);
   return c.json({ ok: true });
 });
 
@@ -2941,6 +4988,30 @@ app.post("/api/beats/:beatId/record", async (c) => {
   if (!mine) return c.json({ error: "not found" }, 404);
 
   await c.env.MEDIA.put(key, audio, { httpMetadata: { contentType: "audio/webm" } });
+
+  /*
+   * AND THEN FIND OUT WHAT IT ACTUALLY IS.
+   *
+   * The length above came from x-duration-ms — a number the BROWSER sent
+   * about a file the server had not looked at, and a cut built on it is a
+   * cut whose length is whatever the client said. Aligning the take to the
+   * line measures it, and says whether it reads that line at all: a forced
+   * aligner will happily place a script over a recording of something else
+   * and report times for every word.
+   *
+   * IN THE BACKGROUND, because the take is already stored and already
+   * usable. Making somebody wait for a container before their own
+   * recording appears would be paying for correctness with the one thing
+   * recording a line is supposed to be: quick.
+   */
+  const job = await createJob(c.env.DB, { user_id: user.id, type: "take", ref_id: beatId });
+  await dispatch(c.env, c.executionCtx, {
+    type: "take",
+    jobId: job.id,
+    userId: user.id,
+    beatId,
+  }).catch(() => {});
+
   return c.json({ ok: true, key });
 });
 
@@ -3001,46 +5072,24 @@ app.post("/api/dictate", async (c) => {
 });
 
 /** Lay out a reaction: clips interleaved with lines drafted to say after them. */
-app.post("/api/projects/:id/reactions", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project?.source_id) return c.json({ error: "not found" }, 404);
-
-  const b = await body<{ about: string }>(c);
-  const about = (b.about || project.brief || "").trim();
-  if (!about) return c.json({ error: "say what you're reacting to" }, 400);
-
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  await dispatch(c.env, c.executionCtx, {
-    type: "reactions", jobId: job.id, userId: user.id, projectId: project.id, about,
-  });
-  return c.json({ jobId: job.id });
-});
-
-/**
- * Outline an essay from the library.
+/*
+ * TWO ROUTES GONE, 28 Oct 2026: /api/projects/:id/reactions and
+ * /api/projects/:id/outline.
  *
- * Unlike every other pass, this one has no source video — it builds from what
- * the user has already kept. A beat the model could not back with a real clip
- * comes back marked as a gap rather than dropped or faked.
+ * Both were second doors to work the composer already starts. `begin()` picks
+ * the intent from the sentence and dispatches `reactions` for a react brief
+ * and `outline` for an essay one — and its own comment says why that moved
+ * there: "there were two callers, only one dispatched anything, and the one
+ * that did hardcoded score — so /sources/:id/edit could create a job that
+ * nothing ever ran. One place decides the intent, the job type and the message
+ * together."
+ *
+ * These were the other callers. Nothing in src/ asked for either one, and the
+ * fidelity gate had been listing both as known-dead every run since 21 Oct.
+ * The capabilities are untouched: src/reactions.ts and src/essay.ts are still
+ * reached through /api/begin, which is the door a person actually goes
+ * through. A list of known-dead routes earns its keep only by getting shorter.
  */
-app.post("/api/projects/:id/outline", async (c) => {
-  await ensureV2Schema(c.env.DB);
-  const user = await requireUser(c);
-  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
-  if (!project) return c.json({ error: "not found" }, 404);
-
-  const b = await body<{ topic: string }>(c);
-  const topic = (b.topic || project.brief || project.title || "").trim();
-  if (!topic) return c.json({ error: "what is the essay about?" }, 400);
-
-  const job = await createJob(c.env.DB, { user_id: user.id, type: "pass", ref_id: project.id });
-  await dispatch(c.env, c.executionCtx, {
-    type: "outline", jobId: job.id, userId: user.id, projectId: project.id, topic,
-  });
-  return c.json({ jobId: job.id });
-});
 
 /**
  * Generate the voice for a beat.
@@ -3303,6 +5352,100 @@ app.post("/api/projects/:id/shorts-from-line", async (c) => {
   return c.json({ ok: true, made: saved.length > 0, clip: saved[0] ?? null });
 });
 
+/**
+ * A PASTED BRIEF BECOMES RULES.
+ *
+ * Phase 5's acceptance: "hooks in 2s, 20–40s, no politics, we need 8"
+ * compiles to four visible rules with a shortlist diff.
+ *
+ * THE DIFF IS THE RULES PANE, not a second thing built for this. Every rule
+ * there already carries `effectLine` — what it is doing right now, computed
+ * by diffing the cut with and without it — so a compiled brief is four rows
+ * that each say what they took off the shortlist, in the place a person
+ * already looks. A separate diff view would be a second answer to the same
+ * question.
+ *
+ * What the response adds is the one thing the pane cannot say: whether the
+ * number was reached. A shortlist of five when eight were asked for is the
+ * thing a person most needs to be told and the thing five rows do not say.
+ */
+app.post("/api/projects/:id/brief", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id"), user.id);
+  if (!project) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ brief: string }>(c);
+  const brief = (b.brief || "").trim();
+  if (!brief) return c.json({ error: "paste a brief first" }, 400);
+
+  const asked = compileBrief(brief);
+  /* Nothing in it was a rule. Say what would be, rather than applying
+     nothing and reporting success. */
+  if (!asked.rules.length) return c.json({ error: honestReply([brief]) }, 422);
+
+  const before = await loadRules(c.env.DB, project.id);
+  let next = before;
+
+  /*
+   * A BRIEF IS A FILTER, AND A FILTER NEEDS SOMETHING TO FILTER.
+   *
+   * The engine starts with nothing in and `keep` rules mark moments in, so
+   * a brief made only of length, count, subject and hook rules computes a
+   * shortlist of zero — correct arithmetic and a useless answer to
+   * somebody who just pasted four requirements.
+   *
+   * So a project with no keep rule gets one, and it is a RULE like any
+   * other: visible in the pane, switchable, and saying plainly that it was
+   * added rather than asked for. Found by pasting the acceptance's own
+   * brief at a real project and getting nought back.
+   */
+  const keeps = (rs: Rule[]) => rs.some((r) => r.on && r.kind === "keep" && !r.hand);
+  if (!keeps(before) && !asked.rules.some((r) => r.kind === "keep")) {
+    next = applyRule(next, {
+      kind: "keep",
+      tag: "core",
+      on: true,
+      text: "Start from everything you have.",
+      id: ruleKey({ kind: "keep", tag: "core", on: true }),
+    });
+  }
+
+  for (const r of asked.rules) next = applyRule(next, { ...r, id: ruleKey(r) });
+
+  const out = await recomputeFromRules(c.env, {
+    userId: user.id,
+    projectId: project.id,
+    rules: next,
+    scope: scopeOf(project),
+  });
+  if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
+  await saveRules(c.env.DB, project.id, next);
+
+  /* The same set the recompute just ran over, so the diff describes the cut
+     that was saved rather than one computed from a different library. */
+  const pool = inScope(await listMoments(c.env.DB, user.id, CANDIDATE_POOL), scopeOf(project));
+  const diff = shortlistDiff(next, { set: toFootageSet(pool, (m) => momentTags(m)) });
+
+  await recordPass(c.env.DB, {
+    projectId: project.id,
+    sourceId: null,
+    instruction: brief,
+    result: `${out.kept} moment${out.kept === 1 ? "" : "s"} · ${fmtSecs(out.secs)}`,
+    undo: { cuts: null, order: null, rules: JSON.stringify(before) },
+    firstChange: null,
+  }).catch(() => {});
+
+  return c.json({
+    ok: true,
+    rules: next.filter((r) => r.on).length,
+    kept: out.kept,
+    short: diff.short,
+    /* Per rule, for the reply — the pane shows the same thing in place. */
+    diff: diff.rules.map((r) => ({ text: r.rule.text ?? r.rule.kind, removed: r.removed, added: r.added })),
+  });
+});
+
 /** An extra instruction against what the pass already found. */
 app.post("/api/projects/:id/passes", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -3310,9 +5453,20 @@ app.post("/api/projects/:id/passes", async (c) => {
   const project = await getProject(c.env.DB, c.req.param("id"), user.id);
   if (!project) return c.json({ error: "not found" }, 404);
 
-  const b = await body<{ instruction: string }>(c);
+  const b = await body<{ instruction: string; apply?: boolean }>(c);
   const instruction = (b.instruction || "").trim();
   if (!instruction) return c.json({ error: "say what you want" }, 400);
+
+  /*
+   * HOW MUCH IT DECIDES — the composer's dial (src/decide.ts).
+   *
+   * `apply` is not a way round the dial, it is what Ask is FOR: the proposal
+   * carries the sentence back, and pressing Add it posts the same sentence
+   * with apply set. A person who has just pressed Add has asked, so the
+   * second half of "it proposes each rule and waits for Add" is this flag.
+   */
+  const mode = await readMode(c.env.DB, user.id);
+  const doIt = b.apply === true || applies(mode);
 
   /*
    * WHAT THE ASSISTANT CAN DO TO AN EDIT WITH NO TRANSCRIPT OF ITS OWN.
@@ -3354,7 +5508,40 @@ app.post("/api/projects/:id/passes", async (c) => {
         if (!same) next = applyRule(next, { ...r, id: ruleKey(r) });
       }
 
-      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope: scopeOf(project) });
+      const scope = scopeOf(project);
+      /*
+       * ASK: WORK OUT WHAT IT WOULD DO, AND DO NOTHING.
+       *
+       * previewFromRules has no write in it, which is the point — a dry-run
+       * flag on the writing function would be one mistyped call away from
+       * changing a cut the person is still being asked about.
+       *
+       * Both sides are computed, because a proposal that said only "6
+       * moments · 4:12" leaves the reader to remember what it is now. The
+       * consequence is the difference, so the answer carries both ends of
+       * it.
+       */
+      if (!doIt) {
+        const [now, would] = await Promise.all([
+          previewFromRules(c.env, { userId: user.id, rules: before, scope }),
+          previewFromRules(c.env, { userId: user.id, rules: next, scope }),
+        ]);
+        if (!would) return c.json({ error: "there is no footage left to cut from" }, 422);
+        return c.json({
+          ok: true,
+          proposal: {
+            instruction,
+            /* The rules it would add, in the words the rules pane uses —
+               not a restatement of the sentence, because what is being
+               agreed to is the rule and not the phrasing. */
+            rules: asked.rules.map((r) => r.text ?? ruleKey(r)),
+            from: now ? { kept: now.kept, secs: now.secs } : null,
+            to: { kept: would.kept, secs: would.secs },
+          },
+        });
+      }
+
+      const out = await recomputeFromRules(c.env, { userId: user.id, projectId: project.id, rules: next, scope });
       if (!out) return c.json({ error: "there is no footage left to cut from" }, 422);
       await saveRules(c.env.DB, project.id, next);
 
@@ -3369,7 +5556,11 @@ app.post("/api/projects/:id/passes", async (c) => {
         firstChange: null,
       }).catch(() => {});
 
-      return c.json({ ok: true, kept: out.kept, secs: out.secs });
+      /* Recommend says what it did with the way back attached; Auto writes
+         it into the record and leaves you alone. Undo exists either way —
+         the pass is recorded in both, and a mode that could turn that off
+         would break invariant 1 rather than express a preference. */
+      return c.json({ ok: true, kept: out.kept, secs: out.secs, announce: announces(mode) });
     }
 
     /*
@@ -3395,6 +5586,23 @@ app.post("/api/projects/:id/passes", async (c) => {
   return c.json({
     jobId: job.id,
     before: { cuts: project.cuts ?? null, order: project.block_order ?? null },
+    /*
+     * ASK CANNOT ASK ABOUT THIS ONE, and says so rather than going quiet.
+     *
+     * A pass on a project with its own transcript is a READ: the model has
+     * to go through the whole thing before anything knows what it would do,
+     * and that reading is the work and the cost. There is no rule to propose
+     * in advance, so the dial's promise — "it proposes each rule and waits
+     * for Add" — has nothing to propose.
+     *
+     * The alternative was to let the setting quietly mean nothing here,
+     * which is how a control becomes one nobody trusts. It runs, because
+     * Run it was pressed, and it is undoable like every other pass; this
+     * line is the product saying which of the two things it did.
+     */
+    note: doIt
+      ? null
+      : "This one reads the whole transcript before it knows what it would do, so it runs rather than proposes. Undo is on the turn.",
   });
 });
 
@@ -3495,6 +5703,50 @@ app.post("/api/account/name", async (c) => {
 });
 
 /**
+ * WHETHER SCOUT MAY GO OUTSIDE — the front door's pill.
+ *
+ * THE CYCLE RUNS SERVER-SIDE. The body says nothing about what the next
+ * state is; it names the state the pill was showing, and the server moves
+ * from there. A client that sent `{pref:"always"}` would otherwise be able
+ * to switch Scout on by asking, which is the one direction of this control
+ * that should never be reachable without a person pressing it.
+ *
+ * `from` is a guard, not an instruction: if it disagrees with what is
+ * stored, the stored value wins and the response carries it, so two tabs
+ * open on the room settle rather than leapfrog.
+ */
+app.post("/api/account/outside", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const sent = (await body<{ from?: string }>(c)).from;
+  const stored = await readPref(c.env.DB, user.id);
+  const { pref, stale } = resolvePress(stored, sent);
+  /* Nothing to write when the press was stale — the stored value is already
+     what the answer says it is. */
+  if (!stale) await writePref(c.env.DB, user.id, pref);
+  return c.json({ ok: true, pref, stale });
+});
+
+/**
+ * HOW MUCH IT DECIDES — the composer's dial.
+ *
+ * Same shape as the Scout pill above, and for the same reason: the body
+ * names the mode the dial was SHOWING, the server computes the next one from
+ * what is stored, and a disagreement reports the truth rather than taking a
+ * second step. Here it matters slightly more — a client that could post
+ * `{mode:"auto"}` could hand itself permission to stop asking.
+ */
+app.post("/api/account/ask-mode", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const sent = (await body<{ from?: string }>(c)).from;
+  const stored = await readMode(c.env.DB, user.id);
+  const { mode, stale } = resolveModePress(stored, sent);
+  if (!stale) await writeMode(c.env.DB, user.id, mode);
+  return c.json({ ok: true, mode, stale });
+});
+
+/**
  * Close the account. Irreversible, and total.
  *
  * You cannot sell a subscription to an account nobody can close, and the
@@ -3584,16 +5836,141 @@ app.get("/api/search", async (c) => {
   return c.json({ hits: await quickSearch(c.env.DB, user.id, c.req.query("q") || "") });
 });
 
-/** What the bell knows: what is running, and what finished while you were away. */
-app.get("/api/notifications", async (c) => {
+/**
+ * ASK IT ANYTHING ABOUT YOUR FOOTAGE.
+ *
+ * The Manual's front-door sentence — "it answers with the lines, timed" —
+ * and the handoff's "search in the conversation", which are the same
+ * feature. POST rather than GET because it spends a model call, and a
+ * question that runs again on every back button is a bill.
+ *
+ * The answer is built in src/ask.ts and no prose is generated anywhere: the
+ * lines are the answer, the times come off each moment's own span, and
+ * "nothing in your footage says that" is a reachable reply rather than an
+ * empty list dressed as one.
+ */
+app.post("/api/ask", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const [running, done] = await Promise.all([
-    activeJobs(c.env.DB, user.id),
-    recentlyFinished(c.env.DB, user.id),
-  ]);
-  return c.json({ running, done });
+
+  const body = await c.req.json<{ q?: string }>().catch(() => null);
+  const q = (body?.q ?? "").trim();
+  if (!q) return c.json({ error: "ask a question" }, 422);
+  /* A question is a sentence. Anything this long is a brief pasted into the
+     wrong box, and sending it to retrieval would match everything. */
+  if (q.length > 400) return c.json({ error: "that's long for a question — try a sentence" }, 422);
+
+  const answer = await ask(c.env, user.id, q);
+  return c.json({ ...answer, lead: answerLead(answer) });
 });
+
+/*
+ * DOCUMENTS — invariant 8's second tier, which had no supply.
+ *
+ * One request through the worker rather than the multipart dance a video
+ * needs: a scan of a letter is kilobytes, and a route sized for that is
+ * simpler than making it pretend to be footage.
+ *
+ * The title and the note arrive as headers because the body is the file.
+ * `x-note` is what the document SHOWS, in the maker's words, and it is what
+ * makes the document proof — doc 08 wants "the document with its line
+ * marked" and nothing here reads a PDF to find the line. Optional on the
+ * way in: a scan you have not described yet is a normal state, and the
+ * offer says why it is not being suggested as proof.
+ */
+app.post("/api/documents", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const mediaType = (c.req.header("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!isDocumentType(mediaType)) {
+    return c.json({ error: "a PDF or an image — PNG, JPEG or WebP" }, 415);
+  }
+
+  const body = await c.req.arrayBuffer();
+  if (!body.byteLength) return c.json({ error: "that file is empty" }, 400);
+  if (body.byteLength > MAX_BYTES) {
+    return c.json({ error: `that is over ${Math.round(MAX_BYTES / 1024 / 1024)}MB — compress it first` }, 413);
+  }
+
+  const filename = (c.req.header("x-filename") || "").slice(0, 200) || null;
+  /* A title, or the filename, or something rather than an empty card. */
+  const title = (c.req.header("x-title") || "").slice(0, 200).trim() || filename || "Untitled document";
+  const note = (c.req.header("x-note") || "").slice(0, 600);
+
+  const doc = await addDocument(c.env.DB, user.id, {
+    title,
+    note,
+    filename,
+    mediaType,
+    bytes: body.byteLength,
+  });
+  await c.env.MEDIA.put(doc.r2Key, body, { httpMetadata: { contentType: mediaType } });
+  return c.json({ document: doc });
+});
+
+/** What the maker has added. The picture supply reads the same list. */
+app.get("/api/documents", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ documents: await listDocuments(c.env.DB, user.id) });
+});
+
+/** Say what it shows, or change what you said. The marking, after the fact. */
+app.post("/api/documents/:id/mark", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const body = await c.req.json<{ note?: string }>().catch(() => null);
+  const note = (body?.note ?? "").slice(0, 600);
+  const ok = await markDocument(c.env.DB, c.req.param("id"), user.id, note);
+  return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+});
+
+/**
+ * Put one away.
+ *
+ * NOT a delete — invariant 6. The row stays and the file stays; it stops
+ * being offered. A document removed because it was the wrong scan is one
+ * somebody may want back when they find out it was the right one.
+ */
+app.post("/api/documents/:id/remove", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const ok = await removeDocument(c.env.DB, c.req.param("id"), user.id);
+  return ok ? c.json({ ok: true }) : c.json({ error: "not found" }, 404);
+});
+
+/** The file itself, for looking at. Owner only, like all media here. */
+app.get("/api/documents/:id/file", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const doc = await getDocument(c.env.DB, c.req.param("id"), user.id);
+  if (!doc) return c.json({ error: "not found" }, 404);
+
+  const obj = await c.env.MEDIA.get(doc.r2Key);
+  if (!obj) return c.json({ error: "the file is gone" }, 404);
+  return new Response(obj.body, {
+    headers: {
+      "content-type": doc.mediaType,
+      /* Inline: this is a thing to look at, and a download prompt for a
+         scan you are checking is a download prompt you did not ask for. */
+      "content-disposition": `inline; filename="${(doc.filename ?? doc.title).replace(/[^\w. -]/g, "_")}"`,
+      "cache-control": "private, max-age=3600",
+    },
+  });
+});
+
+/** What the bell knows: what is running, and what finished while you were away. */
+/*
+ * /api/notifications was here, and is gone with the bell that was the only
+ * thing that ever called it.
+ *
+ * It answered with running jobs and recently finished ones. Both are now
+ * read by the room directly — `activeJobs` for what is going and
+ * `recentlyFinished` for what stopped — and rendered in its working row, so
+ * the answer arrives with the page rather than a tick after it. The gate
+ * found this: a route nothing asks for.
+ */
 
 /*
  * Billing.
@@ -3729,10 +6106,104 @@ app.get("/landing", async (c) => {
   );
 });
 
+/**
+ * SET THE SPEND CAP, because the refusal tells people to.
+ *
+ * src/spend.ts stops work at the cap and its sentence says "until you raise
+ * it in Settings". Nothing could: `spend_cap_usd` was read and never written,
+ * so there was no way to raise it from anywhere in the product. This is the
+ * missing half of a control that was already enforcing.
+ */
+/**
+ * CONNECT A BUCKET YOU OWN.
+ *
+ * "Point sources at a bucket you own" has been on the landing page and in
+ * Settings since both were written, and nothing implemented it.
+ *
+ * The key is checked by USING it — one listing — before anything is stored.
+ * A connection that saves and then fails on first import is a form that lied
+ * to you, and the failure arrives later, somewhere else, about something
+ * else.
+ *
+ * Read-only, and the Worker never hands the key to the browser: it goes in
+ * sealed (src/secretbox.ts) and only comes out to sign a request.
+ */
+app.post("/api/connections", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{
+    endpoint?: string;
+    bucket?: string;
+    region?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    foreignDb?: string;
+  }>(c);
+
+  const conn = {
+    endpoint: (b.endpoint || "").trim(),
+    bucket: (b.bucket || "").trim(),
+    region: (b.region || "").trim() || undefined,
+    accessKeyId: (b.accessKeyId || "").trim(),
+    secretAccessKey: (b.secretAccessKey || "").trim(),
+  };
+  if (!conn.endpoint || !conn.bucket || !conn.accessKeyId || !conn.secretAccessKey) {
+    return c.json({ error: "that needs an endpoint, a bucket and a read-only key" }, 422);
+  }
+
+  try {
+    /* One page is enough to know the key works and the bucket is there. */
+    await listBucket(conn, { cap: 1 });
+  } catch {
+    return c.json({ error: "that key could not read that bucket" }, 422);
+  }
+
+  const id = await saveConnection(c.env, user.id, { ...conn, foreignDb: b.foreignDb || null });
+  return c.json({ ok: true, id });
+});
+
+/**
+ * Bring the footage across — instantly, and without reading any of it.
+ *
+ * Every video lands `unread`: visible, searchable by name, choosable, and
+ * costing nothing until the first time you cut with it. Invariant 5 is that
+ * footage is read once and charged once, and an import that queued two
+ * hundred reads would charge for an archive before you had decided which of
+ * it you wanted.
+ */
+app.post("/api/connections/:id/import", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+
+  const conn = await usableConnection(c.env, c.req.param("id"), user.id);
+  if (!conn) return c.json({ error: "that connection needs reconnecting" }, 404);
+
+  try {
+    return c.json({ ok: true, ...(await importFromBucket(c.env, user.id, conn)) });
+  } catch {
+    return c.json({ error: "the bucket stopped answering part way through" }, 502);
+  }
+});
+
+app.get("/api/connections", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  return c.json({ connections: await listConnections(c.env.DB, user.id) });
+});
+
+app.post("/api/spend-cap", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const b = await body<{ usd?: number }>(c);
+  const usd = Number(b.usd);
+  if (!Number.isFinite(usd)) return c.json({ error: "that isn't a number" }, 422);
+  const cap = await setCap(c.env.DB, user.id, usd);
+  return c.json({ ok: true, cap });
+});
+
 app.get("/settings", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const pro = user.plan !== "free";
 
   const now = new Date();
   const since = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
@@ -3755,6 +6226,9 @@ app.get("/settings", async (c) => {
    * to the user and the number enforced against them have to be one number.
    */
   const limits = PLANS[user.plan] ?? PLANS.free;
+  /* The same verdict the dispatcher refuses on, so the figure a person reads
+     and the figure enforced against them are one figure. */
+  const spend = await underCap(c.env.DB, user.id);
   /* The owner is metered and never blocked — checkCap and checkStorage both
      pass them — so a ceiling here would be a number nothing enforces. What
      they have used is the point, and it stays. */
@@ -3791,6 +6265,30 @@ app.get("/settings", async (c) => {
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
     },
+    /*
+     * THE SPEND CAP, which has been stopping work without ever appearing.
+     *
+     * src/spend.ts checks it on every dispatch and fails the job when it is
+     * reached, with a sentence that reads "Nothing else will run until you
+     * raise it in Settings". Settings had no such row and no such control, and
+     * `spend_cap_usd` was read by capFor and written by nothing at all — so
+     * the cap could not be raised from anywhere, and the only warning
+     * (`nearingCap`) went to a server log.
+     *
+     * The one meter here denominated in money rather than work, which is why
+     * it is last: the two above are what you have used, this is what it cost.
+     */
+    {
+      label: "Monthly spend cap",
+      used: Math.round(spend.spentUsd * 100) / 100,
+      cap: Math.round(spend.capUsd),
+      /* Enforced on EVERY account, the owner's included — unlike the two
+         above, which the owner is exempt from. So it is never `uncapped`. */
+      unit: "USD",
+      color: ACCENT_GOLD,
+      editable: true,
+      note: "What running your jobs has actually cost this month. Work stops here until you raise it.",
+    },
   ];
 
   /*
@@ -3820,6 +6318,11 @@ app.get("/settings", async (c) => {
       else merged.set(label, { label, amount: l.cost, color, note });
     }
 
+    /* What the call cache saved, which is a count rather than a dollar
+       figure: what a reused answer would have cost depends on a token count
+       we never spent. See src/call-cache.ts. */
+    const cacheSaved = await savedCalls(c.env.DB);
+
     const finished = await c.env.DB
       .prepare(`SELECT COUNT(*) AS n FROM renders WHERE user_id=? AND state='ready' AND created_at>=?`)
       .bind(user.id, since)
@@ -3830,6 +6333,11 @@ app.get("/settings", async (c) => {
       total: roll.total,
       finished: finished?.n ?? 0,
       dayOfMonth: now.getUTCDate(),
+      cache: cacheSaved,
+      /* What the month paid for and got nothing from. Decision 38 absorbs
+         these rather than charging for them, so this is the figure the
+         business eats and the one nothing used to show. */
+      wasted: roll.wasted,
     };
   }
 
@@ -3838,7 +6346,26 @@ app.get("/settings", async (c) => {
       "settings",
       "Settings",
       "Settings — Aldershot",
-      renderSettings({ name: user.name, email: user.email, plan: user.plan, isOwner: !!user.is_owner, meters, cost, billingReady: billingReady(c.env), trash: await listTrash(c.env.DB, user.id) }),
+      renderSettings({
+        name: user.name,
+        email: user.email,
+        plan: user.plan,
+        isOwner: !!user.is_owner,
+        connections: (await listConnections(c.env.DB, user.id)).map((x) => ({
+          id: x.id,
+          bucket: x.bucket,
+          last_import_at: x.last_import_at,
+        })),
+        meters,
+        cost,
+        /*
+         * Owner-only: whether this product is working is a fact about our
+         * providers and our jobs, not about anybody's account.
+         */
+        slo: user.is_owner ? await sloFor(c.env.DB) : null,
+        billingReady: billingReady(c.env),
+        trash: await listTrash(c.env.DB, user.id),
+      }),
       user.email,
     ),
   );
@@ -4275,7 +6802,25 @@ app.get("/api/sources/:id", async (c) => {
 app.post("/api/begin", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
-  const b = await body<{ sourceId: string; sourceIds?: unknown[]; brief: string; upgrade: boolean }>(c);
+  const b = await body<{
+    sourceId: string;
+    sourceIds?: unknown[];
+    ledgerIds?: unknown[];
+    brief: string;
+    upgrade: boolean;
+  }>(c);
+
+  /*
+   * THE GHOSTS THAT WERE ATTACHED, checked before anything is made.
+   *
+   * Same check as `sourceIds` and for the same reason: an id off a form is a
+   * claim. minesOwn joins each one back through its run to a project of this
+   * user's, so an id from somebody else's library is simply not there.
+   */
+  const askedGhosts = Array.isArray(b.ledgerIds) ? b.ledgerIds.filter((x) => typeof x === "string") : [];
+  const ghosts = askedGhosts.length
+    ? [...(await minesOwn(c.env.DB, user.id, askedGhosts as string[]))]
+    : [];
 
   /*
    * A BRIEF WITH NO VIDEO MEANS "OUT OF EVERYTHING I HAVE".
@@ -4311,8 +6856,60 @@ app.post("/api/begin", async (c) => {
       if (!scope.length) return c.json({ error: "those videos aren't here any more" }, 422);
     }
 
+    /*
+     * AN ESSAY GETS THE PLAN FIRST, and that is where /plan/:id was supposed
+     * to be entered from all along.
+     *
+     * The whole plan flow — claim, beats, the one stop, find, cut — was built,
+     * tested, and REACHABLE FROM NOWHERE: no href in src/ui/ pointed at
+     * /plan/:id, and POST /api/plans had no caller. A sentence asking for a
+     * video that argues something went straight to assembleFromLibrary, which
+     * pulls the moments that match and arranges them. That is the right answer
+     * for "a supercut of X" and the wrong one for "make the case that X": it
+     * cuts before anybody has agreed what the thing is saying.
+     *
+     * THE PROTOTYPE PUTS IT HERE. `Aldershot One Take.dc.html` tests the
+     * sentence before it does anything else —
+     *
+     *   if (/essay|video about|argue|make the case|explain|plan it/.test(L))
+     *     { this.startPlan(t); return; }
+     *
+     * — and its ESSAY card on the front door reads "a thesis, your footage, or
+     * both · the plan first". The plan first, either way.
+     *
+     * ONLY WITH NO VIDEO ATTACHED, which is the branch this sits in. Point at
+     * one video and say "a video essay out of this" and that is still a pass
+     * over that video; the plan is for an argument assembled out of the
+     * library, which is what it searches for per beat.
+     *
+     * AND IT FALLS THROUGH RATHER THAN DEAD-ENDING. draftPlan returning no
+     * beats means it could not find an argument in the sentence — so the
+     * sentence gets the assembly it would have had, instead of a refusal for
+     * work the user did not ask for by name.
+     */
+    if (readIntent(brief) === "essay") {
+      const draft = await draftPlan(c.env, brief);
+      if (draft.beats.length) {
+        const planId = await createPlan(c.env.DB, {
+          userId: user.id,
+          topic: brief,
+          claim: draft.claim,
+          beats: draft.beats,
+        });
+        return c.json({ intent: "essay", projectId: null, jobId: null, href: `/plan/${planId}` });
+      }
+    }
+
     const made = await assembleFromLibrary(c.env, { userId: user.id, brief, scope });
     if ("error" in made) return c.json({ error: made.error }, 422);
+    /*
+     * THE MISSIONS ARE OPENED AFTER THE PROJECT EXISTS, not before.
+     *
+     * A mission belongs to a cut. Writing one against a project that the
+     * assemble might refuse to make would leave a mission for a cut that
+     * does not exist, and invariant 6 means it would stay there.
+     */
+    if (ghosts.length) await openMissions(c.env.DB, made.projectId, ghosts);
     return c.json({
       intent: "assemble",
       projectId: made.projectId,
@@ -4338,6 +6935,12 @@ app.post("/api/begin", async (c) => {
     c.executionCtx,
   );
 
+  /* A sentence about ONE video can still carry ghosts — attach a find, then
+     attach a video, then run it. begin() returns the project it made. */
+  if (ghosts.length && "projectId" in result && typeof result.projectId === "string") {
+    await openMissions(c.env.DB, result.projectId, ghosts);
+  }
+
   /* begin() dispatches its own work now — it is the only thing that knows
      which job the sentence asked for. Dispatching here as well ran every
      brief through a scoring pass on top of whatever it actually wanted. */
@@ -4359,6 +6962,37 @@ app.get("/api/jobs", async (c) => {
 });
 
 /** Owner-only real spend (05-INFRA-AND-COSTS.md; the panel itself is Phase 8). */
+/**
+ * WHAT IS CONFIGURED. Booleans, never values.
+ *
+ * scripts/preflight.cjs asks this so the answer about a deployment comes from
+ * the deployment rather than from a tick in a document. It reports whether a
+ * secret is PRESENT and nothing else — there is no code path here that can
+ * put a key in a response, which matters because the natural shape of this
+ * endpoint is the dangerous one.
+ *
+ * Owner-only, like the spend panel. What a deployment has configured is not a
+ * customer's business and the absence of a key is a small map of where to
+ * push.
+ */
+app.get("/api/preflight", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  if (!user.is_owner) return c.json({ error: "not found" }, 404);
+  const has = (v: unknown) => Boolean(typeof v === "string" ? v.trim() : v);
+  return c.json({
+    sign_in_google: has(c.env.GOOGLE_CLIENT_ID) && has(c.env.GOOGLE_CLIENT_SECRET),
+    sign_in_email: has(c.env.EMAIL) && has(c.env.MAIL_FROM),
+    session_secret: has(c.env.SESSION_SECRET),
+    app_origin: has(c.env.APP_ORIGIN),
+    billing: has(c.env.STRIPE_SECRET_KEY) && has(c.env.STRIPE_PRICE_ID),
+    billing_webhook: has(c.env.STRIPE_WEBHOOK_SECRET),
+    storage_signing:
+      has(c.env.R2_ACCESS_KEY_ID) && has(c.env.R2_SECRET_ACCESS_KEY) && has(c.env.R2_ACCOUNT_ID),
+    frontier_model: has(c.env.ANTHROPIC_API_KEY),
+  });
+});
+
 app.get("/api/usage/month", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
@@ -4408,6 +7042,32 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     .all<{ user_id: string }>();
 
   await reapRateLimits(env.DB);
+
+  /*
+   * THE CANARY, once a sweep.
+   *
+   * One synthetic judgement whose right answer is known, through the real
+   * judge. It goes before the per-user work because a provider that is down
+   * is the most useful thing to know first, and it is cheap: two short
+   * moments and one call.
+   *
+   * Uncached on purpose — see src/canary.ts. A check whose answer may be a
+   * month old is not a check.
+   */
+  try {
+    const canary = await runCanary(env);
+    await recordCanary(env.DB, canary);
+    if (canary.verdict !== "ok") {
+      /* Loud, because `wrong` is the failure nothing else in the product
+         would notice: a judge that has started calling denials support is
+         worse than one that is down. */
+      console.error(`[canary] ${canary.verdict}: ${canary.says} (${canary.model || "no model"})`);
+    } else {
+      console.log(`[canary] ok — ${canary.says}`);
+    }
+  } catch (err) {
+    console.error(`[canary] the check itself threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   /* Footage read before naming existed still shows its filename. Bounded, and
      outside the per-user loop because it is scoped by what is unnamed rather
@@ -4464,6 +7124,32 @@ async function scheduled(_event: ScheduledController, env: Env, ctx: ExecutionCo
     if (added || gone) console.log(`[sweep] meaning index: +${added} -${gone}`);
   } catch (err) {
     console.log(`[sweep] index: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  /*
+   * THE THREADS CATCH UP WITH THE LIBRARY.
+   *
+   * Here for the same reason the meaning index is here, one block up: clips
+   * are written in three places and a fourth is coming, and a pass you have
+   * to remember to call is a pass that gets forgotten.
+   *
+   * THREE USERS A SWEEP. Grouping is O(n²) over up to 1,500 moments, which
+   * is milliseconds, but it also embeds every quote — so this is deliberately
+   * a trickle rather than a job that wakes up and re-reads every library on
+   * the platform. Nobody is waiting on it: threads are a reading of an
+   * archive, and an archive that grew ten minutes ago can be read in an hour.
+   */
+  for (const userId of await staleThreadUsers(env.DB).catch(() => [] as string[])) {
+    try {
+      const { threads, moments, unnamed } = await rethread(env, userId);
+      if (threads || unnamed) {
+        console.log(`[sweep] threads: ${threads} over ${moments} moments, ${unnamed} unnamed`);
+      }
+    } catch (err) {
+      /* One user's library must not stop the sweep for everyone else — the
+         same rule the per-user block at the bottom of this function follows. */
+      console.log(`[sweep] threads ${userId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /* Videos that failed because a container slot was busy rather than because

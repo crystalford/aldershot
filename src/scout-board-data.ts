@@ -13,7 +13,8 @@
  * the board says so with a different chip and a different button.
  */
 
-import type { BoardBeat, BoardData, BoardRow, AcqState, Route } from "./ui/pages/board.ts";
+import type { BoardBeat, BoardData, BoardRow, AcqState, CrowdKind, Route } from "./ui/pages/board.ts";
+import { ghostsFor } from "./scout-external.ts";
 
 interface LedgerJoin {
   id: string;
@@ -23,12 +24,35 @@ interface LedgerJoin {
   context_before: string | null;
   context_after: string | null;
   verify: string;
+  /* When the verifier LOOKED, not when it agreed. A rejection with this set
+     has been checked and come back empty; one without has not been looked at
+     yet, because the scan writes every find as rejected. */
+  verified_at: number | null;
   crowd_signals_n: number;
   title: string | null;
   channel: string | null;
   host: string | null;
   transcript: string | null;
   published_at: number | null;
+}
+
+/**
+ * WHICH OF THE THREE A ROW IS, as its own function so it can be tested.
+ *
+ * It was a ternary inside a map and the test for it could only reach the
+ * CHIPS, not the decision — so restoring the bug (drawing a rejection as a
+ * crowd row) failed nothing. A decision worth making is a decision worth
+ * naming.
+ *
+ * `verifiedAt` is what tells a CHECKED rejection from an unchecked one. The
+ * scan writes every find as `rejected` because nothing has looked yet, so a
+ * row is only unbacked once somebody looked and came back empty — a row
+ * still waiting on the verifier is a crowd row, not a fabrication.
+ */
+export function kindOf(verify: string, verifiedAt: number | null): "verified" | CrowdKind {
+  if (verify === "verified") return "verified";
+  if (verify === "rejected" && verifiedAt) return "unbacked";
+  return "crowd";
 }
 
 /** Month precision, which is what a credit line carries. */
@@ -91,9 +115,12 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
       .bind(runId)
       .all<LedgerJoin>(),
     db
-      .prepare("SELECT beat_id, COUNT(*) AS n FROM scout_searches WHERE run_id = ? GROUP BY beat_id")
+      .prepare(
+        "SELECT beat_id, COUNT(*) AS n, COUNT(DISTINCT family) AS fams " +
+          "FROM scout_searches WHERE run_id = ? GROUP BY beat_id",
+      )
       .bind(runId)
-      .all<{ beat_id: string | null; n: number }>(),
+      .all<{ beat_id: string | null; n: number; fams: number }>(),
     db
       .prepare("SELECT transcript, scanned, COUNT(*) AS n FROM scout_sources WHERE run_id = ? GROUP BY transcript, scanned")
       .bind(runId)
@@ -101,6 +128,9 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
   ]);
 
   const triedBy = new Map((tried ?? []).map((t) => [String(t.beat_id ?? ""), Number(t.n)]));
+  /* How many of the five families a beat's queries actually used, so the gap
+     sentence can say it rather than assert a number. */
+  const famsBy = new Map((tried ?? []).map((t) => [String(t.beat_id ?? ""), Number(t.fams)]));
 
   const byBeat = new Map<string, BoardRow[]>();
   let verifiedMoments = 0;
@@ -112,11 +142,22 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
     else crowdRows += 1;
 
     const row: BoardRow = {
-      /* A paraphrase and a rejection are NOT verified rows, and the board has
-         no chip that says "nearly". They show as crowd rows — a place
-         somebody should look — which is what they are until a person has
-         decided otherwise. */
-      kind: verified ? "verified" : "crowd",
+      /*
+       * THREE VERDICTS, THREE THINGS — and this used to be two.
+       *
+       * A paraphrase is a near-miss: the words are close, the moment is
+       * probably real, and it is worth a look. A REJECTION is the verifier
+       * having searched the source and not found the quote at all — the
+       * model made it up. Drawing both as CROWD rows put a fabricated quote
+       * on the board with a timestamp, a credit line and a button offering
+       * to go and capture it.
+       *
+       * `verified_at` is what tells a checked rejection from an unchecked
+       * one: the scan writes every find as `rejected` because nothing has
+       * looked yet, so a row is only UNBACKED once somebody has looked and
+       * come back empty.
+       */
+      kind: kindOf(r.verify, r.verified_at),
       acq: acqOf(r.transcript),
       route: routeOf(r.transcript),
       text: r.quote_exact,
@@ -154,9 +195,11 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
     needMin: Number(b.need_min),
     rows: byBeat.get(String(b.id)) ?? [],
     queriesTried: triedBy.get(String(b.id)) ?? 0,
+    familiesTried: famsBy.get(String(b.id)) ?? 0,
   }));
 
   return {
+    projectId,
     verifiedMoments,
     crowdRows,
     beats: boardBeats,
@@ -170,5 +213,15 @@ export async function boardFor(db: D1Database, projectId: string): Promise<Board
     sourcesRead,
     sourcesLinkOnly,
     candidatesScanned,
+    /* Read per project rather than per run: a ghost belongs to the cut, and
+       a second Scout run over the same project does not drop the missions
+       the first one's finds opened. */
+    ghosts: (await ghostsFor(db, projectId)).map((g) => ({
+      ledgerId: g.ledgerId,
+      quote: g.quote,
+      inS: g.inS,
+      url: g.url,
+      state: g.state,
+    })),
   };
 }

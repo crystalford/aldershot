@@ -62,6 +62,13 @@ export interface SourceCandidate {
   views?: number;
   kind?: "vod" | "clip" | "compilation" | "interview" | "podcast" | "news" | "reupload";
   transcript?: "native" | "transcribed" | "none";
+  /**
+   * Where the published transcript is, when `transcript` is "native".
+   *
+   * The state says one exists; this says where. The scan phase needs the
+   * second, and without it a readable episode was unreachable.
+   */
+  transcriptUrl?: string;
   /** An open licence, where the platform states one. The only route to auto. */
   licence?: string;
   /** When the platform's own copy goes away — Twitch VODs at 7, 14 or 60 days. */

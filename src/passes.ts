@@ -72,6 +72,16 @@ export async function recordPass(
       rules?: string | null;
       /** JSON ids, or the string "null" for the whole library. */
       scope?: string | null;
+      /**
+       * The narrowing as it was: a JSON string id, or the string "null".
+       *
+       * JSON-encoded rather than bare for the same reason `scope` is: this
+       * field being ABSENT means the pass did not touch the narrowing, and
+       * a pass that cleared it has to be able to say so. A bare null could
+       * not tell those apart, and the pass that restores everything is
+       * exactly the one that stores a null.
+       */
+      only?: string | null;
     } | null;
     /** The block this pass was first about, for "Show me". */
     firstChange?: string | null;
@@ -142,7 +152,13 @@ export async function claimPassUndo(
   db: D1Database,
   passId: string,
   projectId: string,
-): Promise<{ cuts: string | null; order: string | null; rules?: string | null; scope?: string | null } | null> {
+): Promise<{
+  cuts: string | null;
+  order: string | null;
+  rules?: string | null;
+  scope?: string | null;
+  only?: string | null;
+} | null> {
   const row = await db
     .prepare(`SELECT undo FROM passes WHERE id=? AND project_id=? AND undone_at IS NULL`)
     .bind(passId, projectId)

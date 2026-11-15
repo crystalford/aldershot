@@ -165,3 +165,67 @@ test("what comes back produces the same cut as what went in", async () => {
     "same rows, same order, same gaps",
   );
 });
+
+test("the three fields the brief compiler sets survive the round trip", async () => {
+  /*
+   * `len` carries its window, `count` carries its number, and a subject rule
+   * carries the words it matches. None of them is a tag, a cid, an order or a
+   * `secs`, which is every column the table had — so all four came back as
+   * bare kinds: a `len` rule with no window, which compute() skips entirely,
+   * and a "no politics" rule matching no words at all.
+   *
+   * A rule that reads correctly in the pane and does nothing is the exact
+   * failure invariant 1 exists to prevent, and it is silent twice over: the
+   * sentence is still there, and the cut is still a cut.
+   */
+  const [len, count, avoid] = await round([
+    { id: "r-len", kind: "len", minSecs: 8, maxSecs: 45, on: true, text: "Between 8 and 45 seconds." },
+    { id: "r-count", kind: "count", n: 8, on: true, text: "The best eight." },
+    { id: "r-avoid", kind: "drop", words: ["politics", "election"], on: true, text: "Nothing about politics." },
+  ]);
+
+  assert.equal(len.minSecs, 8, "a len rule with no window is a rule compute() walks straight past");
+  assert.equal(len.maxSecs, 45);
+  assert.equal(count.n, 8, "a count rule with no n keeps everything");
+  assert.deepEqual(avoid.words, ["politics", "election"], "a subject rule with no words matches nothing");
+});
+
+test("a cut made by len, count and words is the same cut after a reload", async () => {
+  /*
+   * The equivalence test above this one uses keep, drop, order and gap — the
+   * four kinds that already persisted. That is why it stayed green through a
+   * reload that dropped three fields on the floor. This is the same claim
+   * aimed at the rules a pasted brief actually compiles to.
+   */
+  const set = {
+    CLIPS: [
+      { id: "m1", src: "A", ts: "0:05", dur: 5, tags: ["core"], strand: "why", text: "so anyway that was the week" },
+      { id: "m2", src: "A", ts: "0:30", dur: 20, tags: ["core"], strand: "why", text: "rent halves and I lose everyone I would call at 2am" },
+      { id: "m3", src: "A", ts: "1:10", dur: 20, tags: ["core"], strand: "why", text: "the election changed how politics felt on this street" },
+      { id: "m4", src: "B", ts: "0:10", dur: 60, tags: ["core"], strand: "cost", text: "the long one about the four weeks of showing up every morning" },
+      { id: "m5", src: "B", ts: "2:00", dur: 20, tags: ["core"], strand: "cost", text: "nobody tells you the first month is just admin" },
+      { id: "m6", src: "B", ts: "3:00", dur: 20, tags: ["core"], strand: "cost", text: "I stopped counting the hours in the second year" },
+    ],
+    STRANDS: ["why", "cost"],
+  };
+  const rules: Rule[] = [
+    { id: "a", kind: "keep", tag: "core", on: true },
+    { id: "b", kind: "drop", words: ["politics"], on: true },
+    { id: "c", kind: "len", minSecs: 8, maxSecs: 45, on: true },
+    { id: "d", kind: "count", n: 2, on: true },
+  ];
+
+  const before = compute(rules, { set });
+  const after = compute(await round(rules), { set });
+
+  assert.deepEqual(
+    before.rows.map((r) => r.key),
+    after.rows.map((r) => r.key),
+    "same rows, same order",
+  );
+  assert.equal(after.secs, before.secs);
+  /* And the cut is actually the narrow one, or the assertion above would hold
+     just as well for two rule sets that both did nothing. There is no gap rule
+     here, so the rows are the moments. */
+  assert.deepEqual(before.rows.map((r) => r.key), ["cm2", "cm5"], "count said two, len dropped the 5s and the 60s, words dropped the election");
+});

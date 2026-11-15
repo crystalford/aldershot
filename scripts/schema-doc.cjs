@@ -51,19 +51,65 @@ const statements = [];
 const seen = new Set();
 for (const f of walk(path.join(ROOT, 'src'))) {
   const src = fs.readFileSync(f, 'utf8');
-  for (const m of src.matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
+  /* UNIQUE is optional and was not, which is how the first unique index in
+     src/ never reached this file. A generator that quietly ignores a form of
+     the statement it exists to collect is worse than no generator: the
+     document it writes looks complete. */
+  for (const m of src.matchAll(/`(CREATE (?:TABLE|(?:UNIQUE )?INDEX) IF NOT EXISTS [\s\S]*?)`/g)) {
     const stmt = m[1];
-    const name = (stmt.match(/create (?:table|index) if not exists (\w+)/i) || [])[1];
+    const name = (stmt.match(/create (?:table|(?:unique )?index) if not exists (\w+)/i) || [])[1];
     if (!name || seen.has(name)) continue;
+    /*
+     * A TRUNCATED STATEMENT IS NEVER WRITTEN OUT.
+     *
+     * The capture above is delimited by backticks, so a single backtick
+     * anywhere inside the statement -- including inside a SQL comment --
+     * ends it early. That is the same trap src/ui/client.ts carries a
+     * warning about, one level up: there the template literal breaks and
+     * tsc says so, here the generator just captures less and reports the
+     * same statement count as before. Measured: a comment containing a
+     * backticked filename cut the rules table off after three columns and
+     * wrote "*;" where the rest of it should have been, and the only
+     * symptom was a schema document missing five columns, two uniques and
+     * a primary key.
+     *
+     * Parentheses have to balance and the statement has to close on one,
+     * or this stops rather than writing a document that looks complete.
+     */
+    let depth = 0;
+    for (const ch of stmt) {
+      if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
+    }
+    if (depth !== 0 || !/\)\s*$/.test(stmt)) {
+      console.error(
+        `\nschema-doc: ${name} in ${path.relative(ROOT, f)} did not close.\n` +
+          `A backtick inside the statement ends the capture early -- check its comments.\n`,
+      );
+      process.exit(1);
+    }
     seen.add(name);
     statements.push({ file: path.relative(ROOT, f), sql: stmt.replace(/\n   /g, '\n  ').trim() });
   }
 }
 
 const added = [];
+/*
+ * Indexes over columns that arrived after their table did. They live in
+ * ADDED_INDEXES rather than STATEMENTS because that batch runs before the
+ * ALTERs — and they were missing from this file entirely for one commit,
+ * which is the whole failure this file exists to stop: migrations/schema.sql
+ * is meant to BE the current shape, and an index it does not mention is one
+ * nobody reading it knows about.
+ */
+const addedIndexes = [];
 for (const f of walk(path.join(ROOT, 'src'))) {
-  for (const m of fs.readFileSync(f, 'utf8').matchAll(/ddl:\s*"(ALTER TABLE [^"]+)"/g)) {
+  const text = fs.readFileSync(f, 'utf8');
+  for (const m of text.matchAll(/ddl:\s*"(ALTER TABLE [^"]+)"/g)) {
     added.push(m[1]);
+  }
+  for (const m of text.matchAll(/"(CREATE INDEX IF NOT EXISTS [^"]+)"/g)) {
+    addedIndexes.push(m[1]);
   }
 }
 
@@ -80,6 +126,13 @@ if (added.length) {
   body += '-- Added after the fact (ADDED_COLUMNS; applied only where missing).\n';
   body += added.map((a) => a + ';').join('\n') + '\n';
 }
+if (addedIndexes.length) {
+  body += '\n-- Indexes over those columns (ADDED_INDEXES; created after the ALTERs).\n';
+  body += addedIndexes.map((a) => a + ';').join('\n') + '\n';
+}
 
 fs.writeFileSync(OUT, HEADER + body);
-console.log(`migrations/schema.sql — ${statements.length} statements, ${added.length} added columns`);
+console.log(
+  `migrations/schema.sql — ${statements.length} statements, ${added.length} added columns, ` +
+    `${addedIndexes.length} added index(es)`,
+);

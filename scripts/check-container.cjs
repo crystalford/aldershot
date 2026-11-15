@@ -105,6 +105,26 @@ const ASKS = [
     want: (r) => r.status !== 404,
   },
   {
+    /*
+     * /align answers its own 400 rather than falling into the shared url
+     * guard, so this asks with a url and no windows — which proves the route
+     * is dispatched AND that it checks what it was given. Asking with {}
+     * would have been answered by the guard above it, which is the mistake
+     * the comment above these two describes.
+     */
+    name: "POST /align refuses a source with no windows",
+    go: () => post("/align", { url: DEAD_URL }),
+    want: (r) => r.status === 400 && /no windows to align/.test(r.body),
+  },
+  {
+    /* And the other way: windows with nothing to align them against. The
+       aligner is never reached — ten seconds of model load for a request
+       that was wrong before it started is ten seconds nobody gets back. */
+    name: "POST /align refuses windows with no source",
+    go: () => post("/align", { windows: [{ startMs: 0, endMs: 1000, words: ["hello"] }] }),
+    want: (r) => r.status === 400 && /missing url/.test(r.body),
+  },
+  {
     name: "an unknown path is a 404, not a crash",
     go: () => post("/nonsense", { url: DEAD_URL }),
     want: (r) => r.status === 404,

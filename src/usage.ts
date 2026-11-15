@@ -34,6 +34,28 @@ export const PRICES = {
   /** bge-large-en-v1.5: 18,582 neurons per million input tokens. */
   neurons_per_m_tokens_embed: 18_582,
 
+  /*
+   * ANTHROPIC, IN DOLLARS, BECAUSE NEURONS ARE A CLOUDFLARE UNIT.
+   *
+   * Every token this product metered was priced at Workers AI neuron rates,
+   * whichever provider actually ran the call — so the moment src/llm.ts could
+   * reach Anthropic, the ledger started understating those calls by about an
+   * order of magnitude. The spend cap reads that ledger, so the brake was
+   * calibrated in the wrong unit too.
+   *
+   * Claude Opus 5.5 list prices, per million tokens, as of 21 Oct 2026. Doc
+   * 10's own instruction about its cost table applies here: "confirm every
+   * price", and re-run on the first hundred real jobs. A second Anthropic
+   * model means a second row — there is deliberately no default, so adding
+   * one is a thing somebody does on purpose.
+   */
+  usd_per_m_anthropic_in: 4,
+  usd_per_m_anthropic_out: 20,
+  /** A cache hit, which is the whole point of caching: 0.05x the input rate. */
+  usd_per_m_anthropic_cache_read: 0.2,
+  /** Writing the entry: 1.25x input for the 5-minute cache. */
+  usd_per_m_anthropic_cache_write: 5,
+
   /** R2, per GB-month stored and per GB delivered (R2 has no egress fee). */
   usd_per_gb_month_r2: 0.015,
   usd_per_gb_delivered: 0,
@@ -81,6 +103,11 @@ export const RUNS_ON: Partial<Record<JobType, keyof typeof INSTANCE>> = {
   render: "standard-4",
   shorts: "standard-4",
   proxy: "standard-4",
+  /* Torch wants the cores: a forward pass is the whole cost here, and on
+     standard-2's single vCPU it runs at about a quarter of the speed for
+     exactly the same number of CPU-seconds of billing. */
+  align: "standard-4",
+  take: "standard-4",
 };
 
 export type Prices = typeof PRICES;
@@ -99,7 +126,19 @@ export type JobType =
   /* One Scout run. Its own type because its cost line is unlike every other
      one here: frontier calls and adapter quota rather than minutes of
      footage, and per-job cost is the number the business runs on. */
-  | "scout";
+  | "scout"
+  /* Forced alignment over one source. Container minutes on a machine
+     carrying a 1.26 GB model, charged — like the proxy — whether it worked
+     or not, because the time was spent either way. */
+  | "align"
+  /* The judge over the eval set. Tokens rather than minutes, and its own
+     type because it is the one job in this product that costs money and
+     produces nothing a user watches — it produces a number about the
+     product itself. */
+  | "judge"
+  /* Aligning one recorded take. Container seconds on the machine with the
+     model, and a short file — the cheapest thing that machine does. */
+  | "take";
 
 export interface UsageInput {
   user_id: string;
@@ -110,14 +149,33 @@ export interface UsageInput {
   gpu_ms?: number;
   tokens_in?: number;
   tokens_out?: number;
+  /**
+   * Who ran it. Absent means Workers AI, which is what every row written
+   * before this field existed was.
+   */
+  provider?: "workers-ai" | "anthropic";
+  /** Tokens served from the prompt cache, at a fraction of the input rate. */
+  cache_read_tokens?: number;
+  /** Tokens written into the prompt cache, at a premium over the input rate. */
+  cache_write_tokens?: number;
   bytes_stored?: number;
   bytes_delivered?: number;
   stream_minutes_stored?: number;
   stream_minutes_delivered?: number;
   /*
    * What the work produced: "found" when it did something, "empty" when it ran
-   * and produced nothing, "failed" when it died. Absent for job types where
-   * the question is meaningless — a proxy either exists or the job failed.
+   * and produced nothing, "failed" when it died.
+   *
+   * IT IS NOT OPTIONAL IN SPIRIT ANY MORE. This used to say "absent for job
+   * types where the question is meaningless — a proxy either exists or the
+   * job failed", and on that reading the proxy call site omitted it; 9,702 of
+   * the 9,703 rows in the development database have no outcome at all.
+   *
+   * The question is not meaningless, it was just not being asked. Decision 38
+   * is "charge for what drives cost; absorb the failed attempts" — so the
+   * business eats every failure, and until monthUsage read this column there
+   * was no way to see how much it was eating. That is what `wasted` below is
+   * for, and it is the whole reason a job type that can fail should say so.
    */
   outcome?: "found" | "empty" | "failed";
   /** Set when the diarization upgrade was used, which costs ~10x. */
@@ -130,6 +188,25 @@ export interface UsageInput {
  * prices it was actually written with.
  */
 export function computeCost(u: UsageInput, p: Prices): number {
+  /*
+   * AN ANTHROPIC CALL IS PRICED IN DOLLARS, NOT NEURONS.
+   *
+   * `tokens_in` on an Anthropic row is the tokens that were NOT cached —
+   * which is how the provider reports it — so the three token figures add up
+   * rather than overlapping. Pricing a cache read at the input rate would
+   * make caching look like it saved nothing, and pricing it at zero would
+   * make a long cached conversation look free.
+   */
+  if (u.provider === "anthropic") {
+    const m = (n: number | undefined) => (n ?? 0) / 1e6;
+    return (
+      m(u.tokens_in) * p.usd_per_m_anthropic_in +
+      m(u.tokens_out) * p.usd_per_m_anthropic_out +
+      m(u.cache_read_tokens) * p.usd_per_m_anthropic_cache_read +
+      m(u.cache_write_tokens) * p.usd_per_m_anthropic_cache_write
+    );
+  }
+
   const neurons =
     (u.source_minutes ?? 0) *
       (u.diarized
@@ -222,23 +299,62 @@ export interface MonthRollup {
   total: number;
   lines: { job_type: string; cost: number; count: number }[];
   source_minutes: number;
+  /**
+   * What this month's spend bought nothing, in dollars and in attempts.
+   *
+   * Decision 38 absorbs failed attempts rather than charging for them, which
+   * means the business pays for all of them and nothing anywhere said how
+   * much. `outcome` had been written by five call sites and read by none —
+   * the column existed, the panel grouped by job_type alone, and the one
+   * question a cost panel is for could not be answered.
+   *
+   * Counted separately rather than deducted: `total` is still every dollar
+   * spent, because that is what the bill will say.
+   */
+  wasted: { cost: number; count: number };
 }
 
 /** The cost panel's only source (05-INFRA §Metering, phase 8). */
 export async function monthUsage(db: D1Database, userId: string, since: number): Promise<MonthRollup> {
+  /*
+   * GROUPED BY OUTCOME AS WELL AS BY TYPE, which is the only change needed
+   * to make `outcome` a column somebody reads. The per-type lines are summed
+   * back out of these rows, so the panel's existing breakdown and its
+   * headline total are the same figures they were.
+   */
   const { results } = await db
     .prepare(
-      `SELECT job_type, SUM(cost_usd) AS cost, COUNT(*) AS count, SUM(source_minutes) AS mins
+      `SELECT job_type, outcome, SUM(cost_usd) AS cost, COUNT(*) AS count, SUM(source_minutes) AS mins
          FROM usage_events WHERE user_id = ? AND created_at >= ?
-        GROUP BY job_type ORDER BY cost DESC`,
+        GROUP BY job_type, outcome ORDER BY cost DESC`,
     )
     .bind(userId, since)
-    .all<{ job_type: string; cost: number; count: number; mins: number }>();
+    .all<{ job_type: string; outcome: string | null; cost: number; count: number; mins: number }>();
 
-  const lines = (results ?? []).map((r) => ({ job_type: r.job_type, cost: r.cost ?? 0, count: r.count ?? 0 }));
+  const rows = results ?? [];
+  const byType = new Map<string, { job_type: string; cost: number; count: number }>();
+  for (const r of rows) {
+    const at = byType.get(r.job_type);
+    if (at) {
+      at.cost += r.cost ?? 0;
+      at.count += r.count ?? 0;
+    } else {
+      byType.set(r.job_type, { job_type: r.job_type, cost: r.cost ?? 0, count: r.count ?? 0 });
+    }
+  }
+  const lines = [...byType.values()].sort((a, b) => b.cost - a.cost);
+
+  /* Only "failed". An "empty" pass ran and honestly found nothing, which is
+     an answer and not a waste; a null outcome is a job type that has never
+     had anything to report. */
+  const failed = rows.filter((r) => r.outcome === "failed");
   return {
     total: lines.reduce((a, l) => a + l.cost, 0),
     lines,
-    source_minutes: (results ?? []).reduce((a, r) => a + (r.mins ?? 0), 0),
+    source_minutes: rows.reduce((a, r) => a + (r.mins ?? 0), 0),
+    wasted: {
+      cost: failed.reduce((a, r) => a + (r.cost ?? 0), 0),
+      count: failed.reduce((a, r) => a + (r.count ?? 0), 0),
+    },
   };
 }

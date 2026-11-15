@@ -13,9 +13,18 @@
     "check:render": "node scripts/check-render.cjs",
     "check:editor": "node scripts/check-editor.cjs",
     "check:frame": "node scripts/check-frame.cjs",
+    "check:align": "node scripts/check-align.cjs",
+    "check:otio": "node scripts/check-otio.cjs",
     "eval": "node --experimental-strip-types scripts/eval-retrieval.ts",
     "labels": "node --experimental-strip-types scripts/read-labels.ts",
-    "schema": "node scripts/schema-doc.cjs"
+    "eval:set": "node --experimental-strip-types scripts/eval-set.ts",
+    "schema": "node scripts/schema-doc.cjs",
+    "check:loudness": "node scripts/check-loudness.cjs",
+    "eval:model": "node scripts/eval-model.cjs",
+    "check:duck": "node --experimental-strip-types scripts/check-duck.cjs",
+    "check:graphics": "node --experimental-strip-types scripts/check-graphics.cjs",
+    "fonts": "node scripts/sync-fonts.cjs",
+    "preflight": "node scripts/preflight.cjs"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",

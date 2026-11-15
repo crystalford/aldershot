@@ -29,6 +29,7 @@ const pulled = (id: string, key: string, start: number, end: number): Block => (
   struck: false,
   score: null,
   why: null,
+  label: null,
   mediaKey: key,
   previewKey: key,
   voiceKey: null,

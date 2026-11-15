@@ -183,7 +183,7 @@ export function criticSeeds(rows: LedgerRow[], subject: string): Seed[] {
   }
 
   const seeds: Seed[] = [];
-  for (const { sources, rows: ids, name } of byChannel.values()) {
+  for (const { sources, name } of byChannel.values()) {
     /* TWO SEPARATE SOURCES, not two rows. Two finds in one video is one video
        by somebody who may never mention the subject again; two videos is a
        channel that covers them. */

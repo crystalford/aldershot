@@ -29,6 +29,7 @@
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
+import { runRead } from "./llm.ts";
 
 /** Scout's beat roles. `outside` is the plan's; Scout writes subject and counter. */
 export const SCOUT_ROLES = ["subject", "counter", "outside"] as const;
@@ -557,7 +558,7 @@ function retryPrompt(offences: Offence[], beats: ScoutBeat[]): string {
  */
 export async function decompose(env: Env, input: DecomposeInput): Promise<Decomposition> {
   const model = resolveModel("reason", env, "upgrade");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "decompose", m, i);
 
   const messages: Array<{ role: string; content: string }> = [
     { role: "system", content: systemPrompt() },

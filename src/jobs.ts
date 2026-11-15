@@ -9,6 +9,14 @@
  */
 
 import { ulid } from "./id.ts";
+import {
+  ITEM_STATUSES,
+  completion,
+  progress,
+  type Completion,
+  type ItemStatus,
+  type Progress,
+} from "./items.ts";
 import type { JobType } from "./usage.ts";
 
 export type JobState = "queued" | "running" | "ready" | "failed";
@@ -111,11 +119,116 @@ export async function advance(db: D1Database, id: string, pct: number, label?: s
     .run();
 }
 
-export async function finishJob(db: D1Database, id: string): Promise<void> {
+/**
+ * Job types that MUST register items, so forgetting to is caught.
+ *
+ * INVARIANT 7 IS THE ONE THIS PRODUCT CALLS A P1: "a job is complete only
+ * when every item is terminal and none failed silently". src/items.ts has
+ * held the whole state machine — the statuses, the legal moves,
+ * completion(), the reconciler — since Scout was built, and finishJob
+ * consulted none of it. It wrote state='ready', pct=100 whatever had
+ * happened, for every job type in the product. Scout held itself to the rule
+ * by calling completion() directly and never going through here at all.
+ *
+ * THE DEFAULT IS OPT-IN, AND THE FIRST VERSION HAD IT BACKWARDS. It listed
+ * the types believed not to track items and enforced the invariant on
+ * everything else — which would have failed every render, judge, take, pass,
+ * shorts and probe job in the product, because the list was written from
+ * memory and those six were not on it. A rule whose blast radius depends on
+ * somebody having remembered every job type is a rule that breaks production
+ * to protect it.
+ *
+ * So there are two ways in, and neither needs a complete list:
+ *
+ *   A job that HAS items is held to the invariant, whatever its type. That
+ *   is the guarantee, and it switches itself on the moment a handler starts
+ *   writing items.
+ *
+ *   A type on this list must have items, so a handler that was wired up and
+ *   then stopped writing them fails instead of passing. The list grows as
+ *   each job type is wired, which is the honest direction for a list to
+ *   grow in.
+ */
+export const ITEM_TRACKED_JOB_TYPES: readonly string[] = [];
+
+/** What a job's items say about it. */
+async function itemsOf(db: D1Database, jobId: string): Promise<Array<{ id: string; status: ItemStatus }>> {
+  const { results } = await db
+    .prepare(`SELECT id, status FROM job_items WHERE job_id=?`)
+    .bind(jobId)
+    .all<{ id: string; status: string }>();
+  return (results ?? []).map((r) => ({ id: r.id, status: r.status as ItemStatus }));
+}
+
+const noCounts = (): Completion["counts"] =>
+  Object.fromEntries(ITEM_STATUSES.map((st) => [st, 0])) as Completion["counts"];
+
+/**
+ * Marks a job finished — IF its items agree that it is.
+ *
+ * A job that registered items and has not finished them does not become
+ * `ready` here. It becomes `failed`, carrying completion()'s own sentence,
+ * because the alternative is the silent partial result invariant 7 names: a
+ * green tick over nine of ten transcripts, which the person only discovers
+ * when they go looking for the tenth.
+ *
+ * `degradedAccepted` is the spec's other half and not a loophole. A partial
+ * result somebody chose is a finished job; a partial result nobody mentioned
+ * is the thing being prevented. So the caller passes it on purpose, and it is
+ * never a default.
+ */
+export async function finishJob(
+  db: D1Database,
+  id: string,
+  opts: {
+    degradedAccepted?: boolean;
+    /**
+     * Which types must have items, overriding the default list.
+     *
+     * A handler that registers items knows that it does, and saying so at
+     * the call site is stronger than a central list somebody has to keep in
+     * step: the declaration sits next to the code that would break it.
+     */
+    trackedTypes?: readonly string[];
+  } = {},
+): Promise<Completion> {
+  const items = await itemsOf(db, id);
+
+  const ready = async (why: string): Promise<Completion> => {
+    await db
+      .prepare(`UPDATE jobs SET state='ready', pct=100, finished_at=? WHERE id=?`)
+      .bind(Date.now(), id)
+      .run();
+    return { complete: true, allTerminal: true, counts: noCounts(), outstanding: [], why };
+  };
+
+  if (!items.length) {
+    const row = await db.prepare(`SELECT type FROM jobs WHERE id=?`).bind(id).first<{ type: string }>();
+    const type = row?.type ?? "";
+    /* A type that is supposed to track items and wrote none is a handler
+       that broke, not a job that finished. completion() calls this out too;
+       this is where its refusal reaches the row. */
+    const tracked = opts.trackedTypes ?? ITEM_TRACKED_JOB_TYPES;
+    if (!tracked.includes(type)) {
+      return ready(`${type || "this job"} does not track items yet`);
+    }
+  }
+
+  const done = completion(items, opts);
+  if (done.complete) {
+    await db
+      .prepare(`UPDATE jobs SET state='ready', pct=100, finished_at=? WHERE id=?`)
+      .bind(Date.now(), id)
+      .run();
+    return done;
+  }
+
+  /* Loudly, and with the reason the person can act on. */
   await db
-    .prepare(`UPDATE jobs SET state='ready', pct=100, finished_at=? WHERE id=?`)
-    .bind(Date.now(), id)
+    .prepare(`UPDATE jobs SET state='failed', error=?, finished_at=? WHERE id=?`)
+    .bind(done.why, Date.now(), id)
     .run();
+  return done;
 }
 
 /**
@@ -207,6 +320,32 @@ export async function failJob(db: D1Database, id: string, error: string): Promis
     .prepare(`UPDATE jobs SET state='failed', error=?, finished_at=? WHERE id=?`)
     .bind(error, Date.now(), id)
     .run();
+}
+
+/**
+ * HOW MANY TIMES THIS HAS BEEN TRIED, AND FAILED.
+ *
+ * The attempt history is already in this table — one row per try, with its
+ * state and when it finished — so a caller that wants to stop retrying
+ * something hopeless needs no new column to count with.
+ *
+ * Written for proxyFirst, which had no ceiling at all: a guard that checked
+ * only `queued` and `running` made a fresh job on every page view of a video
+ * whose editing copy could not be made. 9,695 of them in the development
+ * database, one per view, each one a container start in production.
+ */
+export async function countJobsFor(
+  db: D1Database,
+  refId: string,
+  userId: string,
+  type: JobType,
+  state: JobState,
+): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE ref_id=? AND user_id=? AND type=? AND state=?`)
+    .bind(refId, userId, type, state)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 export async function getJobs(db: D1Database, ids: string[]): Promise<Job[]> {
@@ -383,6 +522,35 @@ export async function latestJobFor(
     .first<Job>();
 }
 
+/**
+ * A job's progress, from its items rather than from its own `pct`.
+ *
+ * Phase 8's per-item progress. `jobs.pct` is written by whatever stage is
+ * running, which means a stage that reported 90% and then died left a job
+ * claiming nine tenths of work that never happened. A count of item rows
+ * cannot say that, so where a job HAS items the items are the answer and
+ * `pct` is a fallback rather than the record.
+ *
+ * Null when the job has no items. That is not "no progress" — it is a job
+ * this machinery does not track, and the caller should keep showing `pct`
+ * rather than a bar at zero. ITEM_TRACKED_JOB_TYPES is opt-in for the same
+ * reason.
+ */
+export async function itemProgress(db: D1Database, jobId: string): Promise<Progress | null> {
+  try {
+    const { results } = await db
+      .prepare(`SELECT id, status FROM job_items WHERE job_id=?`)
+      .bind(jobId)
+      .all<{ id: string; status: ItemStatus }>();
+    const items = results ?? [];
+    return items.length ? progress(items) : null;
+  } catch {
+    /* A read failure is "we do not know", not "nothing is happening" — the
+       same rule as the breaker and the spend cap. */
+    return null;
+  }
+}
+
 export async function activeJobs(db: D1Database, userId: string): Promise<Job[]> {
   await reapStaleJobs(db, userId);
   const { results } = await db
@@ -415,4 +583,31 @@ export async function recentlyFinished(
     .bind(userId, Date.now() - sinceMs, limit)
     .all<Job>();
   return results ?? [];
+}
+
+/**
+ * WHY A RE-READ WOULD BE REFUSED, OR NULL TO GO AHEAD.
+ *
+ * Invariant 5: "footage is read and charged once; editing is free." A read is
+ * the expensive operation here — the cost panel prices it per source minute —
+ * so the two ways of paying for the same minutes twice are a source that has
+ * already been read, and a second request while the first read is in flight.
+ *
+ * It lives here rather than inline in the route because a guard inside
+ * src/index.ts cannot be tested: that file's import graph reaches a .woff2 and
+ * node's type stripper refuses it. The proxy guard learned the same lesson the
+ * expensive way — its missing `failed` state put 9,695 jobs in one database,
+ * and no test could have caught it while the condition was an inline `if`.
+ */
+export async function reReadRefusedBecause(
+  db: D1Database,
+  source: { id: string; transcript_state?: string | null },
+  userId: string,
+): Promise<"already read" | "a read is already running" | null> {
+  if (source.transcript_state === "ready") return "already read";
+  const inFlight = await latestJobFor(db, source.id, userId, ["transcribe"]);
+  if (inFlight && (inFlight.state === "queued" || inFlight.state === "running")) {
+    return "a read is already running";
+  }
+  return null;
 }

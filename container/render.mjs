@@ -1,6 +1,7 @@
 // ffmpeg helper, running inside the Cloudflare Container. Two jobs, both
 // driven by the Worker:
 //
+//   POST /align          { url, windows } -> { results }  (forced alignment; see align.mjs)
 //   POST /extract-full   { url }       -> audio/mpeg (the whole track, 32kbps mono 16kHz)
 //   POST /proxy          { url }       -> video/mp4  (480p editing copy, + x-width/x-height)
 //   POST /render         { plan }      -> { id }     (starts a cut, per the EDL)
@@ -27,6 +28,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
+import { alignHandler } from "./align.mjs";
 
 /**
  * Captions, burned in.
@@ -142,7 +144,19 @@ const ENHANCE_FILTERS = [
   HAS_RNNOISE ? "arnndn=m=" + RNNOISE_MODEL + ":mix=0.8" : "",
   "equalizer=f=3000:t=q:w=1:g=2",
   "acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
-  "loudnorm=I=-16:TP=-1.5:LRA=11",
+  /*
+   * -14 LUFS, which is what doc 09 asks for. It said -16 with no comment
+   * saying why — two LU quieter than the handoff, and quiet enough that
+   * every platform would turn it up on the way in.
+   *
+   * TP aims at -1.5 while the SPEC says peaks under -1, and that is not a
+   * disagreement: the AAC encode runs after this filter and adds true peak
+   * to a signal that measured compliant going in. Aiming at the ceiling
+   * lands above it. src/loudness.ts holds both numbers and says so at
+   * length; scripts/check-loudness.cjs measures the encoded file to prove
+   * it, because measuring the wav would be measuring a file nobody gets.
+   */
+  "loudnorm=I=-14:TP=-1.5:LRA=11",
   "alimiter=limit=-1.5dB",
 ]
   .filter((f) => f)
@@ -456,16 +470,78 @@ function render(plan, res) {
             "-filter_complex",
             "[0:v]" + held + "[v];" +
               "[0:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[base];" +
-              "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
-              // threshold/ratio chosen so speech pulls the bed well down but
-              // does not gate it out entirely — the clip should still be
-              // audible underneath, just clearly behind.
-              "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];" +
+              // DUCK BY WORD TIMINGS WHERE WE HAVE THEM.
+              //
+              // The take is force-aligned, so the Worker knows where every
+              // word is and sends one volume expression (src/ducking.ts).
+              // The bed then drops where the SPEECH is rather than where
+              // the signal is loud — so it does not duck for a cough, it
+              // does duck for a quiet word, and it does not pump in the
+              // half-second between sentences.
+              //
+              // Computed in the Worker rather than here because this
+              // process cannot import src/, and the same anti-pump rule
+              // written twice is one rule that drifts.
+              //
+              // The sidechain stays as the fallback, for a take whose
+              // alignment failed: "we do not know where the speech is" is
+              // a different answer from "there is no speech", and a bed at
+              // full level under somebody talking is worse than a
+              // compressor. threshold/ratio chosen so speech pulls the bed
+              // well down but does not gate it out — the clip should still
+              // be audible underneath, just clearly behind.
+              (cut.duckExpr
+                ? "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[voice];" +
+                  "[base]volume=volume='" + cut.duckExpr + "':eval=frame[ducked];"
+                : "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asplit=2[voice][key];" +
+                  "[base][key]sidechaincompress=threshold=0.03:ratio=12:attack=15:release=350[ducked];") +
               "[ducked][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[a]",
             "-map", "[v]", "-map", "[a]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-avoid_negative_ts", "make_zero", "-y", out,
+          ]);
+        } else if (cut.svg) {
+          // A GENERATED PICTURE: words set as type, no file.
+          //
+          // "Graphics are code, never pixels" (invariant 8), so the Worker
+          // sends an SVG that src/graphics.ts drew from the design tokens and
+          // rsvg-convert turns it into one frame. No diffusion model draws a
+          // word or a number, which is why this tier is a rasteriser and not
+          // an image API.
+          //
+          // THE BEAT USED TO VANISH. src/edl.ts dropped any non-footage block
+          // with no mediaKey, so a card somebody inserted held its place in
+          // the editor and the runtime and was simply absent from the export,
+          // with nothing said about it.
+          //
+          // Encoded to match every other part — same size, same codec, same
+          // audio format — because the concat below is a stream copy and will
+          // not join parts that differ. Silent, because a card has no
+          // recording: anullsrc rather than no audio stream at all, for the
+          // same reason.
+          const svgPath = `${dir}/card-${String(i).padStart(4, "0")}.svg`;
+          const pngPath = `${dir}/card-${String(i).padStart(4, "0")}.png`;
+          writeFileSync(svgPath, cut.svg);
+          const rs = spawn("rsvg-convert", ["-w", String(w), "-h", String(h), "-o", pngPath, svgPath]);
+          await new Promise((resolve, reject) => {
+            let err = "";
+            rs.stderr.on("data", (d) => { err += d; });
+            rs.on("error", reject);
+            rs.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`rsvg-convert: ${err}`))));
+          });
+          if (!existsSync(pngPath) || statSync(pngPath).size === 0) {
+            throw new Error("rsvg-convert produced nothing — the picture would be a blank frame");
+          }
+
+          const holdS = Math.max(0.1, cut.end_s - cut.start_s);
+          await runFfmpeg([
+            "-hide_banner", "-loglevel", "error", "-threads", String(FF_THREADS),
+            "-loop", "1", "-framerate", "30", "-t", holdS.toFixed(3), "-i", pngPath,
+            "-f", "lavfi", "-t", holdS.toFixed(3), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-shortest", "-avoid_negative_ts", "make_zero", "-y", out,
           ]);
         } else if (cut.audioOnly) {
           // A VOICEOVER: sound, no picture.
@@ -603,10 +679,53 @@ function render(plan, res) {
         pr.on("error", () => resolve(0));
       });
 
-      console.log(`render ${id}: ${cuts.length} cuts, ${st.size} bytes, ${measured}s, ${Date.now() - t0}ms`);
+      /*
+       * HOW LOUD IT CAME OUT, measured on every export.
+       *
+       * Doc 09's Sound and captions row is "checked on every export, not
+       * offered as a fix" — so this runs whether or not the export asked to
+       * be cleaned up. An export that was not enhanced is not normalised and
+       * will usually be off target; the point is that it SAYS so rather than
+       * the product being silent about the one thing every platform will
+       * change on upload.
+       *
+       * On the finished mp4, after the encode, because true peak moves there.
+       * A measurement that fails leaves nulls and the Worker reports "not
+       * measured", which is not the same as "fine" — see loudnessVerdict.
+       */
+      const loudness = await new Promise((resolve) => {
+        const ff = spawn("ffmpeg", [
+          "-hide_banner", "-nostdin", "-i", outPath,
+          "-af", "loudnorm=print_format=json", "-f", "null", "-",
+        ]);
+        let err = "";
+        /* The JSON goes to stderr, with everything else ffmpeg says. */
+        ff.stderr.on("data", (d) => { err += d; });
+        ff.on("close", () => {
+          /*
+           * FOUND AND FORWARDED, NOT PARSED.
+           *
+           * The Worker reads this with parseLoudnorm in src/loudness.ts,
+           * which has tests. Nothing in this file does, because nothing in
+           * this file can be run without a docker daemon — so the less of
+           * the thinking that happens here the better. All this does is
+           * locate ffmpeg's block and flatten it onto one line, because a
+           * header cannot contain a newline.
+           */
+          const block = err.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
+          resolve(block ? block[0].replace(/\s+/g, " ") : null);
+        });
+        ff.on("error", () => resolve(null));
+      });
+
+      console.log(
+        `render ${id}: ${cuts.length} cuts, ${st.size} bytes, ${measured}s, ` +
+          `${loudness ?? "loudness not measured"}, ${Date.now() - t0}ms`,
+      );
       job.outPath = outPath;
       job.bytes = st.size;
       job.durationS = measured;
+      job.loudness = loudness;
       job.stage = "ready";
       job.pct = 100;
       job.at = Date.now();
@@ -680,6 +799,10 @@ function renderResult(id, res) {
     "content-type": "video/mp4",
     "content-length": String(job.bytes),
     "x-duration-s": String(job.durationS),
+    /* Absent rather than empty when it could not be measured: the Worker
+       reads a missing header as "not measured", which is its own answer and
+       not a pass. */
+    ...(job.loudness ? { "x-loudness": job.loudness } : {}),
   });
   createReadStream(job.outPath).pipe(res).on("close", () => {
     RENDERS.delete(id);
@@ -829,6 +952,13 @@ function readJson(req) {
   });
 }
 
+/** The other half of jsonError: a body that is not an error. */
+function json(res, code, obj) {
+  if (res.headersSent) { res.destroy(); return; }
+  res.writeHead(code, { "content-type": "application/json" });
+  res.end(JSON.stringify(obj));
+}
+
 function jsonError(res, code, obj) {
   if (obj && !String(obj.error || "").trim()) obj = { ...obj, error: "the encoder failed without saying why" };
   if (res.headersSent) { res.destroy(); return; }
@@ -927,6 +1057,13 @@ createServer(async (req, res) => {
   // /render takes a plan rather than a single url, so the url check only
   // applies to the endpoints that do take one.
   if (path === "/render") return render(body, res);
+
+  /*
+   * /align takes a url AND windows, so it sits above the url-only check for
+   * the same reason /render does: it answers "no windows to align" itself,
+   * which is a more useful 400 than "missing url".
+   */
+  if (path === "/align") return alignHandler(body, res, json, jsonError);
 
   if (!body.url) return jsonError(res, 400, { error: "missing url" });
   if (path === "/extract-full") return extractFull(body.url, res);

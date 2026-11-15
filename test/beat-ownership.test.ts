@@ -25,7 +25,6 @@ function setBeatMediaQuery(): string {
 }
 
 const ME = "U1";
-const THEM = "U2";
 
 function world() {
   const db = new DatabaseSync(":memory:");

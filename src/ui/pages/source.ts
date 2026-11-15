@@ -89,7 +89,7 @@ function editsFrom(d: SourceViewData): string {
     ${
       d.edits.length
         ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">${d.edits.map(row).join("")}</div>`
-        : `<div data-content style="margin-top:12px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing cut from this yet. An edit never changes the footage — you can make as many as you like.</div>`
+        : `<div style="margin-top:12px;padding:14px 16px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.secondary};color:${C.ink45};line-height:1.6">Nothing cut from this yet. An edit never changes the footage — you can make as many as you like.</div>`
     }
   </div>`;
 }

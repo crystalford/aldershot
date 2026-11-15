@@ -13,7 +13,9 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
+import { runRead } from "./llm.ts";
+import { plainRegister } from "./register.ts";
 
 /** The design's own act names. */
 export const ACTS = ["Setup", "Development", "Turn", "Resolution"] as const;
@@ -77,7 +79,8 @@ const SCHEMA = {
 
 function systemPrompt(topic: string, menu: MenuClip[]): string {
   return [
-    "You are outlining a video essay from footage that already exists.",
+    /* Plain register: no genre word. See src/register.ts and invariant 10. */
+    "You are outlining a video from footage that already exists.",
     "",
     `Topic: ${topic}`,
     "",
@@ -116,17 +119,20 @@ function systemPrompt(topic: string, menu: MenuClip[]): string {
  */
 export async function draftOutline(
   env: Env,
-  topic: string,
+  rawTopic: string,
   menu: MenuClip[],
   opts: { upgrade?: boolean } = {},
 ): Promise<EssayOutline> {
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  /* Invariant 10: the genre word is stored and discarded. */
+  const { said: topic } = plainRegister(rawTopic);
+  const model = resolveFor("direct", env);
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "essay", m, i);
 
   const res = await run(model.id, {
     messages: [
       { role: "system", content: systemPrompt(topic, menu) },
-      { role: "user", content: `Outline the essay: ${topic}` },
+      /* Plain register here too: the costume can sit in either turn. */
+      { role: "user", content: `Outline it: ${topic}` },
     ],
     response_format: { type: "json_schema", json_schema: SCHEMA },
     max_tokens: 8000,

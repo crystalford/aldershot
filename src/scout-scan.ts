@@ -37,6 +37,7 @@ import type { IndexedWord } from "./align.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveModel } from "./models.ts";
 import { type CrowdTimestamp, scanWindowStart } from "./scout-triage.ts";
+import { runRead } from "./llm.ts";
 
 /* ── Windows ────────────────────────────────────────────────────────────── */
 
@@ -367,7 +368,7 @@ export async function scanWindow(
   question: string,
 ): Promise<ScanResult> {
   const model = resolveModel("reason", env, "default");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "scan", m, i);
 
   const res = await run(model.id, {
     messages: [
@@ -375,10 +376,24 @@ export async function scanWindow(
       { role: "user", content: `${question}\n\nThe transcript:\n\n${renderWindow(w)}` },
     ],
     response_format: { type: "json_schema", json_schema: SCHEMA },
-    /* Short on purpose. The answer is a quote and an id; a budget that allows
-       an essay invites one, and the essay would be the model explaining why
-       the passage nearly fits. */
-    max_tokens: 400,
+    /*
+     * ROOM TO THINK, NOT ROOM TO RAMBLE — and this was 400 for the opposite
+     * reason. The comment said "short on purpose: the answer is a quote and
+     * an id; a budget that allows an essay invites one", which is the same
+     * reasoning src/naming.ts used at 32 and src/judge.ts used at 2000.
+     * Both were wrong the same way: the budget has to cover the THINKING,
+     * which `assistantText` then throws away. A reading-comprehension
+     * question over two thousand tokens is exactly what a reasoning tier
+     * spends tokens on before it answers, and at 400 it would be cut off
+     * before the quote arrived — on every window, silently, because an
+     * empty parse is a window with nothing in it.
+     *
+     * The length of the ANSWER is bounded by the closed schema below, which
+     * has three string fields and nowhere for prose to go. `runRead` now
+     * says when the budget was spent, so the next number comes from a log
+     * rather than from an argument about essays.
+     */
+    max_tokens: 4000,
   });
 
   const { tokensIn, tokensOut } = usageTokens(res);

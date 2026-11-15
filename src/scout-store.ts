@@ -25,6 +25,7 @@ import { ulid } from "./id.ts";
 import type { AdapterName, Family, SourceCandidate } from "./scout-adapters.ts";
 import type { ScoutBeat } from "./scout-decompose.ts";
 import type { Verdict } from "./scout-verify.ts";
+import type { LedgerRow } from "./scout-reduce.ts";
 import type { RunSnapshot } from "./scout-run.ts";
 import type { StopReason } from "./scout-stop.ts";
 import type { ItemStatus } from "./items.ts";
@@ -210,8 +211,8 @@ export async function writeSources(
     candidates.map((c) =>
       db
         .prepare(
-          "INSERT OR IGNORE INTO scout_sources (id, run_id, adapter, external_id, url, title, channel, published_at, duration_s, kind, transcript, licence, fetched_at, expires_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT OR IGNORE INTO scout_sources (id, run_id, adapter, external_id, url, title, channel, published_at, duration_s, kind, transcript, transcript_url, licence, fetched_at, expires_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(
           ulid(now),
@@ -225,6 +226,7 @@ export async function writeSources(
           c.durationS ?? null,
           c.kind ?? null,
           c.transcript ?? "none",
+          c.transcriptUrl ?? null,
           c.licence ?? null,
           now,
           c.expiresAt ?? null,
@@ -243,6 +245,44 @@ export async function setTriage(
       db.prepare("UPDATE scout_sources SET triage_score = ? WHERE id = ?").bind(r.score, r.sourceId),
     ),
   );
+}
+
+export interface Scannable {
+  id: string;
+  url: string;
+  title: string | null;
+  transcriptUrl: string;
+  durationS: number | null;
+}
+
+/**
+ * Sources with words in them that nobody has read yet.
+ *
+ * TRIAGE ORDER, highest first, because the budget may stop the run partway
+ * and the sources most likely to carry the moment should be the ones that
+ * got read. A source with no transcript_url is not here however promising:
+ * the scan phase needs an address, and "we know it has a transcript" is not
+ * one.
+ */
+export async function sourcesToScan(db: D1Database, runId: string, limit = 5): Promise<Scannable[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, url, title, transcript_url, duration_s
+         FROM scout_sources
+        WHERE run_id = ? AND scanned = 0 AND transcript != 'none'
+          AND transcript_url IS NOT NULL AND transcript_url != ''
+        ORDER BY COALESCE(triage_score, 0) DESC, id
+        LIMIT ?`,
+    )
+    .bind(runId, limit)
+    .all<{ id: string; url: string; title: string | null; transcript_url: string; duration_s: number | null }>();
+  return (results ?? []).map((r) => ({
+    id: r.id,
+    url: r.url,
+    title: r.title,
+    transcriptUrl: r.transcript_url,
+    durationS: r.duration_s,
+  }));
 }
 
 export async function markScanned(db: D1Database, sourceId: string, yieldN: number): Promise<void> {
@@ -317,6 +357,119 @@ export async function writeLedger(db: D1Database, rows: LedgerIn[], now = Date.n
   return ids;
 }
 
+export interface Unverified {
+  id: string;
+  sourceId: string;
+  quoteExact: string;
+  /** The window the scan read, and the hint it is allowed to give. */
+  hintWordIndex: number;
+  transcriptUrl: string;
+}
+
+/**
+ * Finds nobody has checked, with the address of the recording to check against.
+ *
+ * GROUPED BY SOURCE BY THE ORDER, not by the caller: rows from one source
+ * share one transcript, and a fetch per row would pull the same megabyte of
+ * VTT down once for every quote found in it. The verify phase relies on this
+ * ordering to fetch once and reuse.
+ *
+ * A row whose source has lost its transcript url is left alone rather than
+ * rejected. It cannot be checked, and "we could not look" is not the same
+ * answer as "it is not there" — invariant 4's reachable "nothing backs this"
+ * has to mean the second one.
+ */
+export async function rowsToVerify(db: D1Database, runId: string, limit = 50): Promise<Unverified[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT l.id, l.source_id, l.quote_exact, l.word_span_json, s.transcript_url
+         FROM scout_ledger l
+         JOIN scout_sources s ON s.id = l.source_id
+        WHERE l.run_id = ? AND l.verified_at IS NULL
+          AND s.transcript_url IS NOT NULL AND s.transcript_url != ''
+        ORDER BY l.source_id, l.id
+        LIMIT ?`,
+    )
+    .bind(runId, limit)
+    .all<{
+      id: string;
+      source_id: string;
+      quote_exact: string;
+      word_span_json: string;
+      transcript_url: string;
+    }>();
+  return (results ?? []).map((r) => {
+    let hint = 0;
+    try {
+      hint = Number((JSON.parse(r.word_span_json) as { startWord?: unknown }).startWord) || 0;
+    } catch {
+      /* A span that will not parse is a hint we do not have, which costs the
+         fuzzy pass its narrowing and costs the exact pass nothing. */
+    }
+    return {
+      id: r.id,
+      sourceId: r.source_id,
+      quoteExact: r.quote_exact,
+      hintWordIndex: hint,
+      transcriptUrl: r.transcript_url,
+    };
+  });
+}
+
+/**
+ * The verifier's answer, written where the scan's guess was.
+ *
+ * THE SPAN AND THE TIMES ARE REPLACED, which is invariant 2 landing in a
+ * column. The scan recorded the window it read and the model's hint; what
+ * goes in here is the span that actually matched and the times read off
+ * those words. A rejected row keeps the scan's window, because there is no
+ * matched span to replace it with and blanking it would lose what was read.
+ *
+ * `verified_at` is set on every outcome including rejection. That is what
+ * stops the phase re-reading the same hallucination every round, and it is
+ * the timestamp the rejection rate is measured at.
+ */
+export async function setVerification(
+  db: D1Database,
+  id: string,
+  v: {
+    verify: Verdict;
+    matchScore: number;
+    span: { startWord: number; endWord: number } | null;
+    tStartS: number | null;
+    tEndS: number | null;
+    contextBefore?: string | null;
+    contextAfter?: string | null;
+  },
+  now = Date.now(),
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE scout_ledger
+          SET verify = ?,
+              match_score = ?,
+              word_span_json = COALESCE(?, word_span_json),
+              t_start_s = COALESCE(?, t_start_s),
+              t_end_s = COALESCE(?, t_end_s),
+              context_before = COALESCE(?, context_before),
+              context_after = COALESCE(?, context_after),
+              verified_at = ?
+        WHERE id = ?`,
+    )
+    .bind(
+      v.verify,
+      v.matchScore,
+      v.span ? JSON.stringify(v.span) : null,
+      v.tStartS,
+      v.tEndS,
+      v.contextBefore ?? null,
+      v.contextAfter ?? null,
+      now,
+      id,
+    )
+    .run();
+}
+
 /** Links a copy to the original it came from, once a trace seed finds it. */
 export async function setOriginalOf(db: D1Database, ledgerId: string, originalId: string): Promise<void> {
   await db.prepare("UPDATE scout_ledger SET original_of = ? WHERE id = ?").bind(originalId, ledgerId).run();
@@ -372,12 +525,22 @@ export async function snapshot(
     queriesPending: extra.queriesPending,
     candidatesUntriaged: untriaged,
     sourcesUnscanned: unscanned,
-    /* A scan that answered QUOTE and has no ledger row yet. The scan writes
-       its answer and the verifier writes the row, so the gap between them is
-       exactly this count. */
+    /*
+     * A FIND NOBODY HAS CHECKED. This counted something else and was
+     * therefore always zero, so the planner never once asked for verify.
+     *
+     * It read: a source scanned with a yield that has NO ledger row — which
+     * assumed the VERIFIER writes the row. The scan writes it, unverified,
+     * and it is right to: a find that existed only after verification would
+     * be lost entirely by a worker that died between the two, and invariant
+     * 7 is the rule that a half-finished job must not look finished. So the
+     * row appears the moment it is found, saying nothing has checked it.
+     *
+     * Which makes the gap between scanning and checking a property of the
+     * ROW, not of the source, and `verified_at IS NULL` is where it lives.
+     */
     scansUnverified: await one(
-      "SELECT COUNT(*) AS n FROM scout_sources WHERE run_id = ? AND scanned = 1 AND yield_n > 0 " +
-        "AND NOT EXISTS (SELECT 1 FROM scout_ledger l WHERE l.source_id = scout_sources.id)",
+      "SELECT COUNT(*) AS n FROM scout_ledger WHERE run_id = ? AND verified_at IS NULL",
     ),
     verifiedRows,
     reduced: reduced > 0 && (await one("SELECT COUNT(*) AS n FROM scout_runs WHERE id = ? AND status IN ('done','stopped')")) > 0,
@@ -463,4 +626,196 @@ export async function diligence(db: D1Database, runId: string): Promise<Diligenc
        inventive one. */
     rejectionRate: decided ? Number((rejected / decided).toFixed(4)) : 0,
   };
+}
+
+/* ── What the stopping rule measures ───────────────────────────────────── */
+
+/**
+ * THE RUN'S OWN COUNTERS, which the planner had been handed as zeroes.
+ *
+ * `runScoutPhase` built its stop state with `rounds: 0, sourcesScanned: 0,
+ * spendUsd: 0` written in literally, and a one-point curve. decideStop reads
+ * all four:
+ *
+ *   if (state.rounds >= budget.maxRounds)        — never, 0 >= 4 is false
+ *   if (state.sourcesScanned >= budget.maxSources)  — never
+ *   if (state.spendUsd >= budget.maxSpendUsd)    — never
+ *   knee(state.curve)                            — needs more than one point
+ *
+ * So Spec 18's three budgets — four rounds, forty sources, $1.50 — could not
+ * fire, and neither could the knee. Every one of them is a count over rows
+ * already written, which is why this is a read rather than a new column.
+ *
+ * SPEND IS SEARCH SPEND, AND ONLY THAT. `scout_searches.cost_usd` is the one
+ * per-call cost this run records; the model calls (decompose, expand, scan,
+ * reduce) compute their token counts and no row attributes them to a run, so
+ * they are not in this figure. That makes the cap fire later than it should
+ * rather than never, and the gap is written down in 12-DEFERRED.md rather
+ * than papered over with an estimate.
+ */
+export async function runCounters(
+  db: D1Database,
+  runId: string,
+): Promise<{ rounds: number; sourcesScanned: number; spendUsd: number }> {
+  const [run, scanned, spend] = await Promise.all([
+    db.prepare("SELECT rounds FROM scout_runs WHERE id = ?").bind(runId).first<{ rounds: number }>(),
+    db
+      .prepare("SELECT COUNT(*) AS n FROM scout_sources WHERE run_id = ? AND scanned = 1")
+      .bind(runId)
+      .first<{ n: number }>(),
+    db
+      .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS n FROM scout_searches WHERE run_id = ?")
+      .bind(runId)
+      .first<{ n: number }>(),
+  ]);
+  return {
+    rounds: Number(run?.rounds ?? 0),
+    sourcesScanned: Number(scanned?.n ?? 0),
+    spendUsd: Number(spend?.n ?? 0),
+  };
+}
+
+/**
+ * The curve the knee is found on: verified moments against queries issued.
+ *
+ * Built from the rows rather than stored, which is the same argument the
+ * curve's own comment in scout-job makes about the coverage — "a measurement
+ * held in a message is a measurement that drifts".
+ *
+ * ONE POINT PER QUERY, in the order they were issued, each carrying how many
+ * rows had been VERIFIED by the time that query went out. `verified_at` is
+ * what makes this possible and is the column that exists for it. The leading
+ * (0, 0) is kept because the knee is measured from the chord between the
+ * first and last points and a curve starting at the first query would be
+ * measuring from halfway up.
+ */
+export async function searchCurve(db: D1Database, runId: string): Promise<Array<{ queries: number; verified: number }>> {
+  const [{ results: issued }, { results: verified }] = await Promise.all([
+    db
+      .prepare(
+        "SELECT issued_at AS at FROM scout_searches WHERE run_id = ? AND outcome = 'ok' ORDER BY issued_at",
+      )
+      .bind(runId)
+      .all<{ at: number }>(),
+    db
+      .prepare(
+        "SELECT verified_at AS at FROM scout_ledger WHERE run_id = ? AND verify = 'verified' " +
+          "AND verified_at IS NOT NULL ORDER BY verified_at",
+      )
+      .bind(runId)
+      .all<{ at: number }>(),
+  ]);
+
+  const stamps = (verified ?? []).map((r) => Number(r.at));
+  const curve = [{ queries: 0, verified: 0 }];
+  (issued ?? []).forEach((q, i) => {
+    const at = Number(q.at);
+    /* Verified rows are already in order, so a count of those at or before
+       this query is a walk rather than a scan per point. */
+    let n = 0;
+    while (n < stamps.length && stamps[n] <= at) n += 1;
+    curve.push({ queries: i + 1, verified: n });
+  });
+  return curve;
+}
+
+/* ── Seeds ─────────────────────────────────────────────────────────────── */
+
+export interface SeedIn {
+  kind: string;
+  value: string;
+  support: number;
+  why: string;
+  queriesN: number;
+}
+
+/**
+ * The seeds a round raised, so the next round does not raise them again.
+ *
+ * snowball() takes `alreadySeeded` for exactly one reason, in its own words:
+ * "without this a run derives the same phrase every round, searches it, finds
+ * the rows it came from, and spends the budget going in a circle." That set
+ * has to outlive the message that carried the round, because a redelivery
+ * would otherwise re-raise every seed and pay for every query again.
+ *
+ * Written here and read by `seedsRaised` below. It is also the only record of
+ * WHY a round asked what it asked, which is the half of the diligence log
+ * that explains the queries rather than listing them.
+ */
+export async function writeSeeds(db: D1Database, runId: string, round: number, seeds: SeedIn[], now = Date.now()): Promise<void> {
+  if (!seeds.length) return;
+  await db.batch(
+    seeds.map((s) =>
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO scout_seeds (id, run_id, round, kind, value, support, why, queries_n, created_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(ulid(now), runId, round, s.kind, s.value, s.support, s.why, s.queriesN, now),
+    ),
+  );
+}
+
+/** Every seed this run has already raised, as snowball's own seedKey. */
+export async function seedsRaised(db: D1Database, runId: string): Promise<string[]> {
+  const { results } = await db
+    .prepare("SELECT kind, value FROM scout_seeds WHERE run_id = ?")
+    .bind(runId)
+    .all<{ kind: string; value: string }>();
+  return (results ?? []).map((r) => r.kind + "\u0000" + String(r.value).trim().toLowerCase());
+}
+
+/**
+ * A round has closed. Spec 18's round budget counts these.
+ *
+ * Incremented by the snowball phase, which is what a round ENDS with — see
+ * nextStep's "KEEP GOING, AND A ROUND ENDS WITH SNOWBALL". Nothing incremented
+ * it before, so `scout_runs.rounds` was written back as 0 every time the row
+ * was refreshed and the four-round cap was unreachable.
+ */
+export async function closeRound(db: D1Database, runId: string): Promise<number> {
+  await db.prepare("UPDATE scout_runs SET rounds = rounds + 1 WHERE id = ?").bind(runId).run();
+  const row = await db.prepare("SELECT rounds FROM scout_runs WHERE id = ?").bind(runId).first<{ rounds: number }>();
+  return Number(row?.rounds ?? 0);
+}
+
+/**
+ * The verified rows snowball seeds from, in the shape scout-reduce defines.
+ *
+ * Only verified. snowball() filters again on arrival — belt and braces, and
+ * its own comment says why: seeding from a paraphrase spends real searches on
+ * a phrase that may not have been said, and seeding from a rejection sends the
+ * run after a fabrication.
+ */
+export async function verifiedRows(db: D1Database, runId: string): Promise<LedgerRow[]> {
+  const { results } = await db
+    .prepare(
+      "SELECT l.id AS id, l.beat_id AS beat_id, l.verify AS verify, l.quote_exact AS quote_exact, " +
+        "l.t_start_s AS t_start_s, l.t_end_s AS t_end_s, l.context_before AS context_before, " +
+        "l.context_after AS context_after, l.source_id AS source_id, l.crowd_signals_n AS crowd_signals_n, " +
+        "l.original_of AS original_of, s.title AS title, s.channel AS channel, s.kind AS kind, " +
+        "s.published_at AS published_at FROM scout_ledger l " +
+        "LEFT JOIN scout_sources s ON s.id = l.source_id " +
+        "WHERE l.run_id = ? AND l.verify = 'verified' ORDER BY l.created_at",
+    )
+    .bind(runId)
+    .all<Record<string, unknown>>();
+
+  return (results ?? []).map((r) => ({
+    id: String(r.id),
+    beatId: String(r.beat_id ?? ""),
+    verify: "verified" as Verdict,
+    quoteExact: String(r.quote_exact ?? ""),
+    tStartS: Number(r.t_start_s ?? 0),
+    tEndS: Number(r.t_end_s ?? 0),
+    ...(r.context_before == null ? {} : { contextBefore: String(r.context_before) }),
+    ...(r.context_after == null ? {} : { contextAfter: String(r.context_after) }),
+    sourceId: String(r.source_id ?? ""),
+    ...(r.title == null ? {} : { sourceTitle: String(r.title) }),
+    ...(r.channel == null ? {} : { sourceChannel: String(r.channel) }),
+    ...(r.kind == null ? {} : { sourceKind: String(r.kind) }),
+    ...(r.published_at == null ? {} : { publishedAt: Number(r.published_at) }),
+    crowdSignals: Number(r.crowd_signals_n ?? 0),
+    originalOf: r.original_of == null ? null : String(r.original_of),
+  }));
 }

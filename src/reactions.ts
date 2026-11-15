@@ -13,8 +13,10 @@
 
 import type { Env } from "./env.ts";
 import { groundClips, parseClips, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
 import type { Segment } from "./sources.ts";
+import { runRead } from "./llm.ts";
+import { plainRegister } from "./register.ts";
 
 const SCHEMA = {
   type: "object",
@@ -37,9 +39,16 @@ const SCHEMA = {
   required: ["clips"],
 } as const;
 
+/*
+ * PLAIN REGISTER. This opened "You are laying out a reaction video", which is
+ * invariant 10 exactly: the intent parse read "react to this" — doc 05 says
+ * that is the one place allowed to — and then handed the word straight to the
+ * writer. Everything below already says what the job IS, so the costume was
+ * carrying no information at all.
+ */
 function systemPrompt(about: string): string {
   return [
-    "You are laying out a reaction video.",
+    "You are laying out where a creator stops a clip to speak.",
     "",
     `The creator wants to react to: ${about}`,
     "",
@@ -80,14 +89,17 @@ export interface ReactionResult {
 export async function placeReactions(
   env: Env,
   segments: Segment[],
-  about: string,
+  rawAbout: string,
   opts: { upgrade?: boolean } = {},
 ): Promise<ReactionResult> {
   if (!segments.length) return { beats: [], tokensIn: 0, tokensOut: 0, model: "" };
 
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
+  /* Invariant 10: the intent parse already read "react to this" — doc 05 says
+     that is the one place allowed to. It does not travel further. */
+  const { said: about } = plainRegister(rawAbout);
+  const model = resolveFor("direct", env);
   const transcript = segments.map((s) => `[${s.start_ms}-${s.end_ms}] ${s.text}`).join("\n");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "reactions", m, i);
 
   const res = await run(model.id, {
     messages: [

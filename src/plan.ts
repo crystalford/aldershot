@@ -26,7 +26,10 @@
 
 import type { Env } from "./env.ts";
 import { assistantText, usageTokens } from "./grounding.ts";
-import { resolveModel } from "./models.ts";
+import { resolveFor } from "./models.ts";
+import { runRead } from "./llm.ts";
+import { plainRegister } from "./register.ts";
+import { diagnosis } from "./scout-decompose.ts";
 
 /** What a beat is for. The prototype's own three. */
 export const ROLES = ["subject", "counter", "outside"] as const;
@@ -53,6 +56,15 @@ export interface Draft {
   tokensIn: number;
   tokensOut: number;
   model: string;
+  /**
+   * The genre word the person used, if they used one — kept, not thrown away.
+   *
+   * Invariant 10 says the writer never sees it, not that it never existed.
+   * Doc 04: "Genre is a parameter set applied after the cut is aligned, not a
+   * writing instruction." Nothing applies it yet; carrying it is what makes
+   * that possible later without asking the person again.
+   */
+  genre: string | null;
 }
 
 const SCHEMA = {
@@ -78,9 +90,21 @@ const SCHEMA = {
   required: ["claim", "beats"],
 } as const;
 
+/*
+ * A PLAIN REGISTER, WITH NO GENRE WORD IN IT.
+ *
+ * This line read "You are planning a video essay" for as long as it has
+ * existed, which is invariant 10 broken by us rather than by a user: the
+ * writer was handed the costume in the first sentence of its instructions.
+ * Decision 15 — "a genre word is a costume; the model performs it."
+ *
+ * The topic arrives through plainRegister, so a person who typed "make me a
+ * video essay about NASA" is planning NASA and the word "video essay" is
+ * stored as an edit-profile hint rather than sent.
+ */
 function systemPrompt(topic: string): string {
   return [
-    "You are planning a video essay, before any footage has been looked at.",
+    "You are planning a video, before any footage has been looked at.",
     "",
     `The topic: ${topic}`,
     "",
@@ -115,9 +139,14 @@ function systemPrompt(topic: string): string {
  * against the library, where a beat that finds nothing is marked thin rather
  * than filled with something that does not meet it.
  */
-export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
-  const model = resolveModel("reason", env, opts.upgrade ? "upgrade" : "default");
-  const run = env.AI.run.bind(env.AI) as (m: string, i: Record<string, unknown>) => Promise<unknown>;
+export async function draftPlan(env: Env, rawTopic: string, opts: { upgrade?: boolean } = {}): Promise<Draft> {
+  /* Invariant 10: the genre word is stored and discarded; the writer never
+     sees it. `genre` is returned so a caller can keep it — it is an edit
+     profile, which doc 04 applies after the cut is aligned. */
+  const { said: topic, genre } = plainRegister(rawTopic);
+  /* Directing: what the video says. Not a place to save a call. */
+  const model = resolveFor("direct", env);
+  const run = (m: string, i: Record<string, unknown>) => runRead(env, "plan", m, i);
 
   const res = await run(model.id, {
     messages: [
@@ -125,12 +154,29 @@ export async function draftPlan(env: Env, topic: string, opts: { upgrade?: boole
       { role: "user", content: `Plan it: ${topic}` },
     ],
     response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 4000,
+    /*
+     * 8000, LIKE EVERY OTHER CALL THAT RETURNS A STRUCTURE THIS SIZE.
+     *
+     * It was 4000, and the first time anything actually called this — the
+     * composer's new essay door — `reportRoom` said what had been true all
+     * along: "[plan] cut off: spent all 4000 output token(s), so the answer is
+     * incomplete and anything parsed from it is a guess. Raise the budget."
+     * Nothing parsed, no beats came back, and the plan could not be reached.
+     *
+     * The ask is a claim plus five to eight beats, each with a role, a name
+     * and a `need` written as a described moment — the same order of output as
+     * score.ts, arrange.ts and essay.ts, which all use 8000. 4000 was the
+     * figure for a call that returns a sentence.
+     *
+     * Unnoticed for as long as it was because POST /api/plans had no caller:
+     * the budget was only ever wrong on a path nobody took.
+     */
+    max_tokens: 8000,
   });
 
   const { tokensIn, tokensOut } = usageTokens(res);
   const { claim, beats } = parsePlan(res);
-  return { claim, beats, tokensIn, tokensOut, model: model.id };
+  return { claim, beats, tokensIn, tokensOut, model: model.id, genre };
 }
 
 /**
@@ -185,25 +231,102 @@ export function parsePlan(response: unknown): { claim: string; beats: Beat[] } {
  * search until something turns up: a beat with nothing behind it is a hole in
  * the argument, and the useful thing to do with a hole is show it.
  *
+ * AND "LITTLE" MEANS LITTLE THAT BACKS IT, NOT FEW RESULTS. Retrieval
+ * returns six moments for any beat with words in it; counting them measured
+ * whether the search box worked, not whether the beat has an argument under
+ * it. Six moments about the same evening, none of which say the thing, is
+ * exactly the hole this is for — and it read as a well-stocked beat. The
+ * judge (src/judge.ts) is what tells them apart.
+ *
+ * NOBODY CHECKED IS NOT NOTHING BACKS IT. When no verdict is known — the
+ * judge was not run, or the call failed — this falls back to counting
+ * results, which is what it always did. A beat marked thin because a model
+ * call failed would send somebody to reshoot footage they already have.
+ *
  * AN OUTSIDE BEAT IS A GAP, HONESTLY. "One voice that isn't yours" means
- * footage the user did not shoot, which is Scout's job, and Scout is not
- * built. Searching their own library for it would return their own voice and
- * label it somebody else's — so outside beats find nothing on purpose and say
- * why.
+ * footage the user did not shoot, which is Scout's job. Scout is built now
+ * and runs per PROJECT; a plan is not a project until Cut it, so there is
+ * nothing for a beat to hand off to yet and this still says so rather than
+ * searching the user's own library and labelling their voice somebody
+ * else's.
  */
 export const THIN_BELOW = 2;
+
+/**
+ * WHAT THE ON-CAMERA STOPLIST MAKES OF A BEAT THE PERSON WROTE.
+ *
+ * Advice. Never a veto, and the distinction is the whole point of this
+ * function existing rather than the route calling `diagnosis` directly.
+ *
+ * `18-SCOUT-BUILD-SPEC.md` requires every behaviour to be "something a viewer
+ * could point to on camera", and src/scout-decompose.ts enforces it hard: a
+ * hit gets one regeneration and a second hit drops the beat. That is right for
+ * a model's output — a model asked again writes a better sentence. It is wrong
+ * for a person's. Invariant 10 says "the user's own words win where they
+ * exist", and invariant 3's posture throughout is reasons rather than
+ * verdicts, so refusing somebody's sentence because a stoplist matched would
+ * break both at once.
+ *
+ * But saying nothing would be its own failure. A `need` is a RETRIEVAL QUERY,
+ * and "he wants to leave" describes why rather than what a camera saw, so it
+ * genuinely finds nothing. Reporting that is a service; enforcing it is not.
+ *
+ * Returns the offending PHRASE rather than a sentence, for the reason
+ * `diagnosis` does — the page sets it as the data it is, and the wording
+ * around it is the design's. Checks the name as well as the need, as
+ * validateDecomposition does, because a beat called "why he snapped" is the
+ * same problem spelled in the other field.
+ */
+export function needAdvice(beat: { name?: string; need: string }): string | null {
+  for (const field of [beat.need, beat.name]) {
+    if (!field) continue;
+    const hit = diagnosis(field);
+    if (hit) return wholeWord(field, hit);
+  }
+  return null;
+}
+
+/*
+ * THE WORD THEY TYPED, NOT THE STEM THAT MATCHED.
+ *
+ * The stoplist holds stems — "narcissist*" — so `diagnosis` on "narcissistic
+ * framing" returns "narcissis". Quoting that back at Scout is fine, because
+ * Scout is being told to rewrite and a stem is enough to identify what to
+ * drop. Showing it to the person who typed the word reads like a bug, so the
+ * match is extended to the end of the word it started in.
+ *
+ * Done here rather than in `diagnosis` on purpose: that function is Scout's
+ * and its regeneration prompt depends on what it returns, so widening it
+ * would change a working path to improve a sentence on a different one.
+ */
+function wholeWord(text: string, hit: string): string {
+  const at = text.toLowerCase().indexOf(hit.toLowerCase());
+  if (at < 0) return hit;
+  let end = at + hit.length;
+  while (end < text.length && /[\w'\u2019-]/.test(text[end])) end += 1;
+  return text.slice(at, end);
+}
+
+/** One candidate for a beat, with the judge's answer when there is one. */
+export interface Candidate {
+  id: string;
+  /** True when something said it backs the beat; null when nobody looked. */
+  backs: boolean | null;
+}
 
 export interface Found {
   beatId: string;
   clipIds: string[];
   thin: boolean;
+  /** How many of them back it. Null when nobody checked. */
+  backed: number | null;
   /** Why it is empty, when the reason is not "your library has nothing". */
   gap: string | null;
 }
 
 export async function findForBeats(
   beats: Array<{ id: string; role: Role; need: string }>,
-  search: (need: string) => Promise<string[]>,
+  search: (need: string) => Promise<Candidate[]>,
 ): Promise<Found[]> {
   const out: Found[] = [];
   for (const b of beats) {
@@ -212,12 +335,33 @@ export async function findForBeats(
         beatId: b.id,
         clipIds: [],
         thin: true,
+        backed: null,
         gap: "a voice that isn't yours — nothing here can find that yet",
       });
       continue;
     }
-    const clipIds = await search(b.need);
-    out.push({ beatId: b.id, clipIds, thin: clipIds.length < THIN_BELOW, gap: null });
+
+    const found = await search(b.need);
+    const clipIds = found.map((f) => f.id);
+    const checked = found.some((f) => f.backs !== null);
+    const backed = checked ? found.filter((f) => f.backs).length : null;
+
+    out.push({
+      beatId: b.id,
+      clipIds,
+      backed,
+      thin: (backed ?? clipIds.length) < THIN_BELOW,
+      /*
+       * FOUND SOMETHING, AND NONE OF IT SAYS THE THING. A different hole
+       * from an empty one, and the only one a person can act on without
+       * shooting anything: the words are wrong, not the footage.
+       */
+      /* `checked` already implies something was found — nothing can have
+         been checked otherwise — so there is no length guard here. One was,
+         and breaking it on purpose changed nothing, which is how it was
+         found to be saying the same thing twice. */
+      gap: checked && backed === 0 ? "nothing here says it — the moments are about it, not of it" : null,
+    });
   }
   return out;
 }

@@ -12,9 +12,15 @@
  */
 
 import type { Env } from "./env.ts";
-import { FRAME_MS, frameAccurate, timingFor } from "./align.ts";
+import { FRAME_MS, frameAccurate } from "./align.ts";
+import { timingForProject } from "./align-source.ts";
+import { sidecarWanted } from "./captions.ts";
+import { loudnessVerdict, parseLoudnorm } from "./loudness.ts";
+import { plan as duckPlan } from "./ducking.ts";
+import { quoteCard } from "./graphics.ts";
 import { buildEdl, buildRenderPlan, buildSrt } from "./edl.ts";
-import { parseCuts } from "./cuts.ts";
+import { bindings, splitBindings, splitLine, type Binding } from "./envelope.ts";
+import { loadRules } from "./rule-store.ts";
 import { presignGet } from "./r2sign.ts";
 import { advance, failJob, finishJob, secondsPerOutputSecond, startJob } from "./jobs.ts";
 import { Cancelled, encode, EncodeError, encoderFor } from "./encode.ts";
@@ -86,6 +92,9 @@ export interface RenderRow {
   stream_uid: string | null;
   duration_s: number | null;
   bytes: number | null;
+  /** What the finished file measured. Null is "not measured", never "fine". */
+  lufs: number | null;
+  true_peak: number | null;
   state: string;
   error: string | null;
   created_at: number;
@@ -108,6 +117,9 @@ export async function createRender(
     stream_uid: null,
     duration_s: null,
     bytes: null,
+    /* Nothing has been rendered yet, so nothing has been measured. */
+    lufs: null,
+    true_peak: null,
     state: "queued",
     error: null,
     created_at: Date.now(),
@@ -249,6 +261,57 @@ export async function listFinished(
  * read from — the number the user sees and the video they get must come from
  * the same place.
  */
+/**
+ * THE ENVELOPE, CHECKED AT THE DOOR.
+ *
+ * compute()'s four reducers cannot split a must-keep group any more — each of
+ * them drops whole groups (see src/envelope.ts). This is the assertion that
+ * makes that a guarantee rather than four careful functions: invariant 2 says
+ * validate and measure every edit before showing it, and never trust a claim
+ * of success. A render is the last point where that is still cheap.
+ *
+ * It is deliberately ignorant of HOW a group got split. A hand cut can do it
+ * and a person is entitled to — step 6 of the engine overrides everything
+ * above it — but then they are told, here, rather than publishing a claim
+ * whose qualifier they struck three edits ago and forgot. A fifth reducer
+ * added by someone who has not read envelope.ts lands here too.
+ *
+ * KEPT means "has a beat that is not struck whole". A moment with no beat at
+ * all is not in the render, which is the same thing to a viewer, so the two
+ * cases are not distinguished. A group with nothing kept is not a break: the
+ * whole proposition is simply not in this cut.
+ */
+export async function envelopeBreaks(
+  env: Env,
+  projectId: string,
+): Promise<Array<{ ids: Array<string | number>; line: string }>> {
+  const bs = bindings(await loadRules(env.DB, projectId));
+  if (!bs.length) return [];
+
+  const { results } = await env.DB.prepare(
+    `SELECT clip_id, struck, text FROM beats WHERE project_id=? AND clip_id IS NOT NULL`,
+  )
+    .bind(projectId)
+    .all<{ clip_id: string; struck: string | null; text: string | null }>();
+
+  const kept = new Set<string>();
+  const textOf = new Map<string, string>();
+  for (const row of results ?? []) {
+    if (row.text) textOf.set(row.clip_id, row.text);
+    /* The same reading of the column as blocks.ts line 239, which is the one
+       place that says what a cut is. Two readings of "struck" would disagree
+       the first time either was touched. */
+    const struckWhole = Boolean(row.struck) && row.struck !== "0";
+    if (!struckWhole) kept.add(row.clip_id);
+  }
+
+  const isKept = (id: string | number) => kept.has(String(id));
+  return splitBindings(bs, () => true, isKept).map((b: Binding) => ({
+    ids: b.ids,
+    line: splitLine(b, (id: string | number) => textOf.get(String(id)), isKept),
+  }));
+}
+
 export async function edlForProject(env: Env, project: Project, userId: string) {
   /*
    * A PROJECT NEED NOT HAVE A VIDEO.
@@ -285,7 +348,17 @@ export async function edlForProject(env: Env, project: Project, userId: string) 
 
   /* Two keys: the master for the render, the editing copy for the preview.
      playableKey is the one definition of which file you watch. */
-  const edl = buildEdl(source?.r2_key ?? "", blocks, cuts, source ? playableKey(source) : undefined);
+  /*
+   * THE CUT LANDS WHERE THE TIMINGS ALLOW.
+   *
+   * A source that has been through forced alignment knows where the silence
+   * between two words is, so the join goes there instead of on the last
+   * phoneme. One that has not keeps the cut it always had. This is the only
+   * place the two paths differ, and it is why the whole timing contract
+   * exists rather than a boolean somewhere.
+   */
+  const timing = await timingForProject(env, project.id);
+  const edl = buildEdl(source?.r2_key ?? "", blocks, cuts, source ? playableKey(source) : undefined, timing);
   return { edl, source, segments };
 }
 
@@ -302,16 +375,21 @@ export async function runRender(
    * WHAT THE CUTS ARE WORTH, said once per render.
    *
    * Every cut in this product is placed on a word boundary, and those
-   * boundaries come from a recogniser accurate to about a tenth of a second
-   * — roughly three frames at 25fps (src/align.ts). That is the honest
-   * answer to "why is this cut a frame late", and until forced alignment
-   * lands it is the answer for every render. Logged rather than refused,
-   * because a cut that is three frames out is still the cut somebody asked
-   * for; the refusal belongs where frame accuracy is promised, and nothing
-   * promises it yet.
+   * boundaries are only as good as the timings behind them, and a cut draws
+   * on every source in its scope — so this is the WORST of them, because one
+   * unaligned video makes the whole export soft.
+   *
+   * It said `timingFor({ id: opts.projectId })` until the day the column
+   * landed: a project id handed to a function that takes a source, which
+   * type-checked only for as long as that function ignored its argument. It
+   * logged a sentence about this cut that was true of no source in it.
+   *
+   * Logged rather than refused, because a cut that is three frames out is
+   * still the cut somebody asked for; the refusal belongs where frame
+   * accuracy is promised, and nothing promises it yet.
    */
   {
-    const t = timingFor({ id: opts.projectId });
+    const t = await timingForProject(env, opts.projectId);
     if (!frameAccurate(t)) {
       console.log(`[render] cuts placed on ${t.source} timings — ±${t.toleranceMs}ms, about ${Math.round(t.toleranceMs / FRAME_MS)} frames`);
     }
@@ -350,6 +428,14 @@ export async function runRender(
     const render = await env.DB.prepare(`SELECT * FROM renders WHERE id=?`).bind(renderId).first<RenderRow>();
     if (!render) return void (await fail("That render isn't there any more."));
 
+    /*
+     * Before anything is built, because this is a refusal rather than a
+     * failure: nothing has been spent yet and the fix is one press in the
+     * editor. doc 09: "a variant that would split them does not render".
+     */
+    const broken = await envelopeBreaks(env, opts.projectId);
+    if (broken.length) return void (await fail(broken[0].line));
+
     await startJob(env.DB, jobId, "putting it together");
     await env.DB.prepare(`UPDATE renders SET state='running' WHERE id=?`).bind(renderId).run();
 
@@ -378,26 +464,72 @@ export async function runRender(
       (await presignGet(env, key, 7200)) ??
       (env.MEDIA_PUBLIC_BASE ? `${env.MEDIA_PUBLIC_BASE}/media/${key}` : null);
 
-    const urls = await Promise.all(plan.cuts.map((c) => sign(c.key)));
+    /*
+     * A CARD HAS NO KEY, so it is not presigned and must not be checked.
+     *
+     * The guard below refuses the render when any url is missing, which is
+     * right for footage and would have failed every export containing a
+     * generated picture — the beat has no file at all, which is the point.
+     */
+    const urls = await Promise.all(plan.cuts.map((c) => (c.card ? null : sign(c.key))));
     /* And the voice over it, where there is one. B-roll with narration: the
        container mixes it over the picture with the picture's own audio ducked
        underneath, which it has been able to do since that branch was written
        and had never been given one to do it with. */
     const voiceUrls = await Promise.all(plan.cuts.map((c) => (c.voiceKey ? sign(c.voiceKey) : null)));
 
-    if (urls.some((u) => !u)) {
+    if (plan.cuts.some((c, i) => !c.card && !urls[i])) {
       return void (await fail("Couldn't give the encoder a way to read your footage."));
     }
     if (plan.cuts.some((c, i) => c.voiceKey && !voiceUrls[i])) {
       return void (await fail("Couldn't give the encoder a way to read your recording."));
     }
+    /*
+     * THE DUCKING ENVELOPE IS COMPUTED HERE, not in the container.
+     *
+     * The container is a standalone process that cannot import src/, so the
+     * alternative would be the same constants and the same anti-pump rule
+     * written twice — and the one that drifted would be the one that ships.
+     * The Worker owns the rule, the container applies the expression, which
+     * is the same split as everywhere else here.
+     *
+     * A cut with no word timings gets no expression and keeps the
+     * sidechain: see src/ducking.ts' `plan`, where "we do not know where
+     * the speech is" is a different answer from "there is no speech".
+     */
     const withUrls = {
       ...plan,
-      cuts: plan.cuts.map((c, i) => ({
-        ...c,
-        url: urls[i] as string,
-        ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
-      })),
+      cuts: plan.cuts.map((c, i) => {
+        const duck = c.voiceWords?.length
+          ? duckPlan(c.voiceWords, Math.max(0, c.end_s - c.start_s))
+          : null;
+        if (c.voiceKey) {
+          console.log(`[render] duck ${c.key}: ${duck ? duck.why : "no word timings for this take"}`);
+        }
+        /*
+         * A CARD CARRIES ITS SVG, not a url.
+         *
+         * Drawn here rather than in the container for the same reason the
+         * duck expression is: the container cannot import src/, and
+         * src/graphics.ts is where "graphics are code, never pixels" lives
+         * — the shared frame that draws the Generated label, the refusals,
+         * the tokens. A second copy over there is a second answer to what a
+         * generated picture looks like.
+         */
+        const card = c.card ? quoteCard({ quote: c.card }) : null;
+        if (c.card && !card?.svg) {
+          /* A card that cannot be drawn is a beat that would arrive as a
+             blank frame. Said out loud rather than shipped. */
+          console.warn(`[render] card for ${c.card.slice(0, 40)} could not be drawn`);
+        }
+        return {
+          ...c,
+          ...(urls[i] ? { url: urls[i] as string } : {}),
+          ...(voiceUrls[i] ? { voiceUrl: voiceUrls[i] as string } : {}),
+          ...(duck?.expr ? { duckExpr: duck.expr } : {}),
+          ...(card?.svg ? { svg: card.svg } : {}),
+        };
+      }),
     };
 
     /* The output length is known from the plan, so it is recorded before the
@@ -459,8 +591,43 @@ export async function runRender(
     const size = await putFromResponse(env.MEDIA, key, res, { contentType: "video/mp4" });
     const measuredS = Math.round(Number(res.headers.get("x-duration-s")) || 0);
 
-    // Subtitles alongside the render, in output time (Phase 3).
-    const srt = buildSrt(built.edl);
+    /*
+     * HOW LOUD IT CAME OUT. The container found ffmpeg's block and forwarded
+     * it; the parsing happens here, where there are tests for it.
+     *
+     * A missing header is "not measured" and stays null all the way to the
+     * row. Reading it as a number would make an unmeasured export 0 LUFS,
+     * which is a real and very loud level, and it would be reported as 14 LU
+     * too loud rather than as unmeasured.
+     */
+    const measuredLoudness = parseLoudnorm(res.headers.get("x-loudness") ?? "");
+    const { lufs, truePeak } = measuredLoudness;
+
+    /*
+     * Said once per render, beside the line about where the cuts landed.
+     *
+     * Doc 09 wants this checked on every export rather than offered as a fix,
+     * and the export panel is where a person will eventually read it. Until
+     * then it is in the log rather than nowhere: an export that is 9 LU quiet
+     * is a thing somebody needs to find out before a platform tells them.
+     */
+    const heard = loudnessVerdict(measuredLoudness);
+    if (!heard.ok) {
+      console.log(`[render] sound: ${heard.summary} ${heard.problems.join(" ")}`);
+    }
+
+    /*
+     * SUBTITLES ALONGSIDE THE RENDER, in output time (Phase 3) — unless the
+     * captions are already burned into the picture.
+     *
+     * Doc 09: "a subtitle file alongside; no stacking on burned-in
+     * subtitles". A viewer who leaves subtitles on by default gets the
+     * player's copy drawn over the one in the frame, and the overlap is
+     * unreadable in a way neither alone would be. The burned-in case is also
+     * the one doc 09 exempts for shorts, "because muted viewing is a
+     * different medium".
+     */
+    const srt = sidecarWanted(render.caption_style) ? buildSrt(built.edl) : "";
     if (srt) {
       await env.MEDIA.put(`u/${opts.userId}/renders/${renderId}.srt`, srt, {
         httpMetadata: { contentType: "application/x-subrip" },
@@ -468,11 +635,11 @@ export async function runRender(
     }
 
     await env.DB
-      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=? WHERE id=?`)
+      .prepare(`UPDATE renders SET state='ready', r2_key=?, bytes=?, duration_s=?, lufs=?, true_peak=? WHERE id=?`)
       /* The encoder measures the finished file; the EDL only says what the cut
          was meant to add up to. They differ when a source is shorter than its
          transcript claims, and the row should describe the video that exists. */
-      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), renderId)
+      .bind(key, size, measuredS || Math.round(built.edl.durationMs / 1000), lufs, truePeak, renderId)
       .run();
 
     await meter(env.DB, {

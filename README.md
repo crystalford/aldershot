@@ -61,6 +61,83 @@ and the build order should start from them rather than from zero:
 One correction to the same document: `src/essay.ts` outlines **four** acts
 (Setup · Development · Turn · Resolution), not five.
 
+## Where the build order stands
+
+Every phase of `docs/handoff/11-BUILD-ORDER.md` is built. What remains needs
+something this repo cannot supply itself:
+
+- **Phase 0's labelled set** — ~200 claims over ~10 of the owner's own videos,
+  with two labellers. The runner, the four numbers and the labelling surface
+  all exist; the set is footage and judgement, not code. `npm run eval:set`
+  prints the acceptance the moment it exists, which is also Phase 4's
+  remaining acceptance.
+- **An export opened in Resolve.** `npm run check:otio` proves the file parses
+  and carries its credits and ghosts; opening it in Resolve itself needs
+  Resolve.
+- **The render container, run once.** The ENCODER is now proved on every push:
+  `check:render` builds a source of twenty-four one-second colours, makes
+  known edits through the real API, renders, and reads the colours back out of
+  the finished file, so "second 7 was struck" is checked as "that colour is
+  absent". `check:frame` proves the 9:16 reframe and `check:otio` reads the
+  export back with the real OpenTimelineIO. All three are in CI (7 Nov).
+  **None of them ever needed docker**, which was not understood for most of
+  this project's life: `scripts/check-render.cjs` says in its own header that
+  it wants ffmpeg, a dev server and `container/render.mjs` run as a plain node
+  process, and every status report until now folded that into "no docker
+  daemon, so the render is unverified". Docker is how the encoder is shipped,
+  not how it is tested.
+  What genuinely needed a daemon is the IMAGE, and a separate CI job builds it
+  now, runs it, and asserts from outside the build that both approved faces
+  are in it. That closes `librsvg2-bin` and the woff2→TTF conversion.
+  **And `check:align` has now run too** (7 Nov), which was the last check in
+  this repo that had never executed anywhere:
+
+      align: ready — 29 tokens, 16000 Hz
+      ✔ align — 9 words placed inside the hand reading, window offsets
+        honoured, stereo mixed down
+
+  The real MMS_FA model through `container/align.py` and
+  `container/align.mjs`, against the torchaudio tutorial clip with a reading
+  taken by hand. Its own header says how, and it works verbatim:
+
+      python3 -m venv /tmp/align-venv
+      /tmp/align-venv/bin/pip install --upgrade pip
+      /tmp/align-venv/bin/pip install --index-url \
+          https://download.pytorch.org/whl/cpu torch torchaudio
+      /tmp/align-venv/bin/pip install numpy soundfile
+      curl -fsSLO https://download.pytorch.org/torchaudio/tutorial-assets/\
+          Lab41-SRI-VOiCES-src-sp0307-ch127535-sg0042.wav
+      ALIGN_PYTHON=/tmp/align-venv/bin/python ALIGN_WAV=./Lab41-...wav \
+          npm run check:align
+
+  `--upgrade pip` is the one addition, and it is the same trap the Dockerfile
+  hit: an older pip resolves a torch dependency to a source distribution and
+  then cannot find a build backend on the CPU-only index.
+
+  It stays out of `npm run check` on purpose — a gate that needs a 1.26 GB
+  model is a gate people learn to skip — and out of CI for now, because the
+  container job downloads that model anyway as part of the image. Running it
+  inside the built image is the tidy version and wants a daemon to try.
+
+Everything else in `12-DEFERRED.md` is deliberate and post-launch.
+
+## The checks that cost money or need a tool
+
+`npm run check` is the gate and runs on every commit. Four more exist because
+they need something the gate cannot assume, and each says so rather than
+passing quietly when its tool is missing:
+
+| | what it measures | needs |
+|---|---|---|
+| `npm run check:duck` | the bed is down where the words are, and stays down across a short gap | ffmpeg |
+| `npm run check:loudness` | three mixes land within ±1 LU of target | ffmpeg |
+| `npm run check:graphics` | a generated picture carries its words in five fonts | Chromium |
+| `npm run eval:model` | the judge against `eval/adversarial.jsonl` | a dev server, and it spends money |
+
+A gate rule that silently passes when its dependency is absent is the failure
+this repo keeps catching, which is why these are separate commands rather than
+skipped steps.
+
 ## Why the fidelity checks exist
 
 A previous build of this product passed every feature test and still shipped a
@@ -72,7 +149,7 @@ was defensible; together they changed the feel.
 obvious in review; a swapped icon set is invisible. So:
 
 ```bash
-npx wrangler dev --port 8787 --enable-containers=false   # in one shell
+npx wrangler dev --local --port 8787 --enable-containers=false   # in one shell
 node scripts/check-fidelity.cjs                          # icons, colours, strings, layout
 node scripts/shoot.cjs app /                             # screenshot the build
 node scripts/shoot.cjs proto Home                        # screenshot the prototype, same width

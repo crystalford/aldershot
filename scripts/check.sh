@@ -11,6 +11,36 @@
 # last thing on screen, rather than being scrolled off by the checks after it.
 set -euo pipefail
 
+# ── What went unchecked ──────────────────────────────────────────────────
+#
+# Two stages below skip cleanly when there is no dev server, and the editor
+# also skips when the account has no transcribed project to drive. Both skips
+# are right — "a check that goes red for an absent dependency teaches people
+# to ignore red" — and both used to exit 0, which meant THIS SCRIPT could
+# print ALL CHECKS PASSED having rendered no HTML and driven no editor. The
+# one command whose exit code is supposed to be the answer was answering a
+# question nobody had asked.
+#
+# So a skipping stage now exits 78, this collects them, and the last line
+# names them. `--strict` turns a skip into a failure; CI runs --strict, so
+# nothing merges having checked less than it claims.
+STRICT=0
+[ "${1:-}" = "--strict" ] && STRICT=1
+SKIPPED=""
+
+stage() {
+  local name="$1"; shift
+  set +e
+  "$@"
+  local code=$?
+  set -e
+  if [ "$code" = 78 ]; then
+    SKIPPED="$SKIPPED $name"
+  elif [ "$code" != 0 ]; then
+    exit "$code"
+  fi
+}
+
 echo "── typecheck"
 npm run --silent typecheck
 
@@ -34,13 +64,33 @@ node scripts/check-container.cjs
 # This drives it. Skips cleanly when there is no dev server, like the string
 # check below.
 echo "── editor"
-node scripts/check-editor.cjs
+stage editor node scripts/check-editor.cjs
 
 echo "── fidelity"
-node scripts/check-fidelity.cjs
+stage fidelity node scripts/check-fidelity.cjs
+
+# Every surface the product has, visited in a real browser, with every control
+# counted and every console error and 4xx reported. It reported and asserted
+# nothing for weeks — right while it was six pages, and wrong once it walks all
+# of them: the first full walk found /p/:id/receipts answering 404 because it
+# was registered after the route that swallows it. Needs a dev server, so it
+# skips like the two above.
+echo "── walk"
+stage walk node scripts/check-walk.cjs
 
 echo
-echo "ALL CHECKS PASSED"
+if [ -n "$SKIPPED" ]; then
+  echo "ALL CHECKS PASSED (SKIPPED:$SKIPPED)"
+  if [ "$STRICT" = 1 ]; then
+    echo
+    echo "--strict: a skipped check is a check that did not run."
+    exit 78
+  fi
+  echo "  Start \`npx wrangler dev --local --port 8787 --enable-containers=false\`, run"
+  echo "  \`node scripts/seed-fixture.cjs\`, and re-run to check these too."
+else
+  echo "ALL CHECKS PASSED"
+fi
 echo
 # The render is the one thing this cannot prove on its own: it needs ffmpeg,
 # the encoder and a fixture host. `npm run check:render` says what is missing
@@ -52,3 +102,12 @@ echo "  the export itself:  npm run check:render   (see scripts/check-render.cjs
 # plan or the DOM, which is how a 9:16 short shipped with the picture filling a
 # third of the frame and the rest black.
 echo "  what it looks like: npm run check:frame    (see scripts/check-frame.cjs)"
+# Forced alignment: a 1.26 GB model and a torch install, which is why this is
+# acceptance rather than a gate — a gate that cannot run is a gate people
+# learn to skip. It is the only check that asks whether the words are
+# actually WHERE the product says they are, and the band is one frame.
+echo "  where the words are: npm run check:align  (see scripts/check-align.cjs)"
+# The interchange file, read back by the library every NLE's importer is
+# built on. Needs Python and a wheel, so it is a pointer rather than a stage.
+# It is the only thing that can tell real OTIO from JSON that looks like it.
+echo "  does it open:        npm run check:otio   (see scripts/check-otio.cjs)"

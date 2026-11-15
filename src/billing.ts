@@ -193,6 +193,8 @@ const ENTITLED = new Set(["active", "trialing", "past_due"]);
 interface StripeEvent {
   type: string;
   data: { object: Record<string, unknown> };
+  /** Seconds since the epoch, from Stripe. The only ordering it gives. */
+  created?: number;
 }
 
 /**
@@ -250,6 +252,32 @@ export async function applyEvent(env: BillingEnv, event: StripeEvent): Promise<s
      them out of their own product. */
   if (user.is_owner) return `skipped ${event.type}: owner`;
 
-  await env.DB.prepare(`UPDATE v2_users SET plan=? WHERE id=?`).bind(plan, user.id).run();
+  /*
+   * OUT OF ORDER IS THE ONE THAT COSTS MONEY.
+   *
+   * Stripe does not guarantee delivery order. Cancel a subscription and it
+   * sends `updated` (active) and then `deleted`; arriving the other way
+   * round, the `updated` re-granted the plan and the account stayed on studio
+   * for ever, paying nothing. Nothing here noticed, because each event is
+   * correct on its own.
+   *
+   * `created` is the ordering Stripe does give. An event older than the last
+   * one applied is ignored, and the comparison is strict: a retry of the same
+   * event carries the same timestamp and must still land, because a retry
+   * after a slow 200 is normal and the result is the same either way.
+   *
+   * AN EVENT WITH NO TIMESTAMP IS STILL APPLIED. Ordering is a refinement,
+   * not a gate; the alternative is a paid account that never gets its plan
+   * because a field was missing.
+   */
+  const at = typeof event.created === "number" ? event.created : null;
+  const seen = (user as User & { billing_event_at?: number | null }).billing_event_at ?? null;
+  if (at !== null && seen !== null && at < seen) {
+    return `ignored ${event.type}: older than the last event applied`;
+  }
+
+  await env.DB.prepare(`UPDATE v2_users SET plan=?, billing_event_at=? WHERE id=?`)
+    .bind(plan, at ?? seen, user.id)
+    .run();
   return `${event.type}: ${user.id} → ${plan}`;
 }

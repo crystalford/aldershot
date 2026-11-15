@@ -47,9 +47,14 @@ function filled(body: string, size: number, fill: string): string {
 export const iconSearch = (o?: StrokeOpts) =>
   stroke('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/>', o);
 
-/** Nav only. Rendered at 15px. */
-export const iconBell = (o?: StrokeOpts) =>
-  stroke('<path d="M18 8A6 6 0 006 8c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 01-3.4 0"/>', o);
+/*
+ * iconBell was here, and is gone with the bar it lived in.
+ *
+ * "Nav only" was the whole of its comment and the whole of its use. One
+ * Take's bar is the wordmark and the avatar — no bell, no search chip, no
+ * question mark — so the shape had nowhere left to be drawn. The gate found
+ * it: an export nothing references.
+ */
 
 /** Seam inserts between beats, "add" buttons. Rendered at 13, 15px. */
 export const iconPlus = (o?: StrokeOpts) => stroke('<path d="M12 5v14M5 12h14"/>', o);

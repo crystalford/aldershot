@@ -18,9 +18,20 @@
  * like quirks.
  */
 
+import { bindings } from "./envelope.ts";
 import { contentWords } from "./moment-tags.ts";
+import { opening, problems } from "./shorts.ts";
 
-export type RuleKind = "keep" | "drop" | "order" | "gap" | "cap" | "len" | "count" | "hook";
+export type RuleKind =
+  | "keep"
+  | "drop"
+  | "order"
+  | "gap"
+  | "cap"
+  | "len"
+  | "count"
+  | "hook"
+  | "must_keep";
 export type Order = "time" | "strand" | "open";
 
 export interface Rule {
@@ -32,14 +43,48 @@ export interface Rule {
   /** What it matches: a tag, one moment, or a set of them. */
   tag?: string;
   cid?: number | string;
+  /**
+   * The moments a rule names — and for `must_keep`, the ones tied together.
+   *
+   * Doc 03 writes must-keep as (cid_a, cid_b). See the header of
+   * src/envelope.ts for why it is this column and two-or-more instead.
+   */
   cids?: Array<number | string>;
+  /**
+   * OR A SUBJECT, BY THE WORDS THAT WERE SAID.
+   *
+   * "No politics" names a topic, and the tag vocabulary is four fixed
+   * values derived from how a moment is spoken rather than what it is
+   * about (src/moment-tags.ts) — so a topic can never be a tag. Resolving
+   * it to a list of ids at compile time would work today and would make the
+   * rules pane lie: it would read "no politics" and mean "not these nine",
+   * and footage read tomorrow would walk straight past it.
+   *
+   * Matched on whole words, so "rent" does not match "different" — the
+   * same trap src/bm25.ts and src/scout-expand.ts both carry a note about.
+   */
+  words?: string[];
   /** keep/cut by hand, which overrides every rule above it. */
   hand?: boolean;
   /** A keep rule that re-takes a moment a drop rule contested. */
   wins?: boolean;
   order?: Order;
-  /** The cap rule's ceiling, in seconds. */
+  /** The cap rule's ceiling, in seconds — and the hook rule's window. */
   secs?: number;
+  /**
+   * THE THREE THE BRIEF COMPILER NEEDS.
+   *
+   * `len`, `count` and `hook` have been in RuleKind and in applyRule since
+   * the port, and compute() did nothing with any of them — declared rules
+   * that could be added, switched on, and have no effect at all. A pasted
+   * brief compiles to four rules and two of them would have been decoration.
+   */
+  /** `len`: a moment shorter than this is not a short. Seconds. */
+  minSecs?: number;
+  /** `len`: nor is one longer than this. Seconds. */
+  maxSecs?: number;
+  /** `count`: how many to keep. */
+  n?: number;
 }
 
 export interface Moment {
@@ -153,6 +198,49 @@ export function wordDur(m: Moment, struck: Record<string, Record<number, boolean
  * Still charged to the cap rule, which is the part that matters: the rules
  * pane can say what it took and why, and it can be switched off.
  */
+/**
+ * Does this moment say any of these words — as words, not as substrings.
+ *
+ * "rent" must not match "different", which is the trap src/bm25.ts and
+ * src/scout-expand.ts both carry a note about because it was found in each
+ * of them separately.
+ */
+export function saysAny(text: string, words: string[]): boolean {
+  const said = new Set((text.toLowerCase().match(/[a-z0-9']+/g) ?? []));
+  return words.some((w) => said.has(w.toLowerCase()));
+}
+
+/**
+ * DOES THIS MOMENT'S OPENING LAND?
+ *
+ * What stops a clip hooking fast is what src/shorts.ts measures from the
+ * other end: an opening that carries on a thought nobody heard, or points
+ * at somebody nobody has seen. A viewer knows within a word.
+ *
+ * THE SECONDS ARE NOT USED AS A CLOCK, and that is the honest answer rather
+ * than a gap. The engine's moments carry a duration and the text and no
+ * per-word timings, so the only way to time the opening would be to
+ * estimate it from its share of the characters — and the first version did
+ * exactly that, which made a one-sentence moment fail a two-second hook
+ * because the sentence is the whole clip. An invented clock is the kind of
+ * number this codebase refuses everywhere else.
+ *
+ * The seconds stay on the rule because the person wrote them and the pane
+ * reads back what they wrote (invariant 10). What would make them real is
+ * per-word timings on the engine's moments, which forced alignment now
+ * produces (src/align-source.ts) and which `toFootageSet` does not yet
+ * carry across.
+ */
+export function hooksFast(m: Moment, durSecs: number): boolean {
+  const text = m.text.trim();
+  if (!text) return false;
+  /* The opening problems only — a clip that stops mid-sentence is a
+     different complaint, and `len` and the editor both have it covered. */
+  return !problems({ text: opening(text), durationMs: Math.round(durSecs * 1000) }).some(
+    (p) => p.kind === "starts-mid-sentence" || p.kind === "dangling-referent",
+  );
+}
+
 function capDropOrder(candidates: Judged[], others: Judged[]): Judged[] {
   const elsewhere = new Set<string>();
   for (const m of others) for (const w of contentWords(m.text)) elsewhere.add(w);
@@ -214,7 +302,8 @@ export function compute(
   const hit = (r: Rule, m: Judged) =>
     (!!r.tag && m.tags.includes(r.tag)) ||
     (r.cid !== undefined && m.id === r.cid) ||
-    (!!r.cids && r.cids.includes(m.id));
+    (!!r.cids && r.cids.includes(m.id)) ||
+    (!!r.words?.length && saysAny(m.text, r.words));
   const wdur = (m: Moment) => wordDur(m, struck);
 
   /* 1. Every moment in the set, nothing in yet. */
@@ -258,18 +347,144 @@ export function compute(
     }
   }
 
+  /*
+   * THE ENVELOPE, set up before the four reducers that could break it.
+   *
+   * must_keep ties moments that mean something different apart from what they
+   * mean together — a claim and its qualifier. Each of the four steps below
+   * chooses what to leave out, so each of them is a way to keep a claim and
+   * lose the thing that qualified it, which is the one edit this product must
+   * never make on its own. They are made group-aware rather than trusted:
+   * what a reducer drops, it drops whole.
+   *
+   * Together-or-NEITHER, not together-or-both. A ceiling that cannot be met
+   * is a cut that is too long; a claim shown without its qualifier is a cut
+   * that says something the footage does not. So the pair goes out as a unit
+   * and length stays a dial, which is what doc 09 means by "length as a dial
+   * without context collapse".
+   */
+  const env = bindings(on);
+  const groupOf = new Map<string, Judged[]>();
+  for (const b of env) {
+    const want = new Set(b.ids.map((id) => String(id)));
+    /* In the set's own order, and only what this scope actually holds. */
+    const members = st.filter((p) => want.has(String(p.id)));
+    for (const mem of members) groupOf.set(String(mem.id), members);
+  }
+  /** A moment's group-mates in set order, itself included; itself alone when bound to nothing. */
+  const peers = (m: Judged): Judged[] => groupOf.get(String(m.id)) ?? [m];
+  /** What a reducer drops, it drops whole. Returns the seconds that frees. */
+  const dropGroup = (m: Judged, by: Rule["id"]): number => {
+    let freed = 0;
+    for (const p of peers(m)) {
+      if (!p.in) continue;
+      p.in = false;
+      p.dropId = by;
+      freed += wdur(p);
+    }
+    return freed;
+  };
+  /** A group's length is its members' length: the proposition is the unit. */
+  const groupDur = (m: Judged): number =>
+    peers(m).filter((p) => p.in).reduce((n, p) => n + wdur(p), 0);
+  /** Stable identity for a group, so count() can treat it as one item. */
+  const groupKey = (m: Judged): string => String(peers(m)[0].id);
+
   /* 5. cap: drop until under the ceiling, never a `strong` moment. */
   const cap = on.find((r) => r.kind === "cap");
   if (cap && typeof cap.secs === "number") {
     let total = st.filter((m) => m.in).reduce((n, m) => n + wdur(m), 0);
     const inCut = st.filter((m) => m.in);
-    const candidates = inCut.filter((m) => !m.tags.includes("strong"));
-    const protected_ = inCut.filter((m) => m.tags.includes("strong"));
+    /*
+     * A group inherits the strongest protection any member has. Without this
+     * the cap would drop the ordinary half of a pair, the envelope would take
+     * the `strong` half out with it, and step 5 would have broken its own
+     * documented promise never to drop a strong moment — by obeying a rule
+     * written to protect meaning.
+     */
+    const strongHere = (m: Judged) => peers(m).some((p) => p.tags.includes("strong"));
+    const candidates = inCut.filter((m) => !strongHere(m));
+    const protected_ = inCut.filter((m) => strongHere(m));
     for (const m of capDropOrder(candidates, protected_)) {
       if (total <= cap.secs) break;
-      m.in = false;
-      m.dropId = cap.id;
-      total -= wdur(m);
+      /* It may already have gone out with a group-mate earlier in this loop. */
+      if (!m.in) continue;
+      total -= dropGroup(m, cap.id);
+    }
+  }
+
+  /*
+   * 5b. len: a short has a length, and a moment outside it is not one.
+   *
+   * Before the cap and before count, because both of those choose among
+   * what is left and a moment of the wrong length should never have been a
+   * candidate. Unlike cap, this protects nothing: a `strong` moment that
+   * runs four seconds is still four seconds.
+   */
+  const len = on.find((r) => r.kind === "len");
+  if (len && (typeof len.minSecs === "number" || typeof len.maxSecs === "number")) {
+    for (const m of st) {
+      if (!m.in) continue;
+      /* A bound pair is one thing of one length, even when that length is the
+         sum of two moments: a window is about what the viewer sits through. */
+      const d = groupDur(m);
+      if ((typeof len.minSecs === "number" && d < len.minSecs) ||
+          (typeof len.maxSecs === "number" && d > len.maxSecs)) {
+        dropGroup(m, len.id);
+      }
+    }
+  }
+
+  /*
+   * 5c. hook: it has to land in the first few seconds, or it is not a short.
+   *
+   * What stops a clip landing fast is what src/shorts.ts measures — a line
+   * that opens on a conjunction, or on a word pointing at something nobody
+   * watching has seen. See hooksFast for why the seconds on the rule are
+   * not used as a clock.
+   */
+  const hook = on.find((r) => r.kind === "hook");
+  if (hook) {
+    for (const m of st) {
+      if (!m.in) continue;
+      /*
+       * A group is judged once, where it opens. The qualifier on a claim is
+       * allowed to open on "but" and to point back at the claim — that is
+       * what makes it a qualifier, and hooksFast would fail every one of
+       * them for exactly the thing they exist to do.
+       */
+      const first = peers(m).find((p) => p.in);
+      if (first !== m) continue;
+      if (!hooksFast(m, wdur(m))) dropGroup(m, hook.id);
+    }
+  }
+
+  /*
+   * 5d. count: the shortlist is this long.
+   *
+   * LAST of the four, because it chooses among whatever the others left —
+   * taking the first eight and then dropping three for length would hand
+   * back five when eight were asked for.
+   *
+   * It keeps the ones already in, in the set's own order, because the
+   * ordering rule has not run yet and will not reach a moment that is out.
+   * Choosing by any other measure would be a score about somebody's
+   * footage, which is what invariant 3 forbids.
+   */
+  const count = on.find((r) => r.kind === "count");
+  if (count && typeof count.n === "number" && count.n >= 0) {
+    let kept = 0;
+    /* A bound group is one item on the shortlist, counted at its first
+       member: "the best eight" means eight things to watch, and a claim
+       with its qualifier is one of them. */
+    const counted = new Set<string>();
+    for (const m of st) {
+      if (!m.in) continue;
+      const k = groupKey(m);
+      if (counted.has(k)) continue;
+      counted.add(k);
+      kept += 1;
+      if (kept > count.n) dropGroup(m, count.id);
     }
   }
 
@@ -532,8 +747,55 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
  * at a time" tells nobody anything.
  */
 /** What an order rule reads as, in the words the prototype uses. */
-const orderName = (o?: Order): string =>
-  o === "time" ? "as it happened" : o === "open" ? "sharpest line first" : "one thread at a time";
+/**
+ * THE THREE ORDERS, AND WHY YOU WOULD WANT EACH.
+ *
+ * Ported from design/one-take/footage.js rather than reinvented, which is
+ * what CLAUDE.md asks for:
+ *
+ *   strand: { name: "one thread at a time", why: "Each question gets asked
+ *             and answered before the next one starts." }
+ *   time:   { name: "as it happened", why: "Tuesday, Thursday, Sunday — you
+ *             watch the decision arrive." }
+ *   open:   { name: "sharpest line first", why: "Start on the line that
+ *             hurts, then earn it." }
+ *
+ * The names were already here, inline in `orderName`; the whys were not, and
+ * they are the half that makes the alternatives a choice rather than three
+ * words. The prototype shows them under an order rule that is on — press one
+ * and the cut re-runs in that order.
+ */
+export const ORDERS: Record<Order, { name: string; why: string }> = {
+  strand: {
+    name: "one thread at a time",
+    why: "Each question gets asked and answered before the next one starts.",
+  },
+  time: {
+    name: "as it happened",
+    why: "Tuesday, Thursday, Sunday — you watch the decision arrive.",
+  },
+  open: {
+    name: "sharpest line first",
+    why: "Start on the line that hurts, then earn it.",
+  },
+};
+
+/**
+ * Is this one of the three?
+ *
+ * The route takes an order from a client, and a rule carrying a word the
+ * engine does not know would fall through compute() to the default silently
+ * — a cut in an order nobody chose, with the pane saying otherwise.
+ */
+export const isOrder = (v: unknown): v is Order =>
+  typeof v === "string" && Object.prototype.hasOwnProperty.call(ORDERS, v);
+
+/** The order a rule names. Anything unrecognised is the engine's own default. */
+export const orderName = (o?: Order): string => ORDERS[o ?? "strand"]?.name ?? ORDERS.strand.name;
+
+/** "Run it one thread at a time." — the sentence the rule IS, per order. */
+export const orderText = (o: Order): string =>
+  o === "open" ? "Start on the sharpest line." : `Run it ${ORDERS[o].name}.`;
 
 export function effectLine(rules: Rule[], rule: Rule, opts: Parameters<typeof compute>[1]): string {
   if (!rule.on) return "off — footage as shot";

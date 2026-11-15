@@ -17,6 +17,256 @@ None of these blocks launch. Each has been decided far enough that it can be pic
 
 Every stored asset carries licence, source URL and credit beside its file. Searchable by words: GDELT, podcasts, the user's own captures. Everything else by title and tag. Corrections to earlier assumptions: C-SPAN forbids all unlicensed commercial use (floor proceedings excepted); Freesound and Jamendo free APIs are non-commercial; X is paid per call with no reuse; Canadian legislative footage is non-commercial without permission.
 
+## Built, measured, and not wired (28 Oct 2026)
+
+Two of Scout's stopping inputs are computed by code that works and fed
+numbers that are not the truth. Both are written here rather than estimated,
+because an estimate in a stopping rule is a run that stops for a reason
+nobody can check.
+
+- **Capture–recapture.** `recapture()` in `src/scout-stop.ts` compares what
+  the `direct` query family found against what the `crowd` family found and
+  reads the overlap as how much is still out there. It is called with
+  `(0, 0, 0, 0)`, because nothing records which family found a given source:
+  `scout_sources` has no family column, and `writeSources` uses
+  `INSERT OR IGNORE` on `UNIQUE(run_id, adapter, external_id)` — so a source
+  BOTH families found is stored once and the second find, which is precisely
+  the overlap the estimate needs, is discarded on the way in.
+  `scout_ledger.found_by_family` exists for this and is written by nothing,
+  for the same reason: the scan cannot know what it was never told.
+  To wire it: carry the family from `runSearches`' per-request candidate lists
+  (`found: SourceCandidate[][]`, which already knows) into a
+  `(run, source, family)` row, and read n1/n2/m off it.
+  **The zeroes are the safe direction**, which is why this is a deferral and
+  not a bug: `decideStop` only ever reads `moreOutThere` to REFUSE a stop, so
+  an absent estimate makes a run stop at the knee instead of looking longer.
+  It cannot stop a run early for a reason that is not true.
+
+- **Reframe, and the vision dependency behind it.** The prototype's Shorts
+  workbench offers "Follow the speaker", "Centered" and "Split screen".
+  Subject tracking exists nowhere in `src/` or `container/`, and neither does
+  a two-up composite — so two of the three are promises nothing can keep, and
+  a control where one option works is worse than no control. The build ships
+  **Shape** (9:16 / 1:1 / 4:5) instead, which `ASPECTS` already validates and
+  the render route already takes.
+  This is a CAPABILITY decision and not just a parked feature: it determines
+  whether the render container ever grows a vision dependency (face or subject
+  detection per frame, then a pan solved over the shot). That is a different
+  class of thing from everything in the container today, which is ffmpeg
+  filters over known ranges.
+
+- **Word-by-word captions.** The prototype names the caption styles "Word by
+  word" and "Two lines". `container/render.mjs` draws its two styles from the
+  SAME cues — `cuesFromWords` chunks words into wrapped phrases — and they
+  differ only in font size, weight and outline. Nothing is word-by-word. The
+  build keeps **Bold / Clean / None**, which describe what actually differs.
+  Karaoke timing would mean emitting one cue per word with per-word highlight
+  spans in the ASS file, which is real work and not a rename.
+
+- **A short's kept/skipped state, persisted.** Skip it / Keep it on the
+  workbench is a decision held in the page. Persisting it means a row per
+  short per project, and the question of what a "short" IS as a stored object
+  — today it is a line of the cut, graded on the fly, with no identity of its
+  own beyond its block id. Worth doing with the export fan, not before it.
+
+- **Footage-hours, generated seconds, and the plan set.** A PRICING decision,
+  and the owner's: the design and the build denominate differently and neither
+  contradicts itself.
+  `design/one-take/Aldershot Settings.dc.html` prices in **footage-hours**
+  (Starter $39 for 3 h), meters **generated seconds** as top-up-only, and shows
+  a monthly spend cap. The build is consistently in **processing minutes**
+  (Free 300 / Studio $29 for 1,200) with no generated-second metering anywhere
+  in `src/` — landing, Settings and `PLANS` all agree with each other, and
+  `checkCap` enforces the same figure Settings displays, which is the property
+  that actually matters.
+  What re-denominating would take: `PLANS` in `src/plans.ts`, the cap check
+  that reads it, the two meters and their notes in `/settings`, four strings on
+  the landing page, and a decision about whether a generated second is billed
+  at all — `usage_events` has no row kind for one. It is not a refactor to do
+  on a hunch about what the price should be.
+  The spend cap itself IS now built and settable (28 Oct); it was enforced and
+  unraisable before that.
+
+  **Evidence from the market, 4 Nov: both denominators are in use and ours is
+  the one that reads worse at a glance.** pausevfx.com ($15–$200/mo) counts
+  the OUTPUT — "1 video is about 10 minutes of final edited footage" and
+  "Only the finished edited video counts, not the hours of raw footage". We
+  count the INPUT. Three hours of raw footage making one ten-minute cut is
+  1 video to them and 180 of a free 300 to us.
+  Ours is better over time and only ours can say "every re-cut, short and
+  search from it costs nothing" — a second video from the same footage costs
+  them another video and costs us nothing. But that comparison is doing no
+  work anywhere: the landing page states our denominator and never contrasts
+  it. Whichever way the pricing decision goes, the page has to make the
+  argument, because input-metering looks like the worse deal until somebody
+  explains the second cut.
+
+- **Decisions that are rendered rather than described.** The .otio carries two
+  tracks — V1 the cuts, A1 a voiceover — and the captions, the sound chain and
+  the generated graphics are baked into the rendered file. The export panel
+  and the file's own metadata both say so, which is honest and is not the same
+  as being right.
+  **It is invariant 1 applied to the cut and nowhere else.** "A cut is
+  re-produced from rules + moments, never stored as an outcome" — and a
+  caption burn-in, a ducking curve and a composited graphic are outcomes,
+  stored. pausevfx.com, which has no invariants at all, applies the principle
+  more widely than we do because its deliverable forces it to: the product IS
+  a Premiere project, every zoom and SFX and caption arriving as its own
+  adjustable track, so nothing it decides is allowed to be unexpressible.
+  That is the lesson worth keeping: **the output format decides whether your
+  decisions have to be describable.**
+  What parity would take, roughly in order of cost: captions as a described
+  text track rather than a burn-in (the container composites them today);
+  the ducking as a curve on A1 rather than a finished mix (`src/loudness.ts`
+  normalises the programme, once, after the mix); and generated pictures as
+  referenced media with their cue-sheet entry attached rather than frames.
+  All three are render-pipeline changes and the first one is the only one with
+  a clear OTIO home, so this is a big item rather than a tidy one.
+  Not urgent, and the reason is a real one: our export's advantage is not
+  layer count, it is that every clip in it carries its quote, its source and
+  its timing provenance — which no competitor's project file does, and which
+  the panel now says out loud.
+
+- **Per-source loudness matching.** The prototype's cut carries a note
+  reading "Levels matched across 3 sources". The build says "Loudness set for
+  the platform" instead, because the first is a claim this render cannot keep:
+  `LOUDNORM` in `src/loudness.ts` normalises the PROGRAMME, applied once to the
+  finished mix in `container/render.mjs`, whose own comment explains why
+  normalising each part separately is the wrong thing to do. "Matched across 3
+  sources" asserts a per-source pass that does not exist.
+  To restore the stronger line: measure each source's loudness during the read,
+  stage per-source gain in the EDL, and keep the programme pass after it. That
+  is a render-pipeline change plus a new measurement, and it was not the thing
+  to do immediately before building a container for the first time. Changing
+  the sentence cost a line; invariant 4 cuts both ways, and a status line is a
+  claim like any other.
+
+- **Model spend, per run.** `runCounters` sums `scout_searches.cost_usd`, so
+  the $1.50 budget now fires on real search spend. The model calls — decompose,
+  expand, scan, reduce — compute their token counts and no row attributes them
+  to a run, so they are not in the figure. The cap therefore fires later than
+  it should rather than never. To wire it: give `usage_events` the run id it
+  already has a `job_id` column for, and add that sum here.
+
+- **Archiving a rule.** The prototype's rules pane offers "Does nothing now —
+  archive it" on a rule that is on and matching nothing, and archiving there
+  removes it from the list. Invariant 6 is that nothing is deleted and rules
+  switch off, and a rule gone from the pane is a cut with an unexplained
+  shape — the one thing a pane of visible rules exists to prevent. So the
+  build keeps the sentence and changes the verb: **"Does nothing now — switch
+  it off"**, and the rule stays listed, struck through, saying "off".
+  To build the stronger thing honestly: an `archived_at` on the rule, a
+  "retired rules" disclosure below the fixes, and the archived ones still
+  counted in any explanation of why a moment is where it is. Signed off in
+  `check-fidelity.cjs` with this reasoning.
+
+- **Which recorded takes a revision would strand.** `src/revise.ts` prices a
+  change of claim, and the only cost that cannot be undone by pressing
+  something is a recorded take — invariant 6 calls a performance "the one
+  thing in this product you cannot re-make". `priceRevision` counts them and
+  the route passes it zero, because it cannot honestly pass anything else:
+  `beats` has no `plan_beat_id`, so a dropped PLAN beat cannot be mapped to
+  the recording it produced. The board says the recordings exist and says
+  plainly that which of them a change would strand is not tracked.
+  What would close it: `plan_beat_id` on `beats`, written when a plan is
+  cut, and the route's `takesFor` reading through it. Small, and it turns a
+  stated unknown into the number the person actually needs.
+
+- **The loop's second turn.** A revision proposes a claim; nothing re-runs
+  Scout against it. PASS-4's Q6 is where the stopping rule for that lives —
+  "the knee of distinct-finds against queries issued" may transfer, and
+  whether angle quality follows the same curve is the open question. One
+  turn is built; the loop is not yet a loop.
+
+- **A video attached to a cut, detached again.** Footage's Videos tab now
+  lists every video a cut is made of and offers "Only this" on each, which is
+  reversible; what it does not offer is removing one. `scope` only ever grows
+  — attach appends, and nothing subtracts. The honest version is not a
+  delete: it is an `unattached_at` beside the scope, the video's moments
+  shown struck through in Highlights the way a switched-off rule's are, and
+  the chips dropping a letter rather than renumbering (invariant 6, and the
+  letters are how three surfaces refer to the same recording).
+
+- **The frame on a video row.** The prototype's Videos rows carry a 16:9
+  thumbnail; the build renders the lettered chip, the length and the counts.
+  Same missing media as the moment rows below — `frame_r2_key` served per
+  source — and the same reason it is absent rather than a grey box.
+
+- **The frame on a moment row.** The prototype's rows carry a 78px thumbnail.
+  The build renders the letter, the position and the duration instead, which
+  is the identity; the picture needs `frame_r2_key` served per moment and is
+  the same media the walk already reports absent in the fixture.
+
+- **The recorder's camera half, and every take kept.** `getUserMedia({ audio:
+  true })` is what the build records with, and the beat now says so beside the
+  control ("Sound only — no camera yet"). The prototype's recorder is a
+  full-screen stage: camera or mic, a teleprompter, a countdown, layout
+  options ("HOW IT SITS IN THE CUT" — full, corner, side by side), generated
+  script drafts, and **every take kept with one picked**. The build stores one
+  `media_r2_key` per beat, so a second take replaces the first — which breaks
+  invariant 6 for the one thing in the product that cannot be re-made by
+  pressing something. What it needs: a `takes` table keyed on the beat with
+  the chosen one marked, the recorder writing a row rather than a column, and
+  `runTake` aligning per take rather than per beat. The layout options need a
+  compositor the render container does not have; the teleprompter and the
+  countdown are client work on top of the bar that exists.
+
+- **The Manual, and "Read how it works".** The design's nav has a fourth
+  link and its closing CTA a second button, both pointing at
+  `Aldershot Manual.dc.html`. There is no manual in the product and no route
+  serves one, so both are absent rather than dead — the `promise` rule
+  exists to catch exactly that. The Manual is also the later word on what
+  the product IS (see CLAUDE.md's precedence list), so publishing it as a
+  real page is worth more than a link: it is the only document that explains
+  the conversation and Scout the way a user would meet them.
+
+- **Recipes — a rule set that starts next week's video.** The current design
+  promises them three times: in the rules section ("The same rules, saved as
+  a recipe, cut next week's video the way you cut this one"), in the Free
+  plan's features, and in the FAQ. Nothing implements them: `rules` is
+  keyed by project and there is no way to carry a set anywhere. All three
+  mentions are cut from the build, and `claims` now fails on the word. To
+  build it: a table of named rule sets per user, and an apply step on a new
+  project — the rules are already plain objects, so the work is the surface
+  and the naming, not the mechanism.
+
+- **Webhook handoff.** The design's FAQ answers "Can it post for me?" with
+  "set a webhook and every finished piece POSTs to it — Zapier, Make, n8n,
+  or your own endpoint". The only webhook in this codebase is Stripe's,
+  inbound. The answer now says what is true: you download the file, or
+  export the edit. To build it: an endpoint column per user, a signature,
+  and a POST from the render job's terminal state — with the retry and
+  dead-letter rules every other queue here already follows.
+
+- **The overnight queue.** Sold as a Studio feature by both the landing page
+  and Settings, and never built: no caller sets a job's `overnight` flag,
+  `queued_overnight` has never held a 1, and `editor-intake.ts` deliberately
+  omits the button with the reason written beside it. Both pages stopped
+  claiming it. Studio's honest list is three bullets, and that is the point —
+  the pitch is that you pay for the minutes it reads.
+
+- **Storage add-ons.** The design's line under the pricing table is "Need
+  more room? Storage add-ons, or point sources at a bucket you own." There
+  is no add-on: no price, no Stripe product, nothing that grants more room.
+  The bucket half shipped and is the whole of what is true, so that is what
+  the line says.
+
+- **Stories and Supercuts as project kinds.** Both are on the landing page
+  now and both are real things to ask for — the room offers them under "as
+  your archive grows" and the intent parser routes them — but `ProjectKind`
+  is `cut | reaction | essay | idea`, so a Story becomes a cut whose order
+  rule happens to be time. That is the right first version and it means
+  neither has a surface of its own: no date band down a Story, no count on
+  screen for a Supercut, both of which the landing page's own cards promise.
+
+- **"Open the sample cut".** The design's hero has two controls and the build
+  renders one, because there is no sample cut: no route serves a public,
+  signed-out cut and no seeded source backs one. A second control that goes
+  nowhere is the defect the `strings` promise rule exists to catch, so it is
+  absent rather than dead. To build it: a published, read-only cut at a fixed
+  URL — closest to the existing `/r/:token` receipts page, which is already
+  the one surface shown to the public.
+
 ## Scout v2 and v3
 
 - **Companion desktop app** (the founder's earlier Windows tool reborn) and a **browser extension**: open the source at the in-point, tab-capture to the out-point plus a handle, upload with the moment id attached. Positioned as capture for the user's own lawful use, never as a downloader.
@@ -30,7 +280,7 @@ Living timelines with event extraction (only as suggestions the user accepts); t
 
 ## Elastic length and liquid video
 
-One control from 15 s to full length, re-solved from the stored policy; canonical variants pre-rendered; locale and reading-level variants with type and captions composited client-side; packaging personalisation (hook, thumbnail, length) before any change to substance; a publish kit (transcript, chapters, clip markup, provenance manifest, cut ledger); an agent endpoint exposing `search_moments`, `get_clip`, `get_receipts`, `render_variant` with the integrity envelope enforced server-side. An open "liquid video package" spec is the big swing.
+One control from 15 s to full length, re-solved from the stored policy; canonical variants pre-rendered; locale and reading-level variants with type and captions composited client-side; packaging personalisation (hook, thumbnail, length) before any change to substance; a publish kit (transcript, chapters, clip markup, provenance manifest, cut ledger); an agent endpoint exposing `search_moments`, `get_clip`, `get_receipts` with the integrity envelope enforced server-side (spiked 28 Oct — see `docs/decisions/claude-skill.md`, which recommends dropping `render_variant` and never exposing an edit tool: an agent that should change a cut should propose a RULE, the way the product does). An open "liquid video package" spec is the big swing.
 
 ## Generation
 
@@ -51,6 +301,6 @@ Paste your own research — notes, links, an article — before an Essay's plan,
 1. **A legal and policy pack** — fair dealing (Canada) and fair use (US) for react and commentary; privacy and consent for footage of other people; provider terms on calling APIs with a customer's own key; EU labelling in practice. Read by a media lawyer.
 2. **Audio ingest measured on speech under game audio and crosstalk** — denoise, de-reverb, intelligibility scoring, ducking tools.
 3. **The pre-production ladder, observed** — ten real briefs through the plan flow, watching where people actually stop.
-4. **Competitor pricing** — Opus Clip, Captions, Kapwing, CapCut, InVideo, HeyGen, Synthesia, Pictory — before prices are final.
+4. **Competitor pricing** — Opus Clip, Captions, Kapwing, CapCut, InVideo, HeyGen, Synthesia, Pictory — before prices are final. Three read since (produce.so, kino.ai, pausevfx.com) and the pattern is worth more than the numbers: each one counts OUTPUT, keeps the NLE, and ships no provenance of any kind. Pause's terms are the sharpest version — it adds music "picked for the vibe", names no licence for it, and says "You are responsible for the content you edit and for any music, footage, or fonts you use". It adds the asset; you carry the claim. Invariants 4, 8 and 9 are the whole differentiator and nothing in this list competes on them.
 
 Already answered; do not commission again: retrieval, the gavel problem, visual supply, formats, the edit engine, strategy, Scout, the Dossier, sources, operations.

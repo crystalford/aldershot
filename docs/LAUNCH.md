@@ -1,5 +1,28 @@
 # Launch checklist
 
+> **Start here: `npm run preflight`.**
+>
+> It asks the running deployment what it actually has, and prints one line per
+> thing with what its absence costs you — "no Google button at all", "a
+> payment takes the money and never grants the plan". That is the difference
+> between a tick in this document and a fact about the thing you are
+> launching.
+>
+> ```
+> npm run preflight                          # localhost:8787
+> BASE=https://your.site npm run preflight   # the real one, signed in as the owner
+> ```
+>
+> It reports booleans and never a value — `/api/preflight` has no code path
+> that can put a key in a response, and `test/preflight.test.ts` holds it
+> there. Exit code is 0 whether or not everything is set: a deployment with no
+> Stripe keys is a perfectly good free product, and every surface that would
+> charge checks for them and renders nothing.
+>
+> Nothing below is blocked by anything else except where it says so. The order
+> is cheapest-first: Google sign-in needs no domain, email does.
+
+
 Everything here is a GitHub repo secret unless stated otherwise. The deploy
 workflow reads them and writes them to the Worker on every push, so adding a
 secret and re-running the workflow is the whole deployment step.

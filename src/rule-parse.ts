@@ -27,6 +27,7 @@
  * reply listing what works, never a silent no-op.
  */
 
+import { orderText } from "./rules.ts";
 import type { Rule, Order } from "./rules.ts";
 import { targetFromBrief } from "./assemble.ts";
 
@@ -43,6 +44,13 @@ export const WHAT_PARSES = [
   "what to lose — “take out the hellos”, “lose the hedging”",
   "what to keep — “keep the hard lines”, “end on where you land it”",
   "how it feels — “the start drags”, “hard to follow”, “too long”",
+  /*
+   * THE SHORTS BRIEF'S OWN FOUR, added when src/brief.ts learned them.
+   * This list is what somebody is told when nothing parsed, so a shape the
+   * product understands and does not mention here is a shape nobody will
+   * ever type again.
+   */
+  "a shorts brief — “hooks in 2s”, “20–40s”, “no politics”, “we need 8”",
 ];
 
 /*
@@ -56,10 +64,20 @@ const TAG_PHRASES: Array<[RegExp, string]> = [
   [/\b(the )?(core|substance|where (you'?re|i'?m) working (it|something) out)\b/i, "core"],
 ];
 
-const ORDER_PHRASES: Array<[RegExp, Order, string]> = [
-  [/\bas it happened\b|\bchronologic(al|ally)\b|\bin order\b/i, "time", "Run it as it happened."],
-  [/\bone (thread|strand|topic) at a time\b|\bby (thread|strand|topic)\b|\bgroup(ed)? by (thread|topic)\b/i, "strand", "Run it one thread at a time."],
-  [/\bstart on the (sharpest|hardest|best) line\b|\bsharpest line first\b|\bopen on the (sharpest|hardest|best)\b|\blead with the (sharpest|hardest|best)\b/i, "open", "Start on the sharpest line."],
+/*
+ * THE SENTENCE COMES FROM ONE PLACE.
+ *
+ * These three labels were written out here AND produced by `orderName` in
+ * src/rules.ts, which is two copies of the same three strings — and the
+ * rules pane now offers them as alternatives you can press, so a third
+ * copy was about to exist. orderText is the one, and a rule made by
+ * parsing a sentence and a rule made by pressing a chip are now
+ * character-for-character the same rule.
+ */
+const ORDER_PHRASES: Array<[RegExp, Order]> = [
+  [/\bas it happened\b|\bchronologic(al|ally)\b|\bin order\b/i, "time"],
+  [/\bone (thread|strand|topic) at a time\b|\bby (thread|strand|topic)\b|\bgroup(ed)? by (thread|topic)\b/i, "strand"],
+  [/\bstart on the (sharpest|hardest|best) line\b|\bsharpest line first\b|\bopen on the (sharpest|hardest|best)\b|\blead with the (sharpest|hardest|best)\b/i, "open"],
 ];
 
 /*
@@ -92,6 +110,35 @@ const TIGHTEN_MS = 3 * 60_000;
  * targetFromBrief's answer so the two cannot disagree about what "two minutes"
  * means.
  */
+/**
+ * WHAT A LENGTH RULE CALLS ITSELF.
+ *
+ * It must say what the rule DOES. "keep it under 30 seconds" produced a cap
+ * of 30 seconds wearing the words "Keep it under 1 minute." — the rounding
+ * went to whole minutes and the `|| 1` turned every sub-minute cap into one
+ * minute. The rule was right and the sentence beside it in the rules pane
+ * was wrong, which is the worst way round: invariant 1 says the rules are
+ * the source of truth, and a person switching rules on and off reads the
+ * words.
+ *
+ * Found by putting a rule in front of somebody to agree to — the composer's
+ * Ask mode shows the rule's own text in the proposal, and "keep it under 30
+ * seconds" came back asking to be allowed to keep it under a minute.
+ *
+ * Under a minute it says seconds. Over, it says minutes, and only when the
+ * number is whole — 90 seconds is "a minute and a half" to a person and
+ * "1 minute" to a rounder, so it stays in seconds rather than lie by five
+ * per cent.
+ */
+export function capText(ms: number): string {
+  const secs = Math.max(1, Math.round(ms / 1000));
+  if (secs % 60 === 0 && secs >= 60) {
+    const mins = secs / 60;
+    return `Keep it under ${mins} minute${mins === 1 ? "" : "s"}.`;
+  }
+  return `Keep it under ${secs} second${secs === 1 ? "" : "s"}.`;
+}
+
 export function parseRules(sentence: string): Parsed {
   const text = sentence.trim();
   const rules: Array<Omit<Rule, "id">> = [];
@@ -105,13 +152,13 @@ export function parseRules(sentence: string): Parsed {
       kind: "cap",
       secs: Math.round(target.ms / 1000),
       on: true,
-      text: `Keep it under ${Math.round(target.ms / 60_000) || 1} minute${target.ms >= 120_000 ? "s" : ""}.`,
+      text: capText(target.ms),
     });
   }
 
-  for (const [re, order, label] of ORDER_PHRASES) {
+  for (const [re, order] of ORDER_PHRASES) {
     if (re.test(text)) {
-      rules.push({ kind: "order", order, on: true, text: label });
+      rules.push({ kind: "order", order, on: true, text: orderText(order) });
       break;
     }
   }

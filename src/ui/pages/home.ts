@@ -1,10 +1,10 @@
 /**
  * Home — the composer. The only entry point that matters (01-PRODUCT.md).
  *
- * TODO(phase-1): the demo card is designed and rendered, but "Open the demo"
- * has nothing to open until a real 48-minute demo source is seeded and read.
- * Its copy makes a specific factual claim ("Twelve clips found") that must be
- * true of the actual seeded source before this ships to anyone.
+ * THE DEMO CARD IS NOT RENDERED, and the note that used to be here warned
+ * that it must not ship making a claim ("Twelve clips found") that is not
+ * true of any account. It was taken out instead — see the reasoning beside
+ * `answerPanel` below, which is where the decision is recorded.
  *
  * Markup transcribed from the `<sc-if value="{{ isHome }}">` block of
  * design/Aldershot.dc.html. Every string here is copied from the prototype and
@@ -21,6 +21,7 @@ import { C, ACCENT, FONT, RADIUS, SIZE } from "../tokens.ts";
 import { iconPlus } from "../icons.ts";
 import { esc } from "../shell.ts";
 import { hms } from "./footage.ts";
+import { ASK_MODES, DEFAULT_MODE, MODE_LABEL, modeHint, type AskMode } from "../../decide.ts";
 
 /** The three example sentences shown in a fresh account. Copied verbatim. */
 const TRY_CHIPS = [
@@ -49,6 +50,20 @@ const HOW_THIS_GOES: Array<[string, string]> = [
  * `fresh ? … : …` expression. The populated half names a real overnight count
  * and so cannot be rendered until Phase 1 has jobs to count — until then only
  * the fresh half is ever true.
+ */
+/*
+ * IT IS RENDERED WITH data-content, BECAUSE THE PERSON'S NAME IS IN IT.
+ *
+ * "Good morning." is the prototype's copy and is signed off as such.
+ * "Good morning, Ci." is that copy with an account's name appended, and the
+ * strings rule read the whole line as one invented sentence. It had only ever
+ * seen the nameless form, on the machine this was written on; CI signs in as
+ * ci@aldershot.invalid and derived "Ci" — so the first clean machine to run
+ * the gate reported the greeting as a paraphrase.
+ *
+ * The sentence is written by the data, which is exactly what the attribute
+ * means. A JS comment and not an HTML one: a comment inside a template
+ * literal ships to the browser.
  */
 function greeting(name: string | null, isFresh: boolean, landedOvernight: number): string {
   /*
@@ -92,7 +107,49 @@ function greeting(name: string | null, isFresh: boolean, landedOvernight: number
  * unwired, which is exactly the kind of failure the wiring check exists for
  * and would not catch, because the ids would still all be present somewhere.
  */
-export function composer(attached: string[] = [], opts: { room?: boolean } = {}): string {
+/**
+ * THE DIAL — how much it decides.
+ *
+ * One of the two controls the prototype's composer has and the build did
+ * not. It cycles rather than opening a menu, like the Scout pill: three
+ * states, and a menu for three things is a menu nobody opens. The caret is
+ * the prototype's own — it reads as a thing with more inside it, which is
+ * true, and pressing it is how you see the rest.
+ *
+ * src/decide.ts holds the words and the cycle, so the client never restates
+ * them: the row carries all three and reads back the one the server names.
+ */
+export function dial(mode: AskMode): string {
+  const states = ASK_MODES.map(
+    (m) => `data-label-${m}="${esc(MODE_LABEL[m])}" data-hint-${m}="${esc(modeHint(m))}"`,
+  ).join(" ");
+  return `<button type="button" id="askMode" data-mode="${esc(mode)}" ${states} title="${esc(modeHint(mode))}"
+    style="flex:none;display:flex;align-items:center;gap:6px;font-size:${SIZE.secondary};font-weight:600;padding:6px 10px;border-radius:${RADIUS.button};background:#141418;color:rgba(236,236,241,0.82);border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap">
+    <span id="askModeLabel">${esc(MODE_LABEL[mode])}</span><span style="font-size:8px;color:${C.ink45}">&#9662;</span>
+  </button>`;
+}
+
+/**
+ * THE MIC, in the room.
+ *
+ * The project assistant has had this since voice landed; the front door,
+ * where the Manual says you "say what you want in a sentence", did not. Same
+ * classes, so client.ts wires it with the same function and there is one
+ * copy of the MediaRecorder dance rather than two — a second copy is a
+ * second place for the audio stream not to be released.
+ *
+ * It fills the box and does not press Run it. Voice is good at issuing and
+ * bad at reviewing, and review is where the time goes.
+ */
+function roomMic(): string {
+  return `<button type="button" class="asst-mic"
+    style="flex:none;display:flex;align-items:center;gap:5px;font-size:${SIZE.secondary};font-weight:500;padding:6px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:${FONT.ui};white-space:nowrap"><span class="asst-mic-dot" hidden style="width:6px;height:6px;border-radius:50%;background:${ACCENT.red};animation:blip 1.1s ease-in-out infinite"></span><span class="asst-mic-label">Say it</span></button>`;
+}
+
+export function composer(
+  attached: string[] = [],
+  opts: { room?: boolean; ghosts?: string[]; mode?: AskMode } = {},
+): string {
   const chips = TRY_CHIPS.map(
     (t) =>
       `<div tabindex="0" role="button" data-chip="${esc(t)}" style="font-size:${SIZE.secondary};padding:5px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer;white-space:nowrap">${esc(t)}</div>`,
@@ -107,9 +164,22 @@ export function composer(attached: string[] = [], opts: { room?: boolean } = {})
    * than client state for the same reason the URL holds it: one copy of the
    * truth, and the server reads exactly what the page showed.
    */
-  const carry = attached
-    .map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`)
-    .join("");
+  const carry =
+    attached.map((id) => `<input type="hidden" name="sourceIds" value="${esc(id)}"/>`).join("") +
+    /*
+     * AND THE GHOSTS, in their own field.
+     *
+     * An attached external moment is a ledger id, not a source id. Putting
+     * it in `sourceIds` would have it silently dropped by the ownership
+     * check in /api/begin — the person attaches a find, presses Run it, and
+     * the cut comes back without it and without a word. `ledgerIds` is read
+     * separately and becomes a mission per moment: the ghost the prototype
+     * promises when it says they "ride into the cut as ghosts until you
+     * grab them".
+     */
+    (opts.ghosts ?? [])
+      .map((id) => `<input type="hidden" name="ledgerIds" value="${esc(id)}"/>`)
+      .join("");
 
   return `<form id="composer" method="POST" action="/api/begin" style="position:relative;margin-top:24px;background:${C.raised};border-radius:${RADIUS.composer};padding:6px;box-shadow:0 0 0 1px rgba(255,255,255,0.06), 0 12px 40px rgba(0,0,0,0.3)">${carry}
     <div id="dropHint" hidden style="position:absolute;inset:0;border-radius:${RADIUS.composer};box-shadow:inset 0 0 0 2px ${ACCENT.gold};background:rgba(217,179,106,0.07);pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:2">
@@ -141,10 +211,72 @@ export function composer(attached: string[] = [], opts: { room?: boolean } = {})
         "Lose the house thread" and "Keep it under three minutes" rather than
         generic openers. Kept on the retired Home, which still has them.
       -->
-      <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1 1 200px;min-width:0">${opts.room ? "" : chips}</div>
-      <button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">${opts.room ? "Run it" : "Begin →"}</button>
+      ${opts.room ? dial(opts.mode ?? DEFAULT_MODE) + roomMic() : ""}
+      <!--
+        THE SPACER IS A SPACER IN THE ROOM, and a chip tray on the retired
+        Home. A flex basis of 200px asks for width it does not need when
+        there are no chips in it, which pushed Ask and Run it onto a second
+        line — the
+        prototype's composer row is one line with the dial at the left and
+        Run it at the right, and that was the only reason it was not.
+      -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;${opts.room ? "flex:1 1 0" : "flex:1 1 200px"};min-width:0">${opts.room ? "" : chips}</div>
+      <!--
+        TWO THINGS YOU CAN DO WITH ONE SENTENCE.
+        
+        The Manual puts them in the same breath on the front door: "attach
+        footage and say it in a sentence. Ask it anything about your footage
+        and it answers with the lines, timed." So this is not a second box —
+        a question and a brief are both a sentence about your footage, and
+        which one it is depends on which button you press.
+        
+        Not in the prototype, whose composer is the text, the dial and the
+        mic. New UI, so 15-DESIGN-LANGUAGE decides: the quiet treatment,
+        because Run it is still the thing most people came to press.
+      -->
+      <!--
+        THE ROOM'S BUTTONS ARE THE PROTOTYPE'S SIZE, which is smaller than
+        the retired Home's. Run it there is 12.5px at 6px/14px; this was
+        13.5px at 9px/22px, and with the dial and the mic beside it the row
+        no longer fitted the 360px column — Run it wrapped onto a line of its
+        own, below a half-empty one. Measured by rendering it, not guessed.
+      -->
+      <!--
+        THE TWO BUTTONS TRAVEL TOGETHER.
+        
+        One Take's composer row is one line: the dial, the mic, then Run it
+        at the right. The build's room has two controls the prototype does
+        not — the file picker and Ask, both argued for above — and at 360px
+        the six of them do not fit on one line however small the buttons
+        are. Measured by rendering it: they overflow by about 40px.
+        
+        So the row wraps, and what wraps is the PAIR. Left to itself it put
+        Ask at the end of a full line and Run it alone on the next, which
+        reads as a layout that broke rather than one that folded.
+      -->
+      ${opts.room
+        ? `<span style="flex:none;display:flex;gap:8px;margin-left:auto">
+            <button type="button" id="askBtn" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 14px;border-radius:5px;background:${C.pill};color:${C.ink70};cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Ask</button>
+            <button type="submit" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 14px;border-radius:5px;background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Run it</button>
+          </span>`
+        : `<button type="submit" style="flex:none;font-size:${SIZE.body};font-weight:600;padding:9px 22px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;cursor:pointer;white-space:nowrap;border:none;font-family:${FONT.ui}">Begin →</button>`}
     </div>
-  </form>`;
+  </form>
+  ${opts.room ? answerPanel() : ""}`;
+}
+
+/**
+ * Where the answer lands, empty until something is asked.
+ *
+ * Rendered hidden rather than created by the client, so the shape of an
+ * answer lives in the same file as the shape of everything else on this page
+ * and the gate's wiring check can see it. client.ts fills the two children.
+ */
+function answerPanel(): string {
+  return `<div id="askPanel" hidden style="margin-top:14px;background:${C.surface};border-radius:${RADIUS.card};padding:14px 16px">
+    <div id="askLead" style="font-size:${SIZE.secondary};color:${C.ink70};line-height:1.5"></div>
+    <div id="askLines" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
+  </div>`;
 }
 
 /*
@@ -192,6 +324,15 @@ export interface WorkingJob {
   type: string;
   stage: string;
   pct: number;
+  /**
+   * What the job's own ITEMS say, when it has any — "6 of 14 done".
+   *
+   * Preferred over pct where it exists, because pct is written by whatever
+   * stage is running and a stage that died at ninety per cent leaves a job
+   * claiming work that never happened. Null means this job is not
+   * item-tracked, which is not the same as nothing having happened.
+   */
+  says?: string | null;
 }
 
 /**
@@ -220,7 +361,9 @@ function workingLine(jobs: WorkingJob[]): string {
     byStage.get(verb)!.push(j);
   }
   const clauses = [...byStage.entries()].map(([verb, group]) => {
-    const named = group.map((j) => (j.pct > 0 ? `${j.label} (${j.pct}%)` : j.label));
+    const named = group.map((j) =>
+      j.says ? `${j.label} (${j.says})` : j.pct > 0 ? `${j.label} (${j.pct}%)` : j.label,
+    );
     const joined =
       named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
     return `${verb} ${joined}`;
@@ -244,15 +387,74 @@ function sectionHead(title: string, count: string): string {
  * moves, which is worse than showing none at all, and no check catches it
  * because both ids would still exist somewhere.
  */
-export function workingRow(jobs: WorkingJob[]): string {
+/** A job that has stopped, for the line under the running one. */
+export interface FinishedJob {
+  label: string;
+  failed: boolean;
+}
+
+/**
+ * WHAT FINISHED WHILE YOU WERE AWAY.
+ *
+ * The bell in the nav bar was the only place this was ever shown, and One
+ * Take's bar has no bell — so it is here, beside what is still going, which
+ * is where somebody looks to find out what the product is doing.
+ *
+ * A failure is named rather than counted. "2 finished" over a failed read is
+ * the product being cheerful about bad news, and coming back to a silent gap
+ * is worse than coming back to something that went wrong.
+ */
+/**
+ * THE SAME THING, OVER AND OVER, IS ONE THING.
+ *
+ * The same rule `collapse` applies to the feed, and the first version of
+ * this line did not: six failed reads of one video rendered as "Tuesday —
+ * the kitchen one, Tuesday — the kitchen one, Tuesday — the kitchen one,
+ * Tuesday — the kitchen one, Tuesday — the kitchen one and Tuesday — the
+ * kitchen one didn't finish." Seen by rendering it. A repeated failure is
+ * one problem you have hit repeatedly, and reading it six times does not
+ * help you fix it.
+ */
+function names(jobs: FinishedJob[]): string[] {
+  const seen = new Map<string, number>();
+  for (const j of jobs) seen.set(j.label, (seen.get(j.label) ?? 0) + 1);
+  return [...seen.entries()].map(([label, n]) => (n > 1 ? `${label} (${n} times)` : label));
+}
+
+const listed = (xs: string[]): string =>
+  xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+export function finishedLine(done: FinishedJob[]): string {
+  const failed = done.filter((d) => d.failed);
+  if (failed.length) {
+    const rest = done.length - failed.length;
+    return `${listed(names(failed))} didn't finish${rest ? ` — ${rest} other${rest === 1 ? "" : "s"} did` : ""}.`;
+  }
+  return `${listed(names(done))} finished.`;
+}
+
+export function workingRow(jobs: WorkingJob[], done: FinishedJob[] = []): string {
+  const running = jobs.length > 0;
+  /* Green and blinking while something is going; amber and still when the
+     last thing to happen was a failure; otherwise the quiet dot of a thing
+     that has stopped. The dot is the first thing read and must not claim
+     work that is not happening. */
+  const dot = running
+    ? `background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite`
+    : done.some((d) => d.failed)
+      ? `background:${ACCENT.red}`
+      : `background:${C.ink32}`;
+  const line = running ? workingLine(jobs) : finishedLine(done);
   return `<div id="workingRow" style="margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:${RADIUS.card};background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04)">
-    <span style="width:6px;height:6px;border-radius:50%;background:${ACCENT.green};animation:blip 1.6s ease-in-out infinite;flex:none"></span>
+    <span style="width:6px;height:6px;border-radius:50%;${dot};flex:none"></span>
     <!-- data-content: this sentence is assembled around the user's own video
          titles, so it can never match the prototype's fixed wording. It was
          only passing the check while every title happened to be a filename
          the crawler skipped; auto-naming put real words in it. -->
-    <span id="workingLine" data-content style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(workingLine(jobs))}</span>
-    <a href="/footage?tab=sources" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer">Watch</a>
+    <span id="workingLine" data-content style="flex:1 1 240px;min-width:min(220px,100%);font-size:${SIZE.secondary};color:rgba(236,236,241,0.55)">${esc(line)}</span>
+    <!-- Into the room's own Videos tab, not the retired Footage page it used
+         to point at. Watching something read is a thing you do in the room. -->
+    <a href="/?tab=videos" style="flex:none;font-size:${SIZE.secondary};font-weight:500;padding:6px 13px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};cursor:pointer">Watch</a>
   </div>`;
 }
 
@@ -422,7 +624,7 @@ export interface HomeData {
 
 export function renderHome(d: HomeData): string {
   return `<div style="font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-0.025em;line-height:1.2">What are we making today?</div>
-<div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
+<div data-content style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:8px">${esc(greeting(d.name, d.isFresh, d.landedOvernight))}</div>
 ${composer()}
 <div style="margin-top:16px;font-size:${SIZE.secondary};color:rgba(236,236,241,0.3);padding-left:4px">A full cut, a few shorts, a cleanup — it works out the job and checks with you first.</div>
 ${
@@ -448,7 +650,7 @@ ${
       `<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">${
         d.feed.length
           ? collapse(d.feed).map(feedRow).join("")
-          : `<div data-content style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
+          : `<div style="padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};font-size:${SIZE.body};color:${ACCENT.green}">All caught up — nothing waiting on you.</div>`
       }</div>`
 }
 ${

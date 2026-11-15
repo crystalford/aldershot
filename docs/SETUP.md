@@ -124,7 +124,7 @@ you have binned, from the same sweep.
 ### Checking it actually works
 
 ```
-npx wrangler dev --port 8787        # needs DEV_LOGIN_EMAIL in .dev.vars
+npx wrangler dev --local --port 8787   # needs DEV_LOGIN_EMAIL in .dev.vars
 npm run eval                        # and: npm run eval -- --exact
 ```
 

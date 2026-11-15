@@ -7,6 +7,7 @@
  * they show their real empty states rather than a fabricated preview.
  */
 
+import type { TranscriptState } from "../../sources.ts";
 import { C, ACCENT, FONT, RADIUS, SIZE, accentBg } from "../tokens.ts";
 import { esc } from "../shell.ts";
 import { emptyState, pageHeading } from "./empty.ts";
@@ -15,14 +16,16 @@ import { itemMenu } from "../item-menu.ts";
 import { selectBar, selectBox } from "../select-bar.ts";
 import { editList, type ProjectRow } from "./projects.ts";
 
-export type FootTab = "moments" | "threads" | "sources" | "edits" | "exports" | "find";
+export type FootTab = "moments" | "threads" | "sources" | "documents" | "edits" | "exports" | "find";
 
 export interface SourceRow {
   id: string;
   title: string;
   filename: string | null;
   duration_s: number | null;
-  transcript_state: "pending" | "running" | "ready" | "failed";
+  /* The union lives in src/sources.ts. Repeating it here is how a fifth
+     state gets added to the database and silently never rendered. */
+  transcript_state: TranscriptState;
   poster_r2_key: string | null;
   created_at: number;
   /** Live read progress, so the row shows a bar rather than a bare label. */
@@ -64,6 +67,13 @@ export function hms(totalSeconds: number): string {
  */
 function stateChip(state: SourceRow["transcript_state"]): string {
   const map: Record<SourceRow["transcript_state"], [string, string]> = {
+    /*
+     * IMPORTED AND NOT READ YET — which is a thing you have, not a thing
+     * that went wrong, and not a thing that is about to cost you money.
+     * Connecting a bucket brings a whole archive across at once; reading is
+     * metered per video and happens the first time you cut with one.
+     */
+    unread: ["Not read yet", C.ink45],
     pending: ["Queued", C.ink45],
     running: ["Reading", ACCENT.gold],
     ready: ["Ready", ACCENT.green],
@@ -98,6 +108,14 @@ function tabs(active: FootTab, counts: Partial<Record<FootTab, number>>): string
     ["moments", "Clips"],
     ["threads", "Threads"],
     ["sources", "Videos"],
+    /*
+     * DOCUMENTS — invariant 8's second tier, which had no supply.
+     *
+     * Unconditional, unlike Threads: adding one WORKS, so the tab is honest
+     * at zero. "A tab you can never fill is a lie" is about surfaces nothing
+     * can write to, and this one has a route and a picker behind it.
+     */
+    ["documents", "Documents"],
     /*
      * WHAT YOU HAVE FINISHED.
      *
@@ -168,7 +186,13 @@ const THREAD_DOTS = [ACCENT.gold, ACCENT.violet, ACCENT.green, ACCENT.cyan, ACCE
 function threadChips(threads: ThreadRow[], total: number, active: string | null): string {
   const chip = (name: string, count: number, dot: string, href: string, on: boolean) =>
     `<a href="${href}" style="display:flex;align-items:center;gap:7px;font-size:${SIZE.secondary};padding:7px 13px;border-radius:${RADIUS.button};background:${on ? C.active : C.pill};color:${on ? C.ink : C.ink70};font-weight:500;white-space:nowrap">
-      <span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span>${esc(name)} <span data-content style="color:${C.ink32};font-family:${FONT.mono};font-size:${SIZE.meta}">${count}</span>
+      <span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span><!--
+        data-content, because a thread's NAME is data. It was a bare text node
+        after the dot's closing tag, which the strings rule could not see at
+        all: its scan only read text that followed an OPENING tag, so the name was
+        never compared with anything, and the moment the scan was widened it
+        read somebody's own thread name as copy that should be in a design.
+      --><span data-content>${esc(name)}</span> <span data-content style="color:${C.ink32};font-family:${FONT.mono};font-size:${SIZE.meta}">${count}</span>
     </a>`;
 
   return `<div style="margin-top:24px;display:flex;gap:6px;flex-wrap:wrap">
@@ -536,6 +560,9 @@ export interface FootageData {
    */
   momentCount: number;
   threads: ThreadRow[];
+  /** Only loaded on the Documents tab; the count comes whichever tab you are on. */
+  documents?: DocumentCard[];
+  documentCount: number;
   mode: SearchMode;
   q: string;
   /** True when meaning search is asked for but the index is not available. */
@@ -620,10 +647,75 @@ function sortBar(current: string, q: string, mode: string): string {
  * up yet, so the button says so rather than failing silently. Same honesty as
  * the meaning-search notice.
  */
+export interface DocumentCard {
+  id: string;
+  title: string;
+  /** What it shows, in the maker's words. Null until they say. */
+  note: string | null;
+  mediaType: string;
+  bytes: number;
+}
+
+/**
+ * DOCUMENTS — add one, say what it shows, put it away.
+ *
+ * Invariant 8's second tier, and the thing that makes a document PROOF is
+ * the sentence under it: doc 08 wants "the document with its line marked"
+ * and nothing in this codebase reads a PDF to find the line. So the maker
+ * marks it, and the card says plainly which ones are not marked and what
+ * that costs them — a document with no note still outranks the open world
+ * and still cannot carry an EVIDENCE line.
+ *
+ * Not in the prototype, which has no documents anywhere. New UI, so
+ * 15-DESIGN-LANGUAGE decides.
+ */
+function documentsPanel(docs: DocumentCard[]): string {
+  const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+  const add = `<div style="margin-top:20px;padding:16px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div style="font-size:${SIZE.body};font-weight:600">Add a document</div>
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">A PDF or a photograph — a contract, a letter, a screenshot of the thing itself. Say what it shows and it can carry the line that claims it. Without that it is still a picture, just not proof.</div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label style="flex:none;display:flex;align-items:center;gap:6px;font-size:${SIZE.secondary};padding:7px 13px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};cursor:pointer">
+        <span>Choose a file</span>
+        <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" id="docPick" style="display:none"/>
+      </label>
+      <input id="docNote" type="text" maxlength="600" placeholder="What does it show?" style="flex:1 1 260px;min-width:0;box-sizing:border-box;font-size:${SIZE.secondary};padding:8px 11px;border-radius:${RADIUS.input};background:#111114;border:none;outline:none;color:${C.ink};font-family:inherit"/>
+      <span id="docState" style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}"></span>
+    </div>
+  </div>`;
+
+  if (!docs.length) {
+    return add + emptyState("No documents yet — add one and it can stand as the proof on a line that claims it.");
+  }
+
+  const rows = docs
+    .map(
+      (d) => `<div class="doc-row" data-doc="${esc(d.id)}" style="display:flex;gap:12px;align-items:baseline;padding:12px 14px;border-radius:${RADIUS.card};background:${C.surface}">
+      <div style="flex:1;min-width:0">
+        <a href="/api/documents/${esc(d.id)}/file" target="_blank" rel="noreferrer" style="font-size:${SIZE.body};font-weight:500;color:${C.ink};text-decoration:none">${esc(d.title)}</a>
+        <div style="font-size:${SIZE.secondary};color:${d.note ? C.ink70 : C.ink45};margin-top:4px;line-height:1.5">${
+        d.note
+          ? esc(d.note)
+          : /* The one thing a person needs to know about an unmarked
+               document, said where they are looking at it. */
+            "Not marked yet — it cannot stand as proof until you say what it shows."
+      }</div>
+      </div>
+      <span style="flex:none;font-size:${SIZE.meta};color:${C.ink32};font-family:${FONT.mono}">${kb(d.bytes)}</span>
+      <button class="doc-mark" data-doc="${esc(d.id)}" style="flex:none;background:none;border:none;padding:0 2px;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill">${d.note ? "Change what it shows" : "Say what it shows"}</span></button>
+      <button class="doc-remove" data-doc="${esc(d.id)}" style="flex:none;background:none;border:none;padding:0 2px;cursor:pointer;font-family:${FONT.ui}"><span class="seg-pill">Put it away</span></button>
+    </div>`,
+    )
+    .join("");
+
+  return add + `<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">${rows}</div>`;
+}
+
 function findPanel(): string {
   return `<div style="margin-top:24px;padding:20px;border-radius:11px;background:#141418;box-shadow:inset 0 0 0 1px rgba(94,184,201,0.18)">
-    <div data-content style="font-size:${SIZE.body};font-weight:600">Find a moment in a video you don't have yet</div>
-    <div data-content style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">Paste a link and we read its public captions — text only, nothing downloaded. Search it in plain language and you get exact timestamps back. Grab those segments yourself, drop them in Footage, and they behave like everything else here.</div>
+    <div style="font-size:${SIZE.body};font-weight:600">Find a moment in a video you don't have yet</div>
+    <div style="font-size:${SIZE.secondary};color:${C.ink45};margin-top:5px;line-height:1.55;max-width:640px">Paste a link and we read its public captions — text only, nothing downloaded. Search it in plain language and you get exact timestamps back. Grab those segments yourself, drop them in Footage, and they behave like everything else here.</div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
       <input placeholder="https://www.youtube.com/watch?v=…" disabled style="flex:1 1 260px;min-width:min(240px,100%);background:#101014;border:none;outline:none;color:${C.ink};font-size:${SIZE.secondary};font-family:${FONT.mono};padding:10px 12px;border-radius:6px"/>
       <button type="button" disabled style="font-size:${SIZE.secondary};font-weight:600;padding:9px 16px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink45};flex:none;white-space:nowrap;border:none;font-family:${FONT.ui}">Read the captions</button>
@@ -642,9 +734,18 @@ export function renderFootageFull(d: FootageData): string {
   const head =
     pageHeading("Footage", "Every video you've added. Search by topic, upload new ones, or ask what's in there.") +
     searchBox(d.tab, d.mode, d.q, d.canMean) +
-    tabs(d.tab, { moments: d.momentCount, threads: d.threads.length, sources: d.sources.length, edits: d.editsCount, exports: d.exportCount });
+    tabs(d.tab, {
+      moments: d.momentCount,
+      threads: d.threads.length,
+      sources: d.sources.length,
+      documents: d.documentCount,
+      edits: d.editsCount,
+      exports: d.exportCount,
+    });
 
   if (d.tab === "find") return head + findPanel();
+
+  if (d.tab === "documents") return head + documentsPanel(d.documents ?? []);
 
   if (d.tab === "sources") {
     /* The prototype's "Nothing kept yet — add a clip back" is its line for an

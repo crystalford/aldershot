@@ -895,7 +895,11 @@ if (blocksEl) {
      a moment from THIS video is already a block and only wants moving. */
   const sourceId = blocksEl.getAttribute("data-source");
   const video = document.querySelector("#cut-video");
+  /* Two spans now, not one. The kept count sits in the title row's mono
+     note and the runtime is inside the Export button's own label — "Export
+     0:20" — which is where One Take puts it. */
   const footRuntime = document.querySelector("#cut-runtime");
+  const footKept = document.querySelector("#cut-kept");
 
   /*
    * Paint each block its own frame.
@@ -1236,10 +1240,10 @@ if (blocksEl) {
    * The server's own figure is authoritative and comes back with every cut;
    * the local step is optimistic and gets corrected a moment later.
    */
-  /* Seeded from the bar, which is now the only place these numbers are
-     shown. They used to be in the header too — the same two figures twice on
-     one screen — and this read the header's copy. */
-  let keptTotal = Number((footRuntime?.textContent || "").split("kept")[0].replace(/[^0-9]/g, "")) || 0;
+  /* Seeded from the title row's kept note. It used to be seeded from a bar
+     that carried both numbers in one string and had to be split apart; they
+     are two elements now, so there is nothing to parse. */
+  let keptTotal = Number((footKept?.textContent || "").replace(/[^0-9]/g, "")) || 0;
 
   const retotal = (afterS, keptFromServer) => {
     if (typeof keptFromServer === "number") keptTotal = keptFromServer;
@@ -1248,7 +1252,8 @@ if (blocksEl) {
       : [...blocksEl.querySelectorAll(".blk")]
           .filter((el) => el.dataset.struck !== "1")
           .reduce((n, el) => n + Number(el.getAttribute("data-ms") || 0), 0);
-    if (footRuntime) footRuntime.textContent = keptTotal + " kept · " + clock(ms);
+    if (footKept) footKept.textContent = keptTotal + " kept";
+    if (footRuntime) footRuntime.textContent = clock(ms);
   };
 
   /*
@@ -1359,6 +1364,20 @@ if (blocksEl) {
    * repainting either by hand is how the page and the server drift. A toast
    * does not survive that, so the snapshot is parked and picked up here, once.
    */
+  /*
+   * A LINE PARKED THE SAME WAY, for the same reason.
+   *
+   * runPass reloads the page a tick after it answers, so anything it says
+   * there is said to a page that is about to be replaced. The one thing it
+   * has to say — that Ask could not propose this pass because the pass is a
+   * read — rides across in session storage and is said here, once.
+   */
+  const note = sessionStorage.getItem("pass-note:" + projectId);
+  if (note) {
+    sessionStorage.removeItem("pass-note:" + projectId);
+    setTimeout(() => toast(note), 0);
+  }
+
   const parked = sessionStorage.getItem("undo:" + projectId);
   if (parked) {
     sessionStorage.removeItem("undo:" + projectId);
@@ -1520,6 +1539,7 @@ if (blocksEl) {
     const word = e.target.closest(".w");
     const strike = e.target.closest(".blk-strike");
     const short = e.target.closest(".blk-short");
+    const picture = e.target.closest(".blk-picture");
     const rec = e.target.closest(".blk-record");
     const unrec = e.target.closest(".blk-unrecord");
     const tts = e.target.closest(".blk-tts");
@@ -1529,6 +1549,61 @@ if (blocksEl) {
     const seamOpen = e.target.closest(".seam-open");
     const seamClose = e.target.closest(".seam-close");
     const row = e.target.closest(".blk");
+
+    /*
+     * WHAT COULD GO ON THIS LINE.
+     *
+     * Invariant 8's other half: allowed() already refuses a generated
+     * card over a claim, and nothing offered one. The panel opens under the
+     * block and leads with the choice and its reason, then what was refused
+     * and why — doc 08's premise is that a picture answers "why am I seeing
+     * this", and the alternatives are half of that answer.
+     *
+     * No backticks: this file is one String.raw template.
+     */
+    if (picture) {
+      const blk = picture.closest(".blk");
+      const already = blk.querySelector(".pic-panel");
+      if (already) { already.remove(); return; }
+
+      const panel = document.createElement("div");
+      panel.className = "pic-panel";
+      panel.style.cssText =
+        "margin:8px 0 2px;padding:10px 12px;border-radius:8px;background:#141418;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.62)";
+      panel.textContent = "Reading the line…";
+      blk.appendChild(panel);
+
+      try {
+        /* The project id lives on the brief box, which is the only element
+           on this page that carries it. body does not. */
+        const box = document.getElementById("brief-box");
+        const pid = box ? box.getAttribute("data-project") : "";
+        if (!pid) { panel.textContent = "Could not read that line."; return; }
+        const res = await fetch(
+          "/api/projects/" + encodeURIComponent(pid) + "/pictures?block=" +
+            encodeURIComponent(picture.getAttribute("data-block")),
+        );
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) { panel.textContent = d.error || "Could not read that line."; return; }
+
+        let html =
+          '<div style="color:#ECECF1">' + escapeHtml(d.placed && d.placed.reason ? d.placed.reason : "") + "</div>";
+        const refused = (d.placed && d.placed.refused) || [];
+        if (refused.length) {
+          html +=
+            '<div style="margin-top:8px">Refused: ' +
+            refused.map((r) => escapeHtml(r.reason)).join("; ") +
+            "</div>";
+        }
+        /* The sources with nothing behind them, named. An empty list and an
+           unbuilt source look identical and are not. */
+        if (d.note) html += '<div style="margin-top:8px;color:rgba(236,236,241,0.42)">' + escapeHtml(d.note) + "</div>";
+        panel.innerHTML = html;
+      } catch {
+        panel.textContent = "Could not read that line.";
+      }
+      return;
+    }
 
     /* Give this block your voice. record() handles the whole take and only
        touches the server once you stop, so an abandoned one costs nothing. */
@@ -1950,7 +2025,7 @@ if (assist) {
 
   /* A pass is queued work, so the page reloads into the running strip rather
      than pretending the answer is instant. */
-  const runPass = async (instruction, btn) => {
+  const runPass = async (instruction, btn, apply) => {
     /* A verb button holds spans — its name and sometimes a count — so swapping
        the BUTTON's textContent would eat them. The name is swapped instead. */
     const label = btn ? btn.querySelector("span:not([data-content])") || btn : null;
@@ -1961,10 +2036,36 @@ if (assist) {
       const res = await fetch("/api/projects/" + projectId + "/passes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ instruction, apply: apply === true }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "That didn't start");
+      /*
+       * ASK: NOTHING HAPPENED YET, so do not reload.
+       *
+       * The dial is on Ask, the server worked out what the rule would do and
+       * changed nothing, and the row below says so and waits. Reloading here
+       * would throw the proposal away and show a cut that had not moved,
+       * which reads as the button being broken.
+       */
+      if (out.proposal) {
+        showProposal(out.proposal, (apply) => runPass(instruction, btn, apply));
+        if (btn) btn.disabled = false;
+        if (label) label.textContent = was;
+        if (field) field.value = "";
+        return;
+      }
+      /*
+       * Ask on a project that has its own transcript: there was no rule to
+       * propose in advance, so it ran. Said once rather than left to be
+       * noticed — a setting that quietly means nothing on half the projects
+       * is a setting nobody trusts.
+       *
+       * PARKED, NOT TOASTED HERE. The next line reloads the page, and a
+       * toast posted a tick before a reload is a toast nobody sees. It
+       * rides to the other side in the same place the pass undo does.
+       */
+      if (out.note) sessionStorage.setItem("pass-note:" + projectId, out.note);
       /*
        * A pass rewrites the cut, so it needs an undo — and it finishes minutes
        * after this reload, so the state to go back to is the one that exists
@@ -2004,95 +2105,13 @@ if (assist) {
     void runPass(instruction, form.querySelector("button[type=submit]"));
   });
 
-  /*
-   * SAYING THE INSTRUCTION INSTEAD OF TYPING IT.
-   *
-   * Nothing in this market does this — the search for it turns up only voice
-   * OUTPUT, text-to-speech and cloning. The reason it is worth having here and
-   * the reason it must NOT fire a pass are the same one: editing is
-   * issue-then-review, voice is good at issuing and bad at reviewing, and
-   * review is where the time goes. So the words land in the box and you press
-   * the button yourself.
-   *
-   * Same getUserMedia and MediaRecorder the beat recorder uses, and the same
-   * blinking red dot, because it means the same thing.
-   */
-  const mic = assist.querySelector(".asst-mic");
-  if (mic && navigator.mediaDevices) {
-    const dot = mic.querySelector(".asst-mic-dot");
-    const label = mic.querySelector(".asst-mic-label");
-    const hint = assist.querySelector(".asst-hint");
-    const hintWas = hint ? hint.textContent : "";
-    let rec = null;
-    let stream = null;
-
-    const say = (t) => { if (label) label.textContent = t; };
-    const note = (t) => { if (hint) hint.textContent = t; };
-    const idle = () => {
-      if (dot) dot.hidden = true;
-      say("Say it");
-      mic.disabled = false;
-    };
-
-    const stop = () => {
-      if (rec && rec.state !== "inactive") rec.stop();
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-      rec = null;
-      stream = null;
-    };
-
-    mic.addEventListener("click", async () => {
-      if (rec) { stop(); return; }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (err) {
-        toast("I could not reach the microphone.");
-        return;
-      }
-      const chunks = [];
-      rec = new MediaRecorder(stream);
-      rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
-      rec.addEventListener("stop", async () => {
-        if (dot) dot.hidden = true;
-        /* NOT "Listening" — it has stopped listening, that is why we are here.
-           The hint below says what is happening; the button must not disagree
-           with it. */
-        say("Working…");
-        mic.disabled = true;
-        note("Working out what you said…");
-        try {
-          const blob = new Blob(chunks, { type: "audio/webm" });
-          /* Nothing to send is not an error worth a toast — you pressed twice. */
-          if (blob.size < 1200) { idle(); note(hintWas); return; }
-          const res = await fetch("/api/dictate", {
-            method: "POST",
-            headers: { "content-type": "audio/webm" },
-            body: blob,
-          });
-          const out = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(out.error || "I did not catch that");
-          if (field) {
-            /* Appended, not replaced: pressing it twice adds a second
-               sentence rather than throwing the first one away. */
-            const now = (field.value || "").trim();
-            field.value = now ? now + " " + out.text : out.text;
-            field.focus();
-            field.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-          note(hintWas);
-        } catch (err) {
-          note(hintWas);
-          toast((err && err.message) || "I did not catch that");
-        } finally {
-          idle();
-        }
-      });
-      rec.start();
-      if (dot) dot.hidden = false;
-      say("Stop");
-      note("Listening — press again when you are done.");
-    });
-  }
+  /* The assistant's mic. The behaviour is in wireMic, below. */
+  wireMic(assist.querySelector(".asst-mic"), field, {
+    dot: assist.querySelector(".asst-mic-dot"),
+    label: assist.querySelector(".asst-mic-label"),
+    hint: assist.querySelector(".asst-hint"),
+    idleLabel: "Say it",
+  });
 
   /* Show me what it changed. goToBlock is published by the editor so this and
      the find panel can never disagree about what "go there" means. */
@@ -2224,7 +2243,6 @@ const palette = document.querySelector("#palette");
 const paletteInput = document.querySelector("#paletteInput");
 const paletteResults = document.querySelector("#paletteResults");
 const keysheet = document.querySelector("#keysheet");
-const notifpanel = document.querySelector("#notifpanel");
 
 function toggle(el, on) {
   if (!el) return false;
@@ -2237,7 +2255,7 @@ function toggle(el, on) {
 /** Closes anything open. Returns whether there was something to close. */
 function closeOverlays() {
   let closed = false;
-  for (const el of [palette, keysheet, notifpanel]) {
+  for (const el of [palette, keysheet]) {
     if (el && !el.hidden) { el.hidden = true; closed = true; }
   }
   return closed;
@@ -2334,70 +2352,112 @@ if (paletteInput) {
 for (const el of [palette, keysheet]) {
   if (el) el.addEventListener("click", (e) => { if (e.target === el) closeOverlays(); });
 }
-if (notifpanel) {
-  const back = notifpanel.querySelector("[data-close]");
-  if (back) back.addEventListener("click", closeOverlays);
-}
+/*
+ * #navSearch, #navKeys, #navNotif and the notification panel lived here.
+ *
+ * One Take's bar is the wordmark and the avatar, so all three buttons went
+ * with it. Nothing they did went with them: Cmd-K still opens the palette,
+ * "?" still opens the shortcut sheet, and what the bell listed is in the
+ * room's working row — running work was already there, and what finished is
+ * there now too.
+ */
 
-const navSearch = document.querySelector("#navSearch");
-if (navSearch) navSearch.addEventListener("click", openPalette);
-
-const navKeys = document.querySelector("#navKeys");
-if (navKeys) navKeys.addEventListener("click", () => {
-  const open = keysheet && keysheet.hidden;
-  closeOverlays();
-  if (keysheet && open) keysheet.hidden = false;
+/* ── The strip under the player ───────────────────────────────────────
+   A segment per block, its width its duration and its colour the video it
+   came from. Pressing one goes there — goToBlock is the editor's own, so
+   this and the find panel can never disagree about what "go there" means. */
+document.querySelectorAll(".strip-seg").forEach((seg) => {
+  seg.addEventListener("click", async () => {
+    const found = await window.goToBlock(seg.getAttribute("data-block"));
+    if (!found) toast("That line isn't in this cut any more.");
+  });
 });
 
-/* The bell. Its gold dot claimed news for months with nothing behind it. */
-const navNotif = document.querySelector("#navNotif");
-const notifDot = navNotif ? navNotif.querySelector("span") : null;
-const notifBody = document.querySelector("#notifBody");
-
-function notifRow(label, sub, tone, href) {
-  const inner =
-    '<span class="notif-dot" data-tone="' + tone + '"></span>' +
-    '<span class="pal-title">' + escapeHtml(label) + "</span>" +
-    '<span class="pal-sub">' + escapeHtml(sub) + "</span>";
-  return href
-    ? '<a class="notif-row" href="' + href + '">' + inner + "</a>"
-    : '<div class="notif-row">' + inner + "</div>";
-}
-
-async function loadNotifications() {
-  if (!notifBody) return;
-  try {
-    const res = await fetch("/api/notifications");
-    if (!res.ok) throw new Error("no");
-    const { running, done } = await res.json();
-    const rowsHtml = []
-      .concat((running || []).map((j) => notifRow(j.stage_label || j.type, "running", "run", null)))
-      .concat(
-        (done || []).map((j) =>
-          notifRow(
-            j.state === "failed" ? (j.error || "Something failed") : (j.stage_label || j.type),
-            j.state === "failed" ? "failed" : "done",
-            j.state === "failed" ? "fail" : "done",
-            null,
-          ),
-        ),
-      );
-    notifBody.innerHTML = rowsHtml.length ? rowsHtml.join("") : '<div class="pal-note">Nothing running.</div>';
-    /* The dot means something now: it is only there when work is. */
-    if (notifDot) notifDot.hidden = !(running || []).length;
-  } catch (err) {
-    notifBody.innerHTML = '<div class="pal-note">Couldn\'t load that.</div>';
+/* ── The project switcher ─────────────────────────────────────────────
+   The caret beside the title. Rows are links, so this only opens and closes
+   the panel — navigation works with the client switched off entirely, and a
+   middle click opens a project in a new tab the way a person expects. */
+const switcherBtn = $("#switcher");
+const switcherPanel = $("#switcherPanel");
+if (switcherBtn && switcherPanel) {
+  const shut = () => {
+    switcherPanel.hidden = true;
+    switcherBtn.style.background = "";
+  };
+  const open = () => {
+    switcherPanel.hidden = false;
+    /* The prototype lights the trigger while the panel is down, which is
+       the only thing on screen saying which control opened it. */
+    switcherBtn.style.background = "#1C1C22";
+  };
+  switcherBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (switcherPanel.hidden) open(); else shut();
+  });
+  switcherBtn.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    if (switcherPanel.hidden) open(); else shut();
+  });
+  /* Anywhere else, and Escape. A panel that can only be closed by the
+     control that opened it is one people click around. */
+  document.addEventListener("click", (e) => {
+    if (switcherPanel.hidden) return;
+    if (switcherPanel.contains(e.target)) return;
+    shut();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") shut();
+  });
+  /*
+   * AND ON A ROW, because one of them leads where you already are.
+   *
+   * Most rows navigate and take the panel with them. The row for the
+   * project you are IN, and "Your footage" while you are in the room, do
+   * not — the browser loads the same page or nothing at all, and the panel
+   * sits open over the title it came out of.
+   */
+  for (const row of switcherPanel.querySelectorAll(".switch-row, .switch-room")) {
+    row.addEventListener("click", shut);
   }
 }
 
-if (navNotif) {
-  navNotif.addEventListener("click", () => {
-    const open = notifpanel && notifpanel.hidden;
-    closeOverlays();
-    if (notifpanel && open) { notifpanel.hidden = false; loadNotifications(); }
-  });
-  /* Settle the dot on load rather than leaving it permanently lit. */
-  loadNotifications();
+/*
+ * THE MARK CYCLES, one colour per visit.
+ *
+ * MARK_PALETTE in tokens.ts, which is the prototype's own four:
+ *
+ *   const PAL = ["#5EB8C9", "#5EC98F", "#E06A6A", "#D9B36A"];
+ *   markStart() { ... (parseInt(localStorage.getItem(k) || "-1", 10) + 1) % 4 }
+ *
+ * It is not a status light. The build read it as one — a lookup from the
+ * surface you were on, gold for Home, cyan for the archive — which was right
+ * for the retired design's several surfaces and wrong for a product with one
+ * room. The owner spotted it from a screenshot: the build was gold where the
+ * prototype was teal.
+ *
+ * The server paints the first of the four, so a browser with no storage at
+ * all still gets a mark; this moves it to wherever the cycle had got to, and
+ * hovering steps it on.
+ */
+const MARK_PALETTE = ["#5EB8C9", "#5EC98F", "#E06A6A", "#D9B36A"];
+const markEl = document.querySelector("[data-mark]");
+if (markEl) {
+  const bars = markEl.querySelectorAll(".mark-bar");
+  let at = 0;
+  try {
+    at = (parseInt(localStorage.getItem("aldershot.mark") || "-1", 10) + 1) % MARK_PALETTE.length;
+    if (!Number.isFinite(at) || at < 0) at = 0;
+    localStorage.setItem("aldershot.mark", String(at));
+  } catch (err) {
+    /* Private windows and blocked storage. The server's colour stands. */
+    at = 0;
+  }
+  const paintMark = () => {
+    for (const b of bars) b.style.background = MARK_PALETTE[at % MARK_PALETTE.length];
+  };
+  paintMark();
+  markEl.addEventListener("mouseenter", () => { at = (at + 1) % MARK_PALETTE.length; paintMark(); });
 }
 
 /*
@@ -3565,6 +3625,278 @@ function readDuration(file) {
    confirmation and no save step: the answer IS the tap, and changing it is
    another tap. No reload either — reloading after every judgement would
    re-run retrieval and lose the reading position partway down a list. */
+/* ── A pasted brief becomes rules ────────────────────────────────────
+   The rules land in the pane on the left, each with the line saying what it
+   is doing — that is the shortlist diff, in the place a person already
+   looks. The reply adds the one thing the pane cannot say: whether the
+   number asked for was reached. */
+{
+  const form = document.getElementById("brief-box");
+  if (form) {
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const input = form.querySelector('input[name="brief"]');
+      const brief = (input && input.value || "").trim();
+      if (!brief) return;
+      const btn = form.querySelector("button");
+      if (btn) { btn.disabled = true; btn.style.opacity = ".5"; }
+      try {
+        const res = await fetch("/api/projects/" + form.getAttribute("data-project") + "/brief", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ brief }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          window.toast(body.error || "That didn't compile.");
+          if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
+          return;
+        }
+        window.toast(
+          body.rules + (body.rules === 1 ? " rule" : " rules") + " · " + body.kept + " kept" +
+            (body.short ? " — " + body.short + " short of what you asked for" : ""),
+        );
+        window.location.reload();
+      } catch {
+        window.toast("That didn't compile.");
+        if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
+      }
+    });
+  }
+}
+
+/* ── Keep a line as a short ──────────────────────────────────────────
+   The Shorts tab grades every line and withholds none, so this is pressable
+   on a Long shot too — the grade said what to expect and the person read it.
+   It saves the line as a moment; rendering it is a separate press, because
+   nothing renders until you say so. */
+document.querySelectorAll(".short-line").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/shorts-from-line", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ segIdx: Number(btn.getAttribute("data-seg")) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(body.error || "That didn't save.");
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        return;
+      }
+      /* made:false is saveClips refusing an overlap, which means the moment
+         is already in the library — not a failure, and saying "saved" would
+         be the second kind of lie. (No backticks in this file: one ends the
+         String.raw body and takes the whole client with it.) */
+      btn.textContent = body.made ? "Kept" : "Already kept";
+      window.toast(body.made ? "Kept it — it's in your Highlights." : "That one is already in your Highlights.");
+    } catch {
+      window.toast("That didn't save.");
+      btn.disabled = false;
+      btn.style.opacity = "1";
+    }
+  });
+});
+
+/* ── Ask the judge ───────────────────────────────────────────────────
+   A job, so this starts it and leaves; the bell and the page's own reload
+   are where it is watched, the same as every other long thing here. */
+/*
+ * DOCUMENTS — invariant 8's second tier.
+ *
+ * One PUT with the file as the body and the title and note as headers: a
+ * scan of a letter is kilobytes, so the multipart dance a video needs would
+ * be ceremony. The note is what the document SHOWS, and it is what makes it
+ * proof — doc 08 wants "the document with its line marked" and nothing here
+ * reads a PDF to find the line.
+ *
+ * No backticks: this file is one String.raw template.
+ */
+{
+  const docPick = document.getElementById("docPick");
+  const docNote = document.getElementById("docNote");
+  const docState = document.getElementById("docState");
+
+  if (docPick) {
+    docPick.addEventListener("change", async () => {
+      const file = docPick.files && docPick.files[0];
+      if (!file) return;
+      if (docState) docState.textContent = "Adding…";
+      try {
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          headers: {
+            "content-type": file.type || "application/octet-stream",
+            "x-filename": encodeURIComponent(file.name).replace(/%20/g, " "),
+            "x-title": encodeURIComponent(file.name.replace(/\.[^.]+$/, "")).replace(/%20/g, " "),
+            "x-note": encodeURIComponent(docNote ? docNote.value : "").replace(/%20/g, " "),
+          },
+          body: file,
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (docState) docState.textContent = "";
+          window.toast(d.error || "That could not be added.");
+          return;
+        }
+        location.reload();
+      } catch {
+        if (docState) docState.textContent = "";
+        window.toast("That could not be added.");
+      }
+    });
+  }
+
+  document.addEventListener("click", async (e) => {
+    const mark = e.target.closest(".doc-mark");
+    const put = e.target.closest(".doc-remove");
+    if (!mark && !put) return;
+
+    if (mark) {
+      const row = mark.closest(".doc-row");
+      const now = row ? row.querySelector("div > div").textContent : "";
+      const said = window.prompt("What does this document show?", /Not marked yet/.test(now) ? "" : now);
+      /* Cancel is null and must not clear the note; an empty string is a
+         deliberate "I do not want to claim anything for it" and does. */
+      if (said === null) return;
+      try {
+        const res = await fetch("/api/documents/" + encodeURIComponent(mark.getAttribute("data-doc")) + "/mark", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: said }),
+        });
+        if (!res.ok) throw new Error("no");
+        location.reload();
+      } catch {
+        window.toast("That could not be saved.");
+      }
+      return;
+    }
+
+    /* Put away, not deleted — invariant 6. The row and the file stay; it
+       stops being offered. So the confirm says that rather than warning
+       about something irreversible, which it is not. */
+    if (!window.confirm("Put this document away? It stops being offered; nothing is deleted.")) return;
+    try {
+      const res = await fetch("/api/documents/" + encodeURIComponent(put.getAttribute("data-doc")) + "/remove", {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("no");
+      location.reload();
+    } catch {
+      window.toast("That could not be put away.");
+    }
+  });
+}
+
+/*
+ * ASK IT ANYTHING ABOUT YOUR FOOTAGE.
+ *
+ * The composer's text is a sentence about your footage either way; Ask sends
+ * it as a question and the answer is the lines that say it, timed. No prose
+ * is generated anywhere — see src/ask.ts — so everything rendered below is
+ * either something somebody said, or the judge's own line about which
+ * sentence did the saying.
+ *
+ * NO BACKTICKS IN THIS FILE. It is one String.raw template and a single
+ * backtick ends it, so this builds its DOM by concatenation like
+ * renderHits above.
+ */
+{
+  const askBtn = document.getElementById("askBtn");
+  const askPanel = document.getElementById("askPanel");
+  const askLead = document.getElementById("askLead");
+  const askLines = document.getElementById("askLines");
+  const briefBox = document.getElementById("brief");
+
+  function lineCard(l, backs) {
+    /* The timestamp links into the source at that moment, and it came off
+       the moment's own span — never from a model. Invariant 2. */
+    const href = "/source/" + encodeURIComponent(l.sourceId) + "?t=" + Math.floor(l.atMs / 1000);
+    const said = l.line || l.quote;
+    return (
+      '<div style="padding:10px 12px;border-radius:8px;background:' +
+      (backs ? "#1A1A1F" : "#141418") + '">' +
+      '<div style="font-size:14px;line-height:1.5;color:' +
+      (backs ? "#ECECF1" : "rgba(236,236,241,0.62)") + '">“' +
+      escapeHtml(said) + '”</div>' +
+      '<div style="margin-top:6px;display:flex;gap:8px;align-items:baseline;font-size:12px;color:rgba(236,236,241,0.42)">' +
+      '<a href="' + href + '" style="flex:none;color:rgba(236,236,241,0.62);text-decoration:none;font-variant-numeric:tabular-nums">' +
+      escapeHtml(l.sourceTitle || "Untitled") + " · " + escapeHtml(l.atLabel) + "</a>" +
+      (l.why ? '<span style="flex:1;min-width:0">' + escapeHtml(l.why) + "</span>" : "") +
+      "</div></div>"
+    );
+  }
+
+  if (askBtn && askPanel && askLead && askLines && briefBox) {
+    askBtn.addEventListener("click", async () => {
+      const q = briefBox.value.trim();
+      if (!q) { window.toast("Ask a question about your footage."); return; }
+
+      askPanel.hidden = false;
+      askLead.textContent = "Reading your footage…";
+      askLines.innerHTML = "";
+      askBtn.disabled = true;
+      askBtn.style.opacity = ".5";
+
+      try {
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ q: q }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          askLead.textContent = data.error || "That could not be asked just now.";
+          return;
+        }
+        askLead.textContent = data.lead || "";
+        /* What backs it first, then the near things — two groups, never
+           interleaved, because a near miss shown as an answer is the false
+           support the judge exists to stop. */
+        const backs = (data.lines || []).map((l) => lineCard(l, true)).join("");
+        const near = (data.nearby || []).map((l) => lineCard(l, false)).join("");
+        askLines.innerHTML = backs + near;
+      } catch {
+        askLead.textContent = "That could not be asked just now.";
+      } finally {
+        askBtn.disabled = false;
+        askBtn.style.opacity = "1";
+      }
+    });
+  }
+}
+
+{
+  const ask = document.getElementById("ask-judge");
+  if (ask) {
+    ask.addEventListener("click", async () => {
+      if (ask.disabled) return;
+      ask.disabled = true;
+      ask.style.opacity = ".5";
+      try {
+        const res = await fetch("/api/eval/judge", { method: "POST" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          window.toast(body.error || "The judge could not be asked.");
+          ask.disabled = false;
+          ask.style.opacity = "1";
+          return;
+        }
+        window.toast("Judging " + body.claims + " claim" + (body.claims === 1 ? "" : "s") + " — reload when it finishes.");
+      } catch {
+        window.toast("The judge could not be asked.");
+        ask.disabled = false;
+        ask.style.opacity = "1";
+      }
+    });
+  }
+}
+
 document.querySelectorAll(".eval-say").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const row = btn.parentElement;
@@ -3572,7 +3904,18 @@ document.querySelectorAll(".eval-say").forEach((btn) => {
     try {
       const res = await fetch(
         "/api/eval/" + btn.getAttribute("data-claim") + "/" + btn.getAttribute("data-clip"),
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verdict }) },
+        /* WHO IS ANSWERING rides with the answer. It is read off the form
+           on the page rather than held in a variable, so switching labeller
+           and then tapping without reloading cannot file the answer under
+           the person who was here before. */
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            verdict,
+            by: (document.querySelector('input[name="by"]') || {}).value || "",
+          }),
+        },
       );
       if (!res.ok) { window.toast("That didn't save."); return; }
       /* The chosen one lights; the other two go quiet. Done here rather than
@@ -3594,12 +3937,16 @@ document.querySelectorAll(".eval-say").forEach((btn) => {
    The flow stops exactly once, here, and nothing downstream runs until the
    beats are answered — which is why Find the footage and Cut it are separate
    presses rather than one that does both. */
-const planPost = async (url, btn, go) => {
+const planPost = async (url, btn, go, payload) => {
   if (btn.disabled) return;
   btn.disabled = true;
   btn.style.opacity = ".5";
   try {
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) {
       window.toast(out.error || "That didn't work.");
@@ -3639,12 +3986,290 @@ document.querySelectorAll(".plan-find").forEach((btn) => {
   );
 });
 
+/* ── Declare a section, in your own words ──────────────────────────────
+   The answer the plan flow could not take. A model drafts beats and this
+   asks which to keep; what somebody with an argument actually says is that
+   the piece needs a section on something, and here is what it has to show.
+
+   The need goes up exactly as typed. It IS the retrieval query, and
+   invariant 10 is that the user's own words win where they exist, so
+   nothing here trims or rewords it. The page reloads on success because
+   the advice about their wording is computed server-side and belongs on
+   the row, where it persists until the wording changes. */
+document.querySelectorAll(".beat-add").forEach((btn) => {
+  const card = btn.parentElement ? btn.parentElement.parentElement : null;
+  const note = card ? card.querySelector(".beat-add-note") : null;
+  btn.addEventListener("click", () => {
+    const row = btn.parentElement;
+    const nameEl = row ? row.querySelector(".beat-add-name") : null;
+    const needEl = row ? row.querySelector(".beat-add-need") : null;
+    const name = nameEl && nameEl.value ? nameEl.value.trim() : "";
+    const need = needEl && needEl.value ? needEl.value.trim() : "";
+    /* Said here rather than only by the route, because a 422 toast for an
+       empty box is a worse answer than the box telling you itself. */
+    if (!name || !need) {
+      if (note) note.textContent = "A section needs a name and what the footage has to show.";
+      return;
+    }
+    planPost(
+      "/api/plans/" + btn.getAttribute("data-plan") + "/beats",
+      btn,
+      () => location.reload(),
+      { name: name, need: need },
+    );
+  });
+});
+
+/* ── Fill one section ──────────────────────────────────────────────────
+   Topping up one gap used to re-pay for every other beat, which is the
+   difference between a plan you come back to and a plan you run once. */
+document.querySelectorAll(".beat-find").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const plan = btn.closest("[data-plan]");
+    if (!plan) return;
+    planPost(
+      "/api/plans/" + plan.getAttribute("data-plan") + "/find",
+      btn,
+      () => location.reload(),
+      { beatId: btn.getAttribute("data-beat") },
+    );
+  });
+});
+
 document.querySelectorAll(".plan-cut").forEach((btn) => {
   btn.addEventListener("click", () =>
     planPost("/api/plans/" + btn.getAttribute("data-plan") + "/cut", btn, (out) => {
       location.href = out.href || "/";
     }),
   );
+});
+
+/* ── Does what Scout found change the claim? ──────────────────────────
+   The loop. Usually the answer is no, and the no is worth showing: a run
+   that found supporting evidence has told you something, and a control
+   that only ever speaks when it disagrees teaches you to dread it.
+
+   The quotes rendered here come back from OUR verified rows, resolved
+   server-side from the ids the model named. Nothing the model wrote is
+   shown as something somebody said. */
+document.querySelectorAll(".scout-revise").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const out = document.querySelector(".revise-answer");
+    if (!out) return;
+    btn.disabled = true;
+    const said = btn.textContent;
+    btn.textContent = "Reading what was found…";
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/revise", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(body.error || "That didn't change.");
+        btn.disabled = false;
+        btn.textContent = said;
+        return;
+      }
+
+      out.textContent = "";
+      if (!body.revision) {
+        const held = document.createElement("div");
+        held.setAttribute("data-content", "");
+        held.style.cssText = "font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.55)";
+        held.textContent = body.says;
+        out.appendChild(held);
+      } else {
+        const card = document.createElement("div");
+        card.style.cssText =
+          "padding:12px 14px;border-radius:9px;background:#17171B;display:flex;flex-direction:column;gap:6px";
+
+        const claim = document.createElement("div");
+        claim.setAttribute("data-content", "");
+        claim.style.cssText = "font-size:13.5px;line-height:1.5;color:#ECECF1";
+        claim.textContent = body.revision.claim;
+
+        const why = document.createElement("div");
+        why.setAttribute("data-content", "");
+        why.style.cssText = "font-size:12px;line-height:1.5;color:rgba(236,236,241,0.55)";
+        why.textContent = body.revision.why;
+
+        card.append(claim, why);
+
+        for (const d of body.revision.drivenBy || []) {
+          const q = document.createElement("div");
+          q.setAttribute("data-content", "");
+          q.style.cssText =
+            "font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.4);border-left:2px solid #2E2E36;padding-left:8px";
+          q.textContent = d.source ? d.quote + " — " + d.source : d.quote;
+          card.appendChild(q);
+        }
+
+        const cost = document.createElement("div");
+        cost.setAttribute("data-content", "");
+        cost.style.cssText = "font-size:11.5px;line-height:1.45;color:#D9B36A;margin-top:2px";
+        cost.textContent =
+          body.recorded
+            ? body.cost + " You have " + body.recorded + " recorded take" +
+              (body.recorded === 1 ? "" : "s") + " in this cut; which of them a change would strand is not tracked yet."
+            : body.cost;
+        card.appendChild(cost);
+
+        out.appendChild(card);
+      }
+      out.hidden = false;
+      btn.disabled = false;
+      btn.textContent = said;
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.textContent = said;
+    }
+  });
+});
+
+/* ── Other ways to build this ─────────────────────────────────────────
+   The third answer at the one stop. "Yes" and "edit the beats" were the
+   only two the plan page could take; this is "that is the wrong video, and
+   here is a better one from the same material".
+
+   The slate is read-only until something is pressed: a band and the line
+   that caused it, never a score, because what the machine knows is how much
+   footage each angle already has and not which video is worth making. */
+document.querySelectorAll(".plan-angles").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const slate = document.querySelector(".angle-slate");
+    if (!slate) return;
+    const planId = btn.getAttribute("data-plan");
+    btn.disabled = true;
+    const said = btn.textContent;
+    btn.textContent = "Looking for other ways…";
+    try {
+      const res = await fetch("/api/angles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: btn.getAttribute("data-topic") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.textContent = said;
+        return;
+      }
+      const { angles } = await res.json();
+      slate.textContent = "";
+      for (const a of angles || []) {
+        const card = document.createElement("div");
+        card.className = "angle-card";
+        card.style.cssText =
+          "padding:14px 16px;border-radius:9px;background:#17171B;display:flex;flex-direction:column;gap:6px";
+
+        const claim = document.createElement("div");
+        claim.setAttribute("data-content", "");
+        claim.style.cssText = "font-size:14px;line-height:1.5;color:#ECECF1";
+        claim.textContent = a.claim;
+
+        const take = document.createElement("div");
+        take.setAttribute("data-content", "");
+        take.style.cssText = "font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.55)";
+        take.textContent = a.take;
+
+        const why = document.createElement("div");
+        why.setAttribute("data-content", "");
+        why.style.cssText = "font-size:11.5px;color:rgba(236,236,241,0.4);font-family:'IBM Plex Mono',monospace";
+        why.textContent = a.why;
+
+        const pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "angle-pick";
+        pick.style.cssText =
+          "align-self:flex-start;margin-top:4px;font-size:12px;font-weight:600;padding:6px 12px;border-radius:5px;background:#2E2E36;color:#ECECF1;border:none;cursor:pointer;font-family:inherit";
+        pick.textContent = "Build this one instead";
+        pick.addEventListener("click", async () => {
+          if (pick.disabled) return;
+          pick.disabled = true;
+          pick.textContent = "Starting…";
+          try {
+            const made = await fetch("/api/plans", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                topic: btn.getAttribute("data-topic"),
+                claim: a.claim,
+                beats: a.beats,
+              }),
+            });
+            const out = await made.json().catch(() => ({}));
+            if (!made.ok || !out.planId) {
+              window.toast(out.error || "That didn't change.");
+              pick.disabled = false;
+              pick.textContent = "Build this one instead";
+              return;
+            }
+            /* A NEW PLAN, NOT AN EDIT OF THIS ONE. Nothing is deleted
+               (invariant 6): the plan you were looking at is still there,
+               still reachable, and choosing differently costs you nothing
+               you had already decided. */
+            location.href = "/plan/" + out.planId;
+          } catch {
+            window.toast("That didn't change.");
+            pick.disabled = false;
+            pick.textContent = "Build this one instead";
+          }
+        });
+
+        card.append(claim, take, why, pick);
+        slate.appendChild(card);
+      }
+      slate.hidden = false;
+      btn.textContent = said;
+      btn.disabled = false;
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.textContent = said;
+    }
+  });
+});
+
+/* ── The footage tab: cut from one video alone, and back ──────────────
+   Reversible by design: the narrowing is its own column and the project's
+   record of what it is made of does not move, so pressing an active
+   control sends null and the whole cut comes back. The server refuses a
+   narrowing whose cut would be empty, which is why the error is shown
+   rather than swallowed — the alternative is a button that looks like it
+   worked and a cut that did not change. */
+document.querySelectorAll(".only-source").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const on = btn.hasAttribute("data-only");
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/projects/" + project.getAttribute("data-project") + "/only", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceId: on ? null : btn.getAttribute("data-source") }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
 });
 
 /* ── The footage tab: add a video to this cut ─────────────────────────
@@ -3687,6 +4312,171 @@ document.querySelectorAll(".add-source").forEach((btn) => {
    overrides every rule above it, so the whole cut is re-produced and the page
    reloads: membership AND order may have changed, and a partial DOM update
    would be a second answer to what the cut is. */
+/*
+ * KEEP IT OR CUT IT, ON THE LINE ITSELF.
+ *
+ * The two answers to a judgement call. Both are hand decisions on the
+ * moment, and the route takes the hand BACK when the direction posted
+ * matches the one already there — so pressing the one the moment is already
+ * on returns it to whatever the rules say, and pressing the other pins it.
+ * That is the behaviour, not a bug to work around: a decision you cannot
+ * undo is not one this product makes.
+ *
+ * Its own class rather than .moment-hand, which infers the direction from
+ * where the row already is. Here the direction is the control.
+ */
+/*
+ * USE THIS TAKE INSTEAD.
+ *
+ * Every recording on a beat is kept, so changing your mind is picking one
+ * rather than recording again. Nothing is created and nothing is thrown
+ * away — the take you were using is still there and one press from being
+ * chosen back.
+ */
+/*
+ * CONNECT A BUCKET YOU OWN.
+ *
+ * The key is checked by being used — one listing, server-side — before the
+ * row is written, so a connection that saves is a connection that works. A
+ * form that accepts a bad key and fails later, somewhere else, about
+ * something else, is the worst version of this.
+ */
+document.querySelectorAll(".bucket-form").forEach((form) => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const val = (sel) => (form.querySelector(sel) || {}).value || "";
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          endpoint: val(".bucket-endpoint"),
+          bucket: val(".bucket-name"),
+          accessKeyId: val(".bucket-key"),
+          secretAccessKey: val(".bucket-secret"),
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That bucket didn't connect.");
+        if (btn) btn.disabled = false;
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That bucket didn't connect.");
+      if (btn) btn.disabled = false;
+    }
+  });
+});
+
+/*
+ * BRING THE FOOTAGE IN — without reading any of it.
+ *
+ * Every video lands "not read yet": instant however large the archive is,
+ * and nothing is metered until you cut with one.
+ */
+document.querySelectorAll(".bucket-import").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch("/api/connections/" + btn.getAttribute("data-conn") + "/import", {
+        method: "POST",
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That import didn't finish.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      /* The numbers, because "done" says nothing about an archive you cannot
+         see from here. */
+      window.toast(
+        out.added + " brought in" + (out.already ? ", " + out.already + " already here" : "") +
+          (out.truncated ? " — there is more over there" : ""),
+      );
+      location.reload();
+    } catch {
+      window.toast("That import didn't finish.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+document.querySelectorAll(".take-pick").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") +
+          "/beats/" + btn.getAttribute("data-beat") + "/takes",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          /* In the body: a take's id is derived from its R2 key and has
+             slashes in it, so it cannot be a path segment. */
+          body: JSON.stringify({ take: btn.getAttribute("data-take") }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That take didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That take didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+document.querySelectorAll(".judge-hand").forEach((btn) => {
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + btn.getAttribute("data-moment"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keep: btn.getAttribute("data-keep") === "1" }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".moment-hand").forEach((row) => {
   row.addEventListener("click", async () => {
     if (row.disabled) return;
@@ -3738,6 +4528,236 @@ document.querySelectorAll(".make-card").forEach((card) => {
   });
 });
 
+/* ── The room: the Scout row ───────────────────────────────────────────
+   Two controls in one row, so the press has to be told apart. The pill
+   cycles the preference; the row seeds the composer with Scout, find
+   so the next thing you do is ask him for something.
+
+   THE WORDS COME FROM THE SERVER. outside.ts holds the pill labels and the
+   three lines, and this file is one String.raw template with no
+   interpolation in it, so restating them here would mean two copies that
+   disagree the day one is reworded. The row carries all three states as
+   data attributes and this reads the one the server names back. */
+const scoutRow = $("#scoutRow");
+if (scoutRow) {
+  const pill = $("#scoutPref");
+  const line = $("#scoutRowLine");
+  const paint = (pref) => {
+    if (!pref) return;
+    const nextPill = scoutRow.getAttribute("data-pill-" + pref);
+    const nextLine = scoutRow.getAttribute("data-line-" + pref);
+    /* An unknown state repaints nothing rather than emptying the row. */
+    if (nextPill === null || nextLine === null) return;
+    pill.setAttribute("data-pref", pref);
+    pill.textContent = nextPill;
+    line.textContent = nextLine;
+  };
+  const cycle = async () => {
+    if (pill.dataset.busy === "1") return;
+    pill.dataset.busy = "1";
+    const from = pill.getAttribute("data-pref");
+    try {
+      const r = await fetch("/api/account/outside", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ from }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error("no");
+      paint(j.pref);
+      /* Somebody else moved it in another tab. The pill now shows the
+         truth; saying so is better than a press that looks ignored. */
+      if (j.stale) window.toast("Scout was already set to " + pill.textContent + ".");
+    } catch {
+      window.toast("That didn't change.");
+    }
+    pill.dataset.busy = "0";
+  };
+  pill.addEventListener("click", (e) => { e.stopPropagation(); cycle(); });
+  pill.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    cycle();
+  });
+  const seed = () => {
+    const brief = $("#brief");
+    if (!brief) return;
+    brief.value = "Scout, find ";
+    brief.focus();
+    brief.setSelectionRange(brief.value.length, brief.value.length);
+    brief.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  scoutRow.addEventListener("click", seed);
+  scoutRow.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    seed();
+  });
+}
+
+/*
+ * THE PROPOSAL ROW — what it would do, waiting to be agreed to.
+ *
+ * Only ever shown on Ask. The diff is the point of it: a row that said only
+ * "6 moments · 4:12" leaves the reader to remember what it is now, and the
+ * consequence of a rule IS the difference, so both ends travel with it.
+ *
+ * Nothing has been written when this appears. Leave it discards a proposal
+ * and not an edit, which is why the second button is not called Undo.
+ */
+function showProposal(p, decide) {
+  const row = $("#proposal");
+  if (!row) return;
+  const rule = $("#proposalRule");
+  const diff = $("#proposalDiff");
+  const add = $("#proposalAdd");
+  const bin = $("#proposalBin");
+
+  rule.textContent = (p.rules || []).join(" ") || p.instruction;
+  /* No diff when the current state could not be worked out — say nothing
+     rather than half a comparison. */
+  diff.textContent = p.from && p.to
+    ? p.from.kept + " moments \u00b7 " + clockOf(p.from.secs) + "  \u2192  " + p.to.kept + " moments \u00b7 " + clockOf(p.to.secs)
+    : "";
+  row.hidden = false;
+
+  const close = () => { row.hidden = true; add.onclick = null; bin.onclick = null; };
+  add.onclick = () => { close(); decide(true); };
+  bin.onclick = close;
+}
+
+/* m:ss, the one format this product shows a runtime in. */
+function clockOf(secs) {
+  const n = Math.max(0, Math.round(secs || 0));
+  return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
+}
+
+/*
+ * THE ASSISTANT COLUMN STOPS ABOVE THE EXPORT BAR.
+ *
+ * The column is sticky and viewport-tall, the bar is sticky to the bottom
+ * and paints over whatever is beneath it, and the composer lives at the foot
+ * of the column. So the column's height has to be "from where it starts to
+ * where the bar starts".
+ *
+ * CSS CANNOT READ THE FIRST OF THOSE. A sticky top only applies once the
+ * page has scrolled; before that the column begins wherever the content
+ * above it ends, and that moves with the title, the rules and anything else
+ * the page is carrying. shell.ts subtracts a constant, which is right for
+ * exactly one header — it was wrong by 13px on a project with one more rule
+ * than the one it was tuned against, and the composer sat under the bar
+ * until you scrolled. check-editor.cjs asserts the two never overlap and is
+ * the only reason that was ever noticed.
+ *
+ * So it is measured here, where both numbers exist. On load and on resize,
+ * never on scroll: scrolling only pins the column HIGHER, which gives it
+ * more room than this, and resizing a column while somebody scrolls is a
+ * jitter nobody asked for.
+ */
+const aside = $(".asst");
+if (aside) {
+  /*
+   * NO BAR ANY MORE. It used to stop above the sticky export bar; the bar
+   * is gone — One Take has no such thing and its Export is in the title row
+   * — so the column simply runs to the bottom of the window. That is 55px
+   * the conversation did not have, which is most of what it was short of.
+   */
+  let fitted = "";
+  const fitAside = () => {
+    /*
+     * WHERE THE COLUMN STARTS RIGHT NOW, not where it starts at the top of
+     * the page.
+     *
+     * It is sticky: scrolling pins it at 88px and hands it another 160 of
+     * height. Sizing it once for the unscrolled position cost it that room
+     * for the whole session to be correct for the first moment — and the
+     * room is what the conversation is short of.
+     */
+    const startsAt = Math.max(0, aside.getBoundingClientRect().top);
+    /* 360 is the floor shell.ts already sets: below that the conversation
+       has no room and a scrollbar is the better answer than a crush. */
+    const room = Math.max(360, window.innerHeight - startsAt);
+    const want = room + "px";
+    /* Only when it actually changes. The observer below watches the page,
+       and the page contains this column — writing the same height back
+       every time would be a loop that never settles. */
+    if (want === fitted) return;
+    fitted = want;
+    aside.style.height = want;
+
+  };
+  fitAside();
+  window.addEventListener("resize", fitAside);
+  /*
+   * AND AGAIN WHENEVER THE PAGE ABOVE IT MOVES.
+   *
+   * Both numbers this depends on settle late. The bar is 53px before the
+   * fonts load and 55px after; the column's own start shifts by a pixel or
+   * two as the conversation above it fills in. Sized once on load, the
+   * composer finished two pixels under the bar — still under the bar, and
+   * check-editor.cjs said so.
+   *
+   * A couple of pixels of safety margin would have hidden that rather than
+   * fixed it. Both numbers are live, so both are read live.
+   */
+  if (window.ResizeObserver) new ResizeObserver(fitAside).observe(document.body);
+  /* And on scroll, because that is when it pins and the number changes.
+     Passive, and a no-op once the height stops moving. */
+  window.addEventListener("scroll", fitAside, { passive: true });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAside);
+}
+
+/* ── The room: the composer's dial and its mic ────────────────────────
+   The dial cycles Ask → Recommend → Auto. Its words come from the server for
+   the same reason the Scout row's do: this file is one String.raw template
+   with no interpolation in it, so a second copy of them here would disagree
+   the day one is reworded. All three ride on the button. */
+const askMode = $("#askMode");
+if (askMode) {
+  const askModeLabel = $("#askModeLabel");
+  const paintMode = (mode) => {
+    if (!mode) return;
+    const label = askMode.getAttribute("data-label-" + mode);
+    const hint = askMode.getAttribute("data-hint-" + mode);
+    if (label === null || hint === null) return;
+    askMode.setAttribute("data-mode", mode);
+    askMode.title = hint;
+    askModeLabel.textContent = label;
+  };
+  askMode.addEventListener("click", async () => {
+    if (askMode.dataset.busy === "1") return;
+    askMode.dataset.busy = "1";
+    try {
+      const r = await fetch("/api/account/ask-mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ from: askMode.getAttribute("data-mode") }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error("no");
+      paintMode(j.mode);
+      if (j.stale) window.toast("That was already set to " + askModeLabel.textContent + ".");
+    } catch {
+      window.toast("That didn't change.");
+    }
+    askMode.dataset.busy = "0";
+  });
+}
+
+/* The room composer's mic — the same wiring as the assistant's, which is why
+   it is the same function and the same classes. It fills #brief and does not
+   press Run it. */
+const roomComposer = $("#composer");
+if (roomComposer) {
+  wireMic(roomComposer.querySelector(".asst-mic"), $("#brief"), {
+    dot: roomComposer.querySelector(".asst-mic-dot"),
+    label: roomComposer.querySelector(".asst-mic-label"),
+    hint: null,
+    idleLabel: "Say it",
+  });
+}
+
 /* ── The rules pane: switch one off ───────────────────────────────────
    Invariant 1: a cut is re-produced from rules. So this does not patch the
    document it disagrees with — it tells the server the rule's new state and
@@ -3747,6 +4767,400 @@ document.querySelectorAll(".make-card").forEach((card) => {
    NOT routed through doUndoable. A toggle is its own inverse and is already
    reversible by pressing it again; an undo entry would be a second way to say
    the same thing that could disagree with the first. */
+/*
+ * CHOOSING A DIFFERENT ORDER, which is the one rule that is a choice of
+ * three rather than a yes/no.
+ *
+ * Same shape as the toggle below and for the same reason: an order rule
+ * changes which moments open the cut and in what sequence, so the page is
+ * re-produced from the rules rather than patched. A partial DOM update
+ * would be a second, drifting answer to what the cut is — invariant 1.
+ *
+ * The chip you are already on does nothing. The server says so too
+ * (unchanged: true), but a press that reloads the page to show you the
+ * same page is a press that looks broken.
+ */
+document.querySelectorAll(".rule-order").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    const card = btn.closest(".rule-card");
+    const current = card && card.querySelector(".rule-order[data-current]");
+    if (current === btn) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ order: btn.getAttribute("data-order") }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/*
+ * LET THE KEEP RULE WIN.
+ *
+ * The conflicts panel appears when two of your own rules disagree about the
+ * same moments. By default the drop rule takes them — taking out beats
+ * keeping unless you say otherwise — and this is the "unless you say
+ * otherwise". It sets wins on the KEEP rule — no backticks in this file,
+ * ever: client.ts is one String.raw template and a single one ends it —
+ * which is a standing decision
+ * about those two rules rather than a judgement made again per moment.
+ *
+ * A reload like every other rule change, because the cut is re-produced from
+ * the rules and half the page depends on the answer.
+ */
+/*
+ * THE SHORTS WORKBENCH.
+ *
+ * Four controls on the short in front of you, and one rule between them: none
+ * of this touches the cut. Trimming a short, choosing its shape and choosing
+ * its captions are decisions about one clip for one platform; the video it
+ * came from is a different piece of work. The only control here that changes
+ * the cut says so on its face ("Add it to the cut").
+ */
+
+/* The short's own struck words, kept per short id. Separate from the cut's
+   strikes on purpose — see above. */
+const shortStruck = {};
+
+document.querySelectorAll(".sw").forEach((w) => {
+  w.addEventListener("click", () => {
+    const id = w.getAttribute("data-short");
+    const i = w.getAttribute("data-word");
+    const set = (shortStruck[id] = shortStruck[id] || {});
+    set[i] = !set[i];
+    w.style.textDecoration = set[i] ? "line-through" : "";
+    w.style.color = set[i] ? "rgba(236,236,241,0.28)" : "";
+
+    /*
+     * THE DURATION FOLLOWS THE WORDS.
+     *
+     * A short whose stated length does not change when you cut two seconds
+     * out of it is lying about what it will post as. Proportional to the
+     * words struck, which is what the render does to it: the words carry
+     * their own timings and the surviving ranges are what gets cut.
+     */
+    const panel = w.closest(".short-focus");
+    if (!panel) return;
+    const all = panel.querySelectorAll(".sw");
+    const gone = Object.keys(set).filter((k) => set[k]).length;
+    const full = Number(panel.getAttribute("data-ms")) || 0;
+    const left = all.length ? Math.round((full * (all.length - gone)) / all.length) : full;
+    const out = panel.querySelector("[data-short-dur]");
+    if (out) out.textContent = window.hms ? window.hms(left / 1000) : Math.round(left / 1000) + "s";
+  });
+});
+
+/* Shape and captions: one chosen at a time, and the choice is on the element
+   so the render request can read it without a second source of truth. */
+const pickOne = (cls) =>
+  document.querySelectorAll("." + cls).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.parentElement;
+      if (!row) return;
+      row.querySelectorAll("." + cls).forEach((b) => {
+        const on = b === btn;
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.style.background = on ? "#2E2E36" : "transparent";
+        b.style.color = on ? "#ECECF1" : "rgba(236,236,241,0.45)";
+      });
+    });
+  });
+pickOne("short-aspect");
+pickOne("short-caption");
+
+/* Skipping is a decision about the shortlist, not a deletion: nothing is
+   removed, the card says it was skipped, and it can be taken back. */
+document.querySelectorAll(".short-skip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const panel = btn.closest(".short-focus");
+    if (!panel) return;
+    const badge = panel.querySelector("[data-short-state]");
+    const skipped = btn.getAttribute("data-skipped") === "1";
+    btn.setAttribute("data-skipped", skipped ? "0" : "1");
+    btn.textContent = skipped ? "Skip it" : "Keep it";
+    if (badge) {
+      badge.textContent = skipped ? "KEEPING" : "SKIPPED";
+      badge.style.color = skipped ? "#5EC98F" : "rgba(236,236,241,0.45)";
+      badge.style.background = skipped ? "rgba(94,201,143,0.14)" : "rgba(236,236,241,0.08)";
+    }
+  });
+});
+
+/*
+ * MAKE THE SHORT, at the shape and with the captions chosen above.
+ *
+ * This is what makes those two rows of chips controls rather than decoration:
+ * the values are read off the pressed buttons at the moment of the request,
+ * so there is no second copy of the choice to drift from what is on screen.
+ */
+document.querySelectorAll(".short-make").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const panel = btn.closest(".short-focus");
+    const chosen = (cls, fallback) => {
+      const on = panel && panel.querySelector("." + cls + '[aria-pressed="true"]');
+      return on ? on.getAttribute("data-value") : fallback;
+    };
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/projects/" + btn.getAttribute("data-project") + "/blocks/short", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          block: btn.getAttribute("data-block"),
+          aspect: chosen("short-aspect", "9:16"),
+          captionStyle: chosen("short-caption", "Bold"),
+        }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That short didn't render.");
+        btn.disabled = false;
+        return;
+      }
+      window.toast("Making it. It lands in Footage, under Exports.");
+      btn.disabled = false;
+    } catch {
+      window.toast("That short didn't render.");
+      btn.disabled = false;
+    }
+  });
+});
+
+/*
+ * SAVE THE SPEND CAP.
+ *
+ * The one meter in Settings a person can change. Everything else there is a
+ * reading; this is a decision, and src/spend.ts has been enforcing it against
+ * a number nothing could write since the column was added.
+ */
+document.querySelectorAll(".cap-form").forEach((form) => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = form.querySelector(".cap-usd");
+    if (!input) return;
+    const btn = form.querySelector("button");
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/spend-cap", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ usd: Number(input.value) }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.toast(out.error || "That cap didn't save.");
+        if (btn) btn.disabled = false;
+        return;
+      }
+      /* The figure comes back from the server because setCap clamps it, and
+         showing what was asked for rather than what was stored is how a cap
+         of 99999 looks accepted and is not. */
+      input.value = String(out.cap);
+      window.toast("Work stops at $" + out.cap + " a month.");
+      if (btn) btn.disabled = false;
+    } catch {
+      window.toast("That cap didn't save.");
+      if (btn) btn.disabled = false;
+    }
+  });
+});
+
+document.querySelectorAll(".rule-wins").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wins: true }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/*
+ * SHOW WHICH MOMENTS, which is the promise the note beside the cut makes.
+ *
+ * Every block two rules disagreed about already carries data-contested and a
+ * gold edge; this takes you to the first of them. Scrolling rather than
+ * filtering: the point is to see the disagreement IN the cut, next to what
+ * surrounds it, not to be handed a list of three lines out of context.
+ */
+document.querySelectorAll(".show-contested").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const marked = document.querySelectorAll('[data-contested="1"]');
+    if (!marked.length) {
+      window.toast("Those moments are not in the window on screen.");
+      return;
+    }
+    marked[0].scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+});
+
+/*
+ * TWO OFFERS, ONE PRESS: switch that rule off.
+ *
+ * "Does nothing now — switch it off" on a rule matching nothing, and
+ * "Bring back all 4 rule 02 took out" on one that is taking out a lot. They
+ * read as different decisions and they are the same write, because turning a
+ * rule off IS how its moments come back and how a rule stops acting. It
+ * never deletes: invariant 6.
+ *
+ * Not the .rule-toggle class, even though the request is identical. That
+ * class is the switch, and a switch is something whose state you can read
+ * off the control; these are sentences. A later query for "the switch on
+ * rule 02" would find three elements.
+ */
+/*
+ * NARROW THE MOMENTS TO ONE THREAD.
+ *
+ * The prototype's chips above the grid, with their counts. Client-side and
+ * no fetch: the rows are already on the page, every one of them carries its
+ * thread, and a reload to hide half a list is a round trip for a filter.
+ *
+ * Pressing the chip you are on goes back to Everything, so the control never
+ * becomes a state you cannot leave.
+ */
+document.querySelectorAll(".thread-chip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const want = btn.getAttribute("data-thread") || "";
+    const already = btn.hasAttribute("data-current");
+    const next = already ? "" : want;
+    document.querySelectorAll(".thread-chip").forEach((c) => {
+      const mine = (c.getAttribute("data-thread") || "") === next;
+      if (mine) c.setAttribute("data-current", "");
+      else c.removeAttribute("data-current");
+      c.style.background = mine ? "#2E2E36" : "#15151A";
+      c.style.color = mine ? "#ECECF1" : "rgba(236,236,241,0.7)";
+    });
+    document.querySelectorAll(".moment-hand").forEach((row) => {
+      const mine = !next || (row.getAttribute("data-thread") || "") === next;
+      row.style.display = mine ? "flex" : "none";
+    });
+  });
+});
+
+document.querySelectorAll(".rule-off").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/rules/" + btn.getAttribute("data-rule"),
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ on: false }) },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That didn't change.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That didn't change.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
+/* The fixes by hand, folded away until you want them. No fetch: it is a
+   disclosure, and the list is already on the page. */
+document.querySelectorAll(".fixes-toggle").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const wrap = btn.parentElement;
+    const list = wrap && wrap.querySelector(".fixes-list");
+    const caret = btn.querySelector(".fixes-caret");
+    if (!list) return;
+    const open = list.hasAttribute("hidden");
+    if (open) list.removeAttribute("hidden");
+    else list.setAttribute("hidden", "");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (caret) caret.innerHTML = open ? "&#9652;" : "&#9662;";
+  });
+});
+
+/*
+ * UNDO ONE FIX, by making the same decision again.
+ *
+ * POST /api/projects/:id/moments/:momentId removes a hand rule when the
+ * direction posted matches the one already there, which returns the moment
+ * to whatever the rules say. Posting the OPPOSITE would pin it by hand in
+ * the other direction and there would be no way back to the rule's answer —
+ * see that route's header.
+ */
+document.querySelectorAll(".fix-undo").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    const project = btn.closest("[data-project]");
+    if (!project) return;
+    btn.disabled = true;
+    btn.style.opacity = ".5";
+    try {
+      const res = await fetch(
+        "/api/projects/" + project.getAttribute("data-project") + "/moments/" + btn.getAttribute("data-moment"),
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ keep: btn.getAttribute("data-keep") === "1" }),
+        },
+      );
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        window.toast(error || "That fix didn't undo.");
+        btn.disabled = false;
+        btn.style.opacity = "";
+        return;
+      }
+      location.reload();
+    } catch {
+      window.toast("That fix didn't undo.");
+      btn.disabled = false;
+      btn.style.opacity = "";
+    }
+  });
+});
+
 document.querySelectorAll(".rule-toggle").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (btn.disabled) return;
@@ -3843,7 +5257,7 @@ if (passForm) {
       const res = await fetch("/api/projects/" + passForm.getAttribute("data-project") + "/passes", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ instruction, apply: apply === true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "That pass didn't run");
@@ -4583,4 +5997,101 @@ if (reading) {
   };
   setTimeout(tick, 1500);
 }
+
+/*
+ * SAYING THE INSTRUCTION INSTEAD OF TYPING IT.
+ *
+ * Nothing in this market does this — the search for it turns up only voice
+ * OUTPUT, text-to-speech and cloning. The reason it is worth having and the
+ * reason it must NOT fire the thing it is attached to are the same one:
+ * editing is issue-then-review, voice is good at issuing and bad at
+ * reviewing, and review is where the time goes. So the words land in the box
+ * and you press the button yourself.
+ *
+ * Same getUserMedia and MediaRecorder the beat recorder uses, and the same
+ * blinking red dot, because it means the same thing.
+ *
+ * ONE COPY, TWO COMPOSERS. The project assistant had this and the room's
+ * composer did not, which is the prototype's mic missing from the front
+ * door. A second copy of a MediaRecorder dance is a second place for the
+ * stream not to be released, so the parts are passed in and the behaviour
+ * is not.
+ */
+function wireMic(mic, field, parts) {
+  if (!mic || !navigator.mediaDevices) return;
+  const dot = parts.dot;
+  const label = parts.label;
+  const hint = parts.hint;
+  const hintWas = hint ? hint.textContent : "";
+  let rec = null;
+  let stream = null;
+
+  const say = (t) => { if (label) label.textContent = t; };
+  const note = (t) => { if (hint) hint.textContent = t; };
+  const idle = () => {
+    if (dot) dot.hidden = true;
+    say(parts.idleLabel);
+    mic.disabled = false;
+  };
+
+  const stop = () => {
+    if (rec && rec.state !== "inactive") rec.stop();
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    rec = null;
+    stream = null;
+  };
+
+  mic.addEventListener("click", async () => {
+    if (rec) { stop(); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      toast("I could not reach the microphone.");
+      return;
+    }
+    const chunks = [];
+    rec = new MediaRecorder(stream);
+    rec.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunks.push(e.data); });
+    rec.addEventListener("stop", async () => {
+      if (dot) dot.hidden = true;
+      /* NOT "Listening" — it has stopped listening, that is why we are here.
+         The hint below says what is happening; the button must not disagree
+         with it. */
+      say("Working…");
+      mic.disabled = true;
+      note("Working out what you said…");
+      try {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        /* Nothing to send is not an error worth a toast — you pressed twice. */
+        if (blob.size < 1200) { idle(); note(hintWas); return; }
+        const res = await fetch("/api/dictate", {
+          method: "POST",
+          headers: { "content-type": "audio/webm" },
+          body: blob,
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || "I did not catch that");
+        if (field) {
+          /* Appended, not replaced: pressing it twice adds a second
+             sentence rather than throwing the first one away. */
+          const now = (field.value || "").trim();
+          field.value = now ? now + " " + out.text : out.text;
+          field.focus();
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        note(hintWas);
+      } catch (err) {
+        note(hintWas);
+        toast((err && err.message) || "I did not catch that");
+      } finally {
+        idle();
+      }
+    });
+    rec.start();
+    if (dot) dot.hidden = false;
+    say("Stop");
+    note("Listening — press again when you are done.");
+  });
+}
+
 `;

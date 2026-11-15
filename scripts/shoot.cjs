@@ -20,6 +20,7 @@
  * Run scripts/fetch-fixtures.sh once to populate both caches.
  */
 const { chromium } = require('playwright');
+const { chromeOptions } = require('./chrome.cjs');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -91,7 +92,7 @@ async function withRoutes(page) {
     console.error('usage: node scripts/shoot.js app|proto <targets...>');
     process.exit(2);
   }
-  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const browser = await chromium.launch(chromeOptions());
   const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
   await withRoutes(page);
 

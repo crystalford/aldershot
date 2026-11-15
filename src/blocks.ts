@@ -16,7 +16,9 @@
  * safe rather than destructive.
  */
 
-import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
+import { PAUSE_BEAT_MS, PAUSE_OVER_MS, isSegmentCut, isTightened, isWordCut, parseWords, runRange, wordEndMs, wordStartMs, type Cut, type StoredWord } from "./cuts.ts";
+import { frameAccurate, timingOf, type Timing } from "./align.ts";
+import { labelFor } from "./cuesheet.ts";
 
 export type BlockOrigin = "footage" | "voice" | "generated";
 
@@ -35,6 +37,34 @@ export interface Block {
   /** The model's opinion, when it has one. Null is not zero; it means unjudged. */
   score: number | null;
   why: string | null;
+  /**
+   * WHETHER THE RECORDING IS THE LINE THAT WAS WRITTEN.
+   *
+   * `why` already carries the sentence src/take.ts wrote, and that is the
+   * problem this field solves: a warning and a compliment were arriving in
+   * the same field, to be drawn in the same grey. "It reads about half of
+   * what you wrote" and "names the mistake plainly" are not the same kind of
+   * thing and must not look alike — this is the only signal anybody gets
+   * that a forced aligner put a script over the wrong audio.
+   *
+   * Null on everything that is not a recording with a verdict, and never
+   * "matches": a row of reassurance under every good take is a row nobody
+   * reads, which is what made the bad one invisible.
+   */
+  takeVerdict?: "drifted" | "unclear" | null;
+  /**
+   * WHAT GOES ON SCREEN OVER THIS BLOCK, and null for almost all of them.
+   *
+   * A generated picture and a stock clip carry a label; the maker's own
+   * footage and their own voice do not, because a label on every block is a
+   * label on nothing. Derived from the beat's kind rather than stored, so it
+   * cannot disagree with what the block actually is — see src/cuesheet.ts.
+   *
+   * `origin` cannot answer this: it maps both kinds of picture to
+   * "generated", and an AI picture and somebody else's footage are different
+   * claims to a viewer.
+   */
+  label: string | null;
   /**
    * WHAT THIS BLOCK RENDERS FROM. Read by buildEdl, and only by buildEdl.
    *
@@ -77,6 +107,14 @@ export interface Block {
    * both a picture and a voice.
    */
   voiceKey: string | null;
+  /**
+   * Where the words are in that recording, for the ducking envelope.
+   *
+   * Empty when the take was never aligned — which is not "no ducking", it
+   * is "we do not know where the speech is", and the container's sidechain
+   * is the honest answer to that case. See src/ducking.ts' `plan`.
+   */
+  voiceWords?: Array<{ s: number; e: number }>;
   posterKey: string | null;
 }
 
@@ -95,6 +133,26 @@ export interface BeatLike {
   text: string | null;
   dur_ms: number | null;
   media_r2_key: string | null;
+  /**
+   * What a recorded take turned out to be, when one has been aligned.
+   *
+   * Null is "nobody has looked yet", which is not the same as a take that
+   * failed — see src/take.ts. The editor says so beside the beat, because
+   * the beat's TEXT is what the captions and the cue sheet will claim was
+   * said, and a take of a different sentence under it is the one failure a
+   * product built on receipts cannot have.
+   */
+  take_verdict?: string | null;
+  take_reason?: string | null;
+  /**
+   * The take's words with their spans, as stored JSON (seconds).
+   *
+   * Carried through to the render because it is what DUCKS the bed: the bed
+   * drops where the words are rather than where the signal is loud. See
+   * src/ducking.ts for why a compressor is the wrong instrument when you
+   * know where the speech is.
+   */
+  take_words?: string | null;
   clip_id: string | null;
   /** Set when this beat is a clip pulled from a DIFFERENT video. */
   pulled?: PulledClip;
@@ -193,6 +251,7 @@ export function buildBlocks(opts: {
     struck: isSegmentCut(cuts, s.idx),
     score: verdicts.get(s.idx)?.score ?? null,
     why: verdicts.get(s.idx)?.why ?? null,
+    label: null,
     mediaKey: null,
     previewKey: null,
     voiceKey: null,
@@ -227,6 +286,9 @@ export function buildBlocks(opts: {
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
     why: p.sourceTitle,
+    /* The maker's own footage, pulled from another of their videos. A credit
+       line is a different thing and lives with the external moments. */
+    label: null,
     /* The two differ HERE and essentially nowhere else, which is the whole
        reason previewKey exists: this block belongs to another video, so it
        renders from that video's master and plays that video's copy. */
@@ -234,8 +296,31 @@ export function buildBlocks(opts: {
     previewKey: p.previewKey || p.sourceKey,
     /* The clip's picture, your voice over it. */
     voiceKey: b.media_r2_key ?? null,
+    ...(takeWords(b.take_words).length ? { voiceWords: takeWords(b.take_words) } : {}),
     posterKey: p.frameKey || posterKey,
   });
+
+/**
+ * The take's word spans, as stored.
+ *
+ * Tolerant on the way in because this column has been written by one code
+ * path and read by none until now: a null, a legacy shape or malformed JSON
+ * all mean the same thing here — we do not know where the words are — and
+ * that is a case `src/ducking.ts` handles rather than a reason to fail a
+ * render.
+ */
+function takeWords(json: string | null | undefined): Array<{ s: number; e: number }> {
+  if (!json) return [];
+  try {
+    const rows = JSON.parse(json) as Array<{ s?: unknown; e?: unknown }>;
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .map((r) => ({ s: Number(r.s), e: Number(r.e) }))
+      .filter((r) => Number.isFinite(r.s) && Number.isFinite(r.e) && r.e > r.s);
+  } catch {
+    return [];
+  }
+}
 
   const fromBeat = (b: BeatLike): Block => ({
     id: beatId(b.id),
@@ -246,7 +331,18 @@ export function buildBlocks(opts: {
     words: [],
     struck: Boolean(b.struck) && b.struck !== "0",
     score: null,
-    why: null,
+    /*
+     * `why` on a voice beat is WHAT THE TAKE TURNED OUT TO BE, and only
+     * when it is not what was written. The field is the editor's one-line
+     * explanation of a block, which is exactly the job — and saying "it
+     * reads the line" on every matching take would be a row of reassurance
+     * nobody reads.
+     */
+    why: b.take_verdict && b.take_verdict !== "matches" ? (b.take_reason ?? null) : null,
+    takeVerdict:
+      b.take_verdict === "drifted" || b.take_verdict === "unclear" ? b.take_verdict : null,
+    /* No user action: the kind decides the type, the type decides the label. */
+    label: labelFor(b.kind),
     /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
     previewKey: b.media_r2_key,
@@ -360,7 +456,13 @@ export function moveBlock(blocks: Block[], id: string, dir: -1 | 1): string[] {
  * A recording has no range in the source at all; it carries its own media, so
  * it is not answerable here. Callers handle it by origin.
  */
-export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number; end_ms: number }> {
+export function blockRanges(
+  block: Block,
+  cuts: Cut[],
+  /* What the word timings are worth. Recogniser by default — see
+     playableRanges, which this function must not disagree with. */
+  timing: Timing = timingOf("recogniser"),
+): Array<{ start_ms: number; end_ms: number }> {
   if (block.struck) return [];
   if (block.origin !== "footage") return [];
   if (!block.words.length) return [{ start_ms: block.start_ms, end_ms: block.end_ms }];
@@ -373,11 +475,15 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
      are built from these two functions and must not disagree. */
   const tightening = block.origin === "footage" && isTightened(cuts, Number(block.id.slice(2)));
 
+  const breathing = frameAccurate(timing);
   const out: Array<{ start_ms: number; end_ms: number }> = [];
   let run: { start_ms: number; end_ms: number } | null = null;
+  /* Where the run STARTED, because where a cut should land is a question
+     about the words either side of it, not about the run's milliseconds. */
+  let first = 0;
   for (let i = 0; i < block.words.length; i++) {
     if (wordStruck(cuts, block, i)) {
-      if (run) out.push(run);
+      if (run) out.push(runRange(block.words, first, i - 1, block, breathing));
       run = null;
       continue;
     }
@@ -385,17 +491,25 @@ export function blockRanges(block: Block, cuts: Cut[]): Array<{ start_ms: number
     const end = wordEndMs(block.words[i]);
 
     /* A long silence ends the run and a beat of it is kept — every word on
-       both sides stays. */
+       both sides stays. Its own end rule, not the breathing one: the beat is
+       silence left on purpose. */
     if (run && tightening && start - run.end_ms > PAUSE_OVER_MS) {
-      out.push({ start_ms: run.start_ms, end_ms: run.end_ms + PAUSE_BEAT_MS });
+      out.push({
+        start_ms: runRange(block.words, first, i - 1, block, breathing).start_ms,
+        end_ms: run.end_ms + PAUSE_BEAT_MS,
+      });
       run = { start_ms: start, end_ms: end };
+      first = i;
       continue;
     }
 
     if (run) run.end_ms = Math.max(run.end_ms, end);
-    else run = { start_ms: start, end_ms: end };
+    else {
+      run = { start_ms: start, end_ms: end };
+      first = i;
+    }
   }
-  if (run) out.push(run);
+  if (run) out.push(runRange(block.words, first, block.words.length - 1, block, breathing));
   return out;
 }
 

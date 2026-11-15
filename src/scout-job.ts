@@ -31,20 +31,29 @@
 import type { Env } from "./env.ts";
 import { QuotaLedger, d1QuotaStore, runSearches, type ScoutAdapter, type SearchRequest } from "./scout-adapters.ts";
 import { decompose } from "./scout-decompose.ts";
+import { scanSource } from "./scout-scan-run.ts";
+import { verifyRun } from "./scout-verify-run.ts";
 import { expandQueries, type Term } from "./scout-expand.ts";
 import { podcastAdapter } from "./scout-podcast.ts";
 import { youtubeAdapter } from "./scout-youtube.ts";
 import { nextStep, rowFor, type RunSnapshot } from "./scout-run.ts";
 import { DEFAULT_BUDGET, coverageOf, recapture, type Point } from "./scout-stop.ts";
-import {
+import { sourcesToScan,
   getBeats,
   queriesTried,
+  closeRound,
+  runCounters,
+  searchCurve,
+  seedsRaised,
   snapshot,
+  verifiedRows,
   writeBeats,
   writeRunRow,
   writeSearches,
+  writeSeeds,
   writeSources,
 } from "./scout-store.ts";
+import { snowball } from "./scout-snowball.ts";
 
 /** Every adapter that works without a key. The rest refuse with a sentence. */
 export function adapters(env: Env): Map<string, ScoutAdapter> {
@@ -94,17 +103,52 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
   const triedByBeat = new Map<string, number>();
   for (const b of beats) triedByBeat.set(b.id, b.queriesTried);
 
+  /*
+   * THE NUMBERS THE STOPPING RULE READS, and three of them used to be the
+   * literal 0.
+   *
+   * decideStop checks `rounds >= maxRounds`, `sourcesScanned >= maxSources`
+   * and `spendUsd >= maxSpendUsd` against DEFAULT_BUDGET's 4 / 40 / $1.50.
+   * With all three hardcoded to zero not one of Spec 18's budgets could ever
+   * fire, and the curve was a single point, so `knee` had no chord to measure
+   * from either. The only way this run could stop was coverage.
+   *
+   * Every one of them is a count over rows already written — see runCounters
+   * and searchCurve, which is also where the one genuine gap is recorded:
+   * spend is SEARCH spend, because no row attributes a model call to a run.
+   */
+  const counters = await runCounters(env.DB, job.runId);
   const stop = {
-    rounds: 0,
-    sourcesScanned: 0,
-    spendUsd: 0,
+    rounds: counters.rounds,
+    sourcesScanned: counters.sourcesScanned,
+    spendUsd: counters.spendUsd,
     queriesIssued: tried.length,
-    curve: [{ queries: 0, verified: 0 }] as Point[],
+    curve: (await searchCurve(env.DB, job.runId)) as Point[],
     coverage: coverageOf(
       beats.map((b) => ({ id: b.id, role: b.role, needMin: b.needMin })),
       verifiedByBeat,
       triedByBeat,
     ),
+    /*
+     * NOT WIRED, AND IT CANNOT BE FROM THESE ROWS. Written down rather than
+     * estimated — see 12-DEFERRED.md.
+     *
+     * recapture compares what the `direct` family found against what the
+     * `crowd` family found and reads the OVERLAP as how much is still out
+     * there. That needs to know which family found each source, and nothing
+     * records it: `scout_sources` has no family column, and `writeSources`
+     * uses INSERT OR IGNORE on UNIQUE(run_id, adapter, external_id) — so a
+     * source both families found is stored once and the second family's find,
+     * which IS the overlap, is discarded on the way in.
+     * `scout_ledger.found_by_family` exists for this and is written by nothing
+     * for the same reason: the scan cannot know what it was never told.
+     *
+     * Zeroes are the SAFE direction here, and that is why this is a deferral
+     * rather than a bug. recapture only ever PREVENTS a stop — decideStop's
+     * `if (state.recapture.moreOutThere) return { stop: false }` — so an
+     * absent estimate makes a run stop at the knee instead of looking longer.
+     * It never causes a run to stop early for a reason that is not true.
+     */
     recapture: recapture(0, 0, 0, 0),
   };
 
@@ -170,11 +214,130 @@ export async function runScoutPhase(env: Env, job: ScoutJob): Promise<ScoutJob |
       return { ...job, queriesPending: [] };
     }
 
+    case "scan": {
+      /*
+       * READING THE SOURCES THAT HAVE WORDS IN THEM.
+       *
+       * This arm did not exist, and the comment below said why: "none is
+       * reachable until a source arrives with words in it". One had —
+       * the podcast adapter marks an episode with a published transcript
+       * `native` — but scout_sources recorded THAT a transcript existed and
+       * never WHERE, so the run could not reach it. The column is there now.
+       *
+       * A few sources per invocation, highest triage score first, and the
+       * phase returns so the run re-dispatches. A long transcript is read
+       * across rounds rather than in one call that times out.
+       */
+      const ready = await sourcesToScan(env.DB, job.runId, 3);
+      if (!ready.length) return { ...job, snowballed: false };
+
+      for (const source of ready) {
+        const out = await scanSource(env, { runId: job.runId, source, beats });
+        console.log(
+          `[scout] scan ${source.id}: ${out.scanned} window(s), ${out.found} quote(s)` +
+            `${out.skipped ? ` — skipped: ${out.skipped}` : ""}`,
+        );
+      }
+      return { ...job, snowballed: false };
+    }
+
+    case "verify": {
+      /*
+       * CHECKING THE SCAN'S CLAIMS AGAINST THE RECORDING.
+       *
+       * The comment below used to say this phase "needs the scan above to
+       * have written something". It had been written to — the scan writes
+       * every find with `verify: 'rejected'` because nothing has looked yet
+       * — and the phase was still never reached, because the planner's
+       * count of unchecked finds was looking at the wrong table and was
+       * therefore always zero. So every quote Scout found was stored as a
+       * rejection, permanently, and nothing could reach the board.
+       *
+       * Deterministic end to end: no model is called here. Spec 18 §3.6 —
+       * the step that checks the model cannot be a model call, or there is
+       * nothing underneath it.
+       */
+      const out = await verifyRun(env, { runId: job.runId });
+      console.log(
+        `[scout] verify: ${out.checked} checked — ${out.verified} verified, ` +
+          `${out.paraphrase} paraphrase, ${out.rejected} rejected` +
+          `${out.unreadable.length ? ` — ${out.unreadable.length} source(s) unreadable, rows left for a retry` : ""}`,
+      );
+      return { ...job, snowballed: false };
+    }
+
     /*
-     * THE PHASES THAT NEED WHAT V0 HAS NOT GOT. Triage needs the harvested
-     * vocabulary; scan needs a readable transcript, which only the podcast
-     * adapter currently produces; verify needs that scan. Each is built and
-     * tested; none is reachable until a source arrives with words in it.
+     * SNOWBALL: WHAT WAS VERIFIED DECIDES WHAT TO LOOK FOR NEXT.
+     *
+     * THIS ARM DID NOT EXIST. src/scout-snowball.ts is 447 lines, fully
+     * tested, and nothing in src/ imported it — while nextStep emitted
+     * `snowball` as the phase that ENDS a round ("its last act is deciding
+     * what the next round should ask"). With no case for it the switch fell to
+     * `default: return null`, which does not loop — it ends the chain. So
+     * every Scout run there has ever been stopped dead at its first round
+     * boundary, and the step the spec calls "the one that made Scout worth
+     * building" had never run.
+     *
+     * The two bugs hid each other: the run died at round one, so the
+     * four-round budget being hardcoded to zero never mattered.
+     *
+     * NO MODEL CALL. Every seed is a count or a match over rows already held
+     * — a phrase in two verified quotes, a channel on three sources, three
+     * finds inside a fortnight. The convention: if it can be a count, it is
+     * not a model call. Asking a model what to search next produces plausible
+     * queries about the subject; this produces queries about what the evidence
+     * turned out to be.
+     */
+    case "snowball": {
+      const out = snowball({
+        rows: await verifiedRows(env.DB, job.runId),
+        subject: job.subject,
+        alreadyTried: tried,
+        alreadySeeded: await seedsRaised(env.DB, job.runId),
+      });
+
+      /* The round closes whether or not it raised anything, and that
+         distinction is the reason `snowballed` is a boolean rather than a seed
+         count — see RunSnapshot. A run on a subject nobody has discussed
+         raises no seeds and must still advance, or it snowballs for ever. */
+      const round = await closeRound(env.DB, job.runId);
+      await writeSeeds(
+        env.DB,
+        job.runId,
+        round,
+        out.seeds.map((s) => ({
+          kind: s.kind,
+          value: s.value,
+          support: s.support,
+          why: s.why,
+          queriesN: s.queries.length,
+        })),
+      );
+
+      console.log(
+        `[scout] snowball round ${round}: ${out.seeds.length} seed(s), ${out.queries.length} query(ies)` +
+          `${out.skipped.length ? ` — ${out.skipped.length} set aside` : ""}`,
+      );
+
+      /*
+       * The seeds become this round's pending queries, so the next dispatch
+       * sees `queriesPending > 0` and searches them. A seed's beat is not
+       * recoverable: it is derived from rows across several beats by
+       * construction, which is the point of it, so the search row records a
+       * null beat rather than attributing it to one of them arbitrarily.
+       */
+      const requests: SearchRequest[] = out.queries.map((q) => ({
+        adapter: "youtube",
+        beatId: null,
+        family: q.family,
+        query: q.query,
+      }));
+      return { ...job, queriesPending: requests, snowballed: true };
+    }
+
+    /*
+     * THE PHASE THAT NEEDS WHAT V0 HAS NOT GOT. Triage needs the harvested
+     * vocabulary.
      *
      * Returning null ENDS the chain rather than looping. A job that
      * re-dispatched itself into a phase it cannot perform is a message that

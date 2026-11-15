@@ -8,11 +8,55 @@ Phases are gated. A phase is done when its tests pass, not when its features exi
 - 50 directive tasks (brief + archive → expected plan shape) and 30 critic pairs (cut A vs cut B with a human preference).
 - **Accept:** the set exists in the repo with a runner that reports recall@5, judge precision/recall per label, false-support rate, and labeller agreement.
 
+**The runner exists**: `npm run eval:set` over `eval/set.jsonl`, exported from
+`/api/eval/export` after labelling at `/eval`. It reports the set's shape, its
+negatives, and labeller agreement (raw and Cohen's kappa) offline; `--live`
+adds recall@5 through the same `findMaterial` the labels were collected from.
+The judge's two figures are written and tested in `src/eval-metrics.ts` and
+reported as *waiting* rather than as zero, because the three-way judge is
+Phase 4 and does not exist yet.
+
+A blocker was found and fixed on the way: `eval_labels` is keyed
+`(claim_id, clip_id)`, so a second labeller silently overwrote the first and
+the agreement figure this acceptance names could never have been computed.
+`eval_judgements` adds the labeller to the key, and the page asks who is
+answering. **What is still owed is the set itself** — ~200 claims over ~10
+hours, two labellers — which is somebody's own footage judged by somebody who
+watched it, and nothing in this repo can invent it. `eval/example.jsonl` is
+three invented claims that exist only so the runner can be exercised.
+
 ## Phase 1 — the spine
 
 Ingest → proxy → transcript (raw audio, VAD) → forced alignment → the document (word table, parents, children, labels) → text cuts → render → OTIO export.
 
 - **Accept:** a 30-minute file produces word timings within one frame on a 20-line spot check; moments never straddle a breakpoint; a word-span cut renders with the audio cut on the pause, not the phoneme; the OTIO opens in Resolve with the cuts intact; hours are charged exactly once and never again.
+
+**Forced alignment has landed** (decision 43): torchaudio's MMS_FA in the render
+container, over ~30-second overlapping windows planned in `src/align.ts`,
+started when a source is attached. `npm run check:align` is the spot check in
+runnable form — nine words of a known clip, a band of one frame, plus the
+window-offset and mix-to-mono cases that a single window cannot test. It needs
+a torch install, so it is acceptance rather than a gate; its header says how to
+run it. What is still owed is the same check over thirty minutes of the owner's
+own footage on a real deploy, which no sandbox can stand in for.
+
+**OTIO has landed** too: `GET /api/projects/:id/timeline.otio`, built from the
+same `edlForProject` the render uses, linked from the export panel as "Take it
+elsewhere". Milliseconds are the time base rather than an assumed frame rate —
+nothing in this product has ever measured one, and an NLE conforms on import.
+Every clip carries `metadata.aldershot` with its source, its words and where
+its timings came from, so a cut finished in somebody else's editor still knows
+what it is made of. `npm run check:otio` round-trips it through
+OpenTimelineIO, which is the closest a machine with no NLE can get to "opens
+in Resolve"; opening it in Resolve itself is still owed.
+
+**The cut lands on the pause**, not the phoneme, wherever the timings allow
+it: a run of surviving words takes up to 60 ms of the silence at each end,
+never more than half the real gap, and only when `frameAccurate()` says the
+timings can carry it. `runRange` in `src/cuts.ts` is the one definition, so
+the runtime in the footer and the rendered file cannot disagree about it.
+With recogniser timings nothing changes — the gap they report is fuzzier
+than the room this would make.
 
 ## Phase 2 — the rule engine and the Editor
 
@@ -30,6 +74,46 @@ The no-project state (the front door, Footage with Videos · Highlights · Proje
 
 Hybrid retrieval (BM25 ∥ dense → RRF → rerank) and the three-way judge with a calibrated threshold; search in the conversation; coverage per beat in the plan flow.
 
+**BM25 and the judge have landed.** `src/bm25.ts` is the words retriever —
+IDF, saturation, length normalisation, and word boundaries rather than
+substrings — over `searchAny`, which reaches the whole library rather than
+the two hundred most recent moments the old ranker could see. `src/judge.ts`
+answers backs / related / unrelated and cannot write the receipt: it is sent
+numbered sentences and returns a NUMBER, and the line is rebuilt from our own
+text.
+
+**The threshold is structural, not numeric.** A `backs` that cannot point at
+a sentence is downgraded to `related` — the model asserted support and could
+not show it, which is the near-miss it was asked to separate. A numeric
+threshold belongs with the set that could calibrate it, and guessing one
+against nothing is the thing this codebase refuses to do elsewhere.
+
+**The rerank and coverage per beat are the same call.** Reading six
+candidates against a beat's need to say which back it IS the reranking, and
+its answer is the coverage — so there is no separate reranker, and there
+should not be: it would ask the same question twice and only one of the two
+answers could ever be checked against anything. `src/beat-find.ts` is the
+compose, and it degrades rather than failing: a judge that throws costs the
+ordering and the coverage, never the beat.
+
+"Thin" means little that BACKS a beat now, not few results. Retrieval returns
+six moments for any beat with words in it, so the old count measured whether
+the search box worked rather than whether the beat has an argument under it.
+
+**Search in the conversation has landed**, and it is the Manual's front-door
+sentence rather than a search box: "ask it anything about your footage and it
+answers with the lines, timed". `src/ask.ts` runs the same retrieve-and-judge
+pipeline `beat-find.ts` does and keeps what a beat throws away — the line and
+its timestamp. No prose is generated: the answer IS the lines, because a
+question about your own footage has an answer only if somebody said it. Four
+replies, and two of them are easy to confuse and worst to confuse — "nothing
+in your footage says that" and "we could not check" send a person to do
+different things.
+
+Still owed here is the acceptance itself, which is numbers over a Phase 0 set
+that does not exist yet. `npm run eval:set` prints all four the moment it
+does.
+
 - **Accept:** on the Phase 0 set, recall@5 and false-support rate meet the targets you set from the first run and never regress in CI; "nothing here backs this" is returned on the known-none claims at the calibrated threshold; every result shows the backing line; the thread chips come from parent labels; a model swap is blocked if it fails the gate.
 
 ## Phase 5 — Shorts, pictures and voice
@@ -37,6 +121,157 @@ Hybrid retrieval (BM25 ∥ dense → RRF → rerank) and the three-way judge wit
 Shorts mode with Strong / Worth a look / Long shot and reasons, the fragment self-sufficiency test, brief compilation; the pictures move classifier and source order as a rule; voice beats with line-by-line recording and forced alignment of the take; the code-first graphics path with the receipt shot; sound rules (duck by word timings, loudness).
 
 - **Accept:** no short ends mid-sentence or carries an unresolved referent; a pasted brief ("hooks in 2s, 20–40s, no politics, we need 8") compiles to four visible rules with a shortlist diff; a generated image can never be placed on an EVIDENCE or CLAIM block (test the refusal); a recorded take aligns to the script within one frame; a chart with a non-zero baseline fails the lint.
+
+**The self-sufficiency test has landed**, and with it the fourth tab.
+`src/shorts.ts` grades every line in a cut Strong · Worth a look · Long shot
+with the fact that caused the grade — it stops mid-sentence, it opens on
+"he" and nothing in it says who. Both of the acceptance's named failures are
+hard; starting part-way through and length are soft, because a viewer joins
+a thought in progress all the time and length is a format question rather
+than a sense one.
+
+**It is not a model call.** The grading turned out to BE the
+self-sufficiency test, which is a measurement — the house rule — and that
+makes the reason exact rather than an opinion. Nothing is withheld: a Long
+shot is listed and pressable, because the grade says what to expect and a
+person who disagrees presses it anyway.
+
+The Shorts tab also wires `/api/projects/:id/shorts-from-line`, which the
+gate had carried as unreachable-and-known since it was written.
+
+**The brief compiler has landed** too: `src/brief.ts` turns a pasted brief
+into rules, and the shortlist diff is the rules pane's own effect lines
+rather than a second view. `len`, `count` and `hook` had been declared and
+inert since the port — all three run now.
+
+**The picture framework and the chart lints are built, and have no supply
+yet.** `src/pictures.ts` is doc 08's table — the move's visual job, its
+source order, and what it may never have — with invariant 8's refusal as a
+tested function rather than an intention: a generated picture cannot carry
+evidence or a claim, is never photoreal, and "nothing to show" is a result.
+The chart lints are hard fails, provenance among them.
+
+**The classifier has landed** (`src/classify.ts`), and with it the refusal
+has somewhere to bite: `generated` and `stock` are two of the five kinds the
+beat insert accepts, so that route is where a picture which is not your own
+footage enters a cut, and the line it lands against decides whether it may.
+Housekeeping never reaches the model — that is a regex this product has had
+since the first scoring pass. An unanswered line is `claim`, the most
+restrictive move, so a failed classification costs a generated card rather
+than letting one over somebody's proof.
+
+**A recorded take is aligned to its line** now (`src/take.ts`,
+`src/take-run.ts`). The timing half is the aligner — about 20 ms, half a
+frame — and it replaces `x-duration-ms`, a number the browser sent about a
+file the server had not looked at. The other half is whether it reads the
+line at all: a forced aligner cannot refuse, so it will place a script over
+a recording of something else and report times for every word, and the
+score is the only honest signal that happened. A take is never rejected;
+the editor says what it turned out to be, and only when that is not what
+was written.
+
+**The picture supply has landed for three of the four sources.**
+`src/picture-supply.ts` turns real rows into candidates, and "What goes
+here" on every line of a cut opens what was chosen and why, what was refused
+and why, and which sources have nothing behind them. Documents are a tier
+with a table and an upload now (`src/documents.ts`, the Documents tab in
+Footage), and what makes one PROOF is the maker's own sentence about what it
+shows — doc 08 wants "the document with its line marked" and nothing here
+reads a PDF to find the line, so the marking is theirs. Unmarked is
+explicitly not probative and cannot carry an EVIDENCE line.
+
+Two findings came out of driving it rather than reading it. A verified Scout
+find was being refused on every evidence line, because `world` conflates
+stock footage with a checked quote and doc 08 forbids stock; the gate is now
+what a candidate IS, and doc 08 carries the change. And a marked document
+always lost to whatever clip retrieval returned from the maker's own
+library, because the probative bonus could never close the gap between
+tiers — on EVIDENCE, the one move defined by being proof, it now does.
+
+**The generated layer has landed, and it is not an image model.**
+`src/graphics.ts` is doc 08's code-first path: a spec in, SVG out, every mark
+placed by arithmetic from the design tokens. Which makes two rules that are
+policy everywhere else STRUCTURAL here — "never photoreal" is true because
+there is no pixel in the output (`hasNoRaster` proves it per render rather
+than trusting nobody added an `<image>`), and the Generated label is drawn by
+the shared frame so no code path can leave it off.
+
+A chart carries its receipt ON the picture: doc 08's house move is
+"provenance becomes a visible act and answers 'says who?' on screen", so the
+documents, pages and cells behind the numbers are set along the bottom rather
+than filed somewhere a viewer can choose not to open. The lints are hard
+fails — a failing spec returns its reasons and no picture at all.
+
+A quote card is the other half, and the reason the tier exists at all: a
+diffusion model cannot draw a word, so a line set as type is the one
+generated picture that is exactly what was said. Offered on every line of a
+cut, and refused over a claim or its proof, which is most of the moves.
+
+**The sound rules have landed.** `src/ducking.ts` ducks the bed by WORD
+TIMINGS rather than by a compressor, which the container was doing because it
+did not know where the words were. A take is force-aligned, so it does:
+`beats.take_words` carries every word's span through the EDL, the Worker
+builds one ffmpeg `volume` expression, and the container applies it. The
+sidechain stays as the fallback for a take whose alignment failed — "we do
+not know where the speech is" is a different answer from "there is no
+speech".
+
+Three things a compressor cannot do, and this does: it does not duck for a
+cough, it DOES duck for a quiet word, and it does not pump in the
+half-second between sentences. The anti-pump gap is the one number the file
+turns on, and it must exceed lead + tail or adjacent shoulders overlap and
+the bed over-ducks — asserted rather than left as arithmetic a later tweak
+could break.
+
+`npm run check:duck` proves it on real audio rather than on a string: the
+bed measures −21 dB in the gaps, −33 under the words, and **−33 across the
+0.2s gap between two words**, which is the anti-pump rule as a measurement.
+Not in `npm run check` because it needs ffmpeg on PATH, same rule as
+`check:loudness`.
+
+**A generated picture reaches the render now, and the hole was worse than a
+missing rasteriser.** `src/edl.ts` dropped every non-footage block with no
+file — `if (!block.mediaKey) continue` — so a card somebody inserted appeared
+in the editor, held its place in the runtime, and was simply absent from the
+export with nothing said about it. Invariant 7's shape of failure in the one
+place a person cannot check until the file comes back.
+
+A generated block carries its WORDS instead of a file. The Worker draws the
+SVG (`src/graphics.ts`, so the shared frame and the Generated label come with
+it), the container rasterises with `rsvg-convert` and encodes a silent still
+to match every other part, and the duration falls back to a reading time when
+nobody set one — the maker's own length always wins.
+
+**The fonts were the real finding.** Neither face the design names is in a
+debian-slim image, so the text would be laid out by whatever fontconfig falls
+back to — and doc 08 calls the generated still "the approval checkpoint", so
+a picture approved in Instrument Sans and rendered in DejaVu is not the
+picture that was approved. The container now installs the same woff2 the app
+serves, decompressed to TTF at build time; `npm run fonts` keeps the build
+context in step and the `fonts` gate rule fails when it drifts, byte for
+byte. The wrap ceiling came down from 42 characters to 36 because a 42-char
+line measured 1739px of a 1920 frame in a fallback face — outside the margin
+the rest of the picture keeps.
+
+Measured as far as this machine allows: `npm run check:graphics` rasterises
+both pictures across five fonts in Chromium and fails on any overflow or
+missing ink, and the container's exact ffmpeg encode was run on a real card
+and concatenated between two footage parts — 7.47s joined, the card's words
+present at t=3.0. What is NOT verified is the image build itself; there is no
+docker daemon here, so `librsvg2-bin`, the font conversion and the render
+path are written and unrun.
+
+**Corrected 7 Nov.** The last clause of that was wrong, and wrong in the
+expensive direction: the RENDER PATH never needed a docker daemon. It is
+`container/render.mjs` run as a plain node process, which is what
+`scripts/check-render.cjs` asks for in its own header and has asked for all
+along. It now runs on every push and proves the exported file contains the
+cut, colour by colour; `check:frame` and `check:otio` run beside it. The
+image build is the part that did need a daemon, and a separate CI job builds
+it, starts it and asserts the approved faces are inside it. One sentence
+conflating the two kept the render in the "unproven" column for weeks.
+
+Phase 5 is otherwise complete.
 
 ## Phase 6 — Before you post and export
 
@@ -55,6 +290,101 @@ v0: behaviour-first decomposition, four families, metadata triage, deep links, t
 Item state machine, completion invariant, DLQs, same-model multi-pool routing, breakers, content-addressed caching, per-item progress, canaries, the SLO dashboard, metering and the spend cap, BYOK with probe-on-save.
 
 - **Accept:** kill a provider mid-job in staging and the job completes on another pool with every item accounted for; exhaust retries on one item and it lands in the DLQ as `failed_terminal` with an alert, never silently; a job's cost appears in the owner's cost view within a day; a BYOK key over its rate limit produces "your key hit its limit" and never a platform charge; the spend cap halts top-ups.
+
+**The breaker and the second pool have landed.** `src/breaker.ts` shuts a
+model pool that is failing and routes its capability elsewhere, which is the
+first half of Phase 8's acceptance. The second half turned out to exist
+already: a load-bearing capability routes to Claude with a key and to Workers
+AI without one, so the fallback is `resolveFor(cap, {})` — the branch most of
+this product runs on, tested on every commit rather than only during an
+outage. A degraded answer is a normal answer from a model that is merely not
+the best one, and it is tagged, because every judgement already records the
+model that made it.
+
+**What may never trip a pool is the point.** `blameFor` splits a failure four
+ways and only two are the pool's fault: a 429 on somebody's own key is their
+account's limit and a 401 is their key being wrong. Shutting a shared pool on
+either would take the platform down for everybody because one person pasted a
+bad key — the failure a breaker is most likely to introduce, so it is the
+first thing the file refuses to do and the first thing the tests pin.
+
+Settings carries the state, owner-only: which pools are answering, and the
+sentence that shut one. The state has to be visible or the degradation is
+silent.
+
+**Content-addressed caching has landed**, and it closes the one place
+invariant 5 still leaked. "Footage is read and charged once; editing is free"
+was true of transcription and false of model calls: re-run a pass over the
+same transcript with the same brief and the same model and the whole thing
+was paid for again. `src/call-cache.ts` keys an answer on everything that
+decides it — capability, model, effort, temperature, prompt version, system,
+user, schema — so a changed prompt evicts its own answers rather than
+serving the old question's for a month.
+
+**Only a call with one right answer may be cached**, and that is read off the
+temperature rather than declared, so the two cannot disagree. judge, classify
+and arrange are pinned to 0 and cacheable; `direct` and `name` write prose and
+stay sampled, because a cache over those would freeze the first draft and make
+"try again" a lie. An Anthropic call is never cached at all — the sampling
+parameters are removed on the current models, so the better model is the one
+whose answers cannot be reused, which is a real limit rather than an oversight.
+
+The cache is consulted BEFORE the breaker, which is the right order: an answer
+we already have does not care whether the provider is up, so a shut pool and a
+cache hit together are a job that finishes at full quality during an outage. A
+degraded answer is cached under the fallback's own address, never the preferred
+model's — otherwise it would be served after the outage as though Claude had
+given it.
+
+A hit is not metered, because charging for a call nobody made breaks the same
+invariant from the other side, and the hits are counted so the saving is a
+number on the owner's cost view rather than a belief.
+
+**Per-item progress has landed**, and it exists because a job's own `pct` is
+a claim rather than a count. `advance` is trusted to supply measured work, so
+a stage that reported 90% and then died left a job claiming nine tenths of
+work that never happened. `progress()` in `src/items.ts` counts terminal item
+rows instead, which cannot overstate itself, and the bell shows the sentence:
+"3 of 5 pieces done · 1 in hand · 1 failed".
+
+Driven against a job whose stage had written 90 while three of its five items
+were done and one had failed terminally — the number the person now sees is
+60 and the failure is named. A terminal failure counts as done AND is named
+separately, because invariant 7 is the rule that a job which finished with
+failures is not the same thing as a job that finished. A job with no items
+reports zero and says so rather than reading as nothing-to-do: items that
+were never written are the first thing that goes wrong when this machinery is
+wired up.
+
+**Canaries and the SLO dashboard have landed, and Phase 8 is complete.**
+
+`src/canary.ts` sends one synthetic claim through the REAL judge every sweep,
+with the right answer known in advance — so a provider that answers with
+nonsense fails it, which a liveness probe would not notice. It passes only
+when plain support is found AND the near miss is refused, and false support
+is reported first because a judge calling a denial support is producing
+receipts that lie.
+
+**It cannot be served from the cache**, which is the subtle part: the call
+cache keys on the prompt version, and a cached canary would come back green
+while the provider was down — testing our own table instead of the thing it
+watches. `promptVersion` is what makes a call cacheable, so the canary passes
+none.
+
+`src/slo.ts` is four readings on Settings, owner-only, all from rows the
+product already writes: the canary, jobs finished against died, **pieces
+accounted for**, and providers answering. The third is the one with teeth —
+items that failed inside jobs which reported finishing, which is invariant
+7's silent partial failure counted rather than assumed impossible. No
+acceptable rate there, so one piece in twenty asks for attention, unlike a
+single failed job which is Tuesday.
+
+A reading with no data shows a dash and says so: "nothing has run today" and
+"everything ran" look alike as a number and are not, and the canary reading
+asks for attention when nothing has ever checked, because reporting the
+absence of a check as the success of one is the failure the panel exists to
+avoid. The item state machine, the completion invariant, the
+DLQ, metering, the spend cap and BYOK blame are all in.
 
 ## Then
 

@@ -64,8 +64,33 @@ export function assistantText(res: unknown): string {
  * Reads the token counts, whichever shape the response came in.
  */
 export function usageTokens(res: unknown): { tokensIn: number; tokensOut: number } {
-  const u = (res as { usage?: { prompt_tokens?: number; completion_tokens?: number } })?.usage;
-  return { tokensIn: u?.prompt_tokens ?? 0, tokensOut: u?.completion_tokens ?? 0 };
+  /*
+   * TWO PROVIDERS, TWO NAMES FOR THE SAME NUMBER.
+   *
+   * Workers AI reports prompt_tokens/completion_tokens; Anthropic reports
+   * input_tokens/output_tokens. This read only the first pair, so an
+   * Anthropic call metered zero tokens and therefore zero cost — not a
+   * mispriced row, an absent one. Correct prices over absent data is still a
+   * free call, and the spend cap counts what the ledger says.
+   *
+   * Both shapes, one function, because the alternative is every call site
+   * knowing which provider answered it.
+   */
+  const u = (
+    res as {
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        input_tokens?: number;
+        output_tokens?: number;
+      };
+    }
+  )?.usage;
+  const n = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    tokensIn: n(u?.prompt_tokens ?? u?.input_tokens),
+    tokensOut: n(u?.completion_tokens ?? u?.output_tokens),
+  };
 }
 
 /**

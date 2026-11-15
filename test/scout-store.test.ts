@@ -484,12 +484,27 @@ test("ACCEPTANCE: the planner's whole question can be asked of the database", as
   assert.equal(withFresh.sourcesUnscanned, 1, "the untriaged one is not offered to the scanner");
 });
 
-test("ACCEPTANCE: a scan with a yield and no ledger row is a verification owed", () => {
+test("ACCEPTANCE: a find nobody has checked is a verification owed", () => {
   /*
-   * The scan writes its answer and the verifier writes the row, so the gap
-   * between them IS the count. A snapshot that could not see it would send
-   * the run on to the next thing with work half done, and the completion
-   * invariant would never notice.
+   * THIS TEST PINNED THE ASSUMPTION THAT BROKE THE VERIFY PHASE, and it is
+   * written down here rather than quietly replaced.
+   *
+   * It used to read "a scan with a yield and no ledger row is a verification
+   * owed", because `scansUnverified` counted scanned sources with no ledger
+   * row — on the assumption that the VERIFIER creates the row. The scan
+   * creates it, unverified, so the count was always zero, the planner never
+   * once returned the verify phase, and every quote Scout found stayed
+   * stored as a rejection for ever.
+   *
+   * The scan's contract is the right one: a find that only existed after
+   * verification would be lost entirely by a worker that died between the
+   * two, which is the silent partial failure invariant 7 calls a P1. So the
+   * row appears the moment it is found, saying nothing has checked it, and
+   * the work owed is a property of the ROW — `verified_at IS NULL`.
+   *
+   * A snapshot that could not see it would send the run on with work half
+   * done and the completion invariant would never notice. That part of the
+   * old comment was right and is why this is still an acceptance test.
    */
   const d = db();
   const D = fakeD1(d) as never;
@@ -501,27 +516,27 @@ test("ACCEPTANCE: a scan with a yield and no ledger row is a verification owed",
     await setTriage(D, [{ sourceId: src, score: 0.5 }]);
     await markScanned(D, src, 2);
 
-    const owed = await snapshot(D, runId, { queriesPending: 0, snowballed: true, stop: stopState({ queriesIssued: 6 }) });
-    assert.equal(owed.scansUnverified, 1);
-    assert.equal(nextStep(owed).phase, "verify");
-
     /*
-     * A SCAN THAT FOUND NOTHING IS NOT A VERIFICATION OWED. It is a dead end,
-     * and counting it would hold the run in `verify` for ever waiting for a
-     * ledger row nobody is going to write.
+     * A SCAN THAT FOUND NOTHING CANNOT HOLD THE RUN IN `verify`, and under
+     * this contract it cannot structurally rather than because a NOT EXISTS
+     * clause was written correctly: a dead end writes no rows, so there is
+     * nothing to count. Asserted first, because it is the state the old
+     * definition got wrong in the other direction.
      */
     await writeSources(D, runId, [candidate({ externalId: "empty", transcript: "native" })], NOW);
     const emptyId = (d.prepare("SELECT id FROM scout_sources WHERE external_id = 'empty'").get() as { id: string }).id;
     await setTriage(D, [{ sourceId: emptyId, score: 0.4 }]);
     await markScanned(D, emptyId, 0);
-    const stillOne = await snapshot(D, runId, { queriesPending: 0, snowballed: true, stop: stopState({ queriesIssued: 6 }) });
-    assert.equal(stillOne.scansUnverified, 1, "the empty scan is a dead end, not work owed");
+    const none = await snapshot(D, runId, { queriesPending: 0, snowballed: true, stop: stopState({ queriesIssued: 6 }) });
+    assert.equal(none.scansUnverified, 0, "no rows written, so nothing is owed");
+    assert.notEqual(nextStep(none).phase, "verify");
 
     /*
-     * AND verifiedRows COUNTS ONLY WHAT WAS VERIFIED. A paraphrase is a
-     * near-miss nobody has confirmed and a rejection is a quote that is not
-     * in the source; counting either would let the stopping rule believe the
-     * run had found evidence it has not.
+     * THE ROWS THE SCAN WRITES ARE THE WORK. All three go in unverified —
+     * `writeLedger` leaves `verified_at` null, because the scan has not
+     * checked anything — and all three are owed, including the one that will
+     * turn out to be a rejection. A rejection is a decision somebody has to
+     * make, not a decision already made.
      */
     await writeLedger(
       D,
@@ -532,9 +547,23 @@ test("ACCEPTANCE: a scan with a yield and no ledger row is a verification owed",
       ],
       NOW,
     );
+    const owed = await snapshot(D, runId, { queriesPending: 0, snowballed: true, stop: stopState({ queriesIssued: 6 }) });
+    assert.equal(owed.scansUnverified, 3);
+    assert.equal(nextStep(owed).phase, "verify", "the planner must ask for the phase");
+
+    /*
+     * AND verifiedRows COUNTS ONLY WHAT WAS VERIFIED. A paraphrase is a
+     * near-miss nobody has confirmed and a rejection is a quote that is not
+     * in the source; counting either would let the stopping rule believe the
+     * run had found evidence it has not.
+     */
+    assert.equal(owed.verifiedRows, 1, "one of three, not three");
+
+    /* Checked — whatever the verdict — and the phase stops being asked for. */
+    d.prepare("UPDATE scout_ledger SET verified_at = ?").run(NOW);
     const settled = await snapshot(D, runId, { queriesPending: 0, snowballed: true, stop: stopState({ queriesIssued: 6 }) });
     assert.equal(settled.scansUnverified, 0);
-    assert.equal(settled.verifiedRows, 1, "one of three, not three");
+    assert.notEqual(nextStep(settled).phase, "verify");
   })();
 });
 

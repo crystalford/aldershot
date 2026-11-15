@@ -33,7 +33,6 @@ import {
   completion,
   type Completion,
   type Item,
-  type ItemStatus,
 } from "./items.ts";
 import {
   DEFAULT_BUDGET,

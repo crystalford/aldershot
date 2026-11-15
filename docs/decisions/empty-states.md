@@ -71,3 +71,41 @@ it. Making playback work needs a real sample file shipped with the product.
 ## Not doing yet
 
 Owner's call, 2026-08-31: "I'll just work with it here… let's just note it."
+
+## Audited 28 Oct 2026 — the room's fresh state is already the prototype's
+
+A plan written against this repo asserted that "the room has no fresh state"
+and that a new account "lands in an empty room with no instruction", because
+the three-step `How this goes` walkthrough lives on the retired Home at
+`/home` and nothing links there.
+
+**Checked against the rendered prototype, and the claim is wrong.** One Take's
+front door has no walkthrough. What it has, and what `direction()` in
+`src/ui/pages/room.ts` renders unconditionally — whatever the library holds —
+is:
+
+> Pick what to make, or attach footage on the right and say it. Either way
+> this becomes the project — its read, its rules, every change with Undo.
+
+then **MAKE** (Cut · Shorts · Essay · React), then **AS YOUR ARCHIVE GROWS**
+(Story · Supercut), then the Scout row and the composer. A brand-new account
+lands on exactly that. It is an instruction, it names the four things worth
+doing, and the box to type in is under it.
+
+The per-tab lines are honest too, and one of them is better than the
+prototype's because the prototype has no such state to draw:
+
+- Videos: *"Nothing here yet — upload a video and it starts transcribing."* —
+  says what to do AND how long it takes.
+- Highlights, external: *"Nothing from outside yet — Scout finds and links;
+  it never downloads."* — the invariant said where somebody is most likely to
+  wonder about it.
+- Highlights, mine: *"Nothing kept yet — add a clip back."*
+
+So: **nothing to build here.** The walkthrough is retired-Home copy, and
+carrying it into the room would add a second instruction above the one the
+design already specifies.
+
+The demo-card question above is unchanged and still the owner's: a seeded
+demo source would make every surface real at once, and needs a sample file
+shipped with the product.
