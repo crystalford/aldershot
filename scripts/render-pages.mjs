@@ -10,7 +10,7 @@
  * Prints a JSON array of { label, html }. scripts/check-fidelity.cjs's
  * `copy` rule reads it; nothing else should.
  */
-import { renderLanding, renderConfirm } from "../src/ui/pages/landing.ts";
+import { renderLanding, renderConfirm, renderSignIn } from "../src/ui/pages/landing.ts";
 import { receiptsHtml, receiptsPage } from "../src/receipts.ts";
 import { renderCut } from "../src/ui/pages/cut.ts";
 import { renderSettings } from "../src/ui/pages/settings.ts";
@@ -134,6 +134,28 @@ const out = [
     }),
   },
   { label: "renderConfirm", html: renderConfirm("a-token") },
+  {
+    /*
+     * THE SIGN-IN PAGE, in the state the live site is actually in.
+     *
+     * google:false is production — the two Google secrets are unset, so the
+     * button and the "or use your email" line do not render and the page is
+     * the email box alone. Checking only the google:true shape would check a
+     * page nobody is being served.
+     */
+    label: "renderSignIn (email only, as deployed)",
+    html: renderSignIn({ google: false, error: null, sentTo: null, devLink: null }),
+  },
+  {
+    label: "renderSignIn (google configured)",
+    html: renderSignIn({ google: true, error: null, sentTo: null, devLink: null }),
+  },
+  {
+    /* The refusal a person meets today: delivery is not configured, said on
+       the page they asked from rather than on the marketing page. */
+    label: "renderSignIn (delivery not configured)",
+    html: renderSignIn({ google: false, error: "nomail", sentTo: null, devLink: null }),
+  },
   {
     /* Footage's three tabs, and the narrowed state of the first — none of
        which a crawl of `/p/:id/footage` has ever rendered. */
@@ -394,7 +416,7 @@ const out = [
  * fragile for an obvious reason — the fixtures below have labels of their own,
  * and the count was wrong twice before this replaced it.
  */
-const EXPECTED = 20;
+const EXPECTED = 23;
 if (out.length !== EXPECTED) {
   console.error(
     `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +

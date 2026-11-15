@@ -15,7 +15,7 @@ import { HTTPException } from "hono/http-exception";
 import type { Env } from "./env.ts";
 import { ensureV2Schema } from "./schema.ts";
 import { clearCookie, consumeToken, mintSession, sessionCookie, startLogin } from "./auth.ts";
-import { renderConfirm, renderLanding } from "./ui/pages/landing.ts";
+import { renderConfirm, renderLanding, renderSignIn } from "./ui/pages/landing.ts";
 import { clearStateCookie, finishGoogle, googleConfigured, startGoogle, stateCookie, stateFrom, stateMatches } from "./oauth.ts";
 import { noDevNotes, page, type View } from "./ui/shell.ts";
 import { renderBoard } from "./ui/pages/board.ts";
@@ -275,10 +275,25 @@ app.post("/auth/start", async (c) => {
   const form = await c.req.parseBody();
   const email = String(form.email ?? "").trim();
 
+  /*
+   * BACK TO THE PAGE THEY WERE ON.
+   *
+   * Every outcome below used to redirect to "/", which was right while the
+   * only form was on the landing page. /signin has one too, and sending
+   * somebody who asked to sign in to the marketing page to read "email
+   * delivery isn't configured" is answering them somewhere they did not ask.
+   *
+   * A hidden field rather than the Referer header: Referer is absent behind
+   * some privacy settings and forgeable everywhere, and this decides nothing
+   * but which of two of our own pages to render. Anything unrecognised goes
+   * to "/", so a crafted value cannot send anyone off-site.
+   */
+  const back = String(form.from ?? "") === "signin" ? "/signin" : "/";
+
   // Enough of a check to catch a typo, not a regex pretending to validate
   // email — the link either arrives or it does not, which is the real test.
   if (!email.includes("@") || email.length < 5) {
-    return c.redirect("/?error=email", 302);
+    return c.redirect(`${back}?error=email`, 302);
   }
 
   /*
@@ -290,12 +305,12 @@ app.post("/auth/start", async (c) => {
    * doing exactly the same damage to one person.
    */
   const gate = await rateLimit(c.env.DB, `auth:${email}`, LIMITS.authStart);
-  if (!gate.ok) return c.redirect("/?error=toomany", 302);
+  if (!gate.ok) return c.redirect(`${back}?error=toomany`, 302);
 
   const origin = c.env.APP_ORIGIN || new URL(c.req.url).origin;
   const { url, sent } = await startLogin(c.env, email, origin);
 
-  if (sent) return c.redirect(`/?sent=${encodeURIComponent(email)}`, 302);
+  if (sent) return c.redirect(`${back}?sent=${encodeURIComponent(email)}`, 302);
 
   /*
    * The mail provider is not configured, so the link was only logged.
@@ -310,8 +325,8 @@ app.post("/auth/start", async (c) => {
    * Everywhere else, say plainly that sign-in is not available rather than
    * claiming an email was sent.
    */
-  if (c.env.DEV_LOGIN_EMAIL) return c.redirect(`/?link=${encodeURIComponent(url)}`, 302);
-  return c.redirect("/?error=nomail", 302);
+  if (c.env.DEV_LOGIN_EMAIL) return c.redirect(`${back}?link=${encodeURIComponent(url)}`, 302);
+  return c.redirect(`${back}?error=nomail`, 302);
 });
 
 /**
@@ -4414,6 +4429,36 @@ app.get("/api/projects/:id/manifest", async (c) => {
       "content-disposition": `attachment; filename="${name} provenance.json"`,
     },
   });
+});
+
+/**
+ * THE SIGN-IN PAGE.
+ *
+ * The header's "Sign in" jumped to #start — the signup form on the landing
+ * page, under a button reading "Start free". The plumbing is the same either
+ * way (the emailed link finds an account or makes one), which is why it was
+ * built as a jump; but somebody who already has an account and is shown
+ * "Start free" has not been answered, and the owner said so after clicking it.
+ *
+ * Registered here with the other auth routes, which puts it far above every
+ * parameterised route in this file. Nothing could shadow a two-segment path
+ * today — there is no catch-all GET — and scripts/surfaces.cjs's shadow check
+ * only looks at four-segment patterns, so it would not warn if something did.
+ */
+app.get("/signin", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  /* Already signed in? Then this page is not the answer; the room is. */
+  const who = await currentUser(c.env, c.req.header("cookie"));
+  if (who) return c.redirect("/", 302);
+
+  return c.html(
+    renderSignIn({
+      google: googleConfigured(c.env),
+      error: c.req.query("error") ?? null,
+      sentTo: c.req.query("sent") ?? null,
+      devLink: c.env.DEV_LOGIN_EMAIL ? (c.req.query("link") ?? null) : null,
+    }),
+  );
 });
 
 /**

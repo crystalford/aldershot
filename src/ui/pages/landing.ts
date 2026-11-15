@@ -326,13 +326,46 @@ function mark(size: number, gold = GOLD): string {
 }
 
 /**
+ * THE LINE UNDER THE BOX, in its two forms.
+ *
+ * Named here rather than written inline twice, because they are a pair and the
+ * whole point is that they are opposites: whichever page you are on, the box
+ * does both jobs, and the sentence tells you about the job you did not come
+ * for.
+ */
+const BOTH_WAYS = "Already have an account? Same box — we email you a link.";
+const EITHER_WAY = "No account yet? The same link makes one.";
+
+/**
  * The sign-in form. Every CTA on the page targets it.
  *
  * It posts rather than opening the app, because there is no app to open until
  * a link has been followed — a "Start free" button that 302s to a login page
  * would be the same click with an extra step.
  */
-function signInForm(id: string, buttonLabel: string, primary: boolean, google: boolean): string {
+function signInForm(
+  id: string,
+  buttonLabel: string,
+  primary: boolean,
+  google: boolean,
+  /*
+   * THE LINE UNDER THE BOX, which is not the same sentence everywhere.
+   *
+   * On the landing page the button says "Start free" and the box is also the
+   * only way back, so it has to say so. On /signin that sentence answers a
+   * question nobody asked — they are already on the page about coming back —
+   * and the useful line is the opposite one.
+   */
+  aside: string,
+  /*
+   * WHICH OF OUR TWO PAGES THIS FORM IS ON.
+   *
+   * /auth/start sends every outcome back to it, so a failure is explained
+   * where it happened rather than on the marketing page. Unrecognised values
+   * fall back to "/" server-side, so this cannot redirect anyone off-site.
+   */
+  from = "",
+): string {
   /*
    * Google leads. Most people editing footage for YouTube already have the
    * account, it needs no mail provider, and it cannot be lost to a spam
@@ -353,6 +386,7 @@ function signInForm(id: string, buttonLabel: string, primary: boolean, google: b
   return `<div style="display:flex;flex-direction:column;align-items:center">
     ${googleButton}
     <form method="post" action="/auth/start" id="${id}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center">
+      ${from ? `<input type="hidden" name="from" value="${esc(from)}"/>` : ""}
       <input name="email" type="email" required placeholder="you@example.com" aria-label="Your email" style="flex:0 1 260px;min-width:min(220px,100%);background:#1A1A1F;border:none;outline:none;color:#ECECF1;font-size:14px;padding:12px 14px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);font-family:inherit"/>
       <button type="submit" style="flex:none;font-size:14.5px;font-weight:600;padding:12px 26px;border-radius:5px;background:${primary && !google ? "#ECECF1" : "#232329"};color:${primary && !google ? "#131316" : "#ECECF1"};white-space:nowrap;border:none;cursor:pointer;font-family:inherit">${google ? "Email me a link" : buttonLabel}</button>
     </form>
@@ -363,8 +397,53 @@ function signInForm(id: string, buttonLabel: string, primary: boolean, google: b
       somebody who has used this before would reasonably assume the signup
       field is not for them. One line, where the decision is made.
     -->
-    <div style="font-size:12px;color:rgba(236,236,241,0.32);margin-top:10px">Already have an account? Same box — we email you a link.</div>
+    <div style="font-size:12px;color:rgba(236,236,241,0.32);margin-top:10px">${esc(aside)}</div>
   </div>`;
+}
+
+/**
+ * THE SIGN-IN PAGE, for somebody who already has an account.
+ *
+ * The header's "Sign in" used to jump to #start — the signup form, under a
+ * button reading "Start free". The reasoning at the time was that the plumbing
+ * is identical: the emailed link finds an existing account or creates one, so
+ * there is no second route to build. That is true about the plumbing and wrong
+ * about the person. Somebody who has used this before, told "Start free",
+ * has not been answered; the owner clicked it and said so.
+ *
+ * Built like renderConfirm below rather than through the app shell: there is no
+ * session yet, so there is no room to put a page in. Same three pieces
+ * (noDevNotes, FONT_CSS, the wordmark), same flex-centred column, same palette.
+ *
+ * IT CARRIES THE NOTICES ITSELF. Every outcome of /auth/start used to redirect
+ * to "/", so a failure on this page would have been explained on the marketing
+ * page instead — including the one that matters most right now, that email
+ * delivery is not configured. The form posts `from=signin` and the route sends
+ * it back here.
+ */
+export function renderSignIn(d: LandingData): string {
+  return noDevNotes(`<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sign in to Aldershot</title>
+<meta name="robots" content="noindex"/>
+<style>${FONT_CSS}</style>
+<!-- a{text-decoration:none} is in renderLanding's block and not in
+     renderConfirm's, so it is stated here rather than assumed. -->
+<style>*{box-sizing:border-box}body{margin:0}a{text-decoration:none}</style>
+</head>
+<body>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:420px;width:100%;text-align:center">
+    <a href="/" style="display:inline-flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em;color:#ECECF1">aldershot${mark(15.5)}</a>
+    <h1 style="margin:26px 0 0;font-size:26px;font-weight:700;letter-spacing:-0.03em">Sign in</h1>
+    <p style="margin:12px 0 0;font-size:14px;color:rgba(236,236,241,0.5);line-height:1.6">We email you a link. There is no password to remember.</p>
+    <div style="margin-top:24px">${signInForm("signin-form", "Email me a link", true, d.google, EITHER_WAY, "signin")}</div>
+    ${notice(d)}
+  </div>
+</div>
+</body></html>`);
 }
 
 /**
@@ -523,17 +602,20 @@ export function renderLanding(d: LandingData): string {
           rendered page except inside an error banner after a failed attempt.
           A returning visitor had nothing to look for.
 
-          It goes to #start because there is nothing else to build: the
-          emailed link finds an existing account or creates one (src/user.ts),
-          so this is labelling, not a second route. The line under the form
-          says the same thing where the confusion actually is.
+          It said #start, and the reasoning was that the plumbing is the same
+          either way: the emailed link finds an existing account or creates one
+          (src/user.ts), so there is no second route to build. That was true
+          about the plumbing and wrong about the person. Clicking "Sign in" and
+          arriving at a box labelled "Start free" is not an answer, and the
+          owner said so after trying it. /signin is a page about coming back,
+          and it carries the notices itself so a failure is explained there.
 
           NOT class="nav-anchor". That class is display:none under 640px —
           the comment above the media query says the anchors are "what a phone
           needs least" — and this is the one control a returning visitor needs
           most. On a phone the header is now the wordmark, Sign in, Start free.
         -->
-        <a href="#start" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Sign in</a>
+        <a href="/signin" style="color:rgba(236,236,241,0.55);font-weight:500;white-space:nowrap">Sign in</a>
         <a href="#start" style="font-size:13px;font-weight:600;padding:8px 16px;border-radius:5px;background:#ECECF1;color:#131316;white-space:nowrap">Start free</a>
       </div>
     </div>
@@ -548,7 +630,7 @@ export function renderLanding(d: LandingData): string {
       <div style="${EYEBROW}">A VIDEO EDITOR WITH NO TIMELINE</div>
       <h1 style="margin:18px auto 0;max-width:820px;font-size:clamp(34px,6vw,62px);font-weight:700;letter-spacing:-0.035em;line-height:1.05">Say what the video should be.<br>The rules do the cutting.</h1>
       <p style="margin:20px auto 0;max-width:600px;font-size:clamp(15px,2vw,17.5px);color:rgba(236,236,241,0.55);line-height:1.6">Drop in footage — yours or anyone's. Aldershot reads it and asks what you want. Each answer becomes a plain-English rule you can see, switch off, or change. The cut follows the rules. Nothing is ever deleted.</p>
-      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start free", true, d.google)}</div>
+      <div id="start" style="margin-top:28px">${signInForm("hero-form", "Start free", true, d.google, BOTH_WAYS)}</div>
       <div style="margin-top:10px;font-size:12px;color:rgba(236,236,241,0.3)">No card. 300 processing minutes a month on the house.</div>
       ${notice(d)}
 
@@ -853,7 +935,7 @@ export function renderLanding(d: LandingData): string {
   <div style="${PAD};background:#0C0C0F">
     <div style="${WRAP};padding:clamp(56px,8vw,90px) 0;text-align:center">
       <h2 style="margin:0 auto;font-size:clamp(26px,4vw,40px);font-weight:700;letter-spacing:-0.03em;max-width:640px;line-height:1.1">The footage is sitting there. Say what it should be.</h2>
-      <div style="margin-top:26px">${signInForm("footer-form", "Start free", true, d.google)}</div>
+      <div style="margin-top:26px">${signInForm("footer-form", "Start free", true, d.google, BOTH_WAYS)}</div>
       <div style="margin-top:52px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px;color:rgba(236,236,241,0.4)">
         <span style="display:flex;align-items:baseline;gap:4px;font-weight:600;color:rgba(236,236,241,0.55)">aldershot${mark(12.5, "rgba(217,179,106,0.85)")}</span>
         <span>Cuts · Shorts · Reactions · Essays</span>

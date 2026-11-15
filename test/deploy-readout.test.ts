@@ -130,3 +130,43 @@ test("preflight.cjs reads the shared list rather than its own copy", () => {
   assert.match(src, /require\("\.\/capabilities\.cjs"\)/);
   assert.ok(!/key:\s*"sign_in_google"/.test(src), "preflight.cjs has its own copy of the list again");
 });
+
+/*
+ * EVERY NAME THE READOUT LOOKS FOR IS A NAME THE JOB ACTUALLY HAS.
+ *
+ * This is the test that was missing, and its absence shipped a false line to
+ * production. `R2_ACCOUNT_ID` is set on the Worker from CLOUDFLARE_ACCOUNT_ID
+ * — a different name than the job held — so the readout looked for it, did not
+ * find it, and printed "OFF Direct upload to storage" while /api/preflight on
+ * the same deployment reported that capability as ON. Two reporters
+ * disagreeing about one fact with nothing to say which was right, which is the
+ * exact drift scripts/capabilities.cjs exists to prevent.
+ *
+ * It covers the whole class: the next variable somebody wires under a second
+ * name fails here rather than in a deploy log nobody reads.
+ */
+test("every capability's variables are in the deploy job's env, or declared invisible", () => {
+  const yml = readFileSync(join(ROOT, ".github", "workflows", "deploy.yml"), "utf8");
+
+  /* The job's env block: indented NAME: ${{ secrets.X }} lines. */
+  const inEnv = new Set(
+    [...yml.matchAll(/^\s{10}([A-Z0-9_]+):\s*\$\{\{/gm)].map((m) => m[1]),
+  );
+  assert.ok(inEnv.size >= 8, `only parsed ${inEnv.size} env names — has the block moved?`);
+
+  const caps = createRequire(import.meta.url)("../scripts/capabilities.cjs") as {
+    CAPABILITIES: Array<{ key: string; env: string[]; setByDeploy?: boolean; inConfig?: boolean }>;
+  };
+
+  for (const c of caps.CAPABILITIES) {
+    if (c.setByDeploy || c.inConfig) continue;
+    for (const name of c.env) {
+      assert.ok(
+        inEnv.has(name),
+        `${c.key} looks for ${name}, which is not in deploy.yml's env block — ` +
+          "the readout will call it missing even when the Worker has it. Either add it " +
+          "to the env block or mark the capability setByDeploy/inConfig.",
+      );
+    }
+  }
+});
