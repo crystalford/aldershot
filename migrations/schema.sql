@@ -640,6 +640,7 @@ ALTER TABLE sources ADD COLUMN recorded_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN start_word INTEGER;
 ALTER TABLE v2_clips ADD COLUMN end_word INTEGER;
 ALTER TABLE plan_beats ADD COLUMN backed INTEGER;
+ALTER TABLE plan_beats ADD COLUMN by_user INTEGER;
 ALTER TABLE beats ADD COLUMN take_verdict TEXT;
 ALTER TABLE beats ADD COLUMN take_reason TEXT;
 ALTER TABLE beats ADD COLUMN take_words TEXT;

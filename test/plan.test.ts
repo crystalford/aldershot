@@ -230,7 +230,11 @@ test("the search runs only after the stop, and never on a brief's fallback", () 
   );
   assert.match(
     readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8"),
-    /PAST THE STOP[\s\S]{0,1200}?plan\.beats\.filter\(\(x\) => x\.kept\)/,
+    /* Prefix, not the whole expression: the filter grew an optional beat
+       scope ("fill this one section"), and pinning the exact old spelling
+       made a test of WHICH BEATS ARE SEARCHED fail over a change that does
+       not touch that. `x.kept` is the claim; what follows it is not. */
+    /PAST THE STOP[\s\S]{0,1600}?plan\.beats\.filter\(\(x\) => x\.kept/,
     "and only kept beats are searched",
   );
 });

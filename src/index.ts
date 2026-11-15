@@ -53,9 +53,9 @@ const ACCENT_RED = ACCENT.red;
 import { chooseTake, deleteBeat, getBeats, insertBeat, listTakes, moveBeat, setBeatMedia } from "./projects.ts";
 import { listBucket } from "./bucket.ts";
 import { importFromBucket, listConnections, saveConnection, usableConnection } from "./connections.ts";
-import { draftPlan, findForBeats } from "./plan.ts";
+import { ROLES, draftPlan, findForBeats, needAdvice, type Role } from "./plan.ts";
 import { readIntent } from "./intent.ts";
-import { createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
+import { addBeat, createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
 import { setCap, underCap } from "./spend.ts";
 import { renderBeforePost } from "./ui/pages/beforepost.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
@@ -3794,6 +3794,19 @@ app.get("/plan/:id", async (c) => {
               : b.backed === 0 && b.found.length
                 ? "nothing here says it — the moments are about it, not of it"
                 : null,
+          byUser: b.byUser,
+          /*
+           * COMPUTED HERE, AND SO IT PERSISTS.
+           *
+           * The advice is a property of the sentence, not of the moment it
+           * was typed — a need that names a motive will still name one
+           * tomorrow. Returning it only from the POST would have shown it
+           * once and lost it on the next page load, which is the wrong
+           * lifetime for something the person may want to come back and fix.
+           * Recomputed rather than stored, like `gap` above and for the same
+           * reason: it is a fact about the words, derivable from them.
+           */
+          advice: b.byUser ? needAdvice(b) : null,
         })),
       }),
     ),
@@ -3910,6 +3923,45 @@ app.get("/api/plans", async (c) => {
   return c.json({ plans: await listPlans(c.env.DB, user.id) });
 });
 
+/**
+ * DECLARE A SECTION, IN YOUR OWN WORDS, INTO A PLAN THAT ALREADY EXISTS.
+ *
+ * Until this route, a plan's beats were whatever a model drafted at the moment
+ * it was made, and the only thing anybody could do to them afterwards was keep
+ * or cut: `createPlan` writes every beat in one INSERT. So a plan could not
+ * grow. Somebody who knew their piece needed a section on orbital mechanics
+ * had no way to say so, which is the opposite of invariant 10's "the user's
+ * own words win where they exist" at the one point where their words are the
+ * whole contribution.
+ *
+ * `need` is stored exactly as typed, because it IS the retrieval query. What
+ * the on-camera stoplist makes of it comes back as `advice` for the page to
+ * show beside the row — never as a refusal. See needAdvice in src/plan.ts for
+ * why a model's sentence is rejected there and a person's is not.
+ */
+app.post("/api/plans/:id/beats", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
+  if (!plan) return c.json({ error: "not found" }, 404);
+
+  const b = await body<{ name?: string; need?: string; role?: string }>(c);
+  const name = String(b.name ?? "").trim();
+  const need = String(b.need ?? "").trim();
+  /* Both, because a section with no name cannot be referred to and one with
+     nothing to show cannot be searched for. */
+  if (!name || !need) {
+    return c.json({ error: "a section needs a name and what it has to show" }, 422);
+  }
+
+  const beat = await addBeat(c.env.DB, plan.id, {
+    name,
+    need,
+    role: (ROLES as readonly string[]).includes(String(b.role)) ? (b.role as Role) : undefined,
+  });
+  return c.json({ beat, advice: needAdvice(beat) });
+});
+
 /** Keep or cut one beat — the answer to the stop, beat by beat. */
 app.post("/api/plans/:id/beats/:beatId", async (c) => {
   await ensureV2Schema(c.env.DB);
@@ -3939,8 +3991,26 @@ app.post("/api/plans/:id/find", async (c) => {
   const plan = await getPlan(c.env.DB, c.req.param("id"), user.id);
   if (!plan) return c.json({ error: "not found" }, 404);
 
-  const kept = plan.beats.filter((x) => x.kept);
-  if (!kept.length) return c.json({ error: "every beat is cut — keep at least one" }, 422);
+  /*
+   * ONE BEAT, OR ALL OF THEM.
+   *
+   * Topping up one section had to re-pay for every other one, which is the
+   * difference between a plan you can come back to and a plan you run once.
+   * Absent `beatId`, this is exactly what it always was.
+   */
+  const scope = await body<{ beatId?: string }>(c).catch(() => ({}) as { beatId?: string });
+  const only = scope.beatId;
+  if (only && !plan.beats.some((x) => x.id === only)) {
+    return c.json({ error: "no such beat" }, 404);
+  }
+
+  const kept = plan.beats.filter((x) => x.kept && (!only || x.id === only));
+  if (!kept.length) {
+    return c.json(
+      { error: only ? "that section is cut — keep it first" : "every beat is cut — keep at least one" },
+      422,
+    );
+  }
 
   /* The compose — retrieval, the judge, the rerank — is src/beat-find.ts,
      where the degradation can be tested: a judge that throws must cost the

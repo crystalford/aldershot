@@ -38,6 +38,16 @@ export interface PlanData {
     backed: number | null;
     /** Why it is empty, when the reason is not "your library has nothing". */
     gap: string | null;
+    /** True when the person wrote this section rather than accepting a draft. */
+    byUser?: boolean;
+    /**
+     * What the on-camera stoplist makes of their wording, if anything.
+     *
+     * The offending PHRASE, not a sentence — the words around it are this
+     * file's job. Only ever set on a beat the person wrote: a model's beat
+     * that named a motive was regenerated or dropped before it got here.
+     */
+    advice?: string | null;
   }>;
 }
 
@@ -101,6 +111,14 @@ function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string
   const thin = b.kept && (b.backed ?? b.found) < 2;
   return `<div style="display:flex;gap:12px;align-items:baseline;padding:11px 13px;border-radius:${RADIUS.card};background:${C.surface};opacity:${b.kept ? "1" : ".5"}">
     <span data-content style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;background:${accentBg(accent)};color:${accent};white-space:nowrap">${esc(ROLE_NAME[b.role])}</span>
+    ${
+      /* Whose sentence this is. Worth a mark because the two are not the same
+         kind of thing: a drafted beat is a suggestion and yours is a
+         decision, and nothing else on the row distinguishes them. */
+      b.byUser
+        ? `<span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.06em;color:${C.ink45};white-space:nowrap">YOURS</span>`
+        : ""
+    }
     <span style="flex:1 1 220px;min-width:min(200px,100%)">
       <span data-content style="display:block;font-size:${SIZE.body};${b.kept ? "" : "text-decoration:line-through;text-decoration-color:rgba(236,236,241,0.3)"}">${esc(b.name)}</span>
       <span data-content style="display:block;margin-top:2px;font-size:${SIZE.secondary};color:${C.ink45};line-height:1.5">${esc(b.need)}</span>
@@ -121,7 +139,36 @@ function beatRow(b: PlanData["beats"][number], state: PlanData["state"]): string
                   : `${b.backed} of ${b.found} back it`
               }${thin ? " · thin" : ""}</span>`
       }
+    ${
+      /*
+       * WHAT THE STOPLIST NOTICED, said and not enforced.
+       *
+       * A need is a retrieval query, and a phrase like "wants to" describes
+       * why rather than what a camera saw, so it finds nothing. Scout drops
+       * its own beats for this; a person's stands — invariant 10 — and they
+       * are told what it will cost instead. The phrase is theirs, so it is
+       * data-content.
+       */
+      b.advice
+        ? `<span style="display:block;margin-top:5px;font-size:${SIZE.meta};color:${ACCENT.gold};line-height:1.5"><span data-content style="font-family:${FONT.mono}">${esc(b.advice)}</span> says why, not what a camera saw — this may come back empty.</span>`
+        : ""
+    }
     </span>
+    ${
+      /*
+       * FILL THIS ONE.
+       *
+       * Only on a kept section that has found nothing, and only once the plan
+       * has been past the stop — before that the single button below finds
+       * everything and a second control would be two ways to do one thing.
+       * This is the press that makes a plan returnable: a section declared on
+       * Tuesday can be filled on Tuesday without re-paying for the rest.
+       */
+      b.kept && state !== "beats" && !b.found
+        ? `<button class="beat-find" type="button" data-beat="${esc(b.id)}"
+            style="flex:none;font-size:${SIZE.meta};font-weight:600;padding:5px 10px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Go find this one</button>`
+        : ""
+    }
     <!-- data-BEAT, not data-plan. The container carries data-plan, so a
          button carrying it too made closest("[data-plan]") return the button
          itself and the beat id was sent as the plan id. -->
@@ -160,6 +207,33 @@ export function renderPlan(d: PlanData): string {
     }
 
     <div style="margin-top:20px;display:flex;flex-direction:column;gap:6px">${d.beats.map((b) => beatRow(b, d.state)).join("")}</div>
+
+    <!--
+      DECLARE A SECTION, IN YOUR OWN WORDS.
+
+      The plan flow could only ever offer the beats a model drafted and ask
+      which to keep. The answer it had no way to take is the one somebody with
+      an argument actually gives: the piece needs a section on this, and here
+      is what the footage has to show for it.
+
+      Two fields because a beat is two things, and the second one IS the
+      search — see plan_beats in src/schema.ts. Nothing rewrites it:
+      invariant 10, "the user's own words win where they exist". What the
+      on-camera stoplist makes of the wording appears on the row afterwards,
+      as advice.
+    -->
+    <div style="margin-top:12px;padding:13px;border-radius:${RADIUS.card};background:${C.surface}">
+      <div style="font-size:${SIZE.meta};font-weight:600;letter-spacing:.06em;color:${C.ink45}">ADD A SECTION</div>
+      <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+        <input class="beat-add-name" type="text" placeholder="the section, in a few words"
+          style="flex:1 1 180px;min-width:min(160px,100%);font-size:${SIZE.secondary};padding:8px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};border:none;font-family:inherit">
+        <input class="beat-add-need" type="text" placeholder="what the footage has to show"
+          style="flex:2 1 240px;min-width:min(200px,100%);font-size:${SIZE.secondary};padding:8px 10px;border-radius:${RADIUS.button};background:${C.raised};color:${C.ink};border:none;font-family:inherit">
+        <button class="beat-add" type="button" data-plan="${esc(d.id)}"
+          style="flex:none;font-size:${SIZE.secondary};font-weight:600;padding:8px 14px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink70};border:none;cursor:pointer;font-family:inherit">Add it</button>
+      </div>
+      <div class="beat-add-note" style="margin-top:7px;font-size:${SIZE.meta};color:${C.ink45}"></div>
+    </div>
 
     <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span data-content style="flex:none;font-size:${SIZE.meta};font-family:${FONT.mono};color:${C.ink45}">${kept} of ${d.beats.length} beats${d.state === "beats" ? "" : ` · ${total}`}</span>

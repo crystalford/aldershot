@@ -165,6 +165,15 @@ export function schema(db: DatabaseSync): void {
     CREATE TABLE plans (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic TEXT NOT NULL,
       claim TEXT, state TEXT NOT NULL DEFAULT 'beats', project_id TEXT,
       created_at INTEGER NOT NULL);
+    /* A plan's beats, each need a retrieval query. backed and by_user are
+       ADDED_COLUMNS in src/schema.ts, not part of its CREATE, and both have to
+       be here or a query reaching them fails from inside whatever is really
+       being tested. (No backticks in this comment: it sits inside the SQL
+       template literal, and one would end it.) */
+    CREATE TABLE plan_beats (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, idx INTEGER NOT NULL,
+      role TEXT NOT NULL, name TEXT NOT NULL, need TEXT NOT NULL,
+      kept INTEGER NOT NULL DEFAULT 1, found TEXT, backed INTEGER, by_user INTEGER,
+      UNIQUE(plan_id, idx));
     CREATE TABLE scout_missions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
       ledger_id TEXT NOT NULL, in_s REAL NOT NULL, out_s REAL NOT NULL, quote TEXT NOT NULL,
       url_at_in TEXT, state TEXT NOT NULL DEFAULT 'scouted', how TEXT, verdict TEXT,

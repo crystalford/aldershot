@@ -218,6 +218,42 @@ const out = [
   },
   {
     /*
+     * THE PLAN PAST THE STOP, WITH A SECTION ITS AUTHOR WROTE.
+     *
+     * The fixture above is state "beats" with only drafted beats, so none of
+     * the growth loop's copy renders in it: not the YOURS mark, not the
+     * per-section find, not the advice about somebody's wording. `copy`
+     * reported exactly one new string and would have printed green over five.
+     * The same shape as every other false green in this file's history.
+     */
+    label: "renderPlan (found, with a section the author wrote)",
+    html: renderPlan({
+      id: "p1",
+      topic: "whether the story was written before the rockets were",
+      claim: "the account came first and the engineering was fitted to it",
+      state: "found",
+      projectId: null,
+      beats: [
+        { id: "b1", role: "subject", name: "the claim as made", need: "the line itself", kept: true, found: 3, backed: 2, gap: null },
+        {
+          /* Theirs, empty, and worded in a way the stoplist has something to
+             say about — the three states the new controls depend on. */
+          id: "b2",
+          role: "subject",
+          name: "orbital mechanics",
+          need: "he wants to look competent about the numbers",
+          kept: true,
+          found: 0,
+          backed: null,
+          gap: null,
+          byUser: true,
+          advice: "wants to",
+        },
+      ],
+    }),
+  },
+  {
+    /*
      * The export panel, a pure function of a project id and a plan.
      *
      * Its wording about what the timeline file carries and what stays behind
@@ -358,7 +394,7 @@ const out = [
  * fragile for an obvious reason — the fixtures below have labels of their own,
  * and the count was wrong twice before this replaced it.
  */
-const EXPECTED = 19;
+const EXPECTED = 20;
 if (out.length !== EXPECTED) {
   console.error(
     `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +

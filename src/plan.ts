@@ -29,6 +29,7 @@ import { assistantText, usageTokens } from "./grounding.ts";
 import { resolveFor } from "./models.ts";
 import { runRead } from "./llm.ts";
 import { plainRegister } from "./register.ts";
+import { diagnosis } from "./scout-decompose.ts";
 
 /** What a beat is for. The prototype's own three. */
 export const ROLES = ["subject", "counter", "outside"] as const;
@@ -250,6 +251,61 @@ export function parsePlan(response: unknown): { claim: string; beats: Beat[] } {
  * else's.
  */
 export const THIN_BELOW = 2;
+
+/**
+ * WHAT THE ON-CAMERA STOPLIST MAKES OF A BEAT THE PERSON WROTE.
+ *
+ * Advice. Never a veto, and the distinction is the whole point of this
+ * function existing rather than the route calling `diagnosis` directly.
+ *
+ * `18-SCOUT-BUILD-SPEC.md` requires every behaviour to be "something a viewer
+ * could point to on camera", and src/scout-decompose.ts enforces it hard: a
+ * hit gets one regeneration and a second hit drops the beat. That is right for
+ * a model's output — a model asked again writes a better sentence. It is wrong
+ * for a person's. Invariant 10 says "the user's own words win where they
+ * exist", and invariant 3's posture throughout is reasons rather than
+ * verdicts, so refusing somebody's sentence because a stoplist matched would
+ * break both at once.
+ *
+ * But saying nothing would be its own failure. A `need` is a RETRIEVAL QUERY,
+ * and "he wants to leave" describes why rather than what a camera saw, so it
+ * genuinely finds nothing. Reporting that is a service; enforcing it is not.
+ *
+ * Returns the offending PHRASE rather than a sentence, for the reason
+ * `diagnosis` does — the page sets it as the data it is, and the wording
+ * around it is the design's. Checks the name as well as the need, as
+ * validateDecomposition does, because a beat called "why he snapped" is the
+ * same problem spelled in the other field.
+ */
+export function needAdvice(beat: { name?: string; need: string }): string | null {
+  for (const field of [beat.need, beat.name]) {
+    if (!field) continue;
+    const hit = diagnosis(field);
+    if (hit) return wholeWord(field, hit);
+  }
+  return null;
+}
+
+/*
+ * THE WORD THEY TYPED, NOT THE STEM THAT MATCHED.
+ *
+ * The stoplist holds stems — "narcissist*" — so `diagnosis` on "narcissistic
+ * framing" returns "narcissis". Quoting that back at Scout is fine, because
+ * Scout is being told to rewrite and a stem is enough to identify what to
+ * drop. Showing it to the person who typed the word reads like a bug, so the
+ * match is extended to the end of the word it started in.
+ *
+ * Done here rather than in `diagnosis` on purpose: that function is Scout's
+ * and its regeneration prompt depends on what it returns, so widening it
+ * would change a working path to improve a sentence on a different one.
+ */
+function wholeWord(text: string, hit: string): string {
+  const at = text.toLowerCase().indexOf(hit.toLowerCase());
+  if (at < 0) return hit;
+  let end = at + hit.length;
+  while (end < text.length && /[\w'\u2019-]/.test(text[end])) end += 1;
+  return text.slice(at, end);
+}
 
 /** One candidate for a beat, with the judge's answer when there is one. */
 export interface Candidate {

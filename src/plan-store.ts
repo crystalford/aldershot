@@ -20,6 +20,8 @@ export interface StoredBeat extends Beat {
   found: string[];
   /** How many of them back it. Null when nobody checked — see src/plan.ts. */
   backed: number | null;
+  /** True when the person wrote this beat rather than accepting a drafted one. */
+  byUser: boolean;
 }
 
 export interface Plan {
@@ -48,6 +50,7 @@ interface BeatRow {
   kept: number;
   found: string | null;
   backed: number | null;
+  by_user: number | null;
 }
 
 export async function createPlan(
@@ -61,6 +64,7 @@ export async function createPlan(
     .run();
 
   if (opts.beats.length) {
+    /* No by_user: every beat here came from a model. See schema.ts. */
     const stmt = db.prepare(
       `INSERT INTO plan_beats (id,plan_id,idx,role,name,need,kept,found) VALUES (?,?,?,?,?,?,1,NULL)`,
     );
@@ -78,7 +82,7 @@ export async function getPlan(db: D1Database, planId: string, userId: string): P
   if (!row) return null;
 
   const { results } = await db
-    .prepare(`SELECT id, idx, role, name, need, kept, found, backed FROM plan_beats WHERE plan_id=? ORDER BY idx`)
+    .prepare(`SELECT id, idx, role, name, need, kept, found, backed, by_user FROM plan_beats WHERE plan_id=? ORDER BY idx`)
     .bind(planId)
     .all<BeatRow>();
 
@@ -101,6 +105,7 @@ export async function getPlan(db: D1Database, planId: string, userId: string): P
       found: parseIds(b.found),
       /* Null stays null: nobody checked is not nobody backed it. */
       backed: b.backed === null || b.backed === undefined ? null : Number(b.backed),
+      byUser: !!b.by_user,
     })),
   };
 }
@@ -116,6 +121,53 @@ function parseIds(raw: string | null): string[] {
        the plan. */
     return [];
   }
+}
+
+/**
+ * ONE SECTION, DECLARED BY THE PERSON, INTO A PLAN THAT ALREADY EXISTS.
+ *
+ * `createPlan` writes every beat in one INSERT, so until now a plan's beats
+ * were whatever a model drafted at the moment it was made, and the only thing
+ * anybody could do to them afterwards was keep or cut. That is the whole of
+ * why a plan could not grow: there was no way to come back a week later and
+ * say the piece needs a section on something.
+ *
+ * `need` is stored exactly as typed. It is a retrieval query — see the header
+ * of plan_beats in schema.ts — and invariant 10 says the user's own words win
+ * where they exist, so nothing here rewrites, trims or validates it. What the
+ * on-camera stoplist makes of it is advice the caller shows beside the row;
+ * see needAdvice in src/plan.ts.
+ *
+ * The idx continues from the last beat rather than from the count, because
+ * the table is UNIQUE(plan_id, idx) and a count is wrong the moment any row
+ * is ever removed.
+ */
+export async function addBeat(
+  db: D1Database,
+  planId: string,
+  beat: { name: string; need: string; role?: Role },
+): Promise<StoredBeat> {
+  const top = await db
+    .prepare(`SELECT MAX(idx) AS top FROM plan_beats WHERE plan_id=?`)
+    .bind(planId)
+    .first<{ top: number | null }>();
+  const idx = (top?.top ?? -1) + 1;
+
+  /* An unrecognised role reads as the case being made, the same defaulting
+     getPlan and parsePlan do. */
+  const role: Role =
+    beat.role && (ROLES as readonly string[]).includes(beat.role) ? beat.role : "subject";
+
+  const id = ulid();
+  await db
+    .prepare(
+      `INSERT INTO plan_beats (id,plan_id,idx,role,name,need,kept,found,by_user)
+       VALUES (?,?,?,?,?,?,1,NULL,1)`,
+    )
+    .bind(id, planId, idx, role, beat.name, beat.need)
+    .run();
+
+  return { id, idx, role, name: beat.name, need: beat.need, kept: true, found: [], backed: null, byUser: true };
 }
 
 /** Keep or cut one beat. The answer to the one stop, beat by beat. */

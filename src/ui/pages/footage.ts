@@ -186,7 +186,13 @@ const THREAD_DOTS = [ACCENT.gold, ACCENT.violet, ACCENT.green, ACCENT.cyan, ACCE
 function threadChips(threads: ThreadRow[], total: number, active: string | null): string {
   const chip = (name: string, count: number, dot: string, href: string, on: boolean) =>
     `<a href="${href}" style="display:flex;align-items:center;gap:7px;font-size:${SIZE.secondary};padding:7px 13px;border-radius:${RADIUS.button};background:${on ? C.active : C.pill};color:${on ? C.ink : C.ink70};font-weight:500;white-space:nowrap">
-      <span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span>${esc(name)} <span data-content style="color:${C.ink32};font-family:${FONT.mono};font-size:${SIZE.meta}">${count}</span>
+      <span style="width:6px;height:6px;border-radius:50%;background:${dot}"></span><!--
+        data-content, because a thread's NAME is data. It was a bare text node
+        after the dot's closing tag, which the strings rule could not see at
+        all: its scan only read text that followed an OPENING tag, so the name was
+        never compared with anything, and the moment the scan was widened it
+        read somebody's own thread name as copy that should be in a design.
+      --><span data-content>${esc(name)}</span> <span data-content style="color:${C.ink32};font-family:${FONT.mono};font-size:${SIZE.meta}">${count}</span>
     </a>`;
 
   return `<div style="margin-top:24px;display:flex;gap:6px;flex-wrap:wrap">

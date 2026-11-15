@@ -603,6 +603,67 @@ const protoRaw = normalise(PROTO);
  * would have hidden the next paraphrase along with this one.
  */
 const SIGNED_OFF = new Map([
+  /*
+   * DECLARING A SECTION, which the plan flow could not take as an answer.
+   *
+   * The one stop asks whether a model's beats are right and the only replies
+   * were yes and cut-one. What somebody with an argument actually says is
+   * that the piece needs a section on something, and here is what the footage
+   * has to show for it — invariant 10's "the user's own words win where they
+   * exist" at the one point where their words are the whole contribution. No
+   * prototype draws it: One Take's plan flow has no way to add a beat, and
+   * the growth loop this serves did not exist when the design was drawn.
+   */
+  ...[
+    "ADD A SECTION",
+    "Go find this one",
+  ].map((t) => [
+    t,
+    "The declared-section loop on the plan page. 'ADD A SECTION' heads the " +
+      "two fields a beat is made of, the second of which IS the retrieval " +
+      "query. 'Go find this one' fills one section without re-paying for the " +
+      "rest, which is the difference between a plan somebody returns to and " +
+      "one they run once. Neither is drawn anywhere: the prototype's plan " +
+      "flow keeps or cuts the beats it was given and has no notion of adding.",
+  ]),
+
+  /*
+   * WHAT THE ON-CAMERA STOPLIST MAKES OF SOMEBODY'S WORDING. Advice, not a
+   * veto, and the distinction is the sentence.
+   *
+   * 18-SCOUT-BUILD-SPEC requires a behaviour to be something a viewer could
+   * point to on camera, and src/scout-decompose.ts enforces it hard on a
+   * MODEL's output: one regeneration, then the beat is dropped. A person's
+   * sentence stands — invariant 10 — so this says what it will cost instead.
+   * The phrase before it is theirs and is data-content; this half is ours.
+   *
+   * It was invisible to `copy` when written, because the rule only read text
+   * that followed an OPENING tag and this follows a </span>. That hole is
+   * fixed in scanCopy; this string is the one that found it.
+   */
+  [
+    "says why, not what a camera saw — this may come back empty.",
+    "The advice on a section the person wrote, when their wording names a " +
+      "motive or a diagnosis rather than something a camera saw. Nothing in " +
+      "any design, because nothing in any design lets somebody write a need.",
+  ],
+
+  /*
+   * A PRE-EXISTING LANDING STRING, newly visible rather than newly written.
+   *
+   * It has been served since the magic-link flow was built and no check had
+   * ever read it, for the reason above: it follows a </b>. Recorded here
+   * rather than reworded — it is a limit stated BEFORE somebody goes looking
+   * in their inbox, which is the right moment for it, and signing in has no
+   * design at all to compare it with (see the group below on OAuth).
+   */
+  [
+    "&mdash; the link works once and expires in 20 minutes.",
+    "The sent-link confirmation on the signed-out page. Sign-in has no " +
+      "design: every control in both landing designs opens the prototype app " +
+      "directly, with no account, no inbox and no OAuth anywhere in them.",
+  ],
+
   ...[
     "EVERY TAKE IS KEPT",
     "Use this one",
@@ -1821,8 +1882,21 @@ function scanCopy(html, label, seen, suspect) {
     .replace(/<script[\s\S]*?<\/script>/g, ' ')
     .replace(/<style[\s\S]*?<\/style>/g, ' ')
     .replace(/<title>[\s\S]*?<\/title>/g, ' ');
-for (const m of body.matchAll(/<([a-z]+)([^>]*)>([^<>]+)(?=<)/g)) {
-  if (/\bdata-content\b/.test(m[2])) continue;
+/*
+ * AFTER A CLOSING TAG TOO, and that was a hole.
+ *
+ * This matched text only where it followed an OPENING tag, so a sentence
+ * after </em> or </span> was invisible to this rule anywhere in the product.
+ * Eight strings were getting through when it was found — seven of them on the
+ * signed-out page, which is the most-read surface there is, and all seven
+ * sentence-halves after an emphasis tag.
+ *
+ * A closing tag has no attributes, so `data-content` cannot exempt text that
+ * follows one — which is right: the data is INSIDE the marked element, and
+ * what comes after it is copy somebody wrote.
+ */
+for (const m of body.matchAll(/<(?:([a-z]+)([^>]*)|\/[a-z]+)>([^<>]+)(?=<)/g)) {
+  if (m[2] && /\bdata-content\b/.test(m[2])) continue;
   const text = normalise(m[3]);
   if (text.length < 8) continue;
   // Three LETTERS, either case. This was /[a-z]{3}/, which skipped every

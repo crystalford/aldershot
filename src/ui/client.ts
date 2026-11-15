@@ -3937,12 +3937,16 @@ document.querySelectorAll(".eval-say").forEach((btn) => {
    The flow stops exactly once, here, and nothing downstream runs until the
    beats are answered — which is why Find the footage and Cut it are separate
    presses rather than one that does both. */
-const planPost = async (url, btn, go) => {
+const planPost = async (url, btn, go, payload) => {
   if (btn.disabled) return;
   btn.disabled = true;
   btn.style.opacity = ".5";
   try {
-    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) {
       window.toast(out.error || "That didn't work.");
@@ -3980,6 +3984,56 @@ document.querySelectorAll(".plan-find").forEach((btn) => {
   btn.addEventListener("click", () =>
     planPost("/api/plans/" + btn.getAttribute("data-plan") + "/find", btn, () => location.reload()),
   );
+});
+
+/* ── Declare a section, in your own words ──────────────────────────────
+   The answer the plan flow could not take. A model drafts beats and this
+   asks which to keep; what somebody with an argument actually says is that
+   the piece needs a section on something, and here is what it has to show.
+
+   The need goes up exactly as typed. It IS the retrieval query, and
+   invariant 10 is that the user's own words win where they exist, so
+   nothing here trims or rewords it. The page reloads on success because
+   the advice about their wording is computed server-side and belongs on
+   the row, where it persists until the wording changes. */
+document.querySelectorAll(".beat-add").forEach((btn) => {
+  const card = btn.parentElement ? btn.parentElement.parentElement : null;
+  const note = card ? card.querySelector(".beat-add-note") : null;
+  btn.addEventListener("click", () => {
+    const row = btn.parentElement;
+    const nameEl = row ? row.querySelector(".beat-add-name") : null;
+    const needEl = row ? row.querySelector(".beat-add-need") : null;
+    const name = nameEl && nameEl.value ? nameEl.value.trim() : "";
+    const need = needEl && needEl.value ? needEl.value.trim() : "";
+    /* Said here rather than only by the route, because a 422 toast for an
+       empty box is a worse answer than the box telling you itself. */
+    if (!name || !need) {
+      if (note) note.textContent = "A section needs a name and what the footage has to show.";
+      return;
+    }
+    planPost(
+      "/api/plans/" + btn.getAttribute("data-plan") + "/beats",
+      btn,
+      () => location.reload(),
+      { name: name, need: need },
+    );
+  });
+});
+
+/* ── Fill one section ──────────────────────────────────────────────────
+   Topping up one gap used to re-pay for every other beat, which is the
+   difference between a plan you come back to and a plan you run once. */
+document.querySelectorAll(".beat-find").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const plan = btn.closest("[data-plan]");
+    if (!plan) return;
+    planPost(
+      "/api/plans/" + plan.getAttribute("data-plan") + "/find",
+      btn,
+      () => location.reload(),
+      { beatId: btn.getAttribute("data-beat") },
+    );
+  });
 });
 
 document.querySelectorAll(".plan-cut").forEach((btn) => {

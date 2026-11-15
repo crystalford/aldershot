@@ -1076,6 +1076,25 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   { table: "plan_beats", column: "backed", ddl: "ALTER TABLE plan_beats ADD COLUMN backed INTEGER" },
 
   /*
+   * WHOSE SENTENCE THIS BEAT IS.
+   *
+   * Null for every beat a model drafted, 1 for one the person wrote. Two
+   * things in this repo already need to know the difference and neither can
+   * ask.
+   *
+   * Invariant 10's second half is "the user's own words win where they
+   * exist", which a re-draft cannot honour without knowing which words were
+   * theirs. And scout-decompose.ts's DecomposeInput.existing is documented as
+   * "What is already in the plan. Scout keeps these; it does not rewrite
+   * them" — a promise about rows it has no way to identify.
+   *
+   * Null rather than 0 for the old rows, and not backfilled: a beat written
+   * before anybody could write one was a model's, and falsy is the honest
+   * reading of a column that did not exist when the row was made.
+   */
+  { table: "plan_beats", column: "by_user", ddl: "ALTER TABLE plan_beats ADD COLUMN by_user INTEGER" },
+
+  /*
    * WHAT A RECORDED TAKE TURNED OUT TO BE.
    *
    * `dur_ms` came from an x-duration-ms header — a number the BROWSER sent
