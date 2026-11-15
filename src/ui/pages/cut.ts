@@ -2227,6 +2227,13 @@ export function renderBlockSlice(
 /**
  * ADD A VIDEO TO THIS CUT.
  *
+ * The label is the prototype's own — "Add footage", the heading on its attach
+ * panel. It read "not in this cut" until the gate was run against a database
+ * that had drifted: three videos unattached to the open project, which is the
+ * only state this label renders in, and neither CI's fresh fixture nor
+ * render-pages.mjs had ever produced it. So the words were in the product and
+ * had been read by no check on any machine. There is a fixture for it now.
+ *
  * The same gesture as attaching before a project exists, after it does. Its
  * moments are judged by the rules already on the board the moment it lands —
  * which is what "they join left out until a rule or your hand keeps them"
@@ -2235,7 +2242,7 @@ export function renderBlockSlice(
 function addToCut(d: CutData): string {
   if (!d.addable.length) return "";
   return `<div style="margin-top:14px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-    <span style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">not in this cut</span>
+    <span style="flex:none;font-size:${SIZE.meta};color:${C.ink45};font-family:${FONT.mono}">Add footage</span>
     ${d.addable
       .map(
         (s) => `<button class="add-source" type="button" data-source="${esc(s.id)}"

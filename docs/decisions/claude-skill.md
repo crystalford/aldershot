@@ -118,6 +118,33 @@ visibly rather than silently.
 
 **Not before launch, and the order matters when it happens.**
 
+> **AMENDED 15 Nov 2026 — narrowly overturned, and here is the argument.**
+>
+> The strategic risk above said "moderate and rising". It has arrived and it is
+> now specific: a free, competent model-driven ffmpeg orchestrator exists, and
+> its own documentation positions the planner as somebody else's job. Waiting
+> costs the position rather than the time, so "not before launch" no longer
+> holds as written.
+>
+> What was right about it was the part about **front doors**, and exploration
+> made that cost concrete: there is no machine authentication anywhere in this
+> codebase. `requireUser` is a cookie read and nothing else, and `src/auth.ts`
+> has no bearer path. An agent endpoint would need one built from nothing,
+> which is the expensive, one-directional half of the cost above.
+>
+> So only the part that opens **no new door** is built: `/r/:token` was already
+> public, already revocable, and already a deliberate publishing act, so
+> serving its existing contents as data adds no reachable state and no new
+> consent surface. That is `/r/:token.json`, and it answers "the thing that
+> actually blocks it" above — the receipt cannot be detached from its subject,
+> because the only way to hold one is to hold a link the maker can switch off.
+>
+> The four tools below still wait, for the amended reason: not that it is too
+> early, but that each needs an authentication system that does not exist. With
+> the JSON receipt shipped, a wrapper can be written OUTSIDE this repo against
+> public receipt URLs — which is the better side of the line anyway. The asset
+> here is the evidence, not the adapter.
+
 1. `get_receipts` first. It is the thing nothing else has, it is read-only,
    and it is the one that makes the case for the rest.
 2. `search_moments` second, returning bands and reasons, never scores.

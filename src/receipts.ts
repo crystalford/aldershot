@@ -30,8 +30,9 @@
  */
 
 import { noDevNotes } from "./ui/shell.ts";
-import type { CueEntry } from "./cuesheet.ts";
-import type { DisputeEntry } from "./dispute.ts";
+import { cueSheetFor, type CueEntry } from "./cuesheet.ts";
+import { disputeFor, type DisputeEntry } from "./dispute.ts";
+import { getProject } from "./projects.ts";
 
 /** How a verification state reads to somebody who has never heard of Scout. */
 export function verifiedSays(verify: string | null | undefined): string {
@@ -204,4 +205,47 @@ export function receiptsHtml(p: ReceiptsPage): string {
     whether the words are there, at that time, in that source.
   </footer>
 </main></body></html>`);
+}
+
+/**
+ * THE PUBLISHED RECEIPT, BUILT ONCE, FOR BOTH READERS.
+ *
+ * A published receipt has two readers: the person who followed a link from a
+ * video description, and a machine handed the same link that wants the rows
+ * rather than the page. They read the SAME object. `receiptsPage` above is the
+ * only thing in this codebase that decides what a receipt contains, so there
+ * is no second query here to forget to leave a score out of — invariant 3 is
+ * held by the shape of this function rather than by anybody remembering it.
+ *
+ * It lives here rather than beside its routes so that it can be imported: the
+ * routes are in `index.ts`, which cannot be loaded by a test because its
+ * import graph reaches a `.woff2`, and a builder nothing can call is a builder
+ * nothing can check.
+ *
+ * Returns null for every reason a reader should be told nothing: no such
+ * token, a revoked one, or a project that has since gone. Callers turn that
+ * into the same 404 in their own content type, which is the point — "never
+ * existed" and "taken down" must not be distinguishable from outside.
+ */
+export async function publishedReceipt(db: D1Database, token: string): Promise<ReceiptsPage | null> {
+  const row = await db
+    .prepare(`SELECT project_id, user_id FROM receipt_pages WHERE token=? AND revoked_at IS NULL`)
+    .bind(token)
+    .first<{ project_id: string; user_id: string }>();
+  if (!row) return null;
+
+  const project = await getProject(db, row.project_id, row.user_id);
+  if (!project) return null;
+
+  const planRow = await db
+    .prepare(`SELECT claim FROM plans WHERE project_id=? LIMIT 1`)
+    .bind(project.id)
+    .first<{ claim: string | null }>();
+
+  return receiptsPage({
+    title: project.title || "Untitled",
+    claim: planRow?.claim ?? null,
+    external: await disputeFor(db, project.id),
+    pictures: await cueSheetFor(db, project.id),
+  });
 }

@@ -150,5 +150,43 @@ export function schema(db: DatabaseSync): void {
       bytes INTEGER, created_at INTEGER, PRIMARY KEY (source_id, part_number));
     CREATE TABLE auth_tokens (token_hash TEXT PRIMARY KEY, email TEXT,
       expires_at INTEGER, created_at INTEGER);
+
+    /*
+     * THE PUBLISHED RECEIPT AND EVERYTHING IT READS.
+     *
+     * publishedReceipt is the one function whose whole job is to build what
+     * strangers and machines see, and it joins across seven tables to do it.
+     * Testing it against canned rows would test nothing: the join IS the
+     * behaviour, and what must not appear on a public page is decided by which
+     * columns these queries select.
+     */
+    CREATE TABLE receipt_pages (project_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+      token TEXT NOT NULL, published_at INTEGER NOT NULL, revoked_at INTEGER);
+    CREATE TABLE plans (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic TEXT NOT NULL,
+      claim TEXT, state TEXT NOT NULL DEFAULT 'beats', project_id TEXT,
+      created_at INTEGER NOT NULL);
+    CREATE TABLE scout_missions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+      ledger_id TEXT NOT NULL, in_s REAL NOT NULL, out_s REAL NOT NULL, quote TEXT NOT NULL,
+      url_at_in TEXT, state TEXT NOT NULL DEFAULT 'scouted', how TEXT, verdict TEXT,
+      coverage REAL, offset_s REAL, fail_reason TEXT, created_at INTEGER NOT NULL,
+      expires_at INTEGER);
+    CREATE TABLE scout_ledger (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, beat_id TEXT,
+      role TEXT NOT NULL, source_id TEXT NOT NULL, quote_exact TEXT NOT NULL,
+      quote_norm TEXT NOT NULL, word_span_json TEXT NOT NULL, t_start_s REAL NOT NULL,
+      t_end_s REAL NOT NULL, context_before TEXT, context_after TEXT, found_by_family TEXT,
+      verify TEXT NOT NULL DEFAULT 'rejected', match_score REAL,
+      crowd_signals_n INTEGER NOT NULL DEFAULT 0, original_of TEXT,
+      is_compilation_only INTEGER NOT NULL DEFAULT 0, model_version TEXT,
+      verified_at INTEGER, created_at INTEGER NOT NULL);
+    CREATE TABLE scout_sources (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, adapter TEXT NOT NULL,
+      external_id TEXT NOT NULL, url TEXT NOT NULL, title TEXT, channel TEXT,
+      published_at INTEGER, duration_s INTEGER, kind TEXT,
+      transcript TEXT NOT NULL DEFAULT 'none', transcript_url TEXT, licence TEXT,
+      triage_score REAL, scanned INTEGER NOT NULL DEFAULT 0, yield_n INTEGER NOT NULL DEFAULT 0,
+      dead_end INTEGER NOT NULL DEFAULT 0, fetched_at INTEGER NOT NULL, expires_at INTEGER,
+      UNIQUE(run_id, adapter, external_id));
+    CREATE TABLE scout_attributions (id TEXT PRIMARY KEY, ledger_id TEXT NOT NULL,
+      credit_text TEXT NOT NULL, url TEXT, platform TEXT, date INTEGER, chain_parent TEXT,
+      removed INTEGER NOT NULL DEFAULT 0);
   `);
 }

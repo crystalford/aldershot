@@ -307,6 +307,32 @@ const out = [
     html: renderCut(cutData({ footageTab: "made", projects: [] })),
   },
   {
+    /*
+     * A CUT WITH VIDEOS IT COULD STILL TAKE.
+     *
+     * `addToCut` returns "" without `addable`, and every fixture here had it
+     * empty, so its label had never been rendered by this file. CI's seed
+     * attaches everything it creates, so the crawl had never rendered it
+     * either. It was found by running the gate against a database that had
+     * drifted across sessions — which is luck, not a check.
+     */
+    label: "renderCut (footage · moments, more to add)",
+    html: renderCut(
+      cutData({
+        /* The MOMENTS tab, which is where addToCut renders — footageSurface
+           sends "videos" to videosInCut and never calls it. The first version
+           of this fixture said "videos", rendered no add row, and `copy`
+           printed green over a page that did not contain the label it was
+           added for. */
+        footageTab: "moments",
+        addable: [
+          { id: "b", title: "The van" },
+          { id: "c", title: "The kitchen, second pass" },
+        ],
+      }),
+    ),
+  },
+  {
     label: "receiptsPage",
     html: receiptsHtml(
       receiptsPage({
@@ -332,7 +358,7 @@ const out = [
  * fragile for an obvious reason — the fixtures below have labels of their own,
  * and the count was wrong twice before this replaced it.
  */
-const EXPECTED = 18;
+const EXPECTED = 19;
 if (out.length !== EXPECTED) {
   console.error(
     `render-pages: EXPECTED ${EXPECTED} pages and built ${out.length}. ` +

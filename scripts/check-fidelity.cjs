@@ -3067,6 +3067,88 @@ function checkCopy() {
   }
 }
 
+/**
+ * ONE CONSTRUCTION OF WHAT A RECEIPT CONTAINS.
+ *
+ * A published receipt has two readers — the page a stranger reads and the JSON
+ * a machine reads — and the only reason the second one is safe is that it is
+ * the SAME OBJECT as the first. `receiptsPage` decides what a receipt contains;
+ * `publishedReceipt` is the only thing that calls it; both routes render what
+ * that returns.
+ *
+ * The way this breaks is not somebody printing a score on a public page. It is
+ * somebody adding a second builder for the machine reader — a slightly wider
+ * SELECT, "since a machine can handle the raw rows" — and the two drifting
+ * until the data says more than the page. That has a name in this repo: the
+ * cut that is stored as an outcome instead of re-produced. Same mistake,
+ * different table.
+ *
+ * So the rule is structural and blunt: exactly one call site, and both routes
+ * hand the builder's own value out without reshaping it.
+ */
+function checkReceiptJson() {
+  const src = walk(path.join(ROOT, 'src'))
+    .map((f) => [f, fs.readFileSync(f, 'utf8')])
+    /* Comments stripped, for the reason `claims` learned the hard way: a note
+       describing a construction is not a construction. */
+    .map(([f, t]) => [
+      f,
+      t
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .split('\n')
+        .filter((l) => !/^\s*\/\//.test(l))
+        .join('\n'),
+    ]);
+
+  const bad = [];
+
+  const builders = src.filter(([, t]) => /\breceiptsPage\s*\(/.test(t)).map(([f]) => path.relative(ROOT, f));
+  if (builders.length !== 1 || !builders[0].endsWith('receipts.ts')) {
+    bad.push(
+      `receiptsPage() is called in ${builders.length} file(s) (${builders.join(', ') || 'none'}) — ` +
+        'it must be called in src/receipts.ts and nowhere else, or two readers can be served ' +
+        'two different ideas of what a receipt contains',
+    );
+  }
+
+  const index = (src.find(([f]) => f.endsWith(path.join('src', 'index.ts'))) || [, ''])[1];
+
+  /* Both routes, and both reading the one builder. */
+  const json = index.match(/app\.get\("\/r\/:file\{[^"]*\}",[\s\S]*?\n\}\);/);
+  const html = index.match(/app\.get\("\/r\/:token",[\s\S]*?\n\}\);/);
+  if (!json) bad.push('no .json receipts route in src/index.ts — the machine-readable receipt is gone');
+  if (!html) bad.push('no /r/:token receipts page route in src/index.ts');
+
+  for (const [name, body] of [
+    ['the .json route', json && json[0]],
+    ['the page route', html && html[0]],
+  ]) {
+    if (!body) continue;
+    if (!/\bpublishedReceipt\s*\(/.test(body)) {
+      bad.push(`${name} does not call publishedReceipt — it is building a receipt of its own`);
+    }
+    /* It must hand that value out whole. A key from the receipt's own shape
+       appearing inside the handler means it was taken apart and reassembled. */
+    const reshaped = /\b(receipts|pictures|checked)\s*:/.exec(body);
+    if (reshaped) {
+      bad.push(
+        `${name} mentions "${reshaped[1]}:" — it is reshaping the receipt instead of serving it, ` +
+          'which is how the page and the data start to disagree',
+      );
+    }
+  }
+
+  if (bad.length) {
+    fail(
+      'receipt-json',
+      'The receipt a machine reads and the receipt a person reads must be the same object.',
+      bad.join('\n'),
+    );
+  } else {
+    pass('receipt-json', 'one receipt builder, two renderings of it, neither reshaping the other');
+  }
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -3079,6 +3161,7 @@ checkWiring();
 checkClaims();
 checkNotes();
 checkCopy();
+checkReceiptJson();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

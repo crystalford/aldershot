@@ -102,7 +102,7 @@ import {
 import { buildManifest, manifestJson, type LeftOut, type ManifestSource } from "./manifest.ts";
 import { asCandidateModel, isEffort, isModelId } from "./eval-adversarial.ts";
 import { judge } from "./judge.ts";
-import { receiptsHtml, receiptsPage } from "./receipts.ts";
+import { publishedReceipt, receiptsHtml } from "./receipts.ts";
 import { applyRule, compute, effectLine, fmt as fmtSecs, isOrder, orderText, ruleKey, toFootageSet, type Order, type Rule } from "./rules.ts";
 import { momentTags } from "./moment-tags.ts";
 import { aspectOf, clipCountsBySource, createSource, editCountsBySource, getSegments, getSource, listSources, isSourceSort, playableKey, type SourceSort, reapGhostSources } from "./sources.ts";
@@ -4333,33 +4333,44 @@ app.get("/api/projects/:id/manifest", async (c) => {
  * A receipt that could drift from the ledger behind it is not a receipt, and
  * a maker who corrects an attribution should not have to republish.
  */
+/**
+ * THE SAME RECEIPT, AS DATA.
+ *
+ * The editing layer is a commodity and the evidence is not. This route is the
+ * evidence, addressable: a cut's receipts, citable by URL, readable by anything,
+ * and revocable by the maker at any moment. That last property is the one that
+ * matters and the reason this is a URL rather than a payload somebody can keep
+ * — a receipt that can be detached from its subject is not a receipt, so the
+ * only way to hold one is to hold a link the maker can switch off.
+ *
+ * A SEPARATE URL RATHER THAN `Accept` NEGOTIATION. The HTML below is served
+ * `cache-control: public, max-age=300` with no `Vary`, so a shared cache that
+ * had seen one content type would serve it to readers who asked for the other.
+ * Adding `Vary: Accept` would fix that and give up most of the caching; a
+ * second address costs nothing and can be pasted into a citation.
+ *
+ * CORS is open because the resource is public by token and this route reads no
+ * cookie, so there is no credential for a browser to attach to a cross-origin
+ * read. It is registered before the page route: no token contains a dot.
+ */
+app.get("/r/:file{[0-9a-z]+\\.json}", async (c) => {
+  await ensureV2Schema(c.env.DB);
+  const page = await publishedReceipt(c.env.DB, c.req.param("file").replace(/\.json$/, ""));
+  if (!page) return c.json({ error: "There is no receipts page here." }, 404);
+  return c.json(page, 200, {
+    "cache-control": "public, max-age=300",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex",
+    "access-control-allow-origin": "*",
+  });
+});
+
 app.get("/r/:token", async (c) => {
   await ensureV2Schema(c.env.DB);
-  const token = c.req.param("token");
-
-  const page = await c.env.DB
-    .prepare(`SELECT project_id, user_id FROM receipt_pages WHERE token=? AND revoked_at IS NULL`)
-    .bind(token)
-    .first<{ project_id: string; user_id: string }>();
+  const page = await publishedReceipt(c.env.DB, c.req.param("token"));
   if (!page) return c.text("There is no receipts page here.", 404);
 
-  const project = await getProject(c.env.DB, page.project_id, page.user_id);
-  if (!project) return c.text("There is no receipts page here.", 404);
-
-  const planRow = await c.env.DB
-    .prepare(`SELECT claim FROM plans WHERE project_id=? LIMIT 1`)
-    .bind(project.id)
-    .first<{ claim: string | null }>();
-
-  const body = receiptsHtml(
-    receiptsPage({
-      title: project.title || "Untitled",
-      claim: planRow?.claim ?? null,
-      external: await disputeFor(c.env.DB, project.id),
-      pictures: await cueSheetFor(c.env.DB, project.id),
-    }),
-  );
-  return new Response(body, {
+  return new Response(receiptsHtml(page), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       /* Fresh enough that a corrected credit shows up, cheap enough that a
