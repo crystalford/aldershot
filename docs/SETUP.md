@@ -180,11 +180,28 @@ workflow hard-fails if it ever appears as a real var in `wrangler.jsonc`.
 
 If you clone this repo fresh, `.dev.vars` won't be there (it's gitignored),
 and local `wrangler dev` will show you the signed-out landing page. Create
-it with one line to get the app back:
+it with two lines to get the app back:
 
 ```
-echo 'DEV_LOGIN_EMAIL="chrisrobtelford@gmail.com"' > .dev.vars
+DEV_LOGIN_EMAIL="you@example.com"
+OWNER_EMAIL="you@example.com"
 ```
+
+**Both lines, and the same address in each.** `DEV_LOGIN_EMAIL` is who you
+are signed in as; `OWNER_EMAIL` is which address the product treats as the
+owner, and the owner-only surfaces — the cost panel, `/api/preflight`, the
+receipts admin page — answer 404 to anybody else. With only the first line
+the app loads and those three pages are simply not there, which looks like a
+routing bug and isn't one.
+
+`OWNER_EMAIL` was a string literal in `src/user.ts` until 15 Nov 2026. It
+became a secret when this repository went public: a hardcoded personal
+address is harmless among collaborators and is an address harvester's
+breakfast on a public repo. In production it is a Cloudflare secret, and
+until it is set **no account is the owner** — the product works, there is no
+cost panel, and setting it later promotes the account on the next page load.
+The deploy readout says `OFF The owner's account — needs OWNER_EMAIL` while
+it is missing.
 
 ---
 

@@ -89,6 +89,20 @@ That is the whole dependency:
 
 The `send_email` binding is already in `wrangler.jsonc`; nothing else to wire.
 
+### And `OWNER_EMAIL`, while you are in there
+
+Repo secret **`OWNER_EMAIL`** — your own address, the one you will sign in
+with. It decides which account sees the cost panel and is never capped.
+
+It used to be a string literal in `src/user.ts`, which was fine until this
+repository went public on 15 Nov 2026; a personal address sitting in plain
+text at HEAD is what address harvesters read. Until the secret is set, **no
+account is the owner**: the product works normally, there is no cost panel,
+and every cap applies to your account like anyone else's. Setting it
+afterwards is enough — `reconcileUser` promotes the row on the next page
+load, so you do not need to sign up again. Every deploy prints
+`OFF The owner's account — needs OWNER_EMAIL` until it is there.
+
 > Why not Resend, MailChannels, or Email Routing? Resend works and its free
 > tier is comparable, but it is another account, another key and another bill
 > for one email. MailChannels ended its free Cloudflare tier in 2024.
@@ -172,7 +186,7 @@ An unbuyable plan should not offer to sell.
   `.dev.vars`, and the deploy hard-fails if it reappears in `wrangler.jsonc`.
 - Caps are enforced before work starts, not after: Free 300 source minutes,
   Studio 1,200. `checkCap` refuses and states the cap.
-- The owner account (`chrisrobtelford@gmail.com`) is on Studio by identity and
+- The owner account (whichever address `OWNER_EMAIL` is set to) is on Studio by identity and
   is never downgraded by a Stripe event.
 
 ## Known and deliberately not fixed for launch

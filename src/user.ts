@@ -28,23 +28,51 @@ export interface User {
 }
 
 /**
- * The one account that sees the cost panel.
+ * Whether an address is the owner's.
  *
  * Matched on the address rather than a flag passed in at signup, so the first
  * person to type it is the owner and nobody else can claim it by registering
  * a lookalike.
+ *
+ * THE ADDRESS ITSELF IS NOT IN THIS FILE ANY MORE. It was a string literal
+ * here, which was harmless while the repository was private and is an
+ * owner's personal address published in plain text now that it is public.
+ * It comes from env.OWNER_EMAIL, which is a secret; src/env.ts says why it is
+ * a secret where MAIL_FROM is not.
+ *
+ * AN EMPTY OWNER IS NOBODY, NEVER EVERYBODY. The guard is the whole point:
+ * `email === ownerEmail` with both unset would make every account the owner
+ * the moment the secret went missing. Unset means no owner, which reconcileUser
+ * repairs on the next page load once the secret is set.
+ *
+ * The comparison is exact, as it was — deliberately not case-folded. A
+ * provider that treats local parts as case-sensitive would otherwise let a
+ * case variant of the owner's address claim the owner's account.
  */
-const OWNER_EMAIL = "chrisrobtelford@gmail.com";
+function isOwnerEmail(email: string, ownerEmail: string | undefined): boolean {
+  /*
+   * BLANK IS NOBODY. `undefined` is the easy half and was all this guard
+   * caught at first — `email === undefined` is false for any string, so
+   * removing the clause entirely broke nothing a test could see.
+   *
+   * The half that bites is a secret that EXISTS and is empty: a repo secret
+   * created blank, a `wrangler secret put` that took an empty line, a trailing
+   * newline trimmed to nothing. Then `"" === ""` is true and an account with
+   * no address is the owner. Trimmed on both sides so whitespace is blank too.
+   */
+  if (!ownerEmail?.trim() || !email.trim()) return false;
+  return email === ownerEmail;
+}
 
 /**
  * A first name from an address — only when the address actually contains one.
  *
- * "chrisrobtelford@gmail.com" has no separator, so splitting on [._-] returned
- * the whole local part and the greeting read "Good morning, Chrisrobtelford."
- * Returning null instead lets the caller greet without a name, which is better
- * than greeting with a wrong one.
+ * A run-on local part with no separator ("alexanderfinch@") returned the whole
+ * thing when split on [._-], and the greeting read "Good morning,
+ * Alexanderfinch." Returning null instead lets the caller greet without a
+ * name, which is better than greeting with a wrong one.
  *
- * A separated address ("chris.telford@") still yields "Chris", and anything a
+ * A separated address ("alexander.finch@") still yields "Alexander", and anything a
  * provider tells us outright beats guessing entirely.
  */
 function nameFromEmail(email: string): string | null {
@@ -87,7 +115,13 @@ function nameFromEmail(email: string): string | null {
  * Each repair is its own guard clause: cheap when there is nothing to do, and
  * a write only when the row actually disagrees.
  */
-export async function reconcileUser(db: D1Database, user: User): Promise<User> {
+export async function reconcileUser(
+  db: D1Database,
+  user: User,
+  /* env.OWNER_EMAIL. Required rather than optional so a caller that forgets
+     it fails to compile instead of quietly demoting the owner. */
+  ownerEmail: string | undefined,
+): Promise<User> {
   let out = user;
 
   /*
@@ -95,7 +129,7 @@ export async function reconcileUser(db: D1Database, user: User): Promise<User> {
    * or before this address was the owner's — leaves is_owner at 0, and then
    * every cap applies however the checks are written.
    */
-  if (out.email === OWNER_EMAIL && (!out.is_owner || out.plan !== "studio")) {
+  if (isOwnerEmail(out.email, ownerEmail) && (!out.is_owner || out.plan !== "studio")) {
     await db.prepare(`UPDATE v2_users SET is_owner=1, plan='studio' WHERE id=?`).bind(out.id).run();
     out = { ...out, is_owner: 1, plan: "studio" };
   }
@@ -130,6 +164,9 @@ export async function getUserById(db: D1Database, id: string): Promise<User | nu
 export async function userForEmail(
   db: D1Database,
   emailRaw: string,
+  /* env.OWNER_EMAIL. Before providedName, and required, so every call site had
+     to be revisited when the address stopped being a literal in this file. */
+  ownerEmail: string | undefined,
   /* A name the identity provider gave us. Always better than deriving one. */
   providedName?: string | null,
 ): Promise<User> {
@@ -146,10 +183,10 @@ export async function userForEmail(
     }
     /* Signing in is the other moment worth reconciling on, so a stale row is
        corrected before anything reads it — not only once Home is opened. */
-    return await reconcileUser(db, existing);
+    return await reconcileUser(db, existing, ownerEmail);
   }
 
-  const isOwner = email === OWNER_EMAIL;
+  const isOwner = isOwnerEmail(email, ownerEmail);
   const user: User = {
     id: ulid(),
     email,
@@ -183,6 +220,6 @@ export async function currentUser(env: AuthEnv, cookieHeader?: string): Promise<
     return null;
   }
 
-  if (env.DEV_LOGIN_EMAIL) return await userForEmail(env.DB, env.DEV_LOGIN_EMAIL);
+  if (env.DEV_LOGIN_EMAIL) return await userForEmail(env.DB, env.DEV_LOGIN_EMAIL, env.OWNER_EMAIL);
   return null;
 }

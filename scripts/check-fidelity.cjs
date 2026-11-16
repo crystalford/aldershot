@@ -3678,6 +3678,102 @@ function checkTimes() {
   }
 }
 
+/*
+ * ── A personal address in a public repository ──────────────────────────────
+ *
+ * This repository went public on 15 Nov 2026 to get out of an Actions minutes
+ * limit, which is a sound trade and changes what a committed string costs.
+ * The owner's own address was a literal in src/user.ts, in eight test
+ * fixtures and in two documents — harmless while only collaborators could
+ * read it, and a personal address published in plain text at the top of a
+ * file afterwards. Plain text at HEAD is exactly what an address harvester
+ * reads; it does not brute-force anything.
+ *
+ * Removing it from HEAD does NOT un-publish it — it is in the commit history
+ * for good, and anyone who has cloned has it. What this stops is the next
+ * one, which is the only part still available to us.
+ *
+ * THE RULE IS NARROW ON PURPOSE. Not "no email addresses": this repo is full
+ * of them and should be. `someone@example.com` is a fixture, `me@x.com` is
+ * shorthand in a test, `podcast@darknetdiaries.com` and `help@prx.org` are
+ * contact addresses those organisations publish themselves and are Scout
+ * research material. What none of them is, is somebody's personal mailbox at
+ * a consumer mail provider — and that is the whole list below. A rule wide
+ * enough to catch every address would have been switched off within a week.
+ */
+const CONSUMER_MAIL = [
+  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'hotmail.co.uk',
+  'live.com', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com',
+  'icloud.com', 'me.com', 'mac.com', 'aol.com',
+  'proton.me', 'protonmail.com', 'pm.me', 'gmx.com', 'gmx.de', 'yandex.ru',
+  'zoho.com', 'fastmail.com', 'mail.com', 'inbox.com', 'hey.com',
+];
+
+function checkAddresses() {
+  const bad = [];
+  let scanned = 0;
+
+  /*
+   * EVERY TRACKED TEXT FILE, not only src/. The address was in two documents
+   * and six test fixtures as well, and a rule that reads one directory would
+   * have reported green about the other nine occurrences.
+   *
+   * This file declares the provider list, so it excludes itself — a rule
+   * whose haystack includes its own declarations is the mistake `reachable`
+   * made and never once fired.
+   */
+  const dirs = ['src', 'test', 'docs', 'scripts', 'container', 'migrations', '.github'];
+  const SELF = path.relative(ROOT, __filename);
+
+  for (const dir of dirs) {
+    const full = path.join(ROOT, dir);
+    if (!fs.existsSync(full)) continue;
+    for (const file of walkText(full)) {
+      const rel = path.relative(ROOT, file);
+      if (rel === SELF) continue;
+      scanned += 1;
+      const text = fs.readFileSync(file, 'utf8');
+      for (const m of text.matchAll(/[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g)) {
+        const domain = m[1].toLowerCase();
+        if (!CONSUMER_MAIL.includes(domain)) continue;
+        const line = text.slice(0, m.index).split('\n').length;
+        bad.push(
+          `${rel}:${line}: ${m[0]} — a personal mailbox, committed to a public repository. ` +
+            'Addresses that identify a person belong in a secret (see OWNER_EMAIL in src/env.ts) ' +
+            'or in a fixture at example.com.',
+        );
+      }
+    }
+  }
+
+  /* Also the two root documents a stranger reads first. */
+  for (const name of ['README.md', 'CLAUDE.md', 'wrangler.jsonc', 'package.json']) {
+    const full = path.join(ROOT, name);
+    if (!fs.existsSync(full)) continue;
+    scanned += 1;
+    const text = fs.readFileSync(full, 'utf8');
+    for (const m of text.matchAll(/[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g)) {
+      if (!CONSUMER_MAIL.includes(m[1].toLowerCase())) continue;
+      bad.push(`${name}: ${m[0]} — a personal mailbox, committed to a public repository.`);
+    }
+  }
+
+  if (!scanned) bad.push('no files were scanned at all, so this rule checked nothing');
+
+  if (bad.length) fail('addresses', "Somebody's personal address is in the repository.", bad.join('\n'));
+  else pass('addresses', `${scanned} files, no personal mailbox at any of ${CONSUMER_MAIL.length} consumer providers`);
+}
+
+/** Text files worth reading for an address. Skips binaries and lock files. */
+function walkText(dir, out = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walkText(p, out);
+    else if (/\.(ts|tsx|js|cjs|mjs|json|jsonc|md|sql|yml|yaml|sh|py|html|css|txt)$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+
 checkTemplate();
 checkContent();
 checkWired();
@@ -3694,6 +3790,7 @@ checkReceiptJson();
 checkRefusals();
 checkRegister();
 checkTimes();
+checkAddresses();
 
 checkStrings().then(() => {
   /* "All checks passed" having skipped one is the same lie as check.sh's

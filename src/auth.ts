@@ -34,6 +34,8 @@ export interface AuthEnv {
   EMAIL?: { send(message: { to: string; from: string; subject: string; text?: string; html?: string }): Promise<unknown> };
   MAIL_FROM?: string;
   APP_ORIGIN?: string;
+  /** The owner's address, as a secret. See src/env.ts for why. */
+  OWNER_EMAIL?: string;
   /**
    * Development only. When set, an unauthenticated request is treated as this
    * email instead of being bounced to the landing page.

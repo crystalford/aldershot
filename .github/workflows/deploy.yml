@@ -55,6 +55,7 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -182,6 +183,7 @@ jobs:
           # — it appears in every message — but it is per-deployment, so it
           # rides with the rest rather than being hardcoded.
           put_secret MAIL_FROM "${MAIL_FROM:-}"
+          put_secret OWNER_EMAIL "${OWNER_EMAIL:-}"
           put_secret ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}"
           # APP_ORIGIN is NOT here any more: it is https://aldershot.io, a
           # public URL, and it is committed in wrangler.jsonc's vars. It used
