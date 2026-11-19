@@ -75,12 +75,39 @@ async function render(encoder, url, aspect) {
   }).then((r) => r.json());
   if (!started.id) throw new Error("the encoder refused the plan: " + JSON.stringify(started));
 
+  /*
+   * POLLED ON A FIELD THE ENCODER DOES NOT HAVE, for as long as this file has
+   * existed.
+   *
+   * /render/status answers { stage, pct, done, total, error, ready } — see
+   * container/render.mjs:746 and the header at line 8. There is no `state`.
+   * So `s.state === "done"` was never true, `s.state === "failed"` was never
+   * true, and this loop ran all ninety iterations every single time before
+   * falling through to fetch a file that had been ready since about the
+   * second second. Two renders, ninety seconds each: the check took 3m02s to
+   * do five seconds of work, and passed, so nothing ever said so.
+   *
+   * `done` would have been no better — in this API it is a COUNT of finished
+   * parts, so it is truthy for a render still in progress.
+   *
+   * AND A FAILURE WAS INVISIBLE. s.error is the encoder saying what went
+   * wrong; nothing read it, so a failed render waited the full ninety seconds
+   * and then reported "no file came back" — the symptom, two minutes after
+   * the cause was available in plain words.
+   *
+   * Exhausting the loop is now an error rather than a shrug. If this ever
+   * stops matching the encoder again, it says so in a second instead of
+   * costing three minutes and saying nothing.
+   */
+  let ready = false;
   for (let i = 0; i < 90; i++) {
     const s = await fetch(`${BASE}/render/status?id=${started.id}`).then((r) => r.json());
-    if (s.state === "done") break;
-    if (s.state === "failed") throw new Error(s.error || "the render failed");
+    if (s.error) throw new Error("the render failed: " + s.error);
+    if (s.ready) { ready = true; break; }
     await sleep(1000);
   }
+  if (!ready) throw new Error("the encoder never reported ready — 90s of polling and no file");
+
   const out = path.join(DIR, `out-${aspect.replace(":", "x")}.mp4`);
   const res = await fetch(`${BASE}/render/result?id=${started.id}`);
   if (!res.ok) throw new Error("no file came back");
