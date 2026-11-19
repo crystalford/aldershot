@@ -154,12 +154,31 @@ jobs:
       # is just a red build. `set -o pipefail` as well, because the version
       # lines are worth reading and a pipeline that cannot fail is what this
       # whole comment is about.
+      #
+      # AND apt MUST NOT BE ABLE TO HANG, which the first version of this
+      # could. Measured across three consecutive runs of identical code:
+      # 11s, 55s, then over ten minutes still going, on a step whose whole
+      # job is to make one binary present. The runner boots
+      # unattended-upgrades, apt blocks on the dpkg lock, and `-qq` means it
+      # does so in silence — a step that cannot fail, replaced by a step that
+      # cannot finish, which is not an improvement.
+      #
+      # DPkg::Lock::Timeout turns an indefinite block into a bounded wait and
+      # then an error. timeout-minutes is the backstop under that: five
+      # minutes to install one package is already pathological, and failing
+      # at five is better than a 30-minute job timeout that reports nothing.
+      # The install is no longer -qq, so the log says what it is doing while
+      # it does it.
       - name: ffmpeg
+        timeout-minutes: 5
         run: |
           set -euo pipefail
-          if ! command -v ffmpeg > /dev/null || ! command -v ffprobe > /dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq ffmpeg
+          if command -v ffmpeg > /dev/null && command -v ffprobe > /dev/null; then
+            echo "already on the image"
+          else
+            echo "not on the image — installing"
+            sudo apt-get update -o DPkg::Lock::Timeout=120
+            sudo apt-get install -y -o DPkg::Lock::Timeout=120 ffmpeg
           fi
           command -v ffmpeg
           command -v ffprobe
