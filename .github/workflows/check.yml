@@ -54,6 +54,17 @@ jobs:
         run: |
           {
             echo "DEV_LOGIN_EMAIL=ci@aldershot.invalid"
+            # THE SAME ADDRESS AS THE OWNER, or the crawl stops seeing a
+            # third of the product. OWNER_EMAIL became a secret when the
+            # repository went public (src/env.ts), and this file was not
+            # updated with it — so from that commit until this one, CI's user
+            # was signed in and was NOT the owner, and every owner-only
+            # surface answered 404 to the crawl: the cost panel,
+            # /api/preflight and the receipts admin page. Nothing failed,
+            # because a surface that is not reached is not a surface that
+            # disagrees with the prototype. Exactly the shape of defect this
+            # workflow spent the day fixing, introduced the same week.
+            echo "OWNER_EMAIL=ci@aldershot.invalid"
             # Where check:render finds the encoder, and where the encoder
             # fetches the fixture from. Both are written BEFORE wrangler
             # boots, because wrangler reads .dev.vars once at startup.
