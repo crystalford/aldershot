@@ -117,10 +117,43 @@ jobs:
       # header, including the person who kept reporting the gap.
       #
       # So the one thing that could never be verified now runs on every push.
-      # ffmpeg is already on ubuntu-latest — asserted rather than installed,
-      # so its absence is a named failure and not a mysterious one.
+      #
+      # EXCEPT IT DID NOT, FOR AS LONG AS ffmpeg HAS BEEN OFF THE RUNNER.
+      #
+      # This step was `ffmpeg -version | head -1 && ffprobe -version | head -1`,
+      # written to assert rather than install so that "its absence is a named
+      # failure and not a mysterious one". The shell here is `bash -e` with no
+      # pipefail, and a pipeline exits with the status of its LAST command — so
+      # `head` succeeded, the step went green, and the assertion could not fail
+      # under any circumstances:
+      #
+      #   $ bash -e -c 'notacommand -version | head -1 && echo PASSED'
+      #   bash: line 1: notacommand: command not found
+      #   PASSED
+      #   exit=0
+      #
+      # ffmpeg is not on ubuntu-latest any more. So for every run since that
+      # image changed, this step reported success and the two checks below
+      # printed "SKIPPED — ffmpeg is not on PATH" into a green log. The render
+      # check — the one the comment above calls the thing that could never be
+      # verified — has not run in CI since.
+      #
+      # INSTALLED, NOT ASSERTED. The original reasoning was sound when ffmpeg
+      # shipped with the image; it does not, and a named failure on every push
+      # is just a red build. `set -o pipefail` as well, because the version
+      # lines are worth reading and a pipeline that cannot fail is what this
+      # whole comment is about.
       - name: ffmpeg
-        run: ffmpeg -version | head -1 && ffprobe -version | head -1
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg > /dev/null || ! command -v ffprobe > /dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
 
       # check:render needs both; check:frame spawns its own and needs neither.
       - name: The encoder and the fixture host
@@ -144,20 +177,76 @@ jobs:
       # Twenty-four one-second colours in, known edits through the real API,
       # and the colours read back out of the finished file. "Second 7 was
       # struck" becomes "that colour is absent", with no OCR and no judgement.
+      #
+      # A SKIP IS A FAILURE HERE, which is the half that was missing.
+      #
+      # Both of these print "SKIPPED" and exit 0 when a dependency is absent.
+      # That is right on a laptop, where not everybody has ffmpeg, and wrong
+      # in CI, which is the ONLY place either of them ever runs — the gate
+      # does not call them and nobody runs them by hand. So the skip line went
+      # into a green log for months and said nothing.
+      #
+      # Grepping the output catches the whole class rather than today's
+      # reason: the next dependency that goes missing fails here instead of
+      # reporting success about work it did not do.
       - name: npm run check:render
-        run: npm run check:render
+        run: |
+          set -euo pipefail
+          npm run check:render 2>&1 | tee /tmp/render-check.out
+          if grep -q "SKIPPED" /tmp/render-check.out; then
+            echo "::error::check:render skipped, and CI is the only place it runs."
+            exit 1
+          fi
 
       # The 9:16 reframe, which is what Shorts depends on.
       - name: npm run check:frame
-        run: npm run check:frame
+        run: |
+          set -euo pipefail
+          npm run check:frame 2>&1 | tee /tmp/frame-check.out
+          if grep -q "SKIPPED" /tmp/frame-check.out; then
+            echo "::error::check:frame skipped, and CI is the only place it runs."
+            exit 1
+          fi
 
       # And the escape hatch, read by the real OpenTimelineIO rather than by
       # our own parser agreeing with itself.
+      #
+      # THE WHEEL, KEPT. Measured from the run-33 log: the step started at
+      # 00:09:01 and check-otio.cjs printed its first line at 00:10:22, so
+      # eighty-one of those eighty-two seconds were `pip install`, and the
+      # check itself took 0.17s. The same install takes one second on a
+      # machine whose Python has a prebuilt wheel — OpenTimelineIO is a C++
+      # extension, and when the runner's interpreter has no matching wheel pip
+      # compiles it from source on every single push.
+      #
+      # pip keeps what it builds, so caching ~/.cache/pip means it is compiled
+      # once and unpacked thereafter. Keyed on the interpreter as well as the
+      # version, because a wheel built for one Python is no use to another —
+      # which is the whole reason this is slow.
+      #
+      # The version is pinned for the same reason the key can exist at all: an
+      # unpinned dependency in a gate is a build that can change under you
+      # without a commit.
+      # The interpreter decides which wheel is usable, so it is in the key.
+      # Keyed on the workflow file instead, every edit to this file would have
+      # thrown the wheel away; keyed on the version alone, a runner image that
+      # bumped Python would rebuild from source for ever and never re-save,
+      # because a cache key is written once.
+      - name: Python version, for the cache key
+        id: py
+        run: echo "v=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the OpenTimelineIO wheel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: otio-0.18.1-${{ runner.os }}-py${{ steps.py.outputs.v }}
+
       - name: npm run check:otio
         run: |
           set -euo pipefail
           python3 -m venv /tmp/otio-venv
-          /tmp/otio-venv/bin/pip install -q opentimelineio
+          /tmp/otio-venv/bin/pip install -q "opentimelineio==0.18.1"
           OTIO_PYTHON=/tmp/otio-venv/bin/python npm run check:otio
 
       # What the dev server said while all of that ran. Only on a failure,
@@ -198,8 +287,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── The layers the Dockerfile already separated, kept between runs ──
+      #
+      # container/Dockerfile splits torch, the 1.26 GB alignment model and
+      # align.py into their own layers precisely so editing one does not push
+      # the others again. In CI that bought nothing: a plain `docker build`
+      # starts from an empty layer store every run, so every run reinstalled
+      # torch and re-fetched the model. Measured at 2m55s on run 31, on a
+      # commit that touched neither.
+      #
+      # buildx with the Actions cache is what makes that layering pay. The
+      # first run after this lands is NOT faster — it builds cold and then
+      # exports the cache. Every run after it reuses whatever the change did
+      # not invalidate, which for a typical commit is all of it.
+      #
+      # `load: true` puts the image in the local daemon under the same tag, so
+      # the two checks below are unchanged and still run against a real
+      # container rather than against a cache entry.
+      - uses: docker/setup-buildx-action@v3
+
       - name: Build the render image
-        run: docker build -t aldershot-render container/
+        uses: docker/build-push-action@v6
+        with:
+          context: container/
+          tags: aldershot-render
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # And it serves. The image's CMD is `node render.mjs`, so a container
       # that builds and then cannot answer is a container that would fail on
