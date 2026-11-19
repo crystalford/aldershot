@@ -38,16 +38,22 @@ DNS.
 actually use, and unlike email it needs nothing you do not already have.
 
 - Google Cloud console → **OAuth client (Web)**.
-- Authorised redirect URI:
-  `https://aldershot.attenuate.workers.dev/auth/google/callback`
-  — the workers.dev URL is fine. Google accepts any https redirect URI, and
-  the session cookie is host-scoped (no `Domain` attribute), so workers.dev
-  being on the Public Suffix List does not affect it.
+- Authorised redirect URI — **exactly this, and nothing else**:
+  `https://aldershot.io/auth/google/callback`
 - Repo secrets `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 
-That is sign-up working, today. Swap the redirect URI for a real domain when
-you have one — the code builds it from `APP_ORIGIN`, falling back to whatever
-host the request arrived on, so nothing is hardcoded.
+**Why that URI and not the workers.dev one.** This said
+`https://aldershot.attenuate.workers.dev/auth/google/callback`, which was
+right when it was written and is wrong now. `APP_ORIGIN` became a committed
+var on 15 Nov 2026 and it is `https://aldershot.io`;
+`src/index.ts` builds the redirect from `c.env.APP_ORIGIN` and only falls
+back to the request's own host when that is unset. So the URI Google is sent
+is the aldershot.io one, and a client registered against workers.dev fails
+with `redirect_uri_mismatch` before anybody reaches a consent screen.
+
+That is sign-up working, today. The redirect is built from `APP_ORIGIN`, so
+changing the domain means changing that var and the registered URI together —
+nothing is hardcoded, and nothing reconciles the two for you either.
 
 Without these the Google button says so rather than failing.
 
