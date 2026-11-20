@@ -404,7 +404,12 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string, canMean: boolean):
  * instead of offering to make it again.
  */
 function momentCard(m: MomentRow): string {
-  const used = m.used_count > 0 ? `used in ${m.used_count} ${m.used_count === 1 ? "essay" : "essays"}` : null;
+  /* "edit", which is the product's own word for a finished thing — the card
+     beside this one says "N clips · N edits". It read "essay", which is one
+     of five project kinds and wrong for the other four, and no design draws
+     this line at all: the prototype has no "used in" anywhere, because
+     used_count was never incremented and the string could never render. */
+  const used = m.used_count > 0 ? `used in ${m.used_count} ${m.used_count === 1 ? "edit" : "edits"}` : null;
   const from = m.start_ms / 1000;
   const to = m.end_ms / 1000;
 

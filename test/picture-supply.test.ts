@@ -29,6 +29,7 @@ const TABLES = [
   "sources",
   "v2_projects",
   "v2_clips",
+  "beats",
   "documents",
   "v2_threads",
   "v2_clip_threads",
