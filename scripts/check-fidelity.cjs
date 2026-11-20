@@ -1026,6 +1026,29 @@ const SIGNED_OFF = new Map([
       "on 28 Oct 2026, when the surface list stopped being nine literals.",
   ]),
   /*
+   * AN IMPORT NOBODY HAS READ, which no design draws because no design draws
+   * importing. Connecting a bucket is specified in the handoff and in
+   * docs/handoff/12-DEFERRED.md's direct-integrations list; the prototype's
+   * Footage has Videos, Highlights and Projects and no notion of footage that
+   * is in the library and unread.
+   *
+   * Signed off on 20 Nov 2026, when the state got a branch at all. Until then
+   * an imported video rendered the editor's own empty state — "Nothing kept
+   * yet — add a clip back" — which says it was read and nothing was worth
+   * keeping, the opposite of the truth. These two strings say what is true
+   * and offer the read, which /api/sources/:id/retry has always been able to
+   * do and nothing had ever asked it for.
+   */
+  ...[
+    "Nobody has read this one yet. Reading it writes down every word, finds the moments, and is charged once.",
+    "Read it",
+  ].map((t) => [
+    t,
+    "An imported source in the `unread` state. No design draws importing, " +
+      "so there are no prototype words to copy. Signed off 20 Nov 2026 with " +
+      "the branch that renders them.",
+  ]),
+  /*
    * THE SCOUT BOARD. There is a `design/one-take/Scout.dc.html`, and it does
    * not contain these strings: the board was built from
    * docs/handoff/18-SCOUT-BUILD-SPEC.md, which specifies what it must show

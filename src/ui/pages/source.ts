@@ -183,6 +183,37 @@ export function renderSource(d: SourceViewData): string {
     </div>`;
   }
 
+  /*
+   * NOBODY HAS READ THIS YET, and until now the page said something else.
+   *
+   * An import lands in `unread` (src/sources.ts): connecting a bucket puts
+   * two hundred videos in the library and reading is metered, so "pending"
+   * would be a lie that bills you. The state is right. What was missing is
+   * any branch for it here — so an imported video fell through to the empty
+   * state below and read "Nothing kept yet — add a clip back", which says
+   * the video was read and nothing was worth keeping. The opposite is true:
+   * it has never been read, and nothing on any surface offered to.
+   *
+   * THE ROUTE ALREADY EXISTS. /api/sources/:id/retry dispatches a transcribe
+   * and is guarded by reReadRefusedBecause, which refuses a source already
+   * read and one already being read — and an unread import is neither. So
+   * this is the control for a capability that was there all along, which is
+   * the third time on this branch that the missing piece was the way in.
+   *
+   * The footage card's own promise is "a video is read the first time you cut
+   * with it". That half is still not built — nothing triggers a read on
+   * attach — so this says what is true today rather than restating it.
+   */
+  if (s.transcript_state === "unread") {
+    return `${head}
+    <div style="margin-top:24px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface}">
+      <div style="font-size:${SIZE.body};color:${C.ink70};line-height:1.5">Nobody has read this one yet. Reading it writes down every word, finds the moments, and is charged once.</div>
+      <form method="POST" action="/api/sources/${esc(s.id)}/retry" style="margin-top:12px">
+        <button type="submit" style="font-size:${SIZE.secondary};font-weight:600;padding:7px 14px;border-radius:${RADIUS.button};background:${C.ink};color:#131316;border:none;cursor:pointer;font-family:${FONT.ui}">Read it</button>
+      </form>
+    </div>`;
+  }
+
   if (s.transcript_state === "failed") {
     return `${head}
     <div style="margin-top:24px;padding:16px 18px;border-radius:${RADIUS.card};background:${C.surface};box-shadow:inset 0 0 0 1px rgba(224,106,106,0.24)">
