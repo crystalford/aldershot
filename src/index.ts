@@ -4100,7 +4100,7 @@ app.post("/api/plans/:id/cut", async (c) => {
       on: true,
       text: "Keep what the plan found.",
     },
-    { id: "r-order", kind: "order", order: "time", on: true, text: "Run it as the plan has it." },
+    { id: "r-order", kind: "order", order: "given", on: true, text: orderText("given") },
   ];
 
   const out = await recomputeFromRules(c.env, {

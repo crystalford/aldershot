@@ -1697,7 +1697,12 @@ function rulesPanel(rules: CutData["rules"], moments: CutData["moments"] = []): 
   const alternatives = (r: CutData["rules"][number]): string => {
     if (r.kind !== "order" || !r.on) return "";
     const chosen = r.order ?? "strand";
+    /* `given` is deliberately not offered: it means "the order something else
+       already decided" (a plan's beats), so there is nothing to press for it.
+       See ORDERS in src/rules.ts. It still renders as a rule with its own
+       sentence and its own switch. */
     const chips = (Object.keys(ORDERS) as Order[])
+      .filter((o) => o !== "given")
       .map((o) => {
         const here = o === chosen;
         return `<button class="rule-order" data-rule="${esc(r.id)}" data-order="${esc(o)}"${here ? " data-current" : ""} title="${esc(ORDERS[o].why)}"
