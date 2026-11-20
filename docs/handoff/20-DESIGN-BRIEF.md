@@ -67,11 +67,17 @@ This is one problem, not four, and it is the clearest thing the design can fix:
   it — not "there are four places you talk about the rent", not "at 3:12 you
   contradict what you said at 0:40". The judge, retrieval and the library all
   exist. The surface is a progress bar.
-- **The conversation the Manual promises is built and unreachable.**
-  `POST /api/ask` returns exactly its shape: per moment, the sentence being
-  pointed at, its timestamp, and the reason — and it *refuses* to answer from
-  the most-recent fallback, because "here is your recent stuff" dressed as an
-  answer is the lie that feature could most easily tell. Nothing calls it.
+- **The conversation the Manual promises is built, and this document was
+  wrong about it.** ~~Nothing calls it.~~ `POST /api/ask` returns exactly its
+  shape — per moment, the sentence being pointed at, its timestamp, and the
+  reason — and it *refuses* to answer from the most-recent fallback, because
+  "here is your recent stuff" dressed as an answer is the lie that feature
+  could most easily tell. It **is** reachable: there is an Ask button in the
+  composer (`src/ui/pages/home.ts:259`) wired to it in `src/ui/client.ts`.
+  Corrected 20 Nov 2026. What is true is the thing underneath: until this week
+  the library was only populated as a side-effect of asking for a cut, so a
+  question about your own footage would usually have found nothing to answer
+  with. The surface was there and the corpus was not.
 - **Scout is central in the Manual and marginal in the design.** The Manual:
   *"Scout is how the video gets better than your footage alone."*
   `Scout.dc.html` is 9.8 KB, the smallest of the five files, and draws one
@@ -253,3 +259,11 @@ two stubs waiting for the answer.
 
 *Written 15 Nov 2026, against `f67bc43`. The build at that commit: 18 fidelity
 rules, 1,944 tests, strict gate green including the container.*
+
+*Amended 20 Nov 2026. Four things this document asks for have since landed and
+one claim in it was wrong. A read now fills the library (`src/moments.ts`), so
+the accumulating pool is real rather than a side-effect of asking for a cut; a
+plan's beat order survives into the cut, which it did not; match-back runs, so
+a mission can be answered; and an imported source can be read. The wrong claim
+is marked above. The engine-shaped half of Part Five now has its own document:
+`21-LIBRARIAN-BUILD-SPEC.md`.*
