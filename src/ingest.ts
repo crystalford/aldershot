@@ -19,6 +19,7 @@ import { extractAudio, isAudio } from "./audio.ts";
 import { transcribeObject } from "./transcribe.ts";
 import { getSegments, saveSegments, setTranscriptState, type Source } from "./sources.ts";
 import { momentSpans } from "./moments.ts";
+import { matchOpenMissions } from "./scout-match.ts";
 import { saveClips } from "./projects.ts";
 import { dispatch } from "./queue.ts";
 
@@ -184,6 +185,31 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
      * the defect this replaces.
      */
     await fillLibrary(env.DB, src);
+
+    /*
+     * AND THE GHOSTS THIS UPLOAD MAY HAVE JUST FILLED.
+     *
+     * Scout finds and links; the person goes and grabs the footage; this is
+     * where the product notices they did. src/scout-match.ts has the
+     * reasoning — including why a mismatch writes nothing.
+     *
+     * Same swallow-and-say as the library above: the transcript is saved and
+     * a missed match is recoverable, a failed read is not.
+     */
+    try {
+      const filled = await matchOpenMissions(env.DB, { userId: src.user_id, sourceId: src.id });
+      if (filled.length) {
+        console.log(
+          `[ingest] ${src.id} answered ${filled.length} mission(s): ` +
+            filled.map((f) => `${f.ledgerId} at ${f.match.atS}s`).join(", "),
+        );
+      }
+    } catch (err) {
+      console.log(
+        `[ingest] read ${src.id}: the missions were not checked — ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     /*
      * NOW do what they asked for.
