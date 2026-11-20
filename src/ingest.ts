@@ -17,7 +17,10 @@ import { meter } from "./usage.ts";
 import { checkCap, type Plan } from "./plans.ts";
 import { extractAudio, isAudio } from "./audio.ts";
 import { transcribeObject } from "./transcribe.ts";
-import { saveSegments, setTranscriptState, type Source } from "./sources.ts";
+import { getSegments, saveSegments, setTranscriptState, type Source } from "./sources.ts";
+import { momentSpans } from "./moments.ts";
+import { matchOpenMissions } from "./scout-match.ts";
+import { saveClips } from "./projects.ts";
 import { dispatch } from "./queue.ts";
 
 export interface IngestOpts {
@@ -156,6 +159,57 @@ export async function readSource(env: Env, src: Source, opts: IngestOpts): Promi
      */
     await advance(env.DB, job.id, 92, "naming it");
     await nameSourceCut(env, src, result.segments.map((s) => s.text).join(" "), job.id);
+
+    /*
+     * AND THE LIBRARY GETS THE MOMENTS, whether or not anybody asked for a cut.
+     *
+     * This is the line that makes a library a library. A moment used to exist
+     * only where a brief had run a score pass, so uploading an hour and saying
+     * nothing about it left a transcript and nothing to retrieve: the footage
+     * was in the account and absent from every search that matters. The whole
+     * accumulating-pool premise — that the product gets better the more you
+     * put in it — was not true of the implementation.
+     *
+     * Reading is the paid step (invariant 5) and the moments are what it is
+     * for, so they are written here, from the transcript, with no model call
+     * and no score. src/moments.ts has the reasoning and the two numbers.
+     *
+     * Read from the rows rather than from `result.segments`, because
+     * saveSegments drops what nobody said — a zero-length segment, empty text,
+     * a backwards one (saidAloud, src/sources.ts) — and a moment built from a
+     * hallucinated segment is a moment pointing at silence.
+     *
+     * Failure here must not fail the read, which has succeeded: the transcript
+     * is saved, and a re-read lays the spans down then. Said out loud rather
+     * than swallowed, because a library that quietly did not fill is exactly
+     * the defect this replaces.
+     */
+    await fillLibrary(env.DB, src);
+
+    /*
+     * AND THE GHOSTS THIS UPLOAD MAY HAVE JUST FILLED.
+     *
+     * Scout finds and links; the person goes and grabs the footage; this is
+     * where the product notices they did. src/scout-match.ts has the
+     * reasoning — including why a mismatch writes nothing.
+     *
+     * Same swallow-and-say as the library above: the transcript is saved and
+     * a missed match is recoverable, a failed read is not.
+     */
+    try {
+      const filled = await matchOpenMissions(env.DB, { userId: src.user_id, sourceId: src.id });
+      if (filled.length) {
+        console.log(
+          `[ingest] ${src.id} answered ${filled.length} mission(s): ` +
+            filled.map((f) => `${f.ledgerId} at ${f.match.atS}s`).join(", "),
+        );
+      }
+    } catch (err) {
+      console.log(
+        `[ingest] read ${src.id}: the missions were not checked — ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     /*
      * NOW do what they asked for.
@@ -331,4 +385,52 @@ export async function requeueTransientReads(
 export function estimateMinutesFromBytes(bytes: number): number {
   const ASSUMED_BYTES_PER_MINUTE = 1.5 * 1024 * 1024;
   return bytes / ASSUMED_BYTES_PER_MINUTE;
+}
+
+/**
+ * The moments a read produces, written to the library.
+ *
+ * Its own exported function because the read around it has no test — nothing
+ * in test/ calls readSource, which needs a transcription model, a container
+ * and R2 — so wiring this inline would have left the one new step in the
+ * pipeline exercised by nothing. This takes a database and a source and can
+ * be driven directly.
+ *
+ * READ FROM THE ROWS, not from the transcription result — and the reason is
+ * NOT the one I first wrote here.
+ *
+ * I claimed it was hallucination filtering: saveSegments drops what nobody
+ * said (saidAloud — empty text, or end <= start), so the rows are cleaner
+ * than the result. Then I broke it by feeding a hallucinated segment straight
+ * in, and nothing failed, because momentSpans rejects exactly those two
+ * shapes itself. On that argument the two sources are interchangeable.
+ *
+ * The real reason is consistency with the span. saveClips numbers words from
+ * `SELECT idx, words FROM segments` — the rows — and every moment's word-id
+ * address comes out of that numbering. Building the ranges from one source
+ * and addressing them from another is how a moment ends up with a span that
+ * does not contain it. Same rows for both, and the question cannot arise.
+ *
+ * Failure must not fail the read, which has succeeded: the transcript is
+ * saved, and a re-read lays the spans down then. Said out loud rather than
+ * swallowed, because a library that quietly did not fill is exactly the
+ * defect this exists to end.
+ */
+export async function fillLibrary(db: D1Database, src: Source): Promise<number> {
+  try {
+    const spans = momentSpans(await getSegments(db, src.id));
+    if (!spans.length) return 0;
+    const saved = await saveClips(
+      db,
+      { user_id: src.user_id, source_id: src.id, origin: "read", posterKey: src.poster_r2_key },
+      spans,
+    );
+    return saved.length;
+  } catch (err) {
+    console.log(
+      `[ingest] read ${src.id}: the transcript saved and the moments did not — ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    );
+    return 0;
+  }
 }

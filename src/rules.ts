@@ -32,7 +32,7 @@ export type RuleKind =
   | "count"
   | "hook"
   | "must_keep";
-export type Order = "time" | "strand" | "open";
+export type Order = "time" | "strand" | "open" | "given";
 
 export interface Rule {
   id: number | string;
@@ -519,6 +519,31 @@ export function compute(
   let seq: Judged[];
   if (ord === "time") {
     seq = kept.slice().sort(byTime);
+  } else if (ord === "given") {
+    /*
+     * The order the ON rules list their ids in, first mention wins.
+     *
+     * Read off every rule with a `cids` list rather than off the order rule,
+     * because the order rule names no moments — the keep rule beside it does.
+     * A moment nothing lists goes last, in time order: it is in the cut for
+     * some other reason (a words rule, a hand-kept line) and the argument has
+     * no opinion about where it belongs.
+     */
+    const listed = new Map<string, number>();
+    for (const r of on) {
+      for (const id of r.cids ?? []) {
+        const key = String(id);
+        if (!listed.has(key)) listed.set(key, listed.size);
+      }
+    }
+    seq = kept.slice().sort((a, b) => {
+      const ai = listed.get(String(a.id));
+      const bi = listed.get(String(b.id));
+      if (ai === undefined && bi === undefined) return byTime(a, b);
+      if (ai === undefined) return 1;
+      if (bi === undefined) return -1;
+      return ai - bi;
+    });
   } else {
     seq = [];
     for (const s of STR) seq.push(...kept.filter((m) => m.strand === s).sort(byTime));
@@ -766,6 +791,34 @@ export function describe(out: Computed, rules: Rule[], note = ""): string {
  * and the cut re-runs in that order.
  */
 export const ORDERS: Record<Order, { name: string; why: string }> = {
+  /*
+   * THE ORDER THE RULE ITSELF NAMES THEM IN — and the reason this exists is
+   * that a plan's argument was being thrown away.
+   *
+   * src/index.ts builds a plan's cut from two rules: a `keep` listing the
+   * moments in the order the beats put them, and an order rule whose text
+   * reads "Run it as the plan has it." The comment above it is explicit —
+   * "Beat order is not chronological and not by thread — it is the argument".
+   * It then passed `order: "time"`, because there was no fourth value, so
+   * step 8 took the `time` branch and sorted chronologically by source and
+   * timestamp. The carefully-built `cids` order was never read by anything:
+   * hit() tests membership and nothing else.
+   *
+   * So the one stop — the moment somebody approves the shape of their
+   * argument — was the one thing the cut discarded, and the rules pane told
+   * them otherwise. No test covered it.
+   *
+   * NOT IN THE CHIP ROW. src/ui/pages/cut.ts renders a chip per key here, and
+   * the prototype draws three. These three are the ways a person CHOOSES to
+   * run a cut; this one arrives as a rule, because it means "the order
+   * something else already decided" and there is nothing to press for that.
+   * It is still visible and still switchable — switch it off and you get the
+   * footage as it happened, which is the honest alternative.
+   */
+  given: {
+    name: "as the plan has it",
+    why: "The beats are the argument, and an argument is not chronological.",
+  },
   strand: {
     name: "one thread at a time",
     why: "Each question gets asked and answered before the next one starts.",

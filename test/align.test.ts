@@ -116,7 +116,16 @@ test("moments are saved with their span, at the one moment it is cheap", () => {
    */
   const src = readFileSync(join(import.meta.dirname, "..", "src", "projects.ts"), "utf8");
   const save = src.slice(src.indexOf("export async function saveClips"));
-  const upto = save.slice(0, save.indexOf("await db.batch"));
+  /*
+   * Up to the INSERT, which is the statement this claim is about.
+   *
+   * This read to the first `await db.batch`, and saveClips grew an earlier
+   * batch — the UPDATE that annotates a moment the read already laid down —
+   * so the window closed before the lines below and the test failed about
+   * code that had not changed. The row construction is what has to carry the
+   * span; the INSERT is where that ends, whatever else runs first.
+   */
+  const upto = save.slice(0, save.indexOf("INSERT INTO v2_clips"));
   assert.match(upto, /indexWords\(segs \?\? \[\], parseWords\)/, "numbered from this source's own segments");
   assert.match(upto, /start_word: spanFor\(/);
   assert.match(upto, /end_word: spanFor\(/);

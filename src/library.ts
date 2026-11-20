@@ -34,8 +34,24 @@ export interface Moment {
 }
 
 const SELECT_MOMENTS = `
-  SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.used_count, c.frame_r2_key,
+  SELECT c.id, c.start_ms, c.end_ms, c.quote, c.why, c.origin, c.frame_r2_key,
          c.source_id, c.kept,
+         /* HOW MANY EDITS USE THIS MOMENT, derived rather than counted up.
+            v2_clips.used_count exists, defaults to 0, and was never once
+            incremented — so the card's "used in N edits" line could not
+            appear, whatever anybody did with their footage.
+            A COUNTER WOULD HAVE BEEN WRONG ANYWAY. Invariant 1: a cut is
+            re-produced from rules and moments, never stored as an outcome. A
+            number incremented when a moment entered a cut cannot answer the
+            question after a rule is switched off, and could not be put back
+            when an edit is deleted — which is the acceptance test this engine
+            is held to. Counted off the beats here, it is simply true, and it
+            says "currently use" rather than "once used", which is the honest
+            claim about a cut that is worked out every time.
+            The column stays where it is for now rather than being dropped:
+            nothing deleted is invariant 6's shape, and a migration to remove
+            a dead integer is not worth a schema change on its own. */
+         (SELECT COUNT(DISTINCT b.project_id) FROM beats b WHERE b.clip_id = c.id) AS used_count,
          /* heat is how densely interesting the scorer found the stretch, and
             it is read here for ONE reason: the rule engine's cap must never
             drop a "strong" moment, and heat is the only signal we have about

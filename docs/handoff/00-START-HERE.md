@@ -32,6 +32,7 @@ Aldershot is a hands-off video editor for people who make videos out of footage 
 | 18 | `18-SCOUT-BUILD-SPEC.md` | **Scout, buildable**: architecture, tables, every step with its schema and rule, the verifier, the stopping math, adapters and quotas, match-back, phases with acceptance tests |
 | 19 | `19-SCOUT-EVAL.md` | What to gather for the eval, what each number means, and how each one flatters |
 | 20 | `20-DESIGN-BRIEF.md` | **The handoff running the other way**: what the product IS becoming (a session, not a screen; a project that grows, not a cut delivered), why the substrate already chose that, the surfaces nothing draws, and the nine decisions only the design can make |
+| 21 | `21-LIBRARIAN-BUILD-SPEC.md` | **The Librarian, buildable**: the second engine in Scout's shape, over your own footage rather than other people's — what you have, what it is about, what it can back. Includes the rule every engine after it follows: a bot proposes, it never edits |
 | — | `PR-1-HYGIENE.md` | The first pull request for the repo, file by file |
 | — | `PR-1-HYGIENE.md` | The first pull request, step by step: retire the old design, bring in the current prototype and this package, repoint the fidelity scripts, declare the dead-letter queue |
 | — | `CLAUDE.md` | The short manual for Claude Code — copy to the code repo root |

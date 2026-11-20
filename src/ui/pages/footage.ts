@@ -404,7 +404,12 @@ function searchBox(tab: FootTab, mode: SearchMode, q: string, canMean: boolean):
  * instead of offering to make it again.
  */
 function momentCard(m: MomentRow): string {
-  const used = m.used_count > 0 ? `used in ${m.used_count} ${m.used_count === 1 ? "essay" : "essays"}` : null;
+  /* "edit", which is the product's own word for a finished thing — the card
+     beside this one says "N clips · N edits". It read "essay", which is one
+     of five project kinds and wrong for the other four, and no design draws
+     this line at all: the prototype has no "used in" anywhere, because
+     used_count was never incremented and the string could never render. */
+  const used = m.used_count > 0 ? `used in ${m.used_count} ${m.used_count === 1 ? "edit" : "edits"}` : null;
   const from = m.start_ms / 1000;
   const to = m.end_ms / 1000;
 
@@ -550,6 +555,14 @@ export interface FootageData {
   sources: SourceRow[];
   /** The moments SHOWN — only loaded on the Clips tab. */
   moments: MomentRow[];
+  /**
+   * What your library can back, in a sentence (src/standing.ts).
+   *
+   * Only assembled on the Moments tab, the same rule the moments themselves
+   * follow — it is a read over every plan's beats and nobody on the Exports
+   * tab is waiting for it.
+   */
+  standing?: string;
   /**
    * How many there are, whichever tab you are on.
    *
@@ -824,10 +837,30 @@ export function renderFootageFull(d: FootageData): string {
   /* The grid's heading names the filter: the thread's name, or "All clips". */
   const heading = d.thread ? (d.threads.find((t) => t.id === d.thread)?.name ?? "All clips") : "All clips";
 
+  /*
+   * WHAT THIS LIBRARY CAN BACK, above the grid.
+   *
+   * The Librarian's third question (21-LIBRARIAN-BUILD-SPEC.md §7), and the
+   * only honest version of "this gets better the more you put in it": the
+   * sentence moves when you capture. Gaps are named because a claim with
+   * nothing behind it is the next thing to film.
+   *
+   * data-content, for the reason room.ts's archive paragraph gives: the line
+   * is assembled from this person's own plans and counts, so the strings rule
+   * cannot match it against a prototype holding a different library. That
+   * bargain costs something — the scaffolding words go unchecked by the gate
+   * — so the whole sentence is pinned by exact string in test/standing.ts,
+   * every shape of it, which is what pays for the exemption.
+   */
+  const standing = d.standing
+    ? `<div data-content style="margin-top:22px;font-size:${SIZE.body};line-height:1.55;color:${C.ink70};text-wrap:pretty">${esc(d.standing)}</div>`
+    : "";
+
   return (
     head +
     chips +
     notice +
+    standing +
     `<div data-content style="margin-top:26px;font-size:${SIZE.body};font-weight:600;color:${C.ink45}">${esc(heading)}</div>
      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));gap:14px">${d.moments.map(momentCard).join("")}</div>`
   );

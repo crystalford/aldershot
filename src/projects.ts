@@ -391,7 +391,13 @@ export async function listProjects(db: D1Database, userId: string): Promise<Proj
  */
 export async function saveClips(
   db: D1Database,
-  opts: { user_id: string; source_id: string; origin: "editor" | "clipping" | "manual"; posterKey: string | null },
+  opts: {
+    user_id: string;
+    source_id: string;
+    /* "read" is the deterministic pass over the transcript — see src/moments.ts. */
+    origin: "editor" | "clipping" | "manual" | "read";
+    posterKey: string | null;
+  },
   clips: ScoredClip[],
 ): Promise<Clip[]> {
   if (!clips.length) return [];
@@ -422,8 +428,48 @@ export async function saveClips(
   // range rather than by text, because the model rarely returns byte-identical
   // boundaries twice.
   const existing = await listClipsForSource(db, opts.source_id, opts.user_id);
-  const fresh = clips.filter((c) => !existing.some((e) => overlapFraction(c, e) > 0.8));
-  if (!fresh.length) return [];
+
+  /*
+   * AN UNSCORED MOMENT IS ENRICHED, NOT SKIPPED — and getting this wrong would
+   * have emptied every cut.
+   *
+   * src/moments.ts lays a span down for every point in the transcript the
+   * moment it is read, with no score and no reason. Those spans cover the
+   * whole source, so a later score pass overlaps them by definition: under
+   * the old rule every clip it found was a duplicate, `fresh` came back
+   * empty, and saveClips returned nothing. begin.ts turns what this returns
+   * INTO the cut — "the moments become the cut" — so a pass would have
+   * scored an hour of footage and produced an empty edit.
+   *
+   * So the pass annotates the span instead. It supplies score, heat and the
+   * reason; the range stays the one the transcript drew. The row keeps
+   * origin "read", because that is still where it came from, and a score
+   * where there was none is the whole record of what the pass did.
+   *
+   * A re-read carries no score (momentSpans sets it null), so `carries`
+   * stops the deterministic pass from overwriting a real score with nothing.
+   */
+  const carries = (c: Partial<ScoredClip>) => c.score !== null && c.score !== undefined;
+  const fresh: ScoredClip[] = [];
+  const enriched: Clip[] = [];
+  for (const c of clips) {
+    const hit = existing.find((e) => overlapFraction(c, e) > 0.8);
+    if (!hit) {
+      fresh.push(c);
+      continue;
+    }
+    if (hit.origin === "read" && hit.score === null && carries(c)) {
+      enriched.push({ ...hit, score: c.score, heat: c.heat, why: c.why || null });
+    }
+    /* Otherwise it is the duplicate the comment above is about. */
+  }
+
+  if (enriched.length) {
+    const up = db.prepare(`UPDATE v2_clips SET score=?, heat=?, why=? WHERE id=? AND user_id=?`);
+    await db.batch(enriched.map((e) => up.bind(e.score, e.heat, e.why, e.id, e.user_id)));
+  }
+
+  if (!fresh.length) return enriched.slice().sort((a, b) => a.start_ms - b.start_ms);
 
   const now = Date.now();
   const rows: Clip[] = fresh.map((c) => ({
@@ -462,7 +508,9 @@ export async function saveClips(
       ),
     ),
   );
-  return rows;
+  /* Inserted and annotated together, in transcript order: the caller turns
+     this into a cut, and a cut is a sequence. */
+  return [...rows, ...enriched].sort((a, b) => a.start_ms - b.start_ms);
 }
 
 /**

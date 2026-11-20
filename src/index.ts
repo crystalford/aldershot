@@ -23,6 +23,7 @@ import { boardFor } from "./scout-board-data.ts";
 import { createRun, diligence, verifiedRows } from "./scout-store.ts";
 import { renderHome } from "./ui/pages/home.ts";
 import { renderFootageFull, type FootTab, type SearchMode, hms } from "./ui/pages/footage.ts";
+import { standingFor, standingLine } from "./standing.ts";
 import { listMoments, listThreads, searchExact, searchMeaning, threadIdsByClip, countMoments } from "./library.ts";
 import { ulid } from "./id.ts";
 import { renderSource } from "./ui/pages/source.ts";
@@ -1229,6 +1230,10 @@ app.get("/footage", async (c) => {
       renderFootageFull({
         tab,
         documentCount: docs.length,
+        /* What the library can back, on the tab that is about the library.
+           A read over plan beats and one query for which moments survive —
+           no retrieval and no model call, see src/standing.ts. */
+        ...(tab === "moments" ? { standing: standingLine(await standingFor(c.env.DB, user.id)) } : {}),
         ...(tab === "documents"
           ? {
               documents: docs.map((d) => ({
@@ -4100,7 +4105,7 @@ app.post("/api/plans/:id/cut", async (c) => {
       on: true,
       text: "Keep what the plan found.",
     },
-    { id: "r-order", kind: "order", order: "time", on: true, text: "Run it as the plan has it." },
+    { id: "r-order", kind: "order", order: "given", on: true, text: orderText("given") },
   ];
 
   const out = await recomputeFromRules(c.env, {

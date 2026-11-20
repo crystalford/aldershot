@@ -25,7 +25,7 @@ const SCHEMA = readFileSync(join(import.meta.dirname, "../migrations/schema.sql"
 
 function db(quotes: string[]) {
   const d = new DatabaseSync(":memory:");
-  for (const name of ["v2_users", "sources", "v2_clips", "v2_threads", "v2_clip_threads", "renders", "v2_projects"]) {
+  for (const name of ["v2_users", "sources", "v2_clips", "v2_threads", "v2_clip_threads", "renders", "v2_projects", "beats"]) {
     const ddl = SCHEMA.split(";").find((s) =>
       new RegExp(`create table if not exists ${name}\\s*\\(`, "i").test(s),
     );
