@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; background:#101013; }
+  * { box-sizing:border-box; }
+  a { color:rgba(236,236,241,0.85); text-decoration:none; } a:hover { color:#FFFFFF; }
+  a:focus-visible, [role=button]:focus-visible { outline:2px solid #ECECF1; outline-offset:2px; }
+  @keyframes rfIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  @keyframes rfGrain { 0% { background-position:0 0; } 25% { background-position:-7px 3px; } 50% { background-position:4px -6px; } 75% { background-position:-3px -2px; } 100% { background-position:0 0; } }
+  .rf-grain { background-image:radial-gradient(rgba(255,255,255,0.09) 0.6px, transparent 0.8px), radial-gradient(rgba(0,0,0,0.25) 0.6px, transparent 0.8px); background-size:3px 3px, 5px 5px; animation:rfGrain .32s steps(4) infinite; mix-blend-mode:overlay; }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <!-- header row 1 — as One Take -->
+  <div style="display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="Studio.dc.html" title="The Studio" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="flex:1;display:flex;justify-content:flex-end;align-items:center">
+      <a href="../one-take/Aldershot Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#ECECF1" style-hover="background:#2E2E36">C</a>
+    </div>
+  </div>
+
+  <!-- header row 2 -->
+  <div style="display:flex;align-items:center;gap:14px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:10px;overflow:hidden;white-space:nowrap">
+      <span style="font-size:13.5px;font-weight:600">NASA as a medium</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">the trailer · the whole film in 1:22</span>
+    </div>
+<div style="flex:none;display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);overflow-x:auto;max-width:100%">
+      <a href="Studio.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Studio</a>
+      <a href="Plan.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Plan</a>
+      <a href="Footage.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Footage</a>
+      <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:#2E2E36;color:#ECECF1;white-space:nowrap">Trailer</span>
+      <a href="../one-take/Aldershot One Take.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Editor</a>
+    </div>
+  </div>
+
+  <div style="max-width:960px;margin:0 auto;padding:24px 20px 120px">
+
+    <!-- where it stands + the finish switch -->
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span style="font-size:13px;color:rgba(236,236,241,0.62)">{{ progText }}</span>
+      <div style="margin-left:auto;display:flex;gap:2px;padding:3px;border-radius:8px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <sc-for list="{{ modes }}" as="md" hint-placeholder-count="2">
+          <span tabindex="0" role="button" onclick="{{ md.onGo }}" title="{{ md.title }}" style="font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:6px;background:{{ md.bg }};color:{{ md.color }};cursor:pointer;white-space:nowrap">{{ md.name }}</span>
+        </sc-for>
+      </div>
+    </div>
+    <div style="margin-top:6px;font-size:12px;line-height:1.55;color:rgba(236,236,241,0.45)">{{ modeNote }}</div>
+
+    <!-- the stage -->
+    <div style="margin-top:14px;position:relative;aspect-ratio:16/9;container-type:inline-size;overflow:hidden;border-radius:14px;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+
+      <!-- A · open on the quote — an archive clip, drawn as a film frame -->
+      <div style="position:absolute;inset:0;opacity:{{ A.op }}">
+        <div style="position:absolute;left:27%;top:13%;width:46%;aspect-ratio:4/3;border-radius:0.5cqw;background:#121216;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.22);overflow:hidden;transform:scale({{ A.z }})">
+          <svg viewBox="0 0 400 300" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+            <circle cx="200" cy="118" r="34" fill="none" stroke="rgba(236,236,241,0.5)" stroke-width="1.4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ A.draw }}"></circle>
+            <path d="M 112 300 C 120 210 160 178 200 176 C 240 178 280 210 288 300" fill="none" stroke="rgba(236,236,241,0.5)" stroke-width="1.4" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ A.draw }}"></path>
+            <path d="M 300 70 L 360 70 M 300 84 L 344 84" stroke="rgba(236,236,241,0.18)" stroke-width="1"></path>
+          </svg>
+          <div class="rf-grain" style="position:absolute;inset:0;opacity:.9"></div>
+          <div style="position:absolute;left:4%;bottom:5%;font-family:'IBM Plex Mono',monospace;font-size:1cqw;letter-spacing:.08em;color:rgba(236,236,241,0.55)">McLUHAN · ARCHIVE INTERVIEW</div>
+        </div>
+        <sc-for list="{{ sprockets }}" as="sp" hint-placeholder-count="6">
+          <span style="position:absolute;left:{{ sp.l }};top:{{ sp.t }};width:1.1%;height:2.6%;border-radius:0.2cqw;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.16)"></span>
+        </sc-for>
+      </div>
+
+      <!-- B1 · Mercury — seven broadcasts counting down -->
+      <div style="position:absolute;inset:0;opacity:{{ B1.op }}">
+        <sc-for list="{{ tvs }}" as="tv" hint-placeholder-count="7">
+          <div style="position:absolute;left:{{ tv.l }};top:{{ tv.t }};width:15%;aspect-ratio:4/3;border-radius:1cqw;box-shadow:inset 0 0 0 1px rgba(236,236,241,{{ tv.edge }});opacity:{{ tv.op }};transform:translateY({{ tv.y }})">
+            <div style="position:absolute;inset:9% 12% 16% 9%;border-radius:1.6cqw / 1.2cqw;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.25);display:flex;align-items:center;justify-content:center;font-family:'Instrument Serif',serif;font-size:4.2cqw;color:{{ tv.numColor }}">{{ tv.n }}</div>
+            <span style="position:absolute;right:4%;top:22%;width:0.7cqw;height:0.7cqw;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.3)"></span>
+            <span style="position:absolute;right:4%;top:40%;width:0.7cqw;height:0.7cqw;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.3)"></span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- B2 · your bridge — words only until you record it -->
+      <div style="position:absolute;inset:0;opacity:{{ B2.op }}">
+        <sc-if value="{{ B2.slot }}" hint-placeholder-val="{{ true }}">
+          <div style="position:absolute;left:8%;top:64%;width:52%;height:0;border-top:1.5px dashed rgba(217,179,106,0.6)"></div>
+          <div style="position:absolute;left:8%;top:67%;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.08em;color:rgba(217,179,106,0.8)">YOUR VOICE GOES HERE · 6 SEC</div>
+        </sc-if>
+      </div>
+
+      <!-- C · the posters — Sketch draws one of your scans -->
+      <div style="position:absolute;inset:0;opacity:{{ C.op }}">
+        <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+          <rect x="590" y="50" width="250" height="375" rx="4" fill="none" stroke="rgba(236,236,241,0.4)" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ C.frame }}"></rect>
+          <circle cx="715" cy="185" r="72" fill="none" stroke="#E8875A" stroke-width="1.6" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ C.planet }}"></circle>
+          <ellipse cx="715" cy="185" rx="112" ry="20" fill="none" stroke="rgba(236,236,241,0.55)" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ C.ring }}"></ellipse>
+          <path d="M 590 370 C 650 330 780 330 840 370" fill="none" stroke="rgba(236,236,241,0.45)" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ C.ground }}"></path>
+          <path d="M 590 395 C 650 360 780 360 840 395" fill="none" stroke="rgba(236,236,241,0.3)" stroke-width="1" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ C.ground }}"></path>
+          <g transform="{{ C.rocket }}"><path d="M 0 -26 C 4 -20 5 -12 5 -4 L 5 10 L -5 10 L -5 -4 C -5 -12 -4 -20 0 -26 Z" fill="none" stroke="#ECECF1" stroke-width="1.3"></path></g>
+        </svg>
+        <div style="position:absolute;left:61.5%;width:26%;top:69%;text-align:center;font-family:'Instrument Serif',serif;font-size:3.4cqw;letter-spacing:.3em;color:rgba(236,236,241,0.85);opacity:{{ C.title }}">MARS</div>
+      </div>
+
+      <!-- D1 · your line (Mars section) -->
+      <div style="position:absolute;inset:0;opacity:{{ D1.op }}">
+        <sc-for list="{{ posters }}" as="ps" hint-placeholder-count="3">
+          <div style="position:absolute;left:{{ ps.l }};top:{{ ps.t }};width:15%;aspect-ratio:2/3;border-radius:0.4cqw;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.16);transform:rotate({{ ps.r }}) translateY({{ ps.y }});opacity:{{ ps.op }}"></div>
+        </sc-for>
+      </div>
+
+      <!-- D2 · drawn by Sketch — the transfer orbit, then the dive into Mars -->
+      <div style="position:absolute;inset:0;opacity:{{ D2.op }};transform:scale({{ D2.z }});transform-origin:60.7% 46.3%">
+        <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+          <circle cx="400" cy="250" r="120" pathLength="1" fill="none" stroke="rgba(236,236,241,0.28)" stroke-width="1.2" stroke-dasharray="1" stroke-dashoffset="{{ D2.orbE }}"></circle>
+          <circle cx="400" cy="250" r="183" pathLength="1" fill="none" stroke="rgba(236,236,241,0.28)" stroke-width="1.2" stroke-dasharray="1" stroke-dashoffset="{{ D2.orbM }}"></circle>
+          <circle cx="400" cy="250" r="7" fill="#ECECF1" opacity="{{ D2.sun }}"></circle>
+          <path d="M 280 250 A 151.5 148.2 0 0 0 583 250" pathLength="1" fill="none" stroke="#ECECF1" stroke-width="2" stroke-linecap="round" stroke-dasharray="1" stroke-dashoffset="{{ D2.arc }}"></path>
+          <circle cx="{{ D2.ex }}" cy="{{ D2.ey }}" r="6" fill="none" stroke="#ECECF1" stroke-width="1.6" opacity="{{ D2.planets }}"></circle>
+          <circle cx="{{ D2.mx }}" cy="{{ D2.my }}" r="5" fill="#E8875A" opacity="{{ D2.planets }}"></circle>
+          <circle cx="{{ D2.cx }}" cy="{{ D2.cy }}" r="3" fill="#ECECF1" opacity="{{ D2.craft }}"></circle>
+        </svg>
+        <sc-for list="{{ D2.labels }}" as="lb" hint-placeholder-count="3">
+          <div style="position:absolute;left:{{ lb.l }};top:{{ lb.t }};font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.06em;color:rgba(236,236,241,0.55);opacity:{{ lb.op }};white-space:nowrap">{{ lb.text }}</div>
+        </sc-for>
+      </div>
+
+      <!-- D3 · what Scout found — the first picture of Mars, coloured by numbers -->
+      <div style="position:absolute;inset:0;opacity:{{ D3.op }}">
+        <div style="position:absolute;left:61%;top:53%;width:56%;transform:translate(-50%,-50%) scale({{ D3.g }});display:grid;grid-template-columns:repeat(18,1fr);gap:0.12cqw">
+          <sc-for list="{{ grid }}" as="gc" hint-placeholder-count="12">
+            <div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:{{ gc.bg }};font-family:'IBM Plex Mono',monospace;font-size:0.95cqw;color:{{ gc.fg }};transition:background .35s">{{ gc.n }}</div>
+          </sc-for>
+        </div>
+        <sc-if value="{{ D3.grain }}" hint-placeholder-val="{{ true }}"><div class="rf-grain" style="position:absolute;inset:0;opacity:.9"></div></sc-if>
+      </div>
+
+      <!-- D4 · wanted: a news clip, drawn as a broadcast frame -->
+      <div style="position:absolute;inset:0;opacity:{{ D4.op }}">
+        <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+          <line x1="560" y1="500" x2="820" y2="500" stroke="rgba(236,236,241,0.25)" stroke-width="1"></line>
+          <g transform="{{ D4.rocket }}">
+            <path d="M 0 -96 C 10 -80 12 -62 12 -40 L 12 30 L -12 30 L -12 -40 C -12 -62 -10 -80 0 -96 Z" fill="none" stroke="#ECECF1" stroke-width="1.6"></path>
+            <path d="M -12 14 L -24 34 L -12 30 M 12 14 L 24 34 L 12 30" fill="none" stroke="#ECECF1" stroke-width="1.6"></path>
+            <sc-for list="{{ plume }}" as="pl" hint-placeholder-count="4"><circle cx="{{ pl.x }}" cy="{{ pl.y }}" r="{{ pl.r }}" fill="none" stroke="rgba(236,236,241,0.35)" stroke-width="1" opacity="{{ pl.op }}"></circle></sc-for>
+          </g>
+        </svg>
+        <div style="position:absolute;inset:4%;border-radius:0.8cqw;border:1.5px {{ D4.frameStyle }} {{ D4.frameColor }}"></div>
+        <div style="position:absolute;left:7%;top:10%;display:flex;gap:1cqw;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:1.15cqw;letter-spacing:.08em">
+          <span style="padding:0.3cqw 0.8cqw;border-radius:0.3cqw;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.6);color:#ECECF1">LIVE</span>
+          <span style="color:rgba(236,236,241,0.55)">{{ D4.clock }}</span>
+        </div>
+        <div style="position:absolute;left:7%;right:7%;bottom:9%;padding:1cqw 1.4cqw;border-radius:0.4cqw;background:rgba(16,16,19,0.82);box-shadow:inset 0 0 0 1px {{ D4.barRing }};font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.06em;color:{{ D4.barColor }}">{{ D4.bar }}</div>
+      </div>
+
+      <!-- E · the engineers' view — a transcript, three passages marked -->
+      <div style="position:absolute;inset:0;opacity:{{ E.op }}">
+        <div style="position:absolute;left:58%;top:12%;width:31%;height:76%;padding:2.4cqw 2.2cqw;border-radius:0.6cqw;background:#121216;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.16);transform:translateY({{ E.y }});display:flex;flex-direction:column;gap:1.05cqw">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:0.95cqw;letter-spacing:.08em;color:rgba(236,236,241,0.45)">ORAL HISTORY TRANSCRIPT</div>
+          <sc-for list="{{ lines }}" as="ln" hint-placeholder-count="12">
+            <div style="position:relative;height:0.55cqw;width:{{ ln.w }};border-radius:0.3cqw;background:{{ ln.bg }};transition:background .4s">
+              <span style="position:absolute;left:-1.3cqw;top:-0.2cqw;width:0.5cqw;height:0.95cqw;border-radius:0.2cqw;background:{{ ln.mark }}"></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- F1 · the close — the money, drawn from public figures -->
+      <div style="position:absolute;inset:0;opacity:{{ F1.op }}">
+        <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+          <line x1="120" y1="440" x2="860" y2="440" stroke="rgba(236,236,241,0.25)" stroke-width="1"></line>
+          <path d="{{ F1.path }}" fill="none" stroke="#ECECF1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ F1.draw }}"></path>
+          <circle cx="{{ F1.px }}" cy="{{ F1.py }}" r="5" fill="#E8875A" opacity="{{ F1.peak }}"></circle>
+        </svg>
+        <sc-for list="{{ F1.labels }}" as="lb" hint-placeholder-count="4">
+          <div style="position:absolute;left:{{ lb.l }};top:{{ lb.t }};font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.06em;color:{{ lb.color }};opacity:{{ lb.op }};white-space:nowrap">{{ lb.text }}</div>
+        </sc-for>
+      </div>
+
+      <!-- F2 · the last line, then the end card -->
+      <div style="position:absolute;inset:0;opacity:{{ F2.op }}">
+        <sc-if value="{{ F2.slot }}" hint-placeholder-val="{{ true }}">
+          <div style="position:absolute;left:8%;top:60%;width:56%;height:0;border-top:1.5px dashed rgba(217,179,106,0.6)"></div>
+          <div style="position:absolute;left:8%;top:63%;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.08em;color:rgba(217,179,106,0.8)">YOUR LAST LINE · WRITE IT LAST</div>
+        </sc-if>
+      </div>
+      <div style="position:absolute;inset:0;background:#EFE8DA;opacity:{{ end.op }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6cqw">
+        <div style="font-family:'Instrument Serif',serif;font-size:6.4cqw;letter-spacing:-0.01em;color:#16161A;transform:translateY({{ end.y }})">NASA as a medium</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.1em;color:rgba(22,22,26,0.55)">{{ end.sub }}</div>
+      </div>
+
+      <!-- the words — serif, one beat at a time, riding the camera -->
+      <div style="position:absolute;inset:0;pointer-events:none;transform:scale({{ wordZ }});transform-origin:60.7% 46.3%">
+        <sc-for list="{{ words }}" as="w" hint-placeholder-count="3">
+          <div style="position:absolute;left:{{ w.l }};top:{{ w.t }};font-family:'Instrument Serif',serif;font-style:{{ w.it }};font-size:{{ w.size }};line-height:1.05;letter-spacing:-0.01em;color:{{ w.color }};opacity:{{ w.op }};transform:translateY({{ w.y }});text-shadow:0 0 2cqw rgba(11,11,14,0.9);white-space:nowrap">{{ w.text }}</div>
+        </sc-for>
+      </div>
+
+      <!-- the label: what this shot is, and how sure it is -->
+      <sc-if value="{{ label.show }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;left:3%;top:4.5%;display:flex;gap:0.8cqw;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.08em;color:{{ label.color }}">
+          <span style="width:0.7cqw;height:0.7cqw;border-radius:50%;background:{{ label.dot }}"></span><span>{{ label.text }}</span>
+        </div>
+      </sc-if>
+      <div style="position:absolute;right:3%;top:4.5%;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;color:{{ clockColor }}">{{ clock }}</div>
+    </div>
+
+    <!-- controls + the film, section by section -->
+    <div style="margin-top:14px;display:flex;align-items:center;gap:14px">
+      <div tabindex="0" role="button" onclick="{{ onPlay }}" title="{{ playTitle }}" style="flex:none;width:40px;height:40px;border-radius:50%;background:#ECECF1;color:#101013;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px">{{ playIcon }}</div>
+      <div style="flex:1;min-width:0;position:relative">
+        <div style="display:flex;gap:3px">
+          <sc-for list="{{ chapters }}" as="ch" hint-placeholder-count="6">
+            <div tabindex="0" role="button" onclick="{{ ch.onGo }}" title="{{ ch.title }}" style="flex:{{ ch.flex }} 1 0;min-width:0;padding:8px 8px 7px;border-radius:7px;background:{{ ch.bg }};box-shadow:{{ ch.ring }};cursor:pointer;overflow:hidden">
+              <div style="display:flex;gap:3px;margin-bottom:6px">
+                <sc-for list="{{ ch.dots }}" as="dt" hint-placeholder-count="2"><span style="flex:1;height:2px;border-radius:2px;background:{{ dt.bg }}"></span></sc-for>
+              </div>
+              <div style="font-size:9.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ch.num }}</div>
+              <div style="margin-top:2px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(236,236,241,0.85)">{{ ch.name }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <!-- your voice, under the picture -->
+        <div style="margin-top:4px;display:flex;gap:3px;height:12px">
+          <sc-for list="{{ voice }}" as="vo" hint-placeholder-count="11">
+            <span title="{{ vo.title }}" style="flex:{{ vo.flex }} 1 0;min-width:0;border-radius:3px;background:{{ vo.bg }};box-shadow:{{ vo.ring }}"></span>
+          </sc-for>
+        </div>
+        <div style="position:absolute;top:-4px;bottom:-4px;left:{{ head }};width:2px;margin-left:-1px;border-radius:2px;background:#ECECF1;pointer-events:none"></div>
+      </div>
+    </div>
+
+    <!-- the one card: the shot under the playhead -->
+    <div style="margin-top:22px;padding:22px 24px;border-radius:16px;background:#16161B;box-shadow:inset 0 0 0 1px {{ card.ring }};display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 360px;min-width:0">
+        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+          <span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:{{ card.kindColor }}">{{ card.kind }}</span>
+          <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ card.where }}</span>
+        </div>
+        <div style="margin-top:10px;font-size:21px;font-weight:600;letter-spacing:-0.015em;line-height:1.25">{{ card.title }}</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:rgba(236,236,241,0.7)">{{ card.body }}</div>
+        <div style="margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <sc-if value="{{ card.hasAction }}" hint-placeholder-val="{{ true }}">
+            <div tabindex="0" role="button" onclick="{{ card.onAction }}" style="font-size:14px;font-weight:600;padding:10px 18px;border-radius:9px;background:{{ card.btnBg }};color:#101013;cursor:pointer;white-space:nowrap">{{ card.action }}</div>
+          </sc-if>
+          <span style="font-size:13px;color:{{ card.stateColor }}">{{ card.state }}</span>
+        </div>
+      </div>
+      <sc-if value="{{ card.hasQr }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;width:156px;text-align:center">
+          <div style="width:156px;height:156px;padding:12px;border-radius:12px;background:#ECECF1">
+            <sc-if value="{{ qrReady }}" hint-placeholder-val="{{ false }}">
+              <div style="width:100%;height:100%;display:grid;grid-template-columns:repeat({{ qrN }},1fr)">
+                <sc-for list="{{ qr }}" as="qc" hint-placeholder-count="20"><span style="background:{{ qc }}"></span></sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ qrWaiting }}" hint-placeholder-val="{{ true }}"><div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#55555C">QR</div></sc-if>
+          </div>
+          <div style="margin-top:8px;font-size:12px;line-height:1.45;color:rgba(236,236,241,0.6)">Scan to capture it on your phone. It lands in this slot.</div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="margin-top:12px;font-size:12px;line-height:1.6;color:rgba(236,236,241,0.4)">Every shape here is drawn by code — nothing is generated footage — so a gap can never pass for the real thing. In Drawn, anything that stands in for a real object says so on screen.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1250}}'>
+// Trailer: the whole NASA essay in 1:22, playable before the footage exists.
+// Each shot is a ghost with an identity by type — your line (gold), Sketch's drawing (white line art),
+// Scout's find (cyan, grainy until checked), an archive clip (a film frame), a wanted news clip (a dashed broadcast frame).
+// How finished a shot looks says how sure it is.
+// Two finishes: ROUGH shows the ghosts and what's missing; DRAWN is the whole film as motion graphics —
+// a finished cut that needs no footage at all, with recreations labelled as recreations.
+const GOLD = "#D9B36A", CYAN = "#5EB8C9", GREEN = "#5EC98F", MARS = "#E8875A";
+const DUR = 82;
+const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+const easeIn = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * x;
+const cl = x => Math.max(0, Math.min(1, x));
+const mmss = t => Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0");
+
+// Sections and their shots. type → colour: you (gold), sketch (white), scout (cyan), archive, wanted.
+const CH = [
+  { num: "1 · OPEN", name: "The quote", a: 0, b: 9 },
+  { num: "2", name: "Mercury on TV", a: 9, b: 21 },
+  { num: "3", name: "The posters", a: 21, b: 31 },
+  { num: "4", name: "Mars and orbits", a: 31, b: 55 },
+  { num: "5 · OTHER SIDE", name: "The engineers", a: 55, b: 67 },
+  { num: "6 · CLOSE", name: "The funding model", a: 67, b: 82 },
+];
+const SH = [
+  { id: "A",  ch: 0, a: 0,  b: 9,  type: "archive", voice: "rec" },
+  { id: "B1", ch: 1, a: 9,  b: 15, type: "archive", voice: "none" },
+  { id: "B2", ch: 1, a: 15, b: 21, type: "you",     voice: "slot", flag: "bridge" },
+  { id: "C",  ch: 2, a: 21, b: 31, type: "sketch",  voice: "rec",  flag: "poster" },
+  { id: "D1", ch: 3, a: 31, b: 35, type: "you",     voice: "rec" },
+  { id: "D2", ch: 3, a: 35, b: 41, type: "sketch",  voice: "rec",  flag: "orbit", cutOut: true },
+  { id: "D3", ch: 3, a: 41, b: 47, type: "scout",   voice: "rec",  flag: "mariner", cutIn: true },
+  { id: "D4", ch: 3, a: 47, b: 55, type: "wanted",  voice: "slot", flag: "news" },
+  { id: "E",  ch: 4, a: 55, b: 67, type: "scout",   voice: "rec",  flag: "oral" },
+  { id: "F1", ch: 5, a: 67, b: 75, type: "sketch",  voice: "rec",  flag: "budget" },
+  { id: "F2", ch: 5, a: 75, b: 82, type: "you",     voice: "slot", flag: "last" },
+];
+const TYPE_COLOR = { you: GOLD, sketch: "#ECECF1", scout: CYAN, archive: "rgba(236,236,241,0.55)", wanted: CYAN };
+
+const WORDS = [
+  { s: "A",  text: "“…cheap", t0: 4.2, l: "27%", t: "79%", size: "5cqw" },
+  { s: "A",  text: "science fiction…”", t0: 5.0, l: "27%", t: "88%", size: "5cqw", it: 1 },
+  { s: "B1", text: "Before anyone flew,", t0: 12.8, l: "8%", t: "84%", size: "4.4cqw" },
+  { s: "B2", text: "the launches were scheduled", t0: 15.3, l: "8%", t: "42%", size: "5cqw" },
+  { s: "B2", text: "like episodes.", t0: 16.3, l: "8%", t: "52%", size: "5cqw", it: 1 },
+  { s: "C",  text: "NASA’s own artists", t0: 22.4, l: "8%", t: "30%", size: "4.6cqw" },
+  { s: "C",  text: "drew the future", t0: 23.4, l: "8%", t: "40%", size: "4.6cqw" },
+  { s: "C",  text: "it then had to fly to.", t0: 24.5, l: "8%", t: "50%", size: "4.6cqw", it: 1 },
+  { s: "D1", text: "The real planning", t0: 31.35, l: "8%", t: "36%", size: "6cqw" },
+  { s: "D1", text: "looked nothing", t0: 32.15, l: "8%", t: "46%", size: "6cqw" },
+  { s: "D1", text: "like the posters.", t0: 32.95, l: "8%", t: "56%", size: "6cqw", it: 1 },
+  { s: "D2", text: "It was", t0: 37.1, l: "7%", t: "72%", size: "4.6cqw" },
+  { s: "D2", text: "arithmetic.", t0: 37.8, l: "7%", t: "80%", size: "4.6cqw", it: 1 },
+  { s: "D3", text: "The first picture of Mars", t0: 42.3, l: "6%", t: "8.5%", size: "3.6cqw" },
+  { s: "D3", text: "was coloured in", t0: 43.5, l: "6%", t: "15.5%", size: "3.6cqw" },
+  { s: "D3", text: "by hand.", t0: 44.5, l: "6%", t: "22.5%", size: "3.6cqw", it: 1 },
+  { s: "D4", text: "Sixty years on,", t0: 47.7, l: "8%", t: "22%", size: "4.4cqw" },
+  { s: "D4", text: "the launches still stream", t0: 48.7, l: "8%", t: "31%", size: "4.4cqw" },
+  { s: "D4", text: "like episodes.", t0: 50.0, l: "8%", t: "40%", size: "4.4cqw", it: 1 },
+  { s: "E",  text: "The people doing the work", t0: 55.6, l: "7%", t: "34%", size: "4.2cqw" },
+  { s: "E",  text: "thought the publicity", t0: 56.7, l: "7%", t: "43%", size: "4.2cqw" },
+  { s: "E",  text: "was a distraction.", t0: 57.8, l: "7%", t: "52%", size: "4.2cqw", it: 1 },
+  { s: "F1", text: "The fiction", t0: 68.6, l: "50%", t: "14%", size: "4.6cqw" },
+  { s: "F1", text: "wasn’t decoration.", t0: 69.5, l: "50%", t: "23%", size: "4.6cqw", it: 1 },
+  { s: "F2", text: "It was", t0: 75.4, l: "8%", t: "38%", size: "6cqw" },
+  { s: "F2", text: "the funding model.", t0: 76.2, l: "8%", t: "48%", size: "6cqw", it: 1 },
+];
+
+// NASA's share of federal outlays, approximate public figures — peak about 4.4% in 1966.
+const BUDGET = [[1959, 0.1], [1961, 0.9], [1962, 1.2], [1963, 2.3], [1964, 3.4], [1965, 4.3], [1966, 4.4], [1967, 3.5], [1968, 2.7], [1969, 2.3], [1970, 1.9], [1972, 1.4], [1975, 1.0], [1980, 0.8], [1985, 0.8], [1990, 1.0], [1995, 0.9], [2000, 0.75], [2005, 0.6], [2010, 0.5], [2015, 0.5], [2020, 0.5], [2024, 0.4]];
+const bx = y => 120 + (y - 1959) / (2024 - 1959) * 740, by = v => 440 - v / 5 * 330;
+const BUDGET_PATH = BUDGET.map((d, i) => (i ? "L " : "M ") + bx(d[0]).toFixed(1) + " " + by(d[1]).toFixed(1)).join(" ");
+
+// Mariner 4's first frame showed the limb of Mars; drawn here as numbers, the planet under the curve.
+const COLS = 18, ROWS = 12;
+const PAINT = ["#141418", "#2A1A15", "#46231A", "#66301C", "#86401F", "#A55325", "#BE6A33", "#CF8446", "#DDA062", "#E9BD86"];
+const CELLS = [];
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+  const d = Math.hypot(c - 21, r - 24) - 19.5;
+  const n = d > 0 ? 0 : Math.min(9, Math.max(1, Math.round(3 + (-d) * 0.75 + ((c * 7 + r * 13) % 3) - 1)));
+  CELLS.push({ c, r, n });
+}
+const LINES = [92, 100, 84, 96, 70, 100, 88, 94, 62, 100, 90, 78, 96, 54];
+const MARKED = [2, 6, 10];
+
+
+// ── one film, shared by every tab (Studio, Plan, Footage, Trailer) ──
+// Kept in this browser, so a change made on any page shows up on all of them.
+const KEY = "aldershot.nasa.v1";
+const SEED_NOTES = [{ seq: "s5", t: 13, text: "hold on the Mariner picture longer, let it breathe" }, { seq: "s5", t: 70, text: "draw the launch window as a calendar, every 26 months" }];
+const loadShared = () => { let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {} return { over: {}, notes: SEED_NOTES, ...o }; };
+const saveShared = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} };
+
+// this cut's shots are the same moments the Studio and Spine show
+const RF_LINK = { bridge: ["s3:1", { s: "rec" }], poster: ["s4:1", { p: "approved" }], orbit: ["s5:1", { p: "approved" }], mariner: ["s5:2", { p: "have" }],
+  news: ["s5:5", { p: "found" }], oral: ["s6:1", { p: "have", s: "have" }], budget: ["s9:0", { p: "have" }] };
+const rfDone = sh => { const d = {}; Object.keys(RF_LINK).forEach(f => { const [k, eff] = RF_LINK[f], o = (sh.over || {})[k] || {}; if (Object.keys(eff).every(x => o[x] === eff[x])) d[f] = true; }); return d; };
+
+class Component extends DCLogic {
+  state = { t: 0, playing: true, mode: "rough", done: {}, sh: loadShared(), qr: null };
+
+
+  share(patch) { const sh = { ...this.state.sh, ...patch }; saveShared(sh); this.setState({ sh }); return sh; }
+  shareOver(key, eff) { const sh = this.state.sh; return this.share({ over: { ...sh.over, [key]: { ...(sh.over[key] || {}), ...eff } } }); }
+
+
+
+  componentDidMount() {
+    this.iv = setInterval(() => { if (this.state.playing) this.setState(s => ({ t: (s.t + 0.04) % DUR })); }, 40);
+    this.key = e => { if (e.code === "Space" && e.target === document.body) { e.preventDefault(); this.setState(s => ({ playing: !s.playing })); } };
+    document.addEventListener("keydown", this.key);
+    this.onStore = e => { if (!e || e.key === KEY || e.key === null) this.setState({ sh: loadShared() }); };
+    window.addEventListener("storage", this.onStore);
+    const make = () => { try {
+      const q = window.qrcode(0, "M"); q.addData("aldershot capture · NASA as a medium · section 4 · news clip, 8 sec"); q.make();
+      const n = q.getModuleCount(), cells = [];
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push(q.isDark(r, c) ? "#101013" : "transparent");
+      this.setState({ qr: { n, cells } });
+    } catch (e) {} };
+    if (window.qrcode) make();
+    else { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"; sc.onload = make; document.head.appendChild(sc); }
+  }
+  componentWillUnmount() { clearInterval(this.iv); document.removeEventListener("keydown", this.key); window.removeEventListener("storage", this.onStore); }
+
+  shotOp(sh, t) {
+    if (sh.a === 0 && t < 0.3) return 1;
+    const inn = sh.cutIn ? (t >= sh.a ? 1 : 0) : cl((t - (sh.a - 0.3)) / 0.35);
+    const out = sh.cutOut ? (t < sh.b ? 1 : 0) : 1 - cl((t - (sh.b - 0.3)) / 0.35);
+    return Math.min(inn, out);
+  }
+
+  renderVals() {
+    const s = this.state, t = s.t, d = { ...(s.done || {}), ...rfDone(s.sh) }, drawn = s.mode === "drawn", out = {};
+    const op = {}; SH.forEach(x => { op[x.id] = this.shotOp(x, t); });
+    const si = Math.max(0, SH.findIndex(x => t >= x.a && t < x.b));
+    const cur = SH[si];
+    const settled = { A: true, B1: true, B2: !!d.bridge, C: !!d.poster, D1: true, D2: !!d.orbit, D3: !!d.mariner, D4: !!d.news, E: !!d.oral, F1: !!d.budget, F2: !!d.last };
+
+    // A — archive frame
+    out.A = { op: op.A, z: (1 + 0.04 * ease(t / 9)).toFixed(4), draw: 1 - ease((t - 0.4) / 2.2) };
+    out.sprockets = [];
+    for (let i = 0; i < 6; i++) { out.sprockets.push({ l: "24.6%", t: (15 + i * 10.5) + "%" }); out.sprockets.push({ l: "74.3%", t: (15 + i * 10.5) + "%" }); }
+
+    // B1 — seven broadcasts counting down
+    out.B1 = { op: op.B1 };
+    const tvPos = [[10, 14], [28, 14], [46, 14], [64, 14], [19, 44], [37, 44], [55, 44]];
+    out.tvs = tvPos.map((p, i) => { const k = ease((t - 9.3 - i * 0.45) / 0.4);
+      return { l: (p[0] + 6) + "%", t: p[1] + "%", n: String(7 - i), op: k, y: ((1 - k) * 6) + "px",
+        edge: (0.2 + 0.2 * k).toFixed(2), numColor: i === Math.min(6, Math.floor((t - 9.3) / 0.45)) ? "#ECECF1" : "rgba(236,236,241,0.45)" }; });
+    out.B2 = { op: op.B2, slot: !drawn && !settled.B2 };
+
+    // C — Sketch draws a poster from your scans
+    const cl0 = 21;
+    out.C = { op: op.C, frame: 1 - ease((t - cl0 - 0.2) / 1.2), planet: 1 - ease((t - cl0 - 1.0) / 1.6), ring: 1 - ease((t - cl0 - 2.0) / 1.2),
+      ground: 1 - ease((t - cl0 - 2.6) / 1.2), title: ease((t - cl0 - 3.4) / 0.8).toFixed(2),
+      rocket: "translate(806 " + (350 - 130 * ease((t - cl0 - 3.0) / 5)).toFixed(1) + ")" };
+
+    // D — the Mars section (local time u)
+    const O = 31, u = t - O;
+    out.D1 = { op: op.D1 };
+    out.posters = [["58%", "18%", "-6deg"], ["70%", "26%", "4deg"], ["82%", "16%", "-2deg"]].map((p, i) => ({ l: p[0], t: p[1], r: p[2], op: 0.3 + 0.7 * ease((u - 0.2 * i) / 0.8), y: (1 - ease((u - 0.2 * i) / 1.2)) * 8 + "px" }));
+    const p = ease((u - 5.0) / 3.4), th = Math.PI + Math.PI * p;
+    const eA = (180 + 255 * p) * Math.PI / 180, mA = (224 + 136 * p) * Math.PI / 180;
+    const zoom = 1 + 11 * easeIn((u - 8.6) / 1.4);
+    out.D2 = { op: op.D2, z: u < 10 ? zoom.toFixed(3) : 1,
+      orbE: 1 - ease((u - 4.0) / 0.9), orbM: 1 - ease((u - 4.2) / 1.0), sun: ease((u - 4.0) / 0.4),
+      arc: 1 - p, craft: u > 5.0 ? 1 : 0, planets: ease((u - 4.6) / 0.4),
+      cx: (431.5 + 151.5 * Math.cos(th)).toFixed(1), cy: (250 - 148.2 * Math.sin(th)).toFixed(1),
+      ex: (400 + 120 * Math.cos(eA)).toFixed(1), ey: (250 - 120 * Math.sin(eA)).toFixed(1),
+      mx: (400 + 183 * Math.cos(mA)).toFixed(1), my: (250 - 183 * Math.sin(mA)).toFixed(1),
+      labels: [
+        { text: "EARTH · 1.00 AU", l: "22%", t: "36%", op: ease((u - 5.2) / 0.5) * (1 - ease((u - 8.6) / 0.4)) },
+        { text: "MARS · 1.52 AU", l: "63%", t: "30%", op: ease((u - 5.5) / 0.5) * (1 - ease((u - 8.6) / 0.4)) },
+        { text: "TRANSFER · ABOUT 259 DAYS", l: "36%", t: "84%", op: ease((u - 6.0) / 0.5) * (1 - ease((u - 8.6) / 0.4)) },
+      ] };
+    const g = 0.04 + 0.96 * ease((u - 10.0) / 1.2), paintX = (u - 11.0) / 4.0 * (COLS + 2);
+    out.D3 = { op: op.D3, g: g.toFixed(3), grain: !drawn && !settled.D3 };
+    out.grid = CELLS.map(x => { const lit = x.c < paintX, seed = u < 11.2 && Math.hypot(x.c - 8.5, x.r - 5.5) < 3;
+      return { n: String(x.n), bg: lit ? PAINT[x.n] : seed ? MARS : "#0F0F12", fg: lit ? (x.n >= 6 ? "rgba(16,16,19,0.55)" : "rgba(236,236,241,0.35)") : "rgba(236,236,241,0.28)" }; });
+    const rise = ease((u - 16.4) / 6.0);
+    out.D4 = { op: op.D4, rocket: "translate(690 " + (470 - 300 * rise).toFixed(1) + ")",
+      frameStyle: drawn || settled.D4 ? "solid" : "dashed",
+      frameColor: drawn ? "rgba(236,236,241,0.18)" : settled.D4 ? "rgba(94,201,143,0.55)" : "rgba(94,184,201,0.45)",
+      clock: "T+ 00:00:" + String(Math.max(0, Math.floor((u - 16) * 1.5))).padStart(2, "0"),
+      bar: drawn ? "ILLUSTRATION · A LAUNCH, STREAMED LIVE" : settled.D4 ? "LAUNCH COVERAGE · LINKED AT THE SOURCE · 8 SEC" : "LAUNCH COVERAGE · NEWS CLIP WANTED · 8 SEC",
+      barColor: drawn ? "rgba(236,236,241,0.6)" : settled.D4 ? GREEN : CYAN,
+      barRing: drawn ? "rgba(236,236,241,0.15)" : "rgba(94,184,201,0.35)" };
+    out.plume = [0, 1, 2, 3, 4].map(i => { const k = ((t * 3 + i * 0.37) % 1); return { x: ((i % 2 ? 1 : -1) * k * 10).toFixed(1), y: (40 + k * 46).toFixed(1), r: (5 + k * 14).toFixed(1), op: ((1 - k) * (u > 16.4 ? 1 : 0)).toFixed(2) }; });
+
+    // E — the oral history, three passages marked, one picked
+    const pick = settled.E ? 6 : -1;
+    out.E = { op: op.E, y: ((1 - ease((t - 55.2) / 1.0)) * 10).toFixed(1) + "px" };
+    out.lines = LINES.map((w, i) => { const marked = MARKED.includes(i) && t > 58.5 + MARKED.indexOf(i) * 0.6;
+      return { w: w + "%", bg: i === pick && t > 59 ? "rgba(94,184,201,0.75)" : "rgba(236,236,241,0.14)", mark: marked && !drawn ? CYAN : "transparent" }; });
+
+    // F1 — the money, drawn
+    const pk = BUDGET.find(x => x[0] === 1966);
+    out.F1 = { op: op.F1, path: BUDGET_PATH, draw: 1 - ease((t - 67.6) / 3.6), px: bx(pk[0]).toFixed(1), py: by(pk[1]).toFixed(1), peak: ease((t - 69.2) / 0.4),
+      labels: [
+        { text: "NASA · SHARE OF FEDERAL SPENDING", l: "12.5%", t: "86%", color: "rgba(236,236,241,0.45)", op: ease((t - 67.4) / 0.6) },
+        { text: "1966 · ABOUT 4.4%", l: (bx(1966) / 9.6 + 1.2).toFixed(1) + "%", t: (by(4.4) / 5.4 - 1).toFixed(1) + "%", color: MARS, op: ease((t - 69.4) / 0.5) },
+        { text: "TODAY · UNDER 0.5%", l: "76%", t: "70%", color: "rgba(236,236,241,0.6)", op: ease((t - 71.0) / 0.5) },
+        { text: "1959", l: "11.5%", t: "83%", color: "rgba(236,236,241,0.3)", op: ease((t - 67.4) / 0.6) },
+      ] };
+    out.F2 = { op: op.F2 * (1 - cl((t - 79.0) / 0.4)), slot: !drawn && !settled.F2 };
+    out.end = { op: cl((t - 79.0) / 0.45).toFixed(3), y: ((1 - ease((t - 79.2) / 0.8)) * 0.8).toFixed(2) + "cqw", sub: drawn ? "A VIDEO ESSAY" : "A VIDEO ESSAY · TRAILER, ROUGH" };
+
+    // words
+    out.wordZ = t >= 39.6 && t < 41 ? (1 + 2.5 * easeIn((t - 39.6) / 1.4)).toFixed(3) : 1;
+    out.words = WORDS.map(w => { const k = ease((t - w.t0) / 0.45), sop = w.s === "F2" ? out.F2.op : op[w.s];
+      const yours = (w.s === "B2" || w.s === "F2") && !drawn;
+      return { text: w.text, l: w.l, t: w.t, size: w.size, it: w.it ? "italic" : "normal",
+        color: w.s === "D1" ? "#F2E6CF" : yours ? "rgba(236,236,241,0.62)" : "#ECECF1", op: (k * sop).toFixed(3), y: ((1 - k) * 0.9).toFixed(2) + "cqw" }; });
+
+    // label
+    const R = {
+      A:  [drawn ? "ARCHIVE · McLUHAN" : "ARCHIVE · McLUHAN · 0:09 · LINKED, CREDITED", true],
+      B1: [drawn ? "ILLUSTRATION · AFTER THE 1961–63 BROADCASTS" : "MONTAGE · 7 BROADCASTS · IN", true],
+      B2: [drawn ? "" : settled.B2 ? "YOU · BRIDGE · RECORDED" : "YOUR BRIDGE · NOT RECORDED", settled.B2],
+      C:  [drawn ? "ILLUSTRATION · AFTER A NASA ART PROGRAM POSTER" : settled.C ? "DRAWN FROM YOUR SCAN · APPROVED" : "DRAWN FROM YOUR SCAN · YOURS TO APPROVE", settled.C],
+      D1: [drawn ? "" : "YOU · TAKE 1 · RECORDED", true],
+      D2: [drawn ? "ILLUSTRATION · REAL ORBITS" : settled.D2 ? "DRAWN · APPROVED" : "DRAWN BY SKETCH · YOURS TO APPROVE", settled.D2],
+      D3: [drawn ? "RECREATION · MARINER 4 DATA · NASA/JPL 1965" : settled.D3 ? "NASA / JPL · 1965 · CHECKED" : "SCOUT FOUND · NASA / JPL · PREVIEW, NOT CHECKED", settled.D3],
+      D4: [drawn ? "" : settled.D4 ? "NEWS CLIP · LINK IN" : "WANTED · NEWS CLIP · 8 SEC", settled.D4],
+      E:  [drawn ? "ORAL HISTORY · NASA JOHNSON SPACE CENTER" : settled.E ? "JSC ORAL HISTORY · PICKED" : "SCOUT FOUND · JSC ORAL HISTORY · 3 MARKED, PICK ONE", settled.E],
+      F1: [drawn ? "SOURCE · NASA BUDGET, % OF FEDERAL OUTLAYS" : settled.F1 ? "DRAWN FROM PUBLIC FIGURES · CHECKED" : "DRAWN FROM PUBLIC FIGURES · CHECK BEFORE FINAL", settled.F1],
+      F2: [drawn ? "" : settled.F2 ? "YOUR LAST LINE · DRAFTED" : "YOUR LAST LINE · WRITE IT LAST", settled.F2],
+    }[cur.id];
+    const lc = drawn ? "rgba(236,236,241,0.5)" : R[1] ? "rgba(236,236,241,0.6)" : TYPE_COLOR[cur.type];
+    out.label = { show: !!R[0] && out.end.op < 0.5, text: R[0], color: lc, dot: drawn ? "transparent" : R[1] ? GREEN : TYPE_COLOR[cur.type] };
+    out.clock = mmss(t) + " / 1:22";
+    out.clockColor = out.end.op > 0.5 ? "rgba(22,22,26,0.4)" : "rgba(236,236,241,0.4)";
+
+    // finish switch
+    out.modes = [["rough", "Rough", "Show the ghosts and what's missing"], ["drawn", "Drawn", "The whole film as motion graphics"]].map(m => ({ name: m[1], title: m[2],
+      bg: s.mode === m[0] ? "#2E2E36" : "transparent", color: s.mode === m[0] ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => this.setState({ mode: m[0] }) }));
+    out.modeNote = drawn
+      ? "Drawn: the whole film as motion graphics and your voice — no footage needed. A sketch to build on, or the finished cut if that’s the video you want. Anything standing in for a real object is labelled as a recreation."
+      : "Rough: every gap shows as a ghost — what it should be, how long, and how sure we are. It sharpens as things arrive.";
+    const nSet = SH.filter(x => settled[x.id]).length;
+    out.progText = "The whole film · " + nSet + " of " + SH.length + " shots settled";
+
+    // controls
+    out.playIcon = s.playing ? "❚❚" : "▶";
+    out.playTitle = s.playing ? "Pause (space)" : "Play (space)";
+    out.onPlay = () => this.setState({ playing: !s.playing });
+    out.head = (t / DUR * 100).toFixed(2) + "%";
+    out.chapters = CH.map((c, i) => ({ num: c.num, name: c.name, flex: c.b - c.a, title: c.name + " · " + (c.b - c.a) + " sec",
+      bg: i === cur.ch ? "#1D1D23" : "#141418", ring: i === cur.ch ? "inset 0 0 0 1px rgba(236,236,241,0.25)" : "inset 0 0 0 1px rgba(255,255,255,0.05)",
+      dots: SH.filter(x => x.ch === i).map(x => ({ bg: settled[x.id] ? GREEN : x.type === "wanted" ? "repeating-linear-gradient(90deg," + CYAN + " 0 4px,transparent 4px 7px)" : TYPE_COLOR[x.type] })),
+      onGo: () => this.setState({ t: c.a + 0.01 }) }));
+    out.voice = SH.map(x => { const rec = x.voice === "rec" || (x.voice === "slot" && settled[x.id]);
+      return { flex: x.b - x.a, title: rec ? "your voice · recorded" : x.voice === "slot" ? "your voice · not recorded yet" : "no voice here",
+        bg: rec ? "repeating-linear-gradient(90deg,rgba(217,179,106,0.55) 0 2px,rgba(217,179,106,0.2) 2px 4px)" : "transparent",
+        ring: rec ? "none" : x.voice === "slot" ? "inset 0 0 0 1px rgba(217,179,106,0.5)" : "inset 0 0 0 1px rgba(255,255,255,0.05)" }; });
+
+    // the card for the shot under the playhead
+    const act = (flag) => () => { if (RF_LINK[flag]) this.shareOver(RF_LINK[flag][0], RF_LINK[flag][1]); else this.setState({ done: { ...s.done, [flag]: true } }); };
+    const C = {
+      A: { kind: "ARCHIVE CLIP", kindColor: "rgba(236,236,241,0.6)", where: "0:00–0:09 · section 1", title: "McLuhan, the “cheap science fiction” line",
+        body: "Linked and credited on screen. In Rough it plays as a drawn film frame; the real clip drops in at export, with its source in the corner.", state: "Settled", ok: true },
+      B1: { kind: "MONTAGE", kindColor: "rgba(236,236,241,0.6)", where: "0:09–0:15 · section 2", title: "Seven broadcasts, counting down",
+        body: "Seven anchors from the 1961–63 launches, cut on the count. In Drawn it plays as this illustration, labelled as one.", state: "Settled", ok: true },
+      B2: { kind: "YOURS TO RECORD", kindColor: GOLD, where: "0:15–0:21 · section 2 · 6 sec", title: "“…the launches were scheduled like episodes.”",
+        body: "Your bridge line. Until you record it, the words play on their own — dimmer, so you can hear the gap.", action: "Record", btnBg: GOLD, flag: "bridge", doneText: "Recorded — take 1." },
+      C: { kind: "DRAWN FROM YOUR SCAN", kindColor: "#ECECF1", where: "0:21–0:31 · section 3", title: "A poster, redrawn as line art",
+        body: "Sketch traced one of your three scans so it moves: the planet draws itself, the rocket lifts. Keep the drawing, or let the real scan replace it.", action: "Approve", btnBg: GOLD, flag: "poster", doneText: "Approved — it stays drawn." },
+      D1: { kind: "YOUR LINE", kindColor: GOLD, where: "0:31–0:35 · section 4", title: "“The real planning looked nothing like the posters.”",
+        body: "Recorded, take 1.", state: "Settled", ok: true },
+      D2: { kind: "DRAWN BY SKETCH", kindColor: "#ECECF1", where: "0:35–0:41 · section 4", title: "The transfer orbit",
+        body: "Drawn from the real orbits — Earth at 1 AU, Mars at 1.52, about 259 days across — timed so the craft arrives on “arithmetic.” Then the camera dives into Mars.", action: "Approve", btnBg: GOLD, flag: "orbit", doneText: "Approved — it stays." },
+      D3: { kind: "SCOUT FOUND", kindColor: CYAN, where: "0:41–0:47 · section 4", title: "Mariner 4’s first picture of Mars",
+        body: "July 1965: the data came back as numbers, and JPL engineers coloured the printout in by hand. Check it and the real scan replaces Sketch’s preview, credited to NASA/JPL.", action: "Check it", btnBg: CYAN, flag: "mariner", doneText: "Checked — grain off." },
+      D4: { kind: "WANTED · NEWS CLIP", kindColor: CYAN, where: "0:47–0:55 · section 4 · 8 sec", title: "A launch, streamed like an episode",
+        body: "Any recent launch broadcast — the countdown, the anchor, the clock. Scout can’t fetch broadcast news, so this one’s yours to grab.", action: "Paste a link instead", btnBg: CYAN, flag: "news", doneText: "Linked — it plays from the source, credited.", qr: true },
+      E: { kind: "SCOUT FOUND", kindColor: CYAN, where: "0:55–1:07 · section 5", title: "Pick the engineer’s line",
+        body: "Scout read NASA’s Johnson Space Center oral histories and marked three passages about the press. Pick one; it plays after your line, in their words.", action: "Pick one", btnBg: CYAN, flag: "oral", doneText: "Picked — the other two stay in your footage." },
+      F1: { kind: "DRAWN FROM PUBLIC FIGURES", kindColor: "#ECECF1", where: "1:07–1:15 · section 6", title: "The money, as a line",
+        body: "NASA’s share of federal spending: about 4.4% at the 1966 peak, under half a percent now. Drawn from public budget figures — check the numbers before the final cut.", action: "Check the figures", btnBg: GOLD, flag: "budget", doneText: "Checked against the source." },
+      F2: { kind: "YOURS TO WRITE", kindColor: GOLD, where: "1:15–1:22 · section 6", title: "The last line",
+        body: "Write it last. Aldershot drafts three endings from your notes and the film so far; you say the one you mean.", action: "Draft three", btnBg: GOLD, flag: "last", doneText: "Three drafts are in your notebook." },
+    }[cur.id];
+    const isSet = settled[cur.id];
+    out.card = { kind: C.kind, kindColor: C.kindColor, where: C.where, title: C.title, body: C.body,
+      ring: C.kindColor === GOLD ? "rgba(217,179,106,0.28)" : C.kindColor === CYAN ? "rgba(94,184,201,0.28)" : "rgba(236,236,241,0.14)",
+      hasAction: !!C.action && !isSet, action: C.action || "", btnBg: C.btnBg || GOLD, onAction: C.flag ? act(C.flag) : () => {},
+      state: C.ok ? "Settled" : isSet ? C.doneText : "", stateColor: GREEN, hasQr: !!C.qr && !isSet };
+    out.qrReady = !!s.qr; out.qrWaiting = !s.qr;
+    out.qrN = s.qr ? s.qr.n : 21; out.qr = s.qr ? s.qr.cells : [];
+    return out;
+  }
+}
+</script>
+</body>
+</html>
