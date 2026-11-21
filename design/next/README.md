@@ -22,6 +22,10 @@ conversation clears it. In the build this is just the project.
 **What's faked** is listed in doc 21, Part six — chiefly that the crew's
 replies are scripted, and that some of the sample's facts are placeholders.
 
+`film.js` is the sample film — the Plan page's data, copied verbatim — and the
+reference `src/film-plan.ts` is tested against (`test/film-plan.test.ts` fails
+if the page and the file drift apart).
+
 `support.js` and `Scout.dc.html` are copies of `../support.js` and
 `../one-take/Scout.dc.html`, so the folder renders on its own.
 

@@ -273,6 +273,10 @@ Each phase is small and has a test that would fail without it.
 | 6 | **Sketch: three primitives** — orbit/path, line chart, number grid — as code | Each renders from data and a label; none is a pixel image |
 | 7 | **Drawn finish** | A Drawn export of the sample has a label on every recreation; a recreation standing in for a proof fails *Before you post* |
 
+
+*Phase 1 is built: `src/film-plan.ts` (`parseFilmPlan`, `computeFilm`, rules `len` · `order` · `declare` · `drop`), tested by `test/film-plan.test.ts` against `design/next/film.js`. In code the types are `PlanSection` / `PlanBlock`, so they never collide with the cut's `Block` in `src/blocks.ts`.*
+
+
 ## Part eight: the words
 
 The glossary (`14-GLOSSARY.md`) gains: *section*, *two-column script*, *sound
