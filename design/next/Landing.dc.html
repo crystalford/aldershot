@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aldershot</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; background:#101013; scroll-behavior:smooth; }
+  * { box-sizing:border-box; }
+  a { color:inherit; text-decoration:none; }
+  a:focus-visible, [role=button]:focus-visible { outline:2px solid #ECECF1; outline-offset:2px; }
+  .ln-nav:hover { color:#ECECF1 !important; }
+  .ln-card:hover { background:#18181D !important; }
+  @keyframes lnGrain { 0% { background-position:0 0; } 25% { background-position:-7px 3px; } 50% { background-position:4px -6px; } 75% { background-position:-3px -2px; } 100% { background-position:0 0; } }
+  .ln-grain { background-image:radial-gradient(rgba(255,255,255,0.09) 0.6px, transparent 0.8px), radial-gradient(rgba(0,0,0,0.25) 0.6px, transparent 0.8px); background-size:3px 3px, 5px 5px; animation:lnGrain .32s steps(4) infinite; mix-blend-mode:overlay; }
+  details summary { list-style:none; cursor:pointer; } details summary::-webkit-details-marker { display:none; }
+  details[open] .ln-chev { transform:rotate(90deg); }
+  .ln-gap { display:none; flex:1; }
+  @media (max-width: 640px) { .ln-mid { display:none !important; } .ln-gap { display:block; } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <!-- nav -->
+  <div style="position:sticky;top:0;z-index:10;background:rgba(16,16,19,0.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="max-width:1160px;margin:0 auto;padding:0 20px;height:56px;display:flex;align-items:center;gap:26px">
+      <a href="#top" onmouseenter="{{ onMarkNext }}" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:16px;letter-spacing:-0.01em">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:6px;height:12px;background:{{ markColor }};transition:background .4s;border-radius:2px"></span><span style="width:6px;height:12px;background:{{ markColor }};transition:background .4s;opacity:.5;border-radius:2px"></span><span style="width:6px;height:12px;background:{{ markColor }};transition:background .4s;opacity:.22;border-radius:2px"></span></span></a>
+      <div class="ln-mid" style="flex:1;display:flex;gap:22px;font-size:13.5px;overflow:hidden">
+        <a class="ln-nav" href="#how" style="color:rgba(236,236,241,0.6);white-space:nowrap">How it works</a>
+        <a class="ln-nav" href="#crew" style="color:rgba(236,236,241,0.6);white-space:nowrap">The crew</a>
+        <a class="ln-nav" href="#pricing" style="color:rgba(236,236,241,0.6);white-space:nowrap">Pricing</a>
+        <a class="ln-nav" href="../one-take/Aldershot Manual.dc.html" style="color:rgba(236,236,241,0.6);white-space:nowrap">Manual</a>
+      </div>
+      <span class="ln-gap"></span>
+      <a class="ln-nav" href="Studio.dc.html" style="flex:none;font-size:13.5px;color:rgba(236,236,241,0.7)">Sign in</a>
+      <a href="Studio.dc.html" style="flex:none;font-size:13.5px;font-weight:600;padding:8px 14px;border-radius:8px;background:#ECECF1;color:#101013">Start free</a>
+    </div>
+  </div>
+
+  <div id="top" style="max-width:1160px;margin:0 auto;padding:0 20px">
+
+    <!-- hero -->
+    <div style="padding:clamp(48px,8vw,96px) 0 40px;display:flex;gap:44px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1 1 400px;min-width:0">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.09em;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5)">FOR VIDEO ESSAYS, DOCUMENTARIES, AND ANYTHING WITH AN ARGUMENT</div>
+        <h1 style="margin:16px 0 0;font-size:clamp(36px,5.4vw,60px);font-weight:700;letter-spacing:-0.035em;line-height:1.02;text-wrap:balance">From a sentence to a finished film. <span style="font-family:'Instrument Serif',serif;font-weight:400;font-style:italic;letter-spacing:-0.01em">Watchable the whole way.</span></h1>
+        <p style="margin:20px 0 0;max-width:540px;font-size:17px;line-height:1.6;color:rgba(236,236,241,0.72)">Say what your film is. Aldershot lays it out as a plan that plays from the first minute — every gap a sketch of what should go there — then fills it with you, one small thing at a time.</p>
+        <div style="margin-top:28px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <a href="Studio.dc.html" style="font-size:15px;font-weight:600;padding:12px 20px;border-radius:10px;background:#ECECF1;color:#101013">Start free</a>
+          <a href="#how" class="ln-nav" style="font-size:15px;color:rgba(236,236,241,0.7)">See how it works →</a>
+        </div>
+        <div style="margin-top:18px;font-size:12.5px;color:rgba(236,236,241,0.45)">300 minutes a month free. No card.</div>
+      </div>
+
+      <!-- a live, drawn film: code only -->
+      <div style="flex:1.15 1 440px;min-width:0">
+        <div style="position:relative;aspect-ratio:16/9;container-type:inline-size;overflow:hidden;border-radius:16px;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08)">
+          <div style="position:absolute;inset:0;opacity:{{ h.op1 }};transform:scale({{ h.z }});transform-origin:60.7% 46.3%">
+            <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;display:block" aria-hidden="true">
+              <circle cx="400" cy="250" r="120" pathLength="1" fill="none" stroke="rgba(236,236,241,0.28)" stroke-width="1.2" stroke-dasharray="1" stroke-dashoffset="{{ h.orbE }}"></circle>
+              <circle cx="400" cy="250" r="183" pathLength="1" fill="none" stroke="rgba(236,236,241,0.28)" stroke-width="1.2" stroke-dasharray="1" stroke-dashoffset="{{ h.orbM }}"></circle>
+              <circle cx="400" cy="250" r="7" fill="#ECECF1" opacity="{{ h.sun }}"></circle>
+              <path d="M 280 250 A 151.5 148.2 0 0 0 583 250" pathLength="1" fill="none" stroke="#ECECF1" stroke-width="2" stroke-linecap="round" stroke-dasharray="1" stroke-dashoffset="{{ h.arc }}"></path>
+              <circle cx="{{ h.ex }}" cy="{{ h.ey }}" r="6" fill="none" stroke="#ECECF1" stroke-width="1.6" opacity="{{ h.planets }}"></circle>
+              <circle cx="{{ h.mx }}" cy="{{ h.my }}" r="5" fill="#E8875A" opacity="{{ h.planets }}"></circle>
+              <circle cx="{{ h.cx }}" cy="{{ h.cy }}" r="3" fill="#ECECF1" opacity="{{ h.craft }}"></circle>
+            </svg>
+          </div>
+          <div style="position:absolute;inset:0;opacity:{{ h.op2 }}">
+            <div style="position:absolute;left:62%;top:54%;width:54%;transform:translate(-50%,-50%) scale({{ h.g }});display:grid;grid-template-columns:repeat(14,1fr);gap:0.14cqw">
+              <sc-for list="{{ grid }}" as="gc" hint-placeholder-count="12">
+                <div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:{{ gc.bg }};font-family:'IBM Plex Mono',monospace;font-size:1.05cqw;color:{{ gc.fg }};transition:background .3s">{{ gc.n }}</div>
+              </sc-for>
+            </div>
+            <div class="ln-grain" style="position:absolute;inset:0;opacity:.7"></div>
+          </div>
+          <div style="position:absolute;inset:0;pointer-events:none;transform:scale({{ h.wz }});transform-origin:60.7% 46.3%">
+            <sc-for list="{{ words }}" as="w" hint-placeholder-count="3">
+              <div style="position:absolute;left:{{ w.l }};top:{{ w.t }};font-family:'Instrument Serif',serif;font-style:{{ w.it }};font-size:{{ w.size }};line-height:1.05;color:#ECECF1;opacity:{{ w.op }};transform:translateY({{ w.y }});text-shadow:0 0 2cqw rgba(11,11,14,0.9);white-space:nowrap">{{ w.text }}</div>
+            </sc-for>
+          </div>
+          <div style="position:absolute;left:3.5%;top:5%;display:flex;gap:0.8cqw;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.08em;color:rgba(236,236,241,0.55)"><span style="width:0.7cqw;height:0.7cqw;border-radius:50%;background:rgba(236,236,241,0.55)"></span>{{ h.label }}</div>
+        </div>
+        <div style="margin-top:10px;font-size:12px;line-height:1.55;color:rgba(236,236,241,0.45)">Everything above is drawn by code from real numbers — the orbits, the 259-day transfer, Mariner 4’s first picture of Mars, coloured in by hand in 1965. No generated footage. Ever.</div>
+      </div>
+    </div>
+
+    <!-- the promise -->
+    <div style="margin-top:40px;padding:36px 0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:40px;flex-wrap:wrap;align-items:baseline">
+      <div style="flex:1 1 360px;font-family:'Instrument Serif',serif;font-size:clamp(26px,3.4vw,38px);line-height:1.15;letter-spacing:-0.01em;text-wrap:balance">Other tools race to the first ninety seconds. <i>This gets better every day you work on it.</i></div>
+      <div style="flex:1 1 360px;font-size:15px;line-height:1.7;color:rgba(236,236,241,0.68)">Every recording, every find, every note sharpens the same film. The structure lives in rules you can read and switch off, so changing your mind costs nothing — and the footage is read once, so editing is free. A twenty-minute essay isn’t made in a sitting. It’s made in a week, and you can watch it the whole time.</div>
+    </div>
+
+    <!-- how it works -->
+    <div id="how" style="padding-top:72px;scroll-margin-top:70px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">HOW IT WORKS</div>
+      <h2 style="margin:12px 0 0;font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-0.03em;line-height:1.1;max-width:720px;text-wrap:balance">Five steps, and you never stare at a blank timeline.</h2>
+      <div style="margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:10px">
+        <sc-for list="{{ steps }}" as="st" hint-placeholder-count="5">
+          <div style="padding:20px 18px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:rgba(236,236,241,0.4)">{{ st.n }}</span><span style="font-size:19px;font-weight:600;letter-spacing:-0.015em">{{ st.verb }}</span></div>
+            <div style="margin-top:10px;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.68)">{{ st.body }}</div>
+            <div style="margin-top:14px;font-size:10.5px;font-weight:600;letter-spacing:.09em;color:{{ st.color }}">{{ st.who }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- the two-column script -->
+    <div style="padding-top:80px;display:flex;gap:44px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 320px;min-width:0">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">THE PLAN</div>
+        <h2 style="margin:12px 0 0;font-size:clamp(26px,3.4vw,34px);font-weight:700;letter-spacing:-0.03em;line-height:1.12;text-wrap:balance">A film is a weave. Your voice, their words, room to breathe.</h2>
+        <p style="margin:16px 0 0;font-size:15px;line-height:1.7;color:rgba(236,236,241,0.68)">Documentary editors build the sound first and cover it with pictures after. Aldershot’s plan works the same way: acts, then sections that each raise or answer a question, then a two-column script — picture on the left, sound on the right. Your lines arrive as prompts to record, sized to the time they have.</p>
+        <div style="margin-top:18px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5)">
+          <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:#D9B36A;margin-right:5px"></span>your voice</span>
+          <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:#5EB8C9;margin-right:5px"></span>in their words</span>
+          <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:rgba(236,236,241,0.3);margin-right:5px"></span>breathe</span>
+          <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.3);margin-right:5px"></span>silence</span>
+        </div>
+      </div>
+      <div style="flex:1.3 1 460px;min-width:0;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07);padding:18px 20px">
+        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.42)">5 · act 2 · 6:30–9:00</span><span style="font-size:16px;font-weight:600">It was arithmetic</span><span style="font-size:12.5px;color:rgba(236,236,241,0.55)"><span style="font-size:10px;font-weight:600;letter-spacing:.09em;color:#5EC98F;margin-right:6px">ANSWERS</span>The real planning looked nothing like the posters.</span></div>
+        <div style="margin-top:14px;display:flex;flex-direction:column">
+          <sc-for list="{{ script }}" as="r" hint-placeholder-count="4">
+            <div style="display:flex;gap:14px;padding:11px 0;border-top:1px solid rgba(255,255,255,0.06);flex-wrap:wrap">
+              <span style="flex:0 0 40px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:rgba(236,236,241,0.42)">{{ r.dur }}</span>
+              <div style="flex:1 1 170px;min-width:0"><span style="font-size:9.5px;font-weight:600;letter-spacing:.09em;color:{{ r.pColor }}">{{ r.pKind }}</span><div style="margin-top:3px;font-size:13px;line-height:1.45;color:rgba(236,236,241,0.75)">{{ r.pic }}</div></div>
+              <div style="flex:1.3 1 200px;min-width:0;padding-left:12px;border-left:2px solid {{ r.sColor }}"><span style="font-size:9.5px;font-weight:600;letter-spacing:.09em;color:{{ r.sColor }}">{{ r.sKind }}</span><div style="margin-top:3px;font-family:{{ r.font }};font-size:{{ r.size }};line-height:1.4;color:rgba(236,236,241,0.85)">{{ r.sound }}</div></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- the crew -->
+    <div id="crew" style="padding-top:80px;scroll-margin-top:70px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">THE CREW</div>
+      <h2 style="margin:12px 0 0;font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-0.03em;line-height:1.1;max-width:720px;text-wrap:balance">You direct. The crew does the legwork — and asks before anything changes.</h2>
+      <div style="margin-top:28px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:10px">
+        <div style="padding:20px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#ECECF1">ALDERSHOT</div>
+          <div style="margin-top:10px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.72)">Holds the structure — the argument, the acts, the length. When the material pulls the story somewhere new, it says so, once, with what it would cost: <span style="font-family:'Instrument Serif',serif;font-style:italic;font-size:16px;color:#ECECF1">“your stream and your video disagree — that might be the essay.”</span></div>
+        </div>
+        <div style="padding:20px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+          <div style="display:flex;align-items:center;gap:10px"><dc-import name="Scout" state="looking" size="30" hint-size="30px,32px"></dc-import><span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#5EB8C9">SCOUT</span></div>
+          <div style="margin-top:10px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.72)">Finds what your footage is missing — the proof, the other side, the original. He links to it at the right second and never downloads from places that forbid it. What he can’t reach comes back to you with a QR code.</div>
+        </div>
+        <div style="padding:20px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.8)">SKETCH</div>
+          <div style="margin-top:10px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.72)">Draws what can be drawn — orbits, charts, maps, the path a signal took — in code, from real numbers, timed to your line. Yours to approve. Good enough to keep more often than you’d think.</div>
+        </div>
+        <div style="padding:20px;border-radius:14px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.25)">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#D9B36A">YOU</div>
+          <div style="margin-top:10px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.72)">One small thing at a time, each one saying how long it takes and what it gets you. Talk over the film while it plays — every note lands at the moment you said it.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- drawn -->
+    <div style="margin-top:80px;padding:32px;border-radius:18px;background:#EFE8DA;color:#16161A;display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1 1 360px;min-width:0">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.09em;font-family:'IBM Plex Mono',monospace;color:rgba(22,22,26,0.55)">THE DRAWN FINISH</div>
+        <div style="margin-top:10px;font-family:'Instrument Serif',serif;font-size:clamp(28px,3.6vw,40px);line-height:1.1;letter-spacing:-0.01em">No footage yet? <i>Make it Drawn.</i></div>
+        <p style="margin:14px 0 0;font-size:15px;line-height:1.65;color:rgba(22,22,26,0.72)">Any film can be finished as motion graphics and your voice alone — a sketch to build on, or the cut you post. Anything standing in for a real object says so on screen, and a recreation can never stand in for a proof.</p>
+      </div>
+      <a href="Trailer.dc.html" style="flex:none;font-size:15px;font-weight:600;padding:12px 20px;border-radius:10px;background:#16161A;color:#EFE8DA">See a Drawn trailer</a>
+    </div>
+
+    <!-- what it won't do -->
+    <div style="padding-top:80px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">WHAT IT WON’T DO</div>
+      <div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:22px 32px">
+        <sc-for list="{{ wont }}" as="wn" hint-placeholder-count="5">
+          <div><div style="font-size:16px;font-weight:600;letter-spacing:-0.01em">{{ wn.title }}</div><div style="margin-top:6px;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.62)">{{ wn.body }}</div></div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- pricing -->
+    <div id="pricing" style="padding-top:88px;scroll-margin-top:70px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">PRICING</div>
+      <h2 style="margin:12px 0 0;font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-0.03em;line-height:1.1">Pay for the minutes it reads. Editing is free.</h2>
+      <p style="margin:12px 0 0;max-width:640px;font-size:15px;line-height:1.65;color:rgba(236,236,241,0.66)">Footage costs its length to read, once. After that every plan, re-cut, rough film and search from it costs nothing. Storage is permanent on every plan.</p>
+      <div style="margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px;max-width:860px">
+        <sc-for list="{{ plans }}" as="pl" hint-placeholder-count="2">
+          <div style="padding:24px;border-radius:16px;background:{{ pl.bg }};box-shadow:inset 0 0 0 1px {{ pl.ring }}">
+            <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:17px;font-weight:600">{{ pl.name }}</span><span style="font-size:10px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">{{ pl.tag }}</span></div>
+            <div style="margin-top:10px;display:flex;align-items:baseline;gap:8px"><span style="font-size:38px;font-weight:700;letter-spacing:-0.03em">{{ pl.price }}</span><span style="font-size:13px;color:rgba(236,236,241,0.5)">{{ pl.per }}</span></div>
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ pl.feats }}" as="f" hint-placeholder-count="4"><div style="display:flex;gap:10px;font-size:13.5px;line-height:1.5;color:rgba(236,236,241,0.75)"><span style="color:#5EC98F">✓</span><span>{{ f }}</span></div></sc-for>
+            </div>
+            <a href="Studio.dc.html" style="margin-top:20px;display:block;text-align:center;font-size:14px;font-weight:600;padding:11px;border-radius:10px;background:{{ pl.btnBg }};color:{{ pl.btnColor }}">{{ pl.cta }}</a>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- questions -->
+    <div style="padding-top:80px;max-width:760px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">FAIR QUESTIONS</div>
+      <div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06)">
+        <sc-for list="{{ faq }}" as="fq" hint-placeholder-count="5">
+          <details style="border-bottom:1px solid rgba(255,255,255,0.06);padding:16px 0">
+            <summary style="display:flex;gap:12px;align-items:baseline;font-size:15.5px;font-weight:600"><span class="ln-chev" style="flex:none;font-size:11px;color:rgba(236,236,241,0.45);transition:transform .2s">▸</span>{{ fq.q }}</summary>
+            <div style="margin:10px 0 0 23px;font-size:14px;line-height:1.65;color:rgba(236,236,241,0.66)">{{ fq.a }}</div>
+          </details>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- last word -->
+    <div style="padding:96px 0 72px;text-align:center">
+      <div style="font-family:'Instrument Serif',serif;font-size:clamp(30px,4.4vw,48px);line-height:1.1;letter-spacing:-0.01em;text-wrap:balance">Say what the film is. <i>Watch it get made.</i></div>
+      <div style="margin-top:24px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+        <a href="Studio.dc.html" style="font-size:15px;font-weight:600;padding:12px 22px;border-radius:10px;background:#ECECF1;color:#101013">Start free</a>
+        <a href="../one-take/Aldershot Manual.dc.html" class="ln-nav" style="font-size:15px;padding:12px 6px;color:rgba(236,236,241,0.7)">Read the manual →</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="border-top:1px solid rgba(255,255,255,0.06)">
+    <div style="max-width:1160px;margin:0 auto;padding:22px 20px;display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;color:rgba(236,236,241,0.42)">
+      <span>aldershot</span><a class="ln-nav" href="../one-take/Aldershot Manual.dc.html">Manual</a><a class="ln-nav" href="Studio.dc.html">Sign in</a><a class="ln-nav" href="Start here.dc.html">How this prototype fits together</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":4200}}'>
+// The landing: the new story. A plan that plays from the first minute; a crew that fills it; a Drawn finish.
+// The hero is a live film drawn in code — the same thing the product makes — so the page shows rather than tells.
+const LOOP = 14;
+const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+const easeIn = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * x;
+const cl = x => Math.max(0, Math.min(1, x));
+const PAINT = ["#141418", "#2A1A15", "#46231A", "#66301C", "#86401F", "#A55325", "#BE6A33", "#CF8446", "#DDA062", "#E9BD86"];
+const COLS = 14, ROWS = 9, CELLS = [];
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+  const d = Math.hypot(c - 16.5, r - 18.5) - 15;
+  CELLS.push({ c, n: d > 0 ? 0 : Math.min(9, Math.max(1, Math.round(3 + (-d) * 0.85 + ((c * 7 + r * 13) % 3) - 1))) });
+}
+const WORDS = [
+  { text: "It was", t0: 2.6, l: "7%", t: "72%", size: "5cqw", s: 1 },
+  { text: "arithmetic.", t0: 3.3, l: "7%", t: "81%", size: "5cqw", it: 1, s: 1 },
+  { text: "The first picture of Mars", t0: 7.6, l: "6%", t: "10%", size: "3.8cqw", s: 2 },
+  { text: "was coloured in", t0: 8.6, l: "6%", t: "18%", size: "3.8cqw", s: 2 },
+  { text: "by hand.", t0: 9.5, l: "6%", t: "26%", size: "3.8cqw", it: 1, s: 2 },
+];
+
+class Component extends DCLogic {
+  state = { t: 0, markIdx: null };
+  componentDidMount() { this.iv = setInterval(() => this.setState(s => ({ t: (s.t + 0.04) % LOOP })), 40); }
+  componentWillUnmount() { clearInterval(this.iv); }
+
+  renderVals() {
+    const s = this.state, t = s.t, out = {};
+    const PAL = ["#5EB8C9", "#5EC98F", "#E06A6A", "#ECECF1"], mi = s.markIdx === null ? 3 : s.markIdx;
+    out.markColor = PAL[mi % 4]; out.onMarkNext = () => this.setState({ markIdx: (mi + 1) % 4 });
+
+    // shot 1: the orbit draws, then the camera dives into Mars (0–6s); shot 2: the numbers colour in (6–14s)
+    const p = ease((t - 1.0) / 3.0), th = Math.PI + Math.PI * p;
+    const eA = (180 + 255 * p) * Math.PI / 180, mA = (224 + 136 * p) * Math.PI / 180;
+    const fadeIn = cl(t / 0.4), op2 = t < 6 ? 0 : 1 - cl((t - 13.5) / 0.5);
+    out.h = { op1: t < 6 ? fadeIn : 0, z: (1 + 11 * easeIn((t - 4.6) / 1.4)).toFixed(3),
+      orbE: 1 - ease((t - 0.1) / 0.9), orbM: 1 - ease((t - 0.3) / 1.0), sun: ease(t / 0.4), arc: 1 - p, craft: t > 1.0 ? 1 : 0, planets: ease((t - 0.6) / 0.4),
+      cx: (431.5 + 151.5 * Math.cos(th)).toFixed(1), cy: (250 - 148.2 * Math.sin(th)).toFixed(1),
+      ex: (400 + 120 * Math.cos(eA)).toFixed(1), ey: (250 - 120 * Math.sin(eA)).toFixed(1),
+      mx: (400 + 183 * Math.cos(mA)).toFixed(1), my: (250 - 183 * Math.sin(mA)).toFixed(1),
+      op2, g: (0.04 + 0.96 * ease((t - 6.0) / 1.2)).toFixed(3),
+      wz: t >= 4.6 && t < 6 ? (1 + 2.5 * easeIn((t - 4.6) / 1.4)).toFixed(3) : 1,
+      label: t < 6 ? "DRAWN BY SKETCH · REAL ORBITS · ABOUT 259 DAYS" : "RECREATION · MARINER 4 DATA · NASA/JPL 1965" };
+    const paintX = (t - 7.0) / 4.0 * (COLS + 2);
+    out.grid = CELLS.map(x => { const lit = x.c < paintX;
+      return { n: String(x.n), bg: lit ? PAINT[x.n] : "#0F0F12", fg: lit ? (x.n >= 6 ? "rgba(16,16,19,0.55)" : "rgba(236,236,241,0.35)") : "rgba(236,236,241,0.28)" }; });
+    out.words = WORDS.map(w => { const k = ease((t - w.t0) / 0.45), sop = w.s === 1 ? out.h.op1 : op2;
+      return { text: w.text, l: w.l, t: w.t, size: w.size, it: w.it ? "italic" : "normal", op: (k * sop).toFixed(3), y: ((1 - k) * 0.9).toFixed(2) + "cqw" }; });
+
+    out.steps = [
+      { n: "1", verb: "Say it", body: "Talk the idea through, the way you’d tell a friend. Aldershot finds the argument and a target length.", who: "YOU", color: "#D9B36A" },
+      { n: "2", verb: "Plan it", body: "Acts, sections, and a two-column script. It plays as a rough film the moment it exists — every gap a ghost with its own look.", who: "ALDERSHOT", color: "#ECECF1" },
+      { n: "3", verb: "Fill it", body: "One small thing at a time: Scout finds what’s missing, Sketch draws what can be drawn, you record your lines.", who: "SCOUT · SKETCH · YOU", color: "#5EB8C9" },
+      { n: "4", verb: "Watch it", body: "The film sharpens as things arrive. Talk over it while it plays — every note lands at the moment you said it.", who: "YOU", color: "#D9B36A" },
+      { n: "5", verb: "Finish it", body: "Cut it in detail, make a trailer, or finish it Drawn. Every claim leaves with its receipt.", who: "YOU · ALDERSHOT", color: "#5EC98F" },
+    ];
+    const S = { vo: ["YOUR VOICE", "#D9B36A"], sync: ["IN THEIR WORDS", "#5EB8C9"], breathe: ["BREATHE", "rgba(236,236,241,0.5)"] };
+    out.script = [
+      ["0:04", "YOU", "#D9B36A", "Your line, on camera", "vo", "The real planning looked nothing like the posters."],
+      ["0:06", "DRAWN · SKETCH", "#ECECF1", "The transfer orbit draws itself", "vo", "It was arithmetic."],
+      ["0:18", "SCOUT FOUND", "#5EB8C9", "A JPL engineer remembering the hand-coloured image", "sync", "In their words, 18 seconds"],
+      ["0:04", "HOLD", "rgba(236,236,241,0.5)", "Hold on the finished image", "breathe", "Music up"],
+    ].map(r => ({ dur: r[0], pKind: r[1], pColor: r[2], pic: r[3], sKind: S[r[4]][0], sColor: S[r[4]][1], sound: r[5],
+      font: r[4] === "vo" ? "'Instrument Serif',serif" : "'Instrument Sans',sans-serif", size: r[4] === "vo" ? "17px" : "13px" }));
+    out.wont = [
+      { title: "Make up footage.", body: "Nothing photoreal is ever generated. Graphics are drawn in code, and a recreation is labelled as one." },
+      { title: "Download what it shouldn’t.", body: "Scout links to other people’s video at the right second. Where a platform forbids downloading, so does Aldershot." },
+      { title: "Hide a claim’s source.", body: "Every claim keeps its receipt — the quote, the source, the second. “Nothing backs this” is always an answer you can get." },
+      { title: "Delete anything.", body: "Rules switch off; nothing vanishes. Left-out moments are kept with the rule that removed them." },
+      { title: "Charge you to change your mind.", body: "Footage is read once. Every plan, re-cut and rough film after that is free." },
+    ];
+    out.plans = [
+      { name: "Free", tag: "", price: "$0", per: "forever", bg: "#141418", ring: "rgba(255,255,255,0.07)", btnBg: "#232329", btnColor: "#ECECF1", cta: "Start free",
+        feats: ["300 processing minutes a month", "25 GB of permanent storage", "The plan, the rough film, the crew", "Rules, recipes, and your footage, searchable"] },
+      { name: "Studio", tag: "MOST GET THIS", price: "$29", per: "a month", bg: "#16161B", ring: "rgba(236,236,241,0.25)", btnBg: "#ECECF1", btnColor: "#101013", cta: "Start with Studio",
+        feats: ["7 footage-hours a month — read once, edit free", "100 GB of permanent storage, add-ons beyond", "Overnight work — wake up to what changed", "The Drawn finish and 4K renders", "Bring your own storage bucket"] },
+    ];
+    out.faq = [
+      { q: "Do I need to know how to edit?", a: "If you can say what you want, you can make the film. The plan is in sentences — sections that raise or answer a question, lines to record, things to find. The detailed editor is there when you want it, not before." },
+      { q: "How long does it take?", a: "The plan plays in minutes. The film takes as long as a good film takes — a twenty-minute essay is usually a week of small sessions. That’s the point: every session makes the same film better, and you can watch it the whole time." },
+      { q: "What if I don’t have the footage?", a: "Then the plan plays with ghosts: a drawn frame for the news clip you need, an outline where you go on camera, a sketch of the diagram. Scout looks for the real thing; Sketch draws what can be drawn; and you can finish it Drawn." },
+      { q: "Whose footage can I use?", a: "Yours, and anything you have the right to work with. Scout links to other people’s video rather than copying it, and before you post, Aldershot flags third-party clips, music and faces, each with a fix. What you upload is yours; we never train on it." },
+      { q: "What’s a footage-hour?", a: "An hour of footage, read once into moments you can search by what was said. After that, planning, cutting, re-cutting and rough films from it cost nothing." },
+    ];
+    return out;
+  }
+}
+</script>
+</body>
+</html>

@@ -9,7 +9,8 @@ copied into `design/next/` so they can be rendered (precedence rule 1 in
 
 The sample is one film, end to end: a 20-minute video essay, *NASA as a
 medium*, whose argument is **"NASA didn't borrow science fiction's look. It
-paid for it."** Every tab is a view of that one film.
+paid for it."** There is one room, and everything in it is a view of that
+one film.
 
 ---
 
@@ -28,22 +29,51 @@ That loop is the substrate doc 20 described: rules are the source code of the
 video, a cut is compiled, and editing is free — so the loop lives in the plan,
 never in renders.
 
-## Part two: the pages (`design/next/`)
+## Part two: one room (`design/next/Studio.dc.html`)
 
-| Page | What it is | Doc 20 question it answers |
-|---|---|---|
-| `Start here` | How it all fits: five steps, who does what, what the colours mean | — |
-| `Studio` | **The room.** The whole film playing as a rough cut over its sound weave; where you are, in words; the one thing waiting on you; a conversation with the crew that changes the film as you talk | Q1 |
-| `Plan` | The film as acts → sections → two-column script, each section with its own player; Aldershot's structural notes one at a time; notes pinned at the playhead | Q1, Q3, Q4 |
-| `Footage` | What each section has and needs (said · shown · proven), one capture at a time, what the footage can do as it grows | Q4 |
-| `Trailer` | The whole film in 1:22. **Rough** shows the ghosts; **Drawn** is a finished motion-graphics cut | — |
-| Editor | The One Take room, unchanged — `design/one-take/Aldershot One Take.dc.html` | — |
+The first draw of this doc had five tabs — Studio, Plan, Footage, Trailer,
+Editor. The owner's verdict on it: five screens that felt like five apps, and
+the condensed strips under the player were **a timeline in disguise** — the
+thing the product exists to remove. Both were right. The answer is One Take's
+room, holding the whole film:
 
-All four new pages read and write **one shared film** (in the prototype, the
-browser's local storage under `aldershot.nasa.v1`). Record a line on the Plan
-and the Studio's waiting task moves on; accept a cold open in the Studio and
-the Plan grows a section. In the build this is simply the project: one set of
-rules and moments, one `compute()`.
+| Where | What it holds |
+|---|---|
+| **Left** — the conversation | Aldershot and the crew, as in One Take. "While you were away" first, then one proposal at a time with its length cost and a *(Recommended)* button; three suggestions; a composer with *Talk*. Anything you say that isn't a request is pinned as a note at the playhead |
+| **Middle** — the film, top to bottom | One task card (the one thing waiting on you), then acts → section cards. **The vertical scroll is the timeline.** A card opens in place into its blocks, each with exactly one action (Record, Check it, Approve, Check figures, Paste a link) |
+| **Right** — NOW | The block playing, drawn as its ghost; what you hear, as words; ‹ ▶ ›; the clock. While it plays, the section playing opens and scrolls into view — the film walks down the page |
+
+Three **lenses** change how the middle reads, never where you are: **Film**
+(the cards), **Script** (the whole film as a radio script), **Needs** (every
+block grouped by its one action). **Also…** makes things *from* the film — the
+Trailer today, Shorts and a Drawn cut later. The project switcher holds the
+other kind of project: the vlog opens the One Take Editor
+(`design/one-take/Aldershot One Take.dc.html`), unchanged.
+
+**Quiet by default.** A second verdict — "quite cluttered" — set the rule for
+what a card may show: its title, three dots (said · shown · proven, green when
+done), one word of status, its length. The section's question appears only when
+you open it; block rows carry no labels, the colour of their rule says what you
+hear. Every removal is detail folded, not lost (Part three, *One thing at a
+time*).
+
+**Watch what changed.** The "while you were away" message carries one button:
+a 22-second reel of only the blocks the crew touched overnight, played in
+order, ending with "the rest of the film is as you left it". It is doc 20 Q9's
+"a minute of film showing only what changed", built.
+
+| Other pages in `design/next/` | |
+|---|---|
+| `Start here` | How it all fits: five steps, who does what, what the colours mean, and the changelog of every turn the design took |
+| `Landing` | The story told to a stranger: a live drawn film in the hero, the five steps, the crew, the Drawn finish, what it won't do, pricing |
+| `Trailer` | The whole film in 1:22, **Rough** (the ghosts) or **Drawn** (motion graphics only); reached from *Also…* |
+| `Plan`, `Footage` | **Previous try** — the same objects as separate tabs. Kept because they draw two things the room doesn't yet (each section's own player; capture progress as distance to a capability) |
+
+All pages read and write **one shared film** (in the prototype, the browser's
+local storage under `aldershot.nasa.v1`). Accept a cold open in the room and
+the Trailer opens on Mariner 4; reset it from the foot of the conversation. In
+the build this is simply the project: one set of rules and moments, one
+`compute()`.
 
 ## Part three: the objects
 
@@ -153,7 +183,7 @@ call replaces it only behind a `Classify` contract with an eval.
 
 ### One thing at a time
 
-The Studio and Footage show **one** task waiting on you, with its cost ("6
+The room shows **one** task waiting on you, with its cost ("6
 sec") and what it gets you, and the rest as titles. Finishing one shows what
 changed and moves straight on. This is the design's answer to doc 20 Q4 (the
 section that found nothing *is* the worklist) and it is deliberate about the
@@ -191,8 +221,10 @@ declares a section. Nothing stores the outcome.
 
 ## Part five: the nine questions, answered
 
-1. **Is the plan the room?** **Yes.** The Studio is the plan playing; the cut
-   (the Editor) is one view among four.
+1. **Is the plan the room?** **Yes, literally.** There is one room; the plan
+   is its middle column and it plays on the right. Lenses (Film, Script, Needs)
+   re-read it; the detailed cut (the One Take Editor) is where a finished film
+   goes, not a tab beside it.
 2. **Choosing between three possible videos.** Not drawn yet. The prototype
    reserves it as a capability that unlocks when every section has two angles
    ("Three ways to tell it: in order, by argument, or cold open on Mariner 4").
@@ -208,14 +240,16 @@ declares a section. Nothing stores the outcome.
    a type, not a frame.
 8. **Before you post.** Not addressed, except the Drawn rule above.
 9. **The seven unbuilt things.** The overnight queue becomes the "while you
-   were away" note in the Studio, and the next step is a minute of film showing
-   only what changed. The rest are untouched.
+   were away" message in the room, and *Watch what changed* plays only what
+   changed (22 seconds in the sample). The rest are untouched.
 
 ## Part six: what the prototype fakes
 
 - **The crew's replies are scripted.** Four intents get tailored answers (cold
   open, find the Apollo 1 bulletin, draw the signal path, how much voice-over is
   left), trims and finds get templates, everything else is "noted at 6:32".
+- **The overnight reel is a fixed list** of three blocks. In the build it is
+  derived: every block whose status changed since you last opened the project.
 - **The shared film is browser storage**, not a project.
 - **The sample's facts are partly placeholders.** Real and checked against
   common sources: Mariner 4's hand-coloured first image (1965), the Hohmann
@@ -232,9 +266,9 @@ Each phase is small and has a test that would fail without it.
 | # | Phase | Accepted when |
 |---|---|---|
 | 1 | **Plan object.** `Section`/`Block` as above, stored as rules; `compute()` returns sections → blocks → timings | The sample plan round-trips; a len rule on one section changes only that section's blocks; total length is derived, never stored |
-| 2 | **Playable plan.** The Studio player renders any block from its type with no media | Every block kind renders; a 20:00 plan plays end to end and hands off section to section |
+| 2 | **Playable plan.** NOW renders any block from its type with no media, and the film column follows it | Every block kind renders; a 20:00 plan plays end to end, hands off section to section, and the section playing is the one open |
 | 3 | **The sound weave + word budget** | Voice seconds and words-to-go are computed from blocks; a recorded take flips one block and the totals |
-| 4 | **One task at a time** | The queue is derived from block statuses, never hand-kept; recording on the Plan advances the Studio's task |
+| 4 | **One task at a time** | The queue is derived from block statuses, never hand-kept; recording a block in the film column advances the task card; *Watch what changed* is derived the same way |
 | 5 | **Notes at the playhead** | A note stores section + offset; the deterministic classifier routes the six kinds; a `Classify` model call is gated by an eval |
 | 6 | **Sketch: three primitives** — orbit/path, line chart, number grid — as code | Each renders from data and a label; none is a pixel image |
 | 7 | **Drawn finish** | A Drawn export of the sample has a label on every recreation; a recreation standing in for a proof fails *Before you post* |
@@ -249,5 +283,6 @@ speaks*.
 
 ---
 
-*Written 20 Nov 2026, against `3dffd41`. The prototype pages are in
+*Written 20 Nov 2026, against `3dffd41`; Part two redrawn the same week as one
+room. The prototype pages are in
 `design/next/`; the canvas they came from is the live original.*

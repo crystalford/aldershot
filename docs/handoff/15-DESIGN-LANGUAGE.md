@@ -89,3 +89,10 @@ Three departures, each argued rather than assumed:
   words: on-screen type in the rough film, and voice-over lines in the
   two-column script. It never appears in UI chrome. The two-font rule stands
   for the interface.
+- **Quiet by default, one status per thing.** In the one room a section card
+  shows its title, three dots (said · shown · proven, green when done), one
+  word of status and its length — nothing else until it is opened. Block rows
+  carry no labels; the colour of the rule beside the sound says its mode.
+  *Why:* the owner's verdict on the first one-room draw was "quite cluttered",
+  and every badge removed was a fact also available one click down. Folding
+  detail until asked for is the working-memory argument in doc 21 Part three.

@@ -115,3 +115,7 @@ Use these words — in code, in copy, in commit messages. Where a word has a syn
 **Sketch** — the label on anything drawn in code for the film (orbits, charts, signal paths). Yours to approve. Not a character — Scout is the only one.
 
 **Note at the playhead** — something said or typed while the film plays, pinned to that moment and routed: Scout · Sketch · move · trim · timing · script.
+
+**Lens** — a way the one room reads the same film: **Film** (section cards), **Script** (the film as a radio script), **Needs** (every block by its one action). A lens changes how the middle column reads, never where you are. *Not* "tab" or "page" — there is one room.
+
+**Watch what changed** — the short reel that opens a session: only the blocks whose status changed since you were last here, played in order. The user-facing name; *the overnight reel* in code.
