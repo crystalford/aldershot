@@ -5,7 +5,7 @@
  * changes only that section's blocks; total length is derived, never stored.
  *
  * The sample is design/next/film.js, copied verbatim from the prototype's
- * Plan page — the same arrangement as footage.js and test/rules.test.ts. Its
+ * room (Studio.dc.html) and its earlier Plan page — the same arrangement as footage.js and test/rules.test.ts. Its
  * numbers are the ones the rendered prototype shows in its header, so they are
  * checkable by eye: 20:00 · 11 sections · your voice 2:08 of 14:08 · about
  * 1,800 words to go.
@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { computeFilm, parseFilmPlan, sectionFromRows, PlanShapeError, MIN_BLOCK_S, WORDS_PER_S, type FilmPlan, type SectionRule } from "../src/film-plan.ts";
 
 const FILM_JS = join(import.meta.dirname, "..", "design", "next", "film.js");
-const PLAN_PAGE = join(import.meta.dirname, "..", "design", "next", "Plan.dc.html");
+const PAGES = ["Studio.dc.html", "Plan.dc.html"].map((f) => join(import.meta.dirname, "..", "design", "next", f));
 
 // A variable specifier, so the typechecker treats the reference as data rather than a module it must type.
 const ref: { SEQ: any[]; BOTH: any; COLD: any; ACTS: Array<{ label: string }> } = await import(pathToFileURL(FILM_JS).href);
@@ -32,9 +32,13 @@ const sample = (): FilmPlan =>
   });
 const rule = (r: Partial<SectionRule> & Pick<SectionRule, "kind" | "section">): SectionRule => ({ id: 1, on: true, ...r });
 
-test("the reference is the prototype's: Plan.dc.html still carries film.js's SEQ verbatim", () => {
-  const lit = (t: string) => t.slice(t.indexOf("const SEQ = ["), t.indexOf("\n];", t.indexOf("const SEQ = [")) + 3);
-  assert.equal(lit(readFileSync(PLAN_PAGE, "utf8")), lit(readFileSync(FILM_JS, "utf8")));
+test("the reference is the prototype's: the room and the Plan page still carry film.js's SEQ verbatim", () => {
+  const lit = (t: string) => {
+    const i = t.indexOf("const SEQ = [");
+    assert.ok(i >= 0, "no SEQ literal");
+    return t.slice(i, t.indexOf("\n];", i) + 3);
+  };
+  for (const page of PAGES) assert.equal(lit(readFileSync(page, "utf8")), lit(readFileSync(FILM_JS, "utf8")), page);
 });
 
 test("the sample plan round-trips through JSON unchanged", () => {
