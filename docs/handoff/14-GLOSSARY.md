@@ -64,7 +64,7 @@ Use these words — in code, in copy, in commit messages. Where a word has a syn
 
 **Outside** — beyond the user's footage, where Scout looks when he's in a project. Settings: On · Per project · Off. External moments are linked, never downloaded.
 
-**Plan** — the said / shown / proves-it board for a video-sized brief: claim, beats, finds, narration, sources. The one place the flow pauses.
+**Plan** — the said / shown / proves-it board for a video-sized brief: claim, beats, finds, narration, sources. The one place the flow pauses. *In `design/next/` (doc 21) the plan is the room: acts → sections → the two-column script, playable.*
 
 **Provenance** — where a moment came from: yours · external (scouted · mission · acquired · verified) · yours-doc.
 
@@ -95,3 +95,27 @@ Use these words — in code, in copy, in commit messages. Where a word has a syn
 **Voice beat** — a row in the cut for the user's voice: a gap after a thread, a narration line, an inserted line or reaction. Yours to record or rewrite.
 
 **Tabs** — the centre column's views: Footage · Blocks · Words · Shorts. *Not* "zoom" or "Overview" (retired).
+
+---
+
+*Added 20 Nov 2026 with doc 21 (`design/next/`):*
+
+**Section** — a plan beat at film scale: a title, an act, and a job — it *raises* a question or *answers* one. A 20-minute film has 8–12. The user-facing word; *beat* in code.
+
+**Two-column script** — a section's blocks as rows: picture on the left, sound on the right, each with a duration. The plan, the script and the timeline at different zoom levels.
+
+**Sound weave** — the sound column across the whole film: **your voice** (recorded or draft), **in their words** (the source speaks for itself), **breathe**, **silence**. The sound column alone is a radio cut.
+
+**Rough film** — the plan played before the footage exists, every gap a ghost drawn by type. Watchable from the first minute.
+
+**Drawn** — a finish: the whole film as motion graphics and your voice, every recreation labelled. A sketch, or the finished cut.
+
+**Trailer** — the whole film compressed to about a minute and a half, rough or drawn. *Not* "short" (Shorts are vertical clips).
+
+**Sketch** — the label on anything drawn in code for the film (orbits, charts, signal paths). Yours to approve. Not a character — Scout is the only one.
+
+**Note at the playhead** — something said or typed while the film plays, pinned to that moment and routed: Scout · Sketch · move · trim · timing · script.
+
+**Lens** — a way the one room reads the same film: **Film** (section cards), **Script** (the film as a radio script), **Needs** (every block by its one action). A lens changes how the middle column reads, never where you are. *Not* "tab" or "page" — there is one room.
+
+**Watch what changed** — the short reel that opens a session: only the blocks whose status changed since you were last here, played in order. The user-facing name; *the overnight reel* in code.
