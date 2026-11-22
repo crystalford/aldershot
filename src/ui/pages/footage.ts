@@ -229,7 +229,9 @@ function threadChips(threads: ThreadRow[], total: number, active: string | null)
 function sourceCard(s: SourceRow): string {
   /* The duration is stamped on the poster, so repeating it here printed
      "0:20 · test · 0:20 · 30 Aug" across every card. */
-  const added = new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  /* UTC, as a Worker renders it. Left to the machine's own zone, a test run
+     in Toronto put a video added at midnight UTC on the 5th. */
+  const added = new Date(s.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
   /*
    * WHAT IS IN IT, which is the whole subject of this page.
