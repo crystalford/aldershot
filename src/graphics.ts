@@ -293,7 +293,7 @@ export function quoteCard(q: { quote: string; said?: string | null; source?: str
  * The frame every generated picture shares.
  *
  * AND THE LABEL IS PART OF IT, not something a caller may forget. Invariant
- * 8 says generated is "never photoreal and never over a claim or its proof",
+ * 8 says generated is "never photoreal and never the proof",
  * and doc 09 adds that an export carries the label without user action. A
  * label drawn here cannot be left off by the one code path that builds these
  * pictures. Violet because that accent means exactly this — "generated /

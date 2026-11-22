@@ -1125,6 +1125,14 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /* Word timings for the take, same shape as a segment's: seconds, because
      that is what every other stored word list in this product uses. */
   { table: "beats", column: "take_words", ddl: "ALTER TABLE beats ADD COLUMN take_words TEXT" },
+  /*
+   * A GENERATED PICTURE A PERSON PUT OVER A CLAIM, as a depiction (decision
+   * 26). Stored at the insert because that is the only moment anything knows
+   * which line the beat was placed against — the move is classified there
+   * and nowhere downstream — and the label it decides is the one thing that
+   * must not be left off. 1, or null.
+   */
+  { table: "beats", column: "over_claim", ddl: "ALTER TABLE beats ADD COLUMN over_claim INTEGER" },
 
   { table: "sources", column: "timing_source", ddl: "ALTER TABLE sources ADD COLUMN timing_source TEXT" },
   /* When it ran. Null while it has never been tried; a source whose

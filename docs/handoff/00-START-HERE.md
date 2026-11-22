@@ -65,7 +65,7 @@ These hold everywhere. A pull request that breaks one is wrong even if it works.
 5. **Footage is read once; editing is free.** Hours are metered when footage is first read. No edit, cut, short or revision consumes anything.
 6. **Nothing is deleted.** Cut moments go to the deleted pile for 30 days; rules switch off rather than erase.
 7. **Done means every item is accounted for.** One state row per item; no job completes with a silent failure.
-8. **Pictures answer "why am I seeing this".** Own footage → the user's documents → the open world → generated. Generated is never photoreal and never over a claim or its proof.
+8. **Pictures answer "why am I seeing this".** Own footage → the user's documents → the open world → generated. Generated is never photoreal and never the proof; over a claim only as a depiction a person chose, labelled so, with the claim's receipt unchanged. (Changed 21 Nov; decision 26.)
 9. **Scout finds and links; it never downloads.** Footage enters the archive by open licence, by the user, or by the user's own capture.
 10. **The genre word never reaches the writer.** The model drafts from a plan in a plain register; the user's own words win wherever they exist.
 

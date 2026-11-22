@@ -75,6 +75,8 @@ export interface Beat {
   take_verdict?: string | null;
   take_reason?: string | null;
   take_words?: string | null;
+  /** A generated picture placed over a claim as a depiction; see src/schema.ts. */
+  over_claim?: number | null;
 }
 
 export interface Clip {
@@ -537,8 +539,8 @@ export async function putBeats(
   await db.prepare(`DELETE FROM beats WHERE project_id=?`).bind(projectId).run();
   if (!beats.length) return;
   const stmt = db.prepare(
-    `INSERT INTO beats (id,project_id,idx,kind,act,clip_id,text,struck,dur_ms,media_r2_key,recorded_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO beats (id,project_id,idx,kind,act,clip_id,text,struck,dur_ms,media_r2_key,recorded_at,over_claim)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
   await db.batch(
     beats.map((b, i) =>
@@ -548,6 +550,9 @@ export async function putBeats(
         // every move would orphan the audio the user just recorded.
         b.id || ulid(), projectId, i, b.kind, b.act ?? null, b.clip_id ?? null, b.text ?? null,
         b.struck ?? null, b.dur_ms ?? null, b.media_r2_key ?? null, b.recorded_at ?? null,
+        /* Carried through every rewrite, or moving a beat would strip the
+           depiction label off a picture still sitting over a claim. */
+        b.over_claim ? 1 : null,
       ),
     ),
   );
@@ -567,7 +572,7 @@ export async function insertBeat(
   db: D1Database,
   projectId: string,
   atIdx: number,
-  beat: { kind: BeatKind; act?: string | null; text?: string | null; clip_id?: string | null; dur_ms?: number | null },
+  beat: { kind: BeatKind; act?: string | null; text?: string | null; clip_id?: string | null; dur_ms?: number | null; over_claim?: boolean },
 ): Promise<Beat[]> {
   const beats = await getBeats(db, projectId);
   const next = [...beats];
@@ -583,6 +588,7 @@ export async function insertBeat(
     dur_ms: beat.dur_ms ?? null,
     media_r2_key: null,
     recorded_at: null,
+    over_claim: beat.over_claim ? 1 : null,
   });
   await putBeats(db, projectId, next);
   return getBeats(db, projectId);

@@ -44,7 +44,21 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 ## Pictures
 
 25. **The picture answers "why am I seeing this".** Move → job → source order. *The stock gavel is an integrity problem.*
-26. **Own → documents → open world → generated; generated never photoreal, never over a claim or its proof.** *AI imagery lowers trust even when labelled.*
+26. **Own → documents → open world → generated; generated never photoreal, never the proof.** *AI imagery lowers trust even when labelled.*
+
+    **And over a claim, as a depiction a person chose** (21 Nov). The rule
+    said never over a claim. The owner, making an essay: "I should be able to
+    use generative to simulate something, or build a scene that depicts what
+    is being discussed." The harm the rule guards against is a picture passed
+    off as backing — the gavel problem — and a depiction labelled as one,
+    over a claim whose receipt is unchanged, is not that. So a generated
+    picture may sit over a line known to be a claim when a person put it
+    there, labelled "Depiction · made with AI" on screen and in the cue sheet.
+    Still refused: over evidence, photoreal, chosen by the product on its own
+    (the offer follows doc 08's order and holds on the speaker), and over a
+    line the classifier did not answer, because not knowing is treated as a
+    claim precisely so that it refuses. A film-wide Strict switch, back to
+    the old rule, arrives with the Rules lens (doc 22, row 9).
 27. **Graphics are code, never pixels; bars start at zero; the receipt shot is the house move.** *Pixel models can't draw a word; truncated axes mislead even when explained.*
 28. **Style belongs to the user.** Tokens per project; the constructivist look is a preset. *Aldershot is the mechanism, not the style.*
 

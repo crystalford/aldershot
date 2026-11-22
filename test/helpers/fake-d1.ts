@@ -126,7 +126,7 @@ export function schema(db: DatabaseSync): void {
     CREATE TABLE beats (id TEXT PRIMARY KEY, project_id TEXT, idx INTEGER, kind TEXT,
       act TEXT, clip_id TEXT, text TEXT, struck TEXT, dur_ms INTEGER,
       media_r2_key TEXT, recorded_at INTEGER,
-      take_verdict TEXT, take_reason TEXT, take_words TEXT);
+      take_verdict TEXT, take_reason TEXT, take_words TEXT, over_claim INTEGER);
     CREATE TABLE renders (id TEXT PRIMARY KEY, project_id TEXT, user_id TEXT, kind TEXT,
       format TEXT, aspect TEXT, caption_style TEXT, clip_id TEXT, r2_key TEXT,
       stream_uid TEXT, duration_s INTEGER, promised_s INTEGER, bytes INTEGER, state TEXT, error TEXT,

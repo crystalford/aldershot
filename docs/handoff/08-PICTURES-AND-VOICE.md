@@ -36,7 +36,7 @@ Every script-to-video tool matches nouns: "the court ruled" gets a stock gavel. 
 | Move | Visual job | Source order | Forbidden |
 |---|---|---|---|
 | EVIDENCE | probative — the proof itself; the document with its line marked | own footage → user's documents → **a verified Scout find** | generated anything · stock · I2V |
-| CLAIM | attribution — the speaker, a name super, kinetic type of the claim | own footage | generated · stock |
+| CLAIM | attribution — the speaker, a name super, kinetic type of the claim | own footage | stock · generated, unless a person chooses it as a labelled depiction (decision 26) |
 | TURN | contrast — cut back, split, reprise with new meaning | own footage, reused | two unrelated stock clips |
 | CONTEXT | orientation — place, timeline | own → open world → stylised plate | stock with readable text or brands |
 | EXAMPLE | one specific instance | own → documents → stylised still | photoreal generation of real people or events |
@@ -47,7 +47,7 @@ Every script-to-video tool matches nouns: "the court ruled" gets a stock gavel. 
 4. **"Nothing to show" is a result**: hold on the speaker or a plain card. For claims and jokes the face is usually the strongest picture.
 5. **Every picture is typed** evidence / illustration / synthetic; the type sets the on-screen label and the cue-sheet entry.
 
-The **pictures rule** exists in the product's vocabulary: *Pictures from own footage first, then your documents, then the open world — never generated over a claim or its proof.* Switchable; its off-state is named for what it is ("pictures picked by match alone — the stock-gavel problem").
+The **pictures rule** exists in the product's vocabulary: *Pictures from own footage first, then your documents, then the open world — never generated as proof, and over a claim only as a depiction you chose, labelled.* Switchable; its off-state is named for what it is ("pictures picked by match alone — the stock-gavel problem").
 
 ## Graphics as code, never pixels
 

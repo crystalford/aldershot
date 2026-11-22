@@ -9,7 +9,7 @@ The export step. A checklist, each line a plain sentence with one-press fixes, t
 | **Other people's footage** | fingerprint match against sources marked as someone else's — *a probable match, never a clearance; it can't tell you what's fair use* | attribution card at first use + dispute file (Recommended) · dispute file only. External clips are linked, never downloaded; captured only by you; traced to the original where found |
 | **Music** | music under a stretch | duck it (Recommended) · leave it · replace with the licensed bed |
 | **Faces** | someone else appears | leave · blur · ask |
-| **Generated segments** | every picture typed evidence / illustration / synthetic; the type sets the label | the on-screen label the law expects; the **cue sheet** (what, how made, when) exported with the project; never photoreal, never over a claim or its proof |
+| **Generated segments** | every picture typed evidence / illustration / synthetic; the type sets the label | the on-screen label the law expects; the **cue sheet** (what, how made, when) exported with the project; never photoreal, never the proof; over a claim only as a depiction a person chose, labelled "Depiction · made with AI" |
 | **Attributions** | every external clip has a credit at first use | write them (Recommended) · edit · remove (explicit toggle) |
 | **Sound and captions** | loudness about −14 LUFS, peaks under −1 dBTP; music ducked on the words; captions ≤17 characters a second; a subtitle file alongside; no stacking on burned-in subtitles | checked on every export, not offered as a fix |
 | **Provenance record** | every source, every edit, and for each claim the line in the footage that backs it; existing records kept, not stripped | always on |
