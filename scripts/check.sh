@@ -111,3 +111,4 @@ echo "  where the words are: npm run check:align  (see scripts/check-align.cjs)"
 # built on. Needs Python and a wheel, so it is a pointer rather than a stage.
 # It is the only thing that can tell real OTIO from JSON that looks like it.
 echo "  does it open:        npm run check:otio   (see scripts/check-otio.cjs)"
+echo "  and in Premiere:     npm run check:xmeml  (see scripts/check-xmeml.cjs)"

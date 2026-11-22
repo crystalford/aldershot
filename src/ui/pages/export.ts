@@ -94,6 +94,18 @@ export function exportPanel(projectId: string, plan: string): string {
       <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The cuts as a timeline (.otio) for Resolve or Premiere, each clip named by what is said in it and carrying its quote, its source and where its timings came from. Captions, sound work and graphics are rendered rather than described, so those stay here.</span>
     </div>
     <!--
+      THE SAME CUTS FOR PREMIERE, which doesn't open an .otio without a beta
+      switched on. Final Cut XML is what both editors import as they come;
+      the marker on each clip is where the receipt goes, because an editor
+      shows a marker and never shows metadata. Resolve leaves an XML's
+      markers behind, so its markers file sits beside it. Doc 22, row 2.
+    -->
+    <div style="margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <a href="/api/projects/${esc(projectId)}/timeline.xml" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">For Premiere &nearr;</a>
+      <a href="/api/projects/${esc(projectId)}/markers.edl" style="flex:none;font-size:${SIZE.meta};font-weight:600;color:${ACCENT.gold};text-decoration:none">Resolve&rsquo;s markers &nearr;</a>
+      <span style="flex:1 1 200px;min-width:0;font-size:${SIZE.meta};color:${C.ink32}">The same cuts as Final Cut XML, which Premiere and Resolve both import, with a marker on every clip saying what is said in it, where it came from and what its timings are worth. Resolve leaves an XML&rsquo;s markers behind, so they come separately: Timeline, then Import, then Timeline Markers from EDL.</span>
+    </div>
+    <!--
       THE CUE SHEET, which goes out whether anybody opens it or not.
       It is here to be read, not to be switched on: the label on a generated
       picture and this document both come from the beat's kind, so there is

@@ -1525,6 +1525,24 @@ const SIGNED_OFF = new Map([
       "paste a signed-off string does not spend an evening on it.",
   ],
   [
+    "For Premiere &nearr;",
+    "The Final Cut XML export, beside the OTIO link. The canvas (design/canvas, " +
+      "doc 22 row 2) carries the same file as edit.xml in its package; this " +
+      "page has links rather than a package, so the link says who it is for: " +
+      "Premiere is the editor that can't open the .otio above it.",
+  ],
+  [
+    "Resolve&rsquo;s markers &nearr;",
+    "Resolve's marker file, beside the XML. Named for whose it is, because " +
+      "nobody else needs it: Resolve imports an XML's cuts and leaves its " +
+      "markers, and reads them from this file instead.",
+  ],
+  [
+    "The same cuts as Final Cut XML, which Premiere and Resolve both import, with a marker on every clip saying what is said in it, where it came from and what its timings are worth. Resolve leaves an XML&rsquo;s markers behind, so they come separately: Timeline, then Import, then Timeline Markers from EDL.",
+    "What the two links above give, and the one step Resolve needs that " +
+      "nobody would guess. The menu path is Resolve's own words.",
+  ],
+  [
     "The cue sheet &nearr;",
     "The cue sheet, in the export panel under the OTIO link. The prototype " +
       "has no Before you post step at all — doc 09 does, and this is the " +

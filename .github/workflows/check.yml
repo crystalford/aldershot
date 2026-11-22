@@ -260,6 +260,15 @@ jobs:
           /tmp/otio-venv/bin/pip install -q "opentimelineio==0.18.1"
           OTIO_PYTHON=/tmp/otio-venv/bin/python npm run check:otio
 
+      # The Final Cut XML, read back by OpenTimelineIO's FCP7 reader (doc 22,
+      # row 2). Same venv; the reader left OTIO's core in 0.17 and lives in
+      # its own small pure-Python package now, so it adds no compile.
+      - name: npm run check:xmeml
+        run: |
+          set -euo pipefail
+          /tmp/otio-venv/bin/pip install -q "otio-fcp-adapter==1.0.0"
+          OTIO_PYTHON=/tmp/otio-venv/bin/python npm run check:xmeml
+
       # What the dev server said while all of that ran. Only on a failure,
       # because a 400-line miniflare log on a green run is a log nobody reads.
       - name: The dev server's own log

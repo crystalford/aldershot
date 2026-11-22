@@ -71,9 +71,10 @@ something this repo cannot supply itself:
   all exist; the set is footage and judgement, not code. `npm run eval:set`
   prints the acceptance the moment it exists, which is also Phase 4's
   remaining acceptance.
-- **An export opened in Resolve.** `npm run check:otio` proves the file parses
-  and carries its credits and ghosts; opening it in Resolve itself needs
-  Resolve.
+- **An export opened in Resolve or Premiere.** `npm run check:otio` proves the
+  .otio parses and carries its credits and ghosts; `npm run check:xmeml` reads
+  the Final Cut XML back with OpenTimelineIO's FCP7 reader (both in CI).
+  Opening either in the editor itself needs the editor.
 - **The render container, run once.** The ENCODER is now proved on every push:
   `check:render` builds a source of twenty-four one-second colours, makes
   known edits through the real API, renders, and reads the colours back out of
