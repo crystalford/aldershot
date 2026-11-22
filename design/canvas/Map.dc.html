@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet"/>
+<style>
+html, body { margin: 0; padding: 0; background: #101013; }
+* { box-sizing: border-box; }
+a { color: #ECECF1; text-decoration: none; }
+a:focus-visible, [role=button]:focus-visible { outline: 2px solid #ECECF1; outline-offset: 2px; }
+.mp-row:hover { background: #17171C; }
+@media (max-width: 760px) { .mp-places { grid-template-columns: 1fr !important; } .mp-row { grid-template-columns: 1fr !important; } .mp-hide { display: none !important; } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;padding:0 clamp(16px,5vw,48px)">
+  <div style="max-width:1040px;margin:0 auto;padding:clamp(36px,6vw,72px) 0 96px">
+
+    <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap">
+      <a href="Studio.dc.html" style="font-weight:600;font-size:15px;letter-spacing:-0.01em">aldershot</a>
+      <span style="font-size:12.5px;color:rgba(236,236,241,0.45)">For us, while it’s being built — not a page a person using Aldershot sees</span>
+      <a href="Start here.dc.html" style="margin-left:auto;font-size:12.5px;color:rgba(236,236,241,0.6)">Changelog</a>
+    </div>
+
+    <h1 style="margin:36px 0 0;font-size:clamp(28px,4vw,40px);font-weight:700;letter-spacing:-0.03em;line-height:1.1;max-width:760px;text-wrap:balance">The map: everything Aldershot does, where it lives now, and where it should go.</h1>
+    <p style="margin:14px 0 0;max-width:680px;font-size:15px;line-height:1.65;color:rgba(236,236,241,0.7)">We built twelve screens getting here. The Studio has most of what matters, but not all of it — some of it only exists on screens we’ve stopped looking at, and a few things exist nowhere any more. This page counts all of it, then proposes the shape it should all fit into.</p>
+
+    <div style="margin-top:28px;display:flex;gap:10px;flex-wrap:wrap">
+      <sc-for list="{{ tally }}" as="t" hint-placeholder-count="4"><div style="padding:12px 16px;border-radius:10px;background:#16161A;min-width:150px"><div style="display:flex;gap:8px;align-items:center"><span style="width:8px;height:8px;border-radius:50%;background:{{ t.color }}"></span><span style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums">{{ t.n }}</span></div><div style="margin-top:4px;font-size:12.5px;color:rgba(236,236,241,0.6)">{{ t.label }}</div></div></sc-for>
+    </div>
+
+    <!-- the proposed shape -->
+    <h2 style="margin:64px 0 0;font-size:22px;font-weight:600;letter-spacing:-0.02em">The shape we recommend</h2>
+    <p style="margin:8px 0 0;max-width:680px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.65)">Four places a person uses, three pages for people who haven’t signed up, and two pages only we see. The conversation is in every place a person works — it’s the same conversation, carried across.</p>
+    <div class="mp-places" style="margin-top:20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+      <sc-for list="{{ places }}" as="pl" hint-placeholder-count="4">
+        <div style="padding:16px;border-radius:12px;background:#16161A;box-shadow:inset 0 0 0 1px {{ pl.ring }}">
+          <div style="display:flex;gap:8px;align-items:baseline"><span style="font-size:16px;font-weight:600">{{ pl.name }}</span><span style="font-size:11.5px;color:rgba(236,236,241,0.45)">{{ pl.when }}</span></div>
+          <div style="margin-top:6px;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.7)">{{ pl.what }}</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ pl.parts }}" as="pp" hint-placeholder-count="3"><div style="font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.8)">{{ pp }}</div></sc-for>
+          </div>
+          <div style="margin-top:10px;font-size:11.5px;line-height:1.45;color:{{ pl.fromColor }}">{{ pl.from }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+      <div style="padding:14px 16px;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.1)"><div style="font-size:13.5px;font-weight:600">Before you sign up</div><div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)"><a href="Landing.dc.html" style="text-decoration:underline;text-underline-offset:3px">Landing</a>, Sign in, and the Manual. The Manual still describes the old room and needs rewriting for the Studio.</div></div>
+      <div style="padding:14px 16px;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.1)"><div style="font-size:13.5px;font-weight:600">Only for us</div><div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)">This map, and <a href="Start here.dc.html" style="text-decoration:underline;text-underline-offset:3px">the changelog</a>. Previous tries — the Plan and Footage tabs, the One Take editor — stay in the canvas, labelled, as reference.</div></div>
+    </div>
+
+    <!-- inside the studio -->
+    <h2 style="margin:64px 0 0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Inside the Studio: fewer names, each one obvious</h2>
+    <p style="margin:8px 0 0;max-width:680px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.65)">The bar said Film · Script · Needs · Argument · Also… · Export, and three different to-do lists lived in three places. It now says Film · To do · Script · Argument · Export. Done on 21 November, except Rules, which comes with step three:</p>
+    <div style="margin-top:18px;display:flex;flex-direction:column;gap:2px">
+      <sc-for list="{{ renames }}" as="rn" hint-placeholder-count="6">
+        <div class="mp-row" style="display:grid;grid-template-columns:170px 28px 190px 1fr;gap:12px;align-items:baseline;padding:11px 12px;border-radius:9px">
+          <span style="font-size:13.5px;color:rgba(236,236,241,0.55);text-decoration:{{ rn.strike }}">{{ rn.now }}</span>
+          <span class="mp-hide" style="font-size:13px;color:rgba(236,236,241,0.35)">→</span>
+          <span style="font-size:13.5px;font-weight:600">{{ rn.next }}</span>
+          <span style="font-size:13px;line-height:1.5;color:rgba(236,236,241,0.7)">{{ rn.why }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- inventory -->
+    <h2 style="margin:64px 0 0;font-size:22px;font-weight:600;letter-spacing:-0.02em">Everything, one line each</h2>
+    <p style="margin:8px 0 0;max-width:680px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.65)">Where each thing is today, and where it goes in the shape above.</p>
+    <div style="margin-top:16px;display:flex;gap:6px;flex-wrap:wrap">
+      <sc-for list="{{ filters }}" as="fl" hint-placeholder-count="5"><div tabindex="0" role="button" onclick="{{ fl.onPick }}" style="font-size:12.5px;padding:6px 12px;border-radius:99px;cursor:pointer;background:{{ fl.bg }};color:{{ fl.color }};box-shadow:{{ fl.ring }}">{{ fl.name }}</div></sc-for>
+    </div>
+    <div style="margin-top:14px;display:flex;flex-direction:column">
+      <div class="mp-hide" style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) 150px;gap:14px;padding:0 12px 8px;font-size:11.5px;color:rgba(236,236,241,0.45);border-bottom:1px solid rgba(255,255,255,0.06)"><span>What it does</span><span>Where it is now</span><span>Where it goes</span><span>Status</span></div>
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+        <div style="margin-top:18px;padding:0 12px;font-size:13px;font-weight:600;color:rgba(236,236,241,0.85)">{{ g.name }}</div>
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="4">
+          <div class="mp-row" style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) 150px;gap:14px;align-items:baseline;padding:10px 12px;border-radius:8px">
+            <div><div style="font-size:13.5px;line-height:1.4">{{ r.what }}</div><div style="margin-top:2px;font-size:12px;line-height:1.45;color:rgba(236,236,241,0.5)">{{ r.note }}</div></div>
+            <span style="font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.65)">{{ r.now }}</span>
+            <span style="font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.85)">{{ r.goes }}</span>
+            <span style="display:flex;gap:7px;align-items:center;font-size:12.5px;color:{{ r.color }}"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ r.color }}"></span>{{ r.status }}</span>
+          </div>
+        </sc-for>
+      </sc-for>
+    </div>
+
+    <!-- order -->
+    <h2 style="margin:64px 0 0;font-size:22px;font-weight:600;letter-spacing:-0.02em">In what order</h2>
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ phases }}" as="ph" hint-placeholder-count="4">
+        <div style="display:flex;gap:16px;padding:16px;border-radius:12px;background:#16161A">
+          <span style="flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600;background:{{ ph.dotBg }};color:{{ ph.dotColor }}">{{ ph.n }}</span>
+          <div style="flex:1;min-width:0"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><span style="font-size:15px;font-weight:600">{{ ph.name }}</span><span style="font-size:12px;color:#6F8CFF">{{ ph.tag }}</span></div><div style="margin-top:5px;font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.7)">{{ ph.what }}</div></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+const GREEN = "#5EC98F", WORK = "#6F8CFF", ROSE = "#E3A29B", INK = "rgba(236,236,241,0.6)";
+const ST = { home: ["In Home", GREEN], lib: ["In the Library", GREEN], in: ["In the Studio", GREEN], move: ["In the Studio — moves", WORK], thin: ["In the Studio — thin", WORK], else: ["Somewhere else", INK], lost: ["Nowhere now", ROSE] };
+const ROWS = [
+  ["The Studio, as it is", [
+    ["The conversation", "Ask, tell, propose — answers carry the moment they’re about. Watch what changed while you were away.", "Studio, left", "Every place a person works", "in"],
+    ["The film, top to bottom", "Acts, sections, blocks; it plays from the first minute, ghosts and all.", "Studio · Film", "Studio · Film", "in"],
+    ["The script, two columns", "Picture on the left, sound on the right, in reading order.", "Studio · Script", "Studio · Script", "in"],
+    ["The argument underneath", "Thesis, 34 claims with verdicts, 8 patterns, three checks of the film against them.", "Studio · Argument", "Studio · Argument", "in"],
+    ["Recording a line", "The red take panel, sized to its slot; a changed line asks to be recorded again.", "Studio, right", "Studio, right", "in"],
+    ["Every way to fill a slot", "22 ways in five groups, with prices before you choose. The crew’s progress shows in the same panel.", "Studio · the block panel", "Studio · the block panel", "in"],
+    ["Motion graphics", "14 designs drawn in code; words and graphic can be dragged and resized.", "Studio · the block panel", "Studio · the block panel", "in"],
+    ["Generated pictures, priced", "$1 or $3.50 a second that lands; a monthly limit.", "Studio · the block panel", "Studio — limit read from Settings", "thin"],
+  ]],
+  ["One to-do list (was three)", [
+    ["Today’s sitting", "Twenty minutes, whole sections, one line to say out loud.", "Studio · To do", "Studio · To do", "in"],
+    ["What the film still needs", "Every gap, grouped: yours to record, to check, to find.", "Studio · To do (Everything else)", "Studio · To do", "in"],
+    ["Five steps per section", "Written, proven, pictured, voiced, watched.", "Studio · Film (section cards)", "Stays on the cards; counted in To do", "in"],
+    ["Develop the film", "The crew fills every ghost, act by act, with a reel of what it did.", "Studio · To do (header)", "Studio · To do", "in"],
+  ]],
+  ["Making things from the film", [
+    ["A trailer", "The whole film in 1:22, rough or drawn.", "Studio · Export menu → its own page", "Studio · Export menu", "in"],
+    ["Shorts", "Vertical clips from the strongest moments: Strong, Worth a look, Long shot.", "Studio, led by footage · Shorts — each band with the lines that put it there; the essay’s Export lists it once footage is in", "Studio · Shorts", "in"],
+    ["A Drawn cut", "The whole film as motion graphics and your voice. Listed, not made yet.", "Studio · Export menu", "Studio · Export menu", "thin"],
+    ["Export, with the check before it", "Every line in plain words with its fix; the package made from the project as it is.", "Export → Before it goes out, in both kinds of project — downloads the edit list, captions, credits, receipts and the rest as one .zip", "Studio · Export menu", "in"],
+  ]],
+  ["Added in the final pass", [
+    ["Direct it", "A sentence of direction becomes a plan; Go, and the crew works through it with a live list; a reel and the next suggestions at the end.", "Studio · the conversation", "Studio conversation", "in"],
+    ["Scene by scene", "One scene at a time: its rough cut beside what it’s becoming, and the one next thing for every shot.", "Scene by scene — from the Studio’s Film view", "Its own surface", "in"],
+    ["Depictions", "Generated pictures may sit over a claim, labelled “Depiction”, with the claim’s receipt kept — or Strict, film by film.", "Studio · Rules", "Studio · Rules", "in"],
+    ["The shot ladder", "Every shot starts as a sketch; four moves make it real. The specific options open only for the move you pick.", "Studio · the shot panel", "Studio", "in"],
+    ["Voice first", "Record the whole script before the pictures, line after line; each shot follows your reading.", "Studio · Script, To do, or say it — the booth", "Studio", "in"],
+    ["Every version kept", "Every take of a line and every picture a shot has had, one click from coming back.", "Studio · the shot panel", "Studio", "in"],
+    ["A timeline your editor opens", "The film as a file Premiere and Resolve open, every shot a clip, every source and receipt a marker.", "Export → the package, in both kinds of project", "Export", "in"],
+    ["Short generated shots", "Video in clips of up to 8 seconds; a longer shot holds, cuts between clips, or is a moving still. Priced from the model’s cost.", "Studio · the shot panel, Generate from it", "Studio", "in"],
+    ["Hand it to an agent", "Aldershot as an MCP server, so an agent in Premiere or Resolve can work from the plan, shots, sources and receipts.", "Landing — designed, not built", "An MCP server beside the app", "else"],
+  ]],
+  ["Only on other screens", [
+    ["What to make", "Cut, Shorts, Essay, React — and Story, Supercut as your archive grows.", "Home — the kinds, and the conversation that picks one from a sentence", "Home", "home"],
+    ["Your projects", "Every project, and which one you were last in.", "Home, with progress and what’s next; the Studio’s switcher links there", "Home", "home"],
+    ["Your footage, read once", "Every video, its moments, search by meaning or exact words, Neolog connected.", "Library · Footage — moments listed, searchable by meaning; Neolog shown, not connected", "Library", "lib"],
+    ["Rules you can see and switch off", "The essay’s film-wide choices, and the cut’s footage rules — each saying what it does and what switching it off would do.", "Studio · Rules, in both kinds of project", "Studio · Rules", "in"],
+    ["Footage-led projects", "Cut a recording, or make shorts from it.", "Studio, led by footage — Cut, Words, Footage, Shorts, Rules, on One Take’s engine", "Studio, the same room, led by footage", "in"],
+    ["Undo for every change", "Each change in the conversation can be taken back.", "Studio, led by footage: Undo on each change, and ⌘Z. The essay Studio still to do", "Studio conversation", "thin"],
+    ["Plan, usage and the spending limit", "Footage-hours, generated pictures, storage, the thirty-day pile — and one limit the Studio reads.", "Settings, in the Studio’s look; the limit set there is the one the Studio uses", "Settings", "in"],
+  ]],
+  ["Built once, then lost", [
+    ["How this fits", "A link for us that sat in the product’s top bar.", "Foot of the conversation: Map · Changelog", "Only for us", "in"],
+    ["Milestones", "The whole film plays → every slot pictured → every line in your voice → safe to publish. (Three ways to tell it is still to come.)", "Studio · To do (top)", "Studio · To do", "in"],
+    ["Ways in", "Your voice, reading a PDF, from the browser, archives, drawing — five ways to add.", "Library · Ways in — eight, each saying where it lives and whether it’s built", "Library", "lib"],
+    ["Where things went", "Every capture and what it became — including what wasn’t used, and why.", "Library · Where things went — every moment and piece, what it became, and the rule that cut it", "Library", "lib"],
+    ["Contradiction as material", "“Your stream and your video disagree. That might be the essay.”", "Plan (previous try)", "Studio · Argument", "lost"],
+    ["Each section’s question", "What it raises, what it answers — the pull from one section to the next.", "Plan (previous try)", "Studio · Argument, and the section cards", "lost"],
+    ["Footage laid out by angle", "For a vlog: every thread, what you have on it, what’s missing.", "Studio, led by footage · Footage — threads by day, what each is missing, Scout’s finds", "Studio, footage-led", "in"],
+  ]],
+];
+const PLACES = [
+  { name: "Home", when: "no project open", what: "Say what you want to make, or pick up where you left off.", parts: ["The conversation", "What to make — six kinds", "Your projects", "A glance at your library"], from: "From the One Take editor’s front door", fromColor: "rgba(236,236,241,0.45)", ring: "rgba(236,236,241,0.1)" },
+  { name: "Studio", when: "a project open", what: "The film, top to bottom, and everything you do to it.", parts: ["Film · Script · Argument · Rules · To do", "Led by footage: Cut · Words · Footage · Shorts · Rules", "The block panel: picture, words, length", "Export: the film, a trailer, shorts, a Drawn cut"], from: "What we have, tidied", fromColor: GREEN, ring: "rgba(94,201,143,0.35)" },
+  { name: "Library", when: "across projects", what: "Everything you’ve brought in and everything found or drawn for you.", parts: ["Your footage, searchable by meaning", "Scout’s finds, with their credits", "Ways in, and where things went"], from: "From One Take’s Footage tab and the Footage try", fromColor: "rgba(236,236,241,0.45)", ring: "rgba(236,236,241,0.1)" },
+  { name: "Settings", when: "now and then", what: "Your plan, what you’ve spent, your storage, and the deleted pile.", parts: ["Plan & usage, the spend cap", "Storage and the 30-day pile", "Defaults: voice, captions, style"], from: "The Settings page, restyled", fromColor: "rgba(236,236,241,0.45)", ring: "rgba(236,236,241,0.1)" },
+];
+const RENAMES = [
+  ["Needs", "To do", "One list: today’s sitting at the top, milestones above it, then every gap grouped by section. The sitting card leaves the Film view, so the film starts higher.", true],
+  ["Also…", "Export ▾", "One menu for everything that leaves Aldershot: the film, a trailer, shorts, a Drawn cut — each with the check before it.", true],
+  ["Fill · Edit", "One block panel", "Fill (the crew’s quick routes) and Edit (every way) open the same panel: the recommended ways first, then the rest.", true],
+  ["(none)", "Rules", "New. The rules this film is built from, each with what it does and a switch. It’s the first invariant, and the Studio is the only screen that doesn’t show it.", false],
+  ["Argument", "Argument", "Stays — but gains each section’s question and contradictions worth keeping. Only shown when the project argues something.", false],
+  ["How this fits", "(gone from the bar)", "It’s for us. It moves to this map and the changelog.", true],
+];
+const PHASES = [
+  ["1", "Name and fold", "Done · 21 November", "Needs becomes To do (with today’s sitting, milestones and Develop); Also… becomes the Export menu; Fill and Edit become one block panel; the Film view loses its stack of cards above the film. Small, visible, and it makes everything after it easier."],
+  ["2", "Home and Library", "Done · 21 November", "The no-project state and the library, rebuilt in the Studio’s look: what to make, your projects, your footage searchable by meaning, ways in, where things went."],
+  ["3", "Rules, and footage-led projects", "Done · 21 November", "A Rules view in the Studio, then Cut and Shorts living in the same room — port the One Take engine (footage.js) rather than reinvent it."],
+  ["4", "Settings, Manual, Export", "Done · 21 November", "Settings in the new look with one spending limit the Studio reads; the Manual rewritten for the Studio, with two live examples; Export opens a real check and downloads the package."],
+  ["5", "Bring the repo up to date", "Next", "The canvas is well ahead of the code: the Studio, both kinds of project, the treatments, Settings and the export check. Port them, one PR each, behind the gate."],
+];
+class Component extends DCLogic {
+  state = { f: "all" };
+  renderVals() {
+    const all = ROWS.flatMap(g => g[1]), count = k => all.filter(r => r[4] === k).length;
+    const F = [["all", "Everything"], ["in", "Built"], ["move", "Moves"], ["else", "Somewhere else"], ["lost", "Nowhere now"]];
+    const keep = r => this.state.f === "all" || r[4] === this.state.f || (this.state.f === "in" && ["thin", "home", "lib"].includes(r[4])) || (this.state.f === "move" && r[4] === "move");
+    return {
+      tally: [{ n: count("in") + count("thin") + count("home") + count("lib"), label: "in the Studio, Home or Library", color: GREEN }, { n: count("move"), label: "in the Studio, in the wrong place", color: WORK }, { n: count("else"), label: "only on other screens", color: INK }, { n: count("lost"), label: "built once, now nowhere", color: ROSE }],
+      places: PLACES,
+      renames: RENAMES.map(([now, next, why, strike]) => ({ now, next, why, strike: strike ? "line-through" : "none" })),
+      filters: F.map(([id, name]) => ({ name, bg: this.state.f === id ? "#ECECF1" : "transparent", color: this.state.f === id ? "#101013" : "rgba(236,236,241,0.75)", ring: this.state.f === id ? "none" : "inset 0 0 0 1px rgba(236,236,241,0.2)", onPick: () => this.setState({ f: id }) })),
+      groups: ROWS.map(([name, rows]) => ({ name, rows: rows.filter(keep).map(([what, note, now, goes, k]) => ({ what, note, now, goes, status: ST[k][0], color: ST[k][1] })) })).filter(g => g.rows.length),
+      phases: PHASES.map(([n, name, tag, what], i) => ({ n, name, tag, what, dotBg: tag === "Next" ? WORK : "#1F1F25", dotColor: tag === "Next" ? "#FFFFFF" : "rgba(236,236,241,0.7)" })),
+    };
+  }
+}
+</script>
+</body>
+</html>

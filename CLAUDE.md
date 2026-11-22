@@ -11,6 +11,9 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
 - `docs/handoff/00-START-HERE.md` — the package index and the ten invariants
 - `docs/handoff/11-BUILD-ORDER.md` — what to build now and how it's accepted
 - `docs/handoff/14-GLOSSARY.md` — the words to use
+- `design/canvas/` is the newest prototype (the owner's canvas, v73, 21 Nov
+  2026) and `docs/handoff/22-CANVAS-TO-CODE.md` is the plan for porting it,
+  one PR per row. Render `design/canvas/Start here.dc.html` first.
 - `design/one-take/Aldershot One Take.dc.html` is the behavioural spec; `design/one-take/footage.js` is the reference rule engine. Port it, don't reinvent it.
 - Before touching Scout: `docs/handoff/18-SCOUT-BUILD-SPEC.md` (the build
   spec), then `docs/labs/SCOUT.md`, `SOURCES.md`, `DOSSIER.md` for the
@@ -37,10 +40,12 @@ Aldershot is a hands-off video editor: attach footage (yours or other people's),
 They do. The handoff and the Manual were written at different points and the
 owner has said so plainly. The order of precedence, highest first:
 
-1. **The rendered prototype.** Not the file read as text — the thing open in a
+1. **The rendered prototype** — `design/canvas/` first, then `design/next/`,
+   then `design/one-take/`. Not the file read as text — the thing open in a
    browser. `node scripts/shoot.cjs proto Home` renders it; put it beside the
    build and look. Everything below is a description of it.
-2. **`design/one-take/Aldershot Manual.dc.html`** — how the product explains
+2. **The Manual** — `design/canvas/Manual.dc.html`, and before it
+   `design/one-take/Aldershot Manual.dc.html` — how the product explains
    itself to a person. Where it and the handoff differ about what the product
    IS, the Manual is the later word and the one a user would read.
 3. **`docs/handoff/`** — how to build it. Authoritative on sequencing,

@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene by scene</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<style>
+html, body { margin: 0; background: #0E0E11; }
+* { box-sizing: border-box; }
+a { color: inherit; text-decoration: none; }
+a:focus-visible, [role=button]:focus-visible { outline: 2px solid #ECECF1; outline-offset: 2px; }
+@keyframes sbIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes sbPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes sbLand { 0% { box-shadow: inset 0 0 0 2px rgba(94,201,143,0.9), 0 0 0 0 rgba(94,201,143,0.4); } 100% { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 0 14px rgba(94,201,143,0); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+.sb-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.sb-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+.sb-shot:hover { background: #17171C !important; }
+@media (max-width: 980px) { .sb-body { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .sb-pair { grid-template-columns: 1fr; } .sb-hide { display: none !important; } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#0E0E11;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+  <div style="display:flex;align-items:center;gap:22px;height:52px;padding:0 24px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <a href="Home.dc.html" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="display:flex;gap:18px;font-size:13px"><a href="Home.dc.html" style="color:rgba(236,236,241,0.55)">Home</a><a href="Library.dc.html" style="color:rgba(236,236,241,0.55)">Library</a></div>
+    <div style="flex:1"></div>
+    <a href="Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">C</a>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;padding:10px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-wrap:wrap">
+    <span style="font-size:14.5px;font-weight:600">NASA as a medium</span><span style="font-size:12px;color:rgba(236,236,241,0.45)">Scene by scene</span>
+    <span style="flex:1"></span>
+    <span style="font-size:12.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.6)">{{ tally }}</span>
+    <a href="Studio.dc.html" style="font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:7px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.2)">The whole film</a>
+  </div>
+
+  <div style="max-width:1240px;margin:0 auto;padding:22px clamp(16px,3vw,28px) 90px">
+    <!-- every scene, as a strip -->
+    <div style="display:flex;gap:3px;height:30px">
+      <sc-for list="{{ strip }}" as="b" hint-placeholder-count="21"><div tabindex="0" role="button" onclick="{{ b.onGo }}" title="{{ b.title }}" style="flex:{{ b.flex }};min-width:6px;border-radius:4px;background:{{ b.bg }};box-shadow:{{ b.ring }};cursor:pointer;transition:background .4s"></div></sc-for>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:rgba(236,236,241,0.5)">
+      <span style="display:inline-flex;gap:6px;align-items:center"><span style="width:9px;height:9px;border-radius:2px;box-shadow:inset 0 0 0 1.5px rgba(236,236,241,0.3)"></span>Rough</span>
+      <span style="display:inline-flex;gap:6px;align-items:center"><span style="width:9px;height:9px;border-radius:2px;background:rgba(111,140,255,0.55)"></span>On its way</span>
+      <span style="display:inline-flex;gap:6px;align-items:center"><span style="width:9px;height:9px;border-radius:2px;background:#5EC98F"></span>Finished</span>
+    </div>
+
+    <!-- the scene -->
+    <div style="margin-top:26px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span style="font-size:13px;color:rgba(236,236,241,0.45)">{{ sc.where }}</span>
+      <h1 style="margin:0;font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-0.03em">{{ sc.title }}</h1>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <span tabindex="0" role="button" onclick="{{ onPrev }}" title="Previous scene (←)" style="width:34px;height:34px;border-radius:8px;background:#17171C;display:flex;align-items:center;justify-content:center;cursor:pointer">‹</span>
+        <span tabindex="0" role="button" onclick="{{ onNext }}" title="Next scene (→)" style="width:34px;height:34px;border-radius:8px;background:#17171C;display:flex;align-items:center;justify-content:center;cursor:pointer">›</span>
+      </span>
+    </div>
+    <div style="margin-top:6px;font-size:15px;line-height:1.5;color:rgba(236,236,241,0.62);max-width:760px"><span style="font-weight:600;color:{{ sc.qColor }}">{{ sc.qKind }}</span> {{ sc.q }}</div>
+
+    <sc-if value="{{ cele.has }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:16px 18px;border-radius:12px;background:rgba(94,201,143,0.08);animation:sbLand 1.4s ease both">
+        <span style="width:30px;height:30px;border-radius:50%;background:#5EC98F;color:#0E0E11;display:flex;align-items:center;justify-content:center;font-weight:700">✓</span>
+        <div style="flex:1 1 260px"><div style="font-size:15.5px;font-weight:600">{{ cele.head }}</div><div style="margin-top:2px;font-size:13px;color:rgba(236,236,241,0.65)">{{ cele.sub }}</div></div>
+        <sc-if value="{{ cele.hasNext }}" hint-placeholder-val="{{ true }}"><span tabindex="0" role="button" onclick="{{ cele.onNext }}" style="font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;background:#ECECF1;color:#0E0E11;cursor:pointer">{{ cele.next }}</span></sc-if>
+      </div>
+    </sc-if>
+
+    <div class="sb-pair" style="margin-top:20px">
+      <sc-for list="{{ pair }}" as="pl" hint-placeholder-count="2">
+        <div>
+          <div style="display:flex;gap:10px;align-items:baseline;padding:0 2px 9px"><span style="font-size:14px;font-weight:600">{{ pl.name }}</span><span style="font-size:12.5px;color:rgba(236,236,241,0.5)">{{ pl.sub }}</span></div>
+          <div tabindex="0" role="button" onclick="{{ onPlay }}" style="position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#08080A;container-type:inline-size;cursor:pointer;box-shadow:inset 0 0 0 1px {{ pl.ring }}">
+            <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+              <defs><filter id="sbBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="46"></feGaussianBlur></filter></defs>
+              <g transform="{{ pl.f.gT }}">
+                <sc-for list="{{ pl.f.rects }}" as="q" hint-placeholder-count="2"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.sw }}" stroke-dasharray="{{ q.dashA }}" opacity="{{ q.op }}"></rect></sc-for>
+                <sc-for list="{{ pl.f.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}" filter="{{ q.filt }}"></circle></sc-for>
+                <sc-for list="{{ pl.f.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+              </g>
+            </svg>
+            <sc-for list="{{ pl.f.texts }}" as="q" hint-placeholder-count="2"><div style="position:absolute;left:{{ q.l }}%;top:{{ q.tp }}%;transform:{{ q.tf }};font-size:{{ q.fs }}cqw;font-family:{{ q.font }};font-weight:{{ q.weight }};color:{{ q.fill }};opacity:{{ q.op }};white-space:{{ q.ws }};max-width:{{ q.mw }};text-align:center;line-height:1.2">{{ q.t }}</div></sc-for>
+            <div style="position:absolute;left:3%;top:4.5%;font-size:2.1cqw;font-weight:600;padding:0.4cqw 1.1cqw;border-radius:0.8cqw;background:rgba(8,8,10,0.66);color:{{ pl.tagColor }}">{{ pl.tag }}</div>
+            <div style="position:absolute;left:6%;right:6%;bottom:6%;text-align:center;font-family:{{ pl.capFont }};font-style:{{ pl.capStyle }};font-size:3.1cqw;line-height:1.3;color:{{ pl.capColor }};text-shadow:0 1px 8px rgba(0,0,0,0.95)">{{ pl.cap }}</div>
+            <sc-if value="{{ paused }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:11cqw;height:11cqw;border-radius:50%;background:rgba(236,236,241,0.88);display:flex;align-items:center;justify-content:center"><span style="width:0;height:0;border-left:3.4cqw solid #0E0E11;border-top:2cqw solid transparent;border-bottom:2cqw solid transparent;margin-left:0.8cqw"></span></div></sc-if>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:3px;height:6px"><sc-for list="{{ pl.cuts }}" as="c" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ c.onGo }}" style="flex:{{ c.flex }};border-radius:2px;background:{{ c.bg }};cursor:pointer"></div></sc-for></div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:12px;align-items:center;font-size:12.5px;color:rgba(236,236,241,0.5)"><span tabindex="0" role="button" onclick="{{ onPlay }}" style="font-weight:600;color:#ECECF1;cursor:pointer">{{ playLabel }}</span><span style="font-variant-numeric:tabular-nums">{{ clock }}</span><span class="sb-hide">space play · ← → scene · enter does the recommended thing</span></div>
+
+    <div class="sb-body" style="margin-top:34px">
+      <!-- from rough to finished: one card per shot -->
+      <div>
+        <div style="display:flex;gap:10px;align-items:baseline"><span style="font-size:17px;font-weight:600">From rough to finished</span><span style="font-size:12.5px;color:rgba(236,236,241,0.5)">{{ shotsLine }}</span></div>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ shots }}" as="x" hint-placeholder-count="3">
+            <div class="sb-shot" style="padding:14px 16px;border-radius:12px;background:#141418;box-shadow:inset 0 0 0 1px {{ x.ring }};animation:{{ x.anim }}">
+              <div style="display:flex;gap:10px;align-items:baseline"><span style="width:8px;height:8px;border-radius:50%;background:{{ x.dot }};box-shadow:{{ x.dotRing }};transform:translateY(-1px);animation:{{ x.dotAnim }}"></span><span style="font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">{{ x.at }}</span><span style="font-size:12px;color:rgba(236,236,241,0.55)">{{ x.state }}</span><span style="margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">{{ x.dur }}</span></div>
+              <div style="margin-top:7px;font-size:14.5px;line-height:1.45">{{ x.pic }}</div>
+              <sc-if value="{{ x.hasLine }}" hint-placeholder-val="{{ true }}"><div style="margin-top:6px;padding-left:10px;border-left:2px solid {{ x.lineEdge }};font-family:'Instrument Serif',serif;font-size:16px;line-height:1.4;color:{{ x.lineInk }}">{{ x.line }}</div></sc-if>
+              <sc-if value="{{ x.hasWork }}" hint-placeholder-val="{{ false }}"><div style="margin-top:10px;display:flex;gap:10px;align-items:center"><div style="flex:1;height:4px;border-radius:2px;background:rgba(236,236,241,0.07);overflow:hidden"><div style="height:100%;width:{{ x.workW }};background:#6F8CFF;border-radius:2px"></div></div><span style="font-size:12px;color:#B9C6FF">{{ x.workLabel }}</span></div></sc-if>
+              <sc-if value="{{ x.hasTake }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;padding:12px;border-radius:9px;background:#0E0E11;box-shadow:inset 0 0 0 1px {{ x.takeRing }}">
+                  <div style="display:flex;gap:10px;align-items:center"><sc-if value="{{ x.takeRolling }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:50%;background:#EF5B4F;animation:sbPulse 1s ease infinite"></span></sc-if><span style="font-size:13px;font-variant-numeric:tabular-nums">{{ x.takeClock }}</span><span style="font-size:12px;color:rgba(236,236,241,0.5)">{{ x.takeNote }}</span></div>
+                  <div style="margin-top:8px;height:4px;border-radius:2px;background:rgba(236,236,241,0.07);overflow:hidden"><div style="height:100%;width:{{ x.takeW }};background:#EF5B4F"></div></div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ x.hasActs }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  <sc-for list="{{ x.acts }}" as="a" hint-placeholder-count="3"><span tabindex="0" role="button" onclick="{{ a.onGo }}" title="{{ a.title }}" style="font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:7px;background:{{ a.bg }};color:{{ a.color }};box-shadow:{{ a.ring }};cursor:{{ a.cursor }};opacity:{{ a.op }}">{{ a.label }}</span></sc-for>
+                  <span style="font-size:12px;color:rgba(236,236,241,0.45)">{{ x.why }}</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <!-- where the scene is -->
+      <div style="position:sticky;top:16px">
+        <div style="padding:16px 18px;border-radius:12px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+          <div style="font-size:13.5px;font-weight:600">This scene</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:9px">
+            <sc-for list="{{ steps }}" as="s" hint-placeholder-count="5"><div style="display:flex;gap:10px;align-items:baseline"><span style="flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;background:{{ s.bg }};color:{{ s.ink }};box-shadow:{{ s.ring }}">{{ s.mark }}</span><div><div style="font-size:13.5px;font-weight:600;color:{{ s.nameInk }}">{{ s.name }}</div><div style="margin-top:1px;font-size:12px;line-height:1.45;color:rgba(236,236,241,0.5)">{{ s.detail }}</div></div></div></sc-for>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)">{{ nextLine }}</div>
+          <sc-if value="{{ hasRec }}" hint-placeholder-val="{{ true }}"><span tabindex="0" role="button" onclick="{{ onRec }}" style="margin-top:10px;display:inline-block;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;background:{{ recBg }};color:{{ recInk }};cursor:pointer">{{ recLabel }}</span></sc-if>
+        </div>
+        <div style="margin-top:12px;padding:14px 18px;border-radius:12px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+          <div style="font-size:13px;font-weight:600">Today</div>
+          <div style="margin-top:6px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)">{{ today }}</div>
+          <div style="margin-top:10px;display:flex;gap:3px"><sc-for list="{{ todayDots }}" as="d" hint-placeholder-count="6"><span style="width:12px;height:12px;border-radius:3px;background:{{ d.bg }};box-shadow:{{ d.ring }}"></span></sc-for></div>
+        </div>
+        <a href="Studio.dc.html" style="margin-top:12px;display:block;font-size:12.5px;color:rgba(236,236,241,0.55);text-decoration:underline;text-underline-offset:3px">Other ways to tell this scene, in the Studio</a>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+// colour means one thing each: red = recording · green = done · blue = the crew is working, or what Aldershot recommends next · everything else is ink
+const REC = "#EF5B4F", GREEN = "#5EC98F", WORK = "#6F8CFF", RED = "#E3A29B";
+const GOLD = "#ECECF1", CYAN = "rgba(236,236,241,0.62)"; // former accents, now ink: "yours" and "Scout" are words, not colours
+const TARGET = 1200, WPS = 2.5;
+const fmt = s => Math.floor(s / 60) + ":" + String(Math.round(s % 60) === 60 ? 59 : Math.round(s % 60)).padStart(2, "0");
+const ease = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+
+// picture kinds
+const PK = {
+  you:     { name: "YOU", color: GOLD, ring: "rgba(236,236,241,0.4)" },
+  photo:   { name: "PHOTO", color: GOLD, ring: "rgba(236,236,241,0.4)" },
+  clip:    { name: "CLIP", color: GOLD, ring: "rgba(236,236,241,0.4)" },
+  archive: { name: "ARCHIVE", color: "rgba(236,236,241,0.7)", ring: "rgba(236,236,241,0.22)" },
+  sketch:  { name: "DRAWN · SKETCH", color: "#ECECF1", ring: "rgba(236,236,241,0.35)" },
+  found:   { name: "SCOUT FOUND", color: CYAN, ring: "rgba(236,236,241,0.45)" },
+  wanted:  { name: "WANTED", color: CYAN, ring: "rgba(236,236,241,0.45)" },
+  card:    { name: "TEXT CARD", color: "rgba(236,236,241,0.7)", ring: "rgba(236,236,241,0.22)" },
+  hold:    { name: "HOLD", color: "rgba(236,236,241,0.5)", ring: "rgba(236,236,241,0.15)" },
+  gen:     { name: "GENERATED", color: "rgba(236,236,241,0.75)", ring: "rgba(236,236,241,0.3)" },
+};
+// sound modes
+const SM = {
+  vo:      { name: "Your voice", color: GOLD },
+  sync:    { name: "In their words", color: CYAN },
+  breathe: { name: "Breathe", color: "rgba(236,236,241,0.55)" },
+  silence: { name: "Silence", color: "rgba(236,236,241,0.45)" },
+};
+
+
+// [dur, picKind, picture, picStatus, soundMode, sound, soundStatus]
+// statuses: have · found · wanted · figures · rec · draft · drafted · shoot
+// claims: the fact-check rows a section stands on (see CLAIMS)
+const SEQ = [
+  // ── ACT 1 · THE LINE ──
+  { id: "s1", act: 0, title: "Cold open: the numbers", qk: "raises", q: "What is this picture, and why is it made of numbers?", claims: [10], rows: [
+    [20, "found", "Mariner 4’s numbers colouring themselves in, strip by strip", "found", "breathe", "No voice. Just the picture arriving.", ""] ] },
+  { id: "s2", act: 0, title: "“Never been through the real course”", qk: "raises", q: "What did McLuhan mean?", claims: [1], rows: [
+    [25, "archive", "McLuhan, on camera — your clip", "have", "sync", "McLuhan: “18th-century types… never been through the real course… cheap science fiction”", "have"],
+    [5, "hold", "Hold on his face, then black", "have", "silence", "Nothing. Let it sit.", ""],
+    [30, "you", "You, on camera", "have", "vo", "He said it like a throwaway. The first time I heard it, I heard “never been there.” That isn’t what he meant.", "rec"] ] },
+  { id: "s3", act: 0, title: "What he meant", qk: "answers", q: "NASA lived in Newton’s space; the world had moved into electric space.", claims: [2, 3], rows: [
+    [20, "card", "His 1977 letter, typed out line by line", "have", "vo", "In a letter in 1977 he spelled it out. NASA, he wrote, lives in the old visual space of Newton — purely rear-view mirror.", "rec"],
+    [30, "sketch", "A straight road with destinations dissolving into a field of signals", "have", "vo", "NASA thought of space as a road with places on it. He thought the electric age had turned space into something else: information, all around us, arriving.", "draft"],
+    [20, "card", "1970: “haunted by this obsolete and irrelevant image of space”", "have", "breathe", "Music under the quote", ""] ] },
+  { id: "s4", act: 0, title: "A probe about probes", qk: "raises", q: "What kind of belief does a message ask for?", claims: [], rows: [
+    [50, "you", "You, on camera, close", "have", "vo", "Keep both readings. Mine was wrong about what he meant and right about where it leads. A space probe leaves, and nobody ever sees it again. All that comes back is its message. That’s McLuhan, made of metal.", "draft"],
+    [10, "card", "Title: A probe about probes", "have", "breathe", "Music up under the title", ""],
+    [30, "sketch", "A probe drawn leaving the frame; only a dotted signal comes back", "have", "vo", "So this isn’t a film about whether to believe it. It’s about what kind of belief a message asks for — and what you could check with your own eyes.", "draft"] ] },
+
+  // ── ACT 2 · FICTION FIRST, THEN THE SIGNAL ──
+  { id: "s5", act: 1, title: "The man who wrote the dream", qk: "answers", q: "Space travel was fiction first — written by the man who did the maths.", claims: [5], rows: [
+    [30, "wanted", "Kepler’s Somnium, 1634 — the title page", "wanted", "vo", "Johannes Kepler worked out how planets move. He also spent his life on a story: a journey to the Moon, with the Earth hanging in its sky.", "draft"],
+    [20, "sketch", "The Earth from the Moon, “attached to the heavens with a nail”", "have", "breathe", "Music", ""],
+    [25, "you", "You, on camera", "have", "vo", "It was published in 1634, after he died. People call it the first science fiction. The man who wrote the maths also wrote the dream.", "draft"] ] },
+  { id: "s6", act: 1, title: "One reader of Verne", qk: "answers", q: "The rocket equation came from a reader of Jules Verne.", claims: [6, 32], rows: [
+    [25, "found", "Tsiolkovsky’s 1903 paper — the rocket equation", "found", "vo", "A Russian teenager read Jules Verne. Then he worked out that Verne’s cannon would have killed its passengers — and wrote the equation every rocket still obeys.", "draft"],
+    [35, "sketch", "Verne’s capsule: fired from Florida, down in the Pacific, the Navy waiting", "have", "vo", "Verne’s three astronauts launched from Florida and splashed down in the Pacific. A century later, Armstrong mentioned it.", "draft"] ] },
+  { id: "s7", act: 1, title: "Counting to zero", qk: "answers", q: "The launch ritual is a silent-film editing trick.", claims: [7, 33], rows: [
+    [20, "found", "Frau im Mond, 1929 — the countdown intertitles", "found", "silence", "The film’s own silence. Just the numbers.", ""],
+    [20, "wanted", "Explorer 1’s broadcast, 1958", "wanted", "sync", "“The countdown reaches zero.”", "wanted"],
+    [20, "you", "You, on camera", "have", "vo", "The most famous ritual of the space age is a silent-film editing trick. And the first V-2 to fly wore the film’s logo.", "rec"] ] },
+  { id: "s8", act: 1, title: "The beep", qk: "answers", q: "The space age began as a sound anyone could hear.", claims: [4, 8], rows: [
+    [12, "wanted", "Sputnik’s beep — the original recording", "wanted", "sync", "The beep, alone", "wanted"],
+    [28, "sketch", "Radio rings spreading from a small sphere over a dark globe", "have", "vo", "The space age didn’t begin with a picture. It began with a sound: one watt, on frequencies any radio amateur could hear.", "rec"],
+    [20, "card", "McLuhan: “with Sputnik, the world literally became a global theater”", "have", "breathe", "Music under the quote", ""] ] },
+  { id: "s9", act: 1, title: "Live, then dead", qk: "answers", q: "The probe was the camera, and the climax was its death.", claims: [9], rows: [
+    [40, "archive", "Ranger 9’s last frames, as broadcast, 1965", "have", "vo", "In March 1965 America watched Ranger 9 fall into a crater, live. Five thousand eight hundred pictures in eighteen minutes, each one closer.", "rec"],
+    [6, "hold", "The last frame, then black", "have", "silence", "Nothing.", ""],
+    [14, "you", "Your line", "have", "vo", "The probe was the camera. The climax was its death.", "draft"] ] },
+  { id: "s10", act: 1, title: "McLuhan inside the satellite", qk: "answers", q: "The man who called NASA cheap science fiction was content for a satellite.", claims: [11], rows: [
+    [25, "wanted", "McLuhan on “Our World”, 1967 — CBC Toronto", "wanted", "sync", "McLuhan: “Television is an x-ray, not a blueprint.”", "wanted"],
+    [20, "you", "Your line", "have", "vo", "The first live broadcast around the world. Forty-five control rooms. And there he was, inside a satellite.", "draft"] ] },
+  { id: "s11", act: 1, title: "Printed by a tabloid", qk: "answers", q: "The first pictures from another world were printed by strangers.", claims: [12], rows: [
+    [30, "found", "The Daily Express front page, February 1966", "found", "vo", "February 1966. A Soviet probe lands on the Moon and starts sending pictures. At Jodrell Bank in England, they’re listening — and the signal sounds like newspaper fax.", "rec"],
+    [30, "sketch", "A fax machine printing the Moon, too wide", "have", "vo", "They borrow the Daily Express’s machine. The first pictures from another world are printed by strangers, on a tabloid’s fax — and they guess the proportions wrong.", "draft"],
+    [30, "found", "The stretched print beside the Soviet release", "found", "breathe", "Hold on the two, side by side", ""] ] },
+  { id: "s12", act: 1, title: "Five months of noise", qk: "answers", q: "A probe is only ever its message.", claims: [13], rows: [
+    [45, "sketch", "Voyager’s data as noise for five months, resolving on 20 April", "drafted", "vo", "November 2023: Voyager 1 starts sending gibberish. One chip has failed. For five months, the farthest thing we ever made exists only as noise.", "draft"],
+    [30, "you", "Your line", "have", "vo", "They fixed it from twenty-four billion kilometres away, one command at a time. For those months the probe wasn’t lost. Its message was — and the message was all it ever was.", "draft"] ] },
+  { id: "s13", act: 1, title: "Lost in translation", qk: "answers", q: "In a medium made of numbers, a mistranslation is a crash.", claims: [14], rows: [
+    [30, "sketch", "A number in pounds, a number in newtons, an orbit that misses", "have", "vo", "1999. Mars Climate Orbiter is lost because one team used English units and the other metric. A spacecraft destroyed by a translation.", "rec"] ] },
+
+  // ── ACT 3 · WHO READS THE MESSAGE ──
+  { id: "s14", act: 2, title: "Already landed", qk: "answers", q: "With a probe, the present tense doesn’t exist.", claims: [15], rows: [
+    [30, "found", "Perseverance’s own landing video, 2021", "found", "vo", "Mars was eleven minutes away by radio. The landing was over before the first signal of it arrived.", "draft"],
+    [15, "sketch", "A clock counting 11:22 while the rover already sits on the ground", "have", "breathe", "The clock ticking", ""] ] },
+  { id: "s15", act: 2, title: "A pixel", qk: "answers", q: "The probe’s last picture was of the people receiving it.", claims: [16], rows: [
+    [25, "found", "The Pale Blue Dot, 1990", "found", "vo", "In 1990 Voyager 1 turned around and photographed the Earth: about a pixel.", "draft"],
+    [20, "hold", "Hold on the dot", "have", "vo", "Thirty-four minutes later its cameras were switched off. The probe’s last picture was of us.", "draft"] ] },
+  { id: "s16", act: 2, title: "The face was a hill", qk: "answers", q: "The message becomes whatever its receivers make of it.", claims: [17, 18, 19, 34], rows: [
+    [20, "found", "The Face on Mars, 1976, then 2001", "found", "vo", "A Viking picture looked like a face. For twenty-five years it was a myth. In 2001 it was photographed again. It’s a hill.", "draft"],
+    [25, "sketch", "Three grey frames combine into one red planet", "have", "vo", "Colour is built afterwards from black-and-white frames. On Juno, the public makes the pictures. These aren’t lies. They’re translations — and the translator is us.", "draft"] ] },
+  { id: "s17", act: 2, title: "The doubt came down the same wire", qk: "answers", q: "Disbelief is a medium too.", claims: [20, 21], rows: [
+    [20, "archive", "Kaysing’s book, 1976", "have", "vo", "The doubt has a media history too. A self-published book in 1976.", "draft"],
+    [25, "wanted", "Capricorn One, 1978 — the faked Mars landing", "wanted", "sync", "The film’s own launch, 20 seconds", "wanted"],
+    [15, "you", "Your line", "have", "vo", "NASA lent it the hardware. Belief and disbelief came down the same wire.", "draft"] ] },
+  { id: "s18", act: 2, title: "The total hypothesis", qk: "raises", q: "What if every check is part of the template?", claims: [22], rows: [
+    [45, "you", "You, on camera", "have", "vo", "Now the strongest version. Suppose the templates were handed out, to every agency since. Then India’s photo, Japan’s samples, a French laser — all part of it. Nothing can count against it. Which makes it a perfect medium: a closed world that turns every message into its own content.", "draft"],
+    [15, "card", "“Can’t be settled”", "have", "breathe", "Silence, then music", ""] ] },
+  { id: "s19", act: 2, title: "The control experiment", qk: "answers", q: "A probe passed the one test we could grade.", claims: [23], rows: [
+    [45, "sketch", "Galileo turning its instruments on Earth, 1990", "have", "vo", "In 1990 Carl Sagan pointed a passing probe at home, as a test: would its data show life? Oxygen. Methane. Plants. Radio. The probe passed the one test we could grade.", "draft"] ] },
+  { id: "s20", act: 2, title: "What comes back without a picture", qk: "answers", q: "A few things aren’t messages.", claims: [24, 25, 26, 27], rows: [
+    [20, "found", "Hayabusa2’s capsule in the Australian desert, 2020", "found", "vo", "A few things come back without a picture. Asteroid dust, in a capsule you can hold.", "draft"],
+    [20, "sketch", "A rock in Antarctic ice; its trapped gas matching a 1976 measurement", "figures", "vo", "A rock that fell in Antarctica, whose trapped gas matches what Viking measured on Mars.", "draft"],
+    [20, "sketch", "A laser to the Moon and back", "have", "vo", "A light that goes, and comes back. An amateur’s radio, finding a lost satellite.", "draft"] ] },
+  { id: "s21", act: 2, title: "The one you can see", qk: "answers", q: "The real course, run with your own eyes.", claims: [28, 29, 30, 31], rows: [
+    [15, "sketch", "Le Verrier’s prediction landing on Neptune, 1846", "have", "vo", "The arithmetic is older than rockets. It found Neptune before anyone had seen it.", "draft"],
+    [30, "you", "Your shot: the Space Station crossing the sky over Niagara", "shoot", "vo", "So go outside at the minute NASA predicts. The light moves where it was meant to. Then decide what kind of thing you believe about the ones we can’t see.", "draft"] ] },
+];
+
+// Slots Sketch has already drawn; every other drawing or card starts as a ghost: described, not made.
+const DRAWN = new Set(["s3:1", "s4:2", "s8:1", "s13:0"]);
+SEQ.forEach(s => s.rows.forEach((r, i) => { if ((r[1] === "sketch" || r[1] === "card") && r[3] === "have" && !DRAWN.has(s.id + ":" + i)) r[3] = "ghost"; }));
+
+// ── filling a slot ──
+// Routes, in the order the rules set (yours → the open world → drawn → generated). Seconds are the prototype's; the build takes minutes.
+const ROUTE = {
+  yours:  { name: "Yours", who: "you", line: "Upload a file, or shoot it on your phone. Your footage comes first.", cost: "now", secs: 0 },
+  scout:  { name: "Scout sources it", who: "scout", line: "Two or three candidates, each linked at its source and credited. Nothing is downloaded.", cost: "about 10 min", secs: 5 },
+  sketch: { name: "Sketch draws it", who: "sketch", line: "A motion graphic, made in code. Good enough to keep in a Drawn cut.", cost: "about 1 min · free", secs: 3 },
+  card:   { name: "A title card", who: "you", line: "Words on screen, set in the film’s type. You write them.", cost: "now · free", secs: 0 },
+  gen:    { name: "Generate it", who: "sketch", line: "Drawn style, never photoreal, and labelled as generated wherever it plays.", cost: "a few min · uses credits", secs: 6 },
+};
+// a Scout search that comes back empty — failures say so, they never just stay blank
+const FAILS = { "s5:0": "Two copies of the 1634 title page turned up, but neither has a clear licence, so neither goes in. Sketch can draw the page from its description instead." };
+const CANDS = [
+  ["Candidate 1", "Public domain", "Free to use; credit the source", true],
+  ["Candidate 2", "Credit required", "Usable with a credit line under it", true],
+  ["Candidate 3", "Licence needed", "Rights holder found; ask before using", false],
+];
+
+// the fact-check: [row, claim, verdict, source] — verdict: c confirmed · a attributed · s secondary only · u unsourced
+const CLAIMS = [
+  [1, "McLuhan: “18th-century types… never been through the real course… cheap science fiction”", "a", "Your clip; programme and date unknown"],
+  [2, "1977 letter: NASA “concerned with the old visual space of Newton”", "c", "Letters of Marshall McLuhan, p. 531"],
+  [3, "1970: “haunted by this obsolete and irrelevant image of space”", "c", "“The concept of space in art”"],
+  [4, "“With Sputnik, the world literally became a global theater”", "c", "“The End of the Work Ethic”, 1972"],
+  [5, "Kepler’s Somnium, published 1634, “the first proper work of science fiction”", "c", "Astronomy"],
+  [6, "Tsiolkovsky read Verne; rocket equation, 1903", "c", "Space.com"],
+  [7, "Frau im Mond’s countdown; Explorer 1’s “the countdown reaches zero”", "s", "Atlas Obscura"],
+  [8, "Sputnik: 1 W on 20 and 40 MHz, within range of nearly any amateur", "c", "ARRL"],
+  [9, "Ranger 9, March 1965: live on TV, 5,800 images in 18 minutes", "c", "NASA Photojournal"],
+  [10, "Mariner 4’s first picture was coloured in by hand", "c", "NASA History; Caltech"],
+  [11, "McLuhan on Our World, 1967: “Television is an x-ray, not a blueprint”", "s", "Broadcast transcript"],
+  [12, "Luna 9 printed at Jodrell Bank on the Daily Express’s fax, wrong proportions", "c", "Air & Space / Smithsonian"],
+  [13, "Voyager 1 unreadable Nov 2023 – Apr 2024; one chip; code moved", "c", "NASA JPL"],
+  [14, "Mars Climate Orbiter lost to English vs metric units", "c", "NASA JPL"],
+  [15, "Perseverance: 11 min 22 s delay; landed before the data arrived", "c", "The Register"],
+  [16, "Pale Blue Dot: Earth about a pixel; cameras off 34 minutes later", "c", "NASA"],
+  [17, "Face on Mars: Viking 1976; a hill at 2 m a pixel in 2001", "c", "NASA JPL"],
+  [18, "Raw images are black-and-white; colour comes later", "c", "NASA"],
+  [19, "The 2002 Blue Marble is a four-month mosaic", "c", "NASA Earth Observatory"],
+  [20, "Kaysing self-published We Never Went to the Moon, 1976", "s", "Wikipedia"],
+  [21, "Capricorn One: NASA lent equipment; footage reused by hoaxers", "s", "Wikipedia"],
+  [22, "New imagery: LRO 2009, Chandrayaan-2 2021, Perseverance video 2021", "c", "LROC; Spaceflight Now"],
+  [23, "Galileo’s Earth flyby found the signs of life (Sagan, 1993)", "s", "Summary of the Nature paper"],
+  [24, "Hayabusa2 returned asteroid samples to Woomera, 2020", "c", "Scientific American"],
+  [25, "EETA79001’s trapped gas matches Viking’s Mars measurements", "c", "Science, 1983"],
+  [26, "Laser ranging at four observatories; Jodrell Bank and Bochum recorded Apollo", "s", "Wikipedia"],
+  [27, "An amateur found NASA’s lost IMAGE satellite, 2018", "c", "NPR"],
+  [28, "Neptune found one degree from Le Verrier’s prediction, 1846", "c", "NASA History"],
+  [29, "The ISS is visible to the eye; Spot the Station gives the minute", "c", "The Planetary Society"],
+  [30, "7.8 km/s to orbit, 11.2 km/s to escape", "c", "ESA"],
+  [31, "Mars every 26 months, about 259 days; BepiColombo’s nine flybys", "c", "JPL; NASA Goddard; ESA"],
+  [32, "Verne’s crew: Florida launch, Pacific splashdown, Navy recovery", "c", "Space.com"],
+  [33, "Frau im Mond banned 1933–45; the first V-2 wore its logo", "s", "Wikipedia"],
+  [34, "JunoCam is “really the public’s camera”", "c", "NASA JPL"],
+];
+// the doubter's patterns: [suspicion, verdict, rows] — verdict: holds · turns · open
+const PATTERNS = [
+  ["Space travel was fiction first", "holds", [5, 6, 7, 32, 33]],
+  ["The first pictures weren’t photographs", "holds", [10, 12, 18, 19]],
+  ["Nobody witnessed the probes — we only have the signal", "holds", [13, 15, 16]],
+  ["The message becomes whatever its receivers make of it", "holds", [17, 20, 21, 34]],
+  ["Orbital mechanics is too convenient", "turns", [28, 30, 31]],
+  ["Everything comes from the same old stock", "turns", [22]],
+  ["We only have NASA’s word for it", "turns", [24, 25, 26, 27]],
+  ["Every independent check is part of the template", "open", []],
+];
+const VERDICT = { c: ["Confirmed", GREEN], a: ["Attributed", RED], s: ["Secondary only", "rgba(236,236,241,0.55)"], u: ["Unsourced", RED] };
+const PVERDICT = { holds: ["Holds up", "#ECECF1"], turns: ["Turns around", "rgba(236,236,241,0.55)"], open: ["Can’t be settled", "rgba(236,236,241,0.75)"] };
+
+// ── one film, shared by every page ──
+// Kept in this browser, so a change made on any page shows up on all of them.
+const KEY = "aldershot.nasa.v2";
+const SEED_NOTES = [{ seq: "s11", t: 40, text: "show the stretched print first, then reveal the right proportions" }, { seq: "s21", t: 20, text: "real time, no music — just the light crossing" }];
+const loadShared = () => { let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {} return { over: {}, notes: SEED_NOTES, ...o }; };
+const saveShared = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} };
+const ACTS = ["ACT 1 · THE LINE", "ACT 2 · FICTION FIRST, THEN THE SIGNAL", "ACT 3 · WHO READS THE MESSAGE"];
+
+// the things waiting on you, in order
+const TASKS = [
+  { key: "s4:0", kind: "you", title: "Record “A probe about probes”", cost: "50 sec", why: "The thesis, in your voice. Gets you the end of Act 1 with nothing missing.", action: "Record", eff: { s: "rec" }, done: "Recorded — Act 1 says what the film is about." },
+  { key: "s11:0", kind: "scout", title: "Check Scout’s Daily Express find", cost: "1 min", why: "The front page from February 1966. Gets you the tabloid that printed the Moon.", action: "Check it", eff: { p: "have" }, done: "Checked — Luna 9’s front page is in “Printed by a tabloid”." },
+  { key: "s21:1", kind: "you", title: "Fill the last shot", cost: "2 min", why: "The Space Station over Niagara, filmed by you. Spot the Station gives the minute; the film ends on your own eyes.", action: "Fill it", fill: true, eff: { p: "have" }, done: "Filled — the film ends on your own eyes." },
+  { key: "s7:0", kind: "scout", title: "Check the Frau im Mond countdown", cost: "1 min", why: "It’s from 1929, so it may be public domain in the US. Scout needs your eye on the right twenty seconds.", action: "Check it", eff: { p: "have" }, done: "Checked — the countdown is in; the rights still need confirming." },
+  { key: "s5:0", kind: "you", title: "Record the Kepler opener", cost: "30 sec", why: "“Johannes Kepler worked out how planets move…” Gets you Act 2’s first scene in your voice.", action: "Record", eff: { s: "rec" }, done: "Recorded — Act 2 opens in your voice." },
+];
+const WHO = { you: ["You", GOLD], story: ["Aldershot", "#ECECF1"], scout: ["Scout", CYAN], sketch: ["Sketch", "rgba(236,236,241,0.75)"] };
+
+// ── Sketch's motion graphics. Every one is code: a design and a few words. Change a word and it redraws.
+// Each design draws itself from (seconds into the block, block length, its words) as plain shapes on a 960×540 frame.
+const MGT = {
+  signal:   { name: "Signal",          line: "Two places, and a message crossing between them.", fields: [["from", "From"], ["to", "To"], ["time", "How long it takes"], ["back", "Comes back (yes or no)"]] },
+  rings:    { name: "Broadcast",       line: "Rings spreading from a source over the horizon.", fields: [["label", "What’s sending"], ["caption", "Caption"]] },
+  count:    { name: "Counter",         line: "One number, counting up to itself.", fields: [["number", "The number"], ["unit", "Under it"], ["caption", "Caption"]] },
+  noise:    { name: "Noise to signal", line: "Static that settles into a picture.", fields: [["from", "While it’s noise"], ["to", "When it settles"]] },
+  path:     { name: "Trajectory",      line: "A path from one place to another. It arrives, or it misses.", fields: [["from", "From"], ["to", "To"], ["caption", "Caption"], ["miss", "Misses (yes or no)"]] },
+  quote:    { name: "Quote",           line: "Words typed out, then who said them.", fields: [["text", "The words", 1], ["who", "Who, and when"]] },
+  layers:   { name: "Layers",          line: "Separate frames sliding together into one.", fields: [["a", "First"], ["b", "Second"], ["c", "Third"], ["result", "Together they make"]] },
+  print:    { name: "Print-out",       line: "A picture arriving line by line, like a fax.", fields: [["caption", "Caption"], ["stretch", "How much too wide (1 to 1.6)"]] },
+  timeline: { name: "Timeline",        line: "Dates along a line, one at a time.", fields: [["items", "One per line — year: what", 1]] },
+  chart:    { name: "Bar chart",       line: "Numbers as bars that grow, one after another.", fields: [["items", "One per line — label: number", 1], ["unit", "Unit after each number"], ["caption", "Caption"]] },
+  wave:     { name: "Sound",           line: "A sound made visible — a beep, a voice, a signal.", fields: [["label", "What you’re hearing"], ["caption", "Caption"]] },
+  receipt:  { name: "Receipt",         line: "A claim on screen with its source and what backs it.", fields: [["claim", "The claim", 1], ["source", "Its source"], ["verdict", "Checked, attributed, single, or unsourced"]] },
+  captions: { name: "Captions",        line: "Just the words, big, as they’re said.", fields: [["text", "The words", 1]] },
+  compare:  { name: "Side by side",    line: "Two pictures next to each other, so the difference shows.", fields: [["left", "Left"], ["right", "Right"], ["caption", "Caption"]] },
+};
+// Every way a slot can be filled. Ordered the way the rules order pictures: yours → the open world → drawn → generated.
+// cost and time are what the person is told before they choose; "no" says when a way is refused, and why.
+const FAMS = [["yours", "Yours"], ["found", "Found"], ["drawn", "Drawn"], ["gen", "Generated"], ["none", "Nothing, or again"]];
+const WAYS = [
+  { id: "camera",   fam: "yours", name: "On camera",          line: "You, talking to the lens. Shoot it on your phone or upload it.", cost: "free", time: "as long as it takes", pk: "you" },
+  { id: "clip",     fam: "yours", name: "A clip",             line: "Any video of yours.", cost: "free", time: "now", pk: "clip" },
+  { id: "photo",    fam: "yours", name: "A photo",            line: "A still of yours, moving gently — or punching in to a detail.", cost: "free", time: "now", pk: "photo" },
+  { id: "screen",   fam: "yours", name: "Your screen",        line: "Record what’s on your screen — a website, a document, a search.", cost: "free", time: "now", pk: "clip" },
+  { id: "doc",      fam: "yours", name: "A document",         line: "A page you have — a scan, a PDF page, a screenshot — with the passage pulled out.", cost: "free", time: "now", pk: "doc" },
+  { id: "archive",  fam: "found", name: "Public archive",     line: "NASA, the Internet Archive, the Library of Congress, Wikimedia Commons. Free to use, credited.", cost: "free", time: "about a minute", pk: "found" },
+  { id: "stock",    fam: "found", name: "Free stock",         line: "Pexels and Pixabay — general pictures, credited.", cost: "free", time: "about a minute", pk: "found" },
+  { id: "paid",     fam: "found", name: "Paid stock",         line: "Licensed libraries. You see the licence price before you buy; it’s passed on at cost.", cost: "the licence, at cost", time: "about a minute", pk: "found" },
+  { id: "quote",    fam: "found", name: "Quote a clip",       line: "A moment from someone else’s video. Scout finds it and gives you the link and the in and out — you bring the file.", cost: "free", time: "about a minute", pk: "wanted" },
+  { id: "motion",   fam: "drawn", name: "Motion graphic",     line: "Drawn in code from a design and a few words. Redraws as you type.", cost: "free", time: "now", pk: "sketch" },
+  { id: "card",     fam: "drawn", name: "Title card",         line: "Words on screen, and who said them.", cost: "free", time: "now", pk: "card", t: "quote" },
+  { id: "receipt",  fam: "drawn", name: "Receipt",            line: "The claim, its source and what backs it — on screen.", cost: "free", time: "now", pk: "sketch", t: "receipt" },
+  { id: "compare",  fam: "drawn", name: "Side by side",       line: "Two pictures next to each other.", cost: "free", time: "now", pk: "sketch", t: "compare" },
+  { id: "captions", fam: "drawn", name: "Just the words",     line: "The spoken words, big, on black, as they’re said. Nothing else.", cost: "free", time: "now", pk: "sketch", t: "captions" },
+  { id: "gstill",   fam: "gen",   name: "Generated still",    line: "One picture, drawn or painted, moving gently.", cost: "12¢ if it lands", time: "under a minute", pk: "gen", gen: "still" },
+  { id: "gvideo",   fam: "gen",   name: "Generated video",    line: "Moving pictures from a description, in clips of up to 8 seconds. Drawn, painted, clay or paper — never photoreal.", cost: "per second", time: "a few minutes", pk: "gen", gen: "video" },
+  { id: "animate",  fam: "gen",   name: "Animate a still",    line: "Your photo, or a generated one, set moving.", cost: "per second", time: "a few minutes", pk: "gen", gen: "animate" },
+  { id: "restyle",  fam: "gen",   name: "Restyle your clip",  line: "Your own footage, redrawn — as ink, paint or paper.", cost: "per second", time: "a few minutes", pk: "gen", gen: "restyle" },
+  { id: "black",    fam: "none",  name: "A beat of black",    line: "Nothing on screen. Let the words land.", cost: "free", time: "now", pk: "black" },
+  { id: "hold",     fam: "none",  name: "Hold the last frame", line: "The picture before this one stays, still.", cost: "free", time: "now", pk: "hold" },
+  { id: "again",    fam: "none",  name: "Bring a shot back",  line: "Something we’ve already seen, seen again — a callback.", cost: "free", time: "now", pk: "again" },
+  { id: "pip",      fam: "none",  name: "You over it",        line: "You, small in the corner, over whatever’s here. Not in this prototype yet.", cost: "free", time: "now", pk: "pip", later: true },
+];
+// Generated video is made in clips of up to 8 seconds — Veo 3.1’s limit, and the others are close to it. What it costs
+// Aldershot (November 2026 list prices: Veo 3.1 Fast 12¢ a second, Veo 3.1 40¢, a still about 4¢) sets what a person
+// pays: about three times that (decision 38), which pays for the tries people throw away, free to them.
+const CLIP_MAX = 8, GEN_COST = { std: 0.12, prem: 0.4, still: 0.04 };
+const GEN_PRICE = { std: 0.36, prem: 1.2, still: 0.12 }, GEN_LIMIT = 50;
+// how a generated shot fills its time: one clip; one clip then its last frame holds; a clip every 8 seconds; or a still
+const genMode = (o, dur) => { const g = (o && o.gen) || "video"; if (g === "still") return "still"; if (dur <= CLIP_MAX) return "clip";
+  return g === "restyle" || (o && o.gm === "clips") ? "clips" : "hold"; };
+const genSecs = (o, dur) => { const m = genMode(o, dur); return m === "still" ? 0 : m === "clips" ? dur : Math.min(dur, CLIP_MAX); };
+const genClips = (o, dur) => { const m = genMode(o, dur); return m === "still" ? 0 : m === "clips" ? Math.ceil(dur / CLIP_MAX) : 1; };
+const usd = v => v > 0 && v < 1 ? Math.round(v * 100) + "¢" : "$" + v.toFixed(2).replace(/\.00$/, "");
+const genUsd = (o, dur) => genMode(o, dur) === "still" ? GEN_PRICE.still : Math.round(genSecs(o, dur) * ((o && o.tier) === "prem" ? GEN_PRICE.prem : GEN_PRICE.std) * 100) / 100;
+// which design each drawn slot starts as, and its words
+const MG = {
+  "s3:0":  ["quote",    { text: "NASA lives in the old visual space of Newton — purely rear-view mirror.", who: "McLuhan, in a letter, 1977" }],
+  "s3:1":  ["noise",    { from: "Space as a road with places on it", to: "Space as information, all around" }],
+  "s3:2":  ["quote",    { text: "Haunted by this obsolete and irrelevant image of space.", who: "McLuhan, 1970" }],
+  "s4:1":  ["quote",    { text: "A probe about probes", who: "" }],
+  "s4:2":  ["signal",   { from: "Us", to: "The probe", time: "Only the signal comes back", back: "yes" }],
+  "s5:1":  ["path",     { from: "The Moon", to: "The Earth", caption: "Kepler, Somnium, 1634", miss: "no" }],
+  "s6:1":  ["path",     { from: "Florida", to: "The Pacific", caption: "Verne, 1865 — the Navy waiting", miss: "no" }],
+  "s8:1":  ["rings",    { label: "Sputnik · 20 and 40 MHz", caption: "One watt. Any radio amateur could hear it." }],
+  "s8:2":  ["quote",    { text: "With Sputnik, the world literally became a global theater.", who: "McLuhan" }],
+  "s11:1": ["print",    { caption: "Luna 9, on the Daily Express’s fax — 4 February 1966", stretch: "1.45" }],
+  "s12:0": ["noise",    { from: "November 2023 — gibberish", to: "20 April 2024 — Voyager 1 again" }],
+  "s13:0": ["path",     { from: "Pounds", to: "Mars", caption: "1999 — one team in pounds, one in newtons", miss: "yes" }],
+  "s14:1": ["count",    { number: "11:22", unit: "minutes for the signal to reach us", caption: "The rover is already on the ground" }],
+  "s16:1": ["layers",   { a: "Red filter", b: "Green filter", c: "Blue filter", result: "One red planet" }],
+  "s18:1": ["quote",    { text: "Can’t be settled.", who: "" }],
+  "s19:0": ["signal",   { from: "Galileo", to: "Earth", time: "1990 — oxygen, methane, plants, radio", back: "no" }],
+  "s20:1": ["timeline", { items: "1976: Viking measures Mars’s air\n1979: A rock is found in Antarctic ice\n1983: Its trapped gas matches" }],
+  "s20:2": ["signal",   { from: "Earth", to: "The Moon", time: "2.5 seconds there and back", back: "yes" }],
+  "s21:0": ["path",     { from: "Le Verrier’s arithmetic", to: "Neptune", caption: "1846 — found where the numbers said", miss: "no" }],
+};
+const cardOf = (key, o, pic) => (o && o.mg && o.mg.t === "quote") ? o.mg : (MG[key] && MG[key][0] === "quote") ? { t: "quote", f: MG[key][1] } : { t: "quote", f: { text: String(pic || "").replace(/^Title: |^End card: /, ""), who: "" } };
+const mgOf = (key, o) => (o && o.mg) || (MG[key] ? { t: MG[key][0], f: MG[key][1] } : { t: "path", f: { from: "Here", to: "There", caption: "", miss: "no" } });
+
+const MGI = "#ECECF1", MGF = "rgba(236,236,241,0.35)", MGS = "'Instrument Sans',sans-serif", MGR = "'Instrument Serif',serif";
+const mgEase = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+const mgHash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const mgWrap = (t, n) => { const out = []; let line = ""; String(t || "").split(/\s+/).forEach(w => { if ((line + " " + w).trim().length > n && line) { out.push(line); line = w; } else line = (line + " " + w).trim(); }); if (line) out.push(line); return out; };
+
+function mgDraw(t, f, lt, d) {
+  const P = [], C = [], X = [], R = [], p = (a, b) => mgEase((lt - a) / (b - a)), yes = v => /^y/i.test(String(v || ""));
+  const path = (d, o) => P.push({ d, stroke: MGI, w: 2.5, fill: "none", draw: 1, dots: false, op: 1, ...o });
+  const circ = (cx, cy, r, o) => C.push({ cx, cy, r, fill: "none", stroke: MGI, w: 2.5, op: 1, ...o });
+  const text = (x, y, s, o) => X.push({ x, y, t: s, size: 22, fill: MGI, anchor: "middle", font: MGS, weight: 400, op: 1, ...o });
+  const rect = (x, y, w, h, o) => R.push({ x, y, w, h, fill: MGI, op: 1, rx: 0, ...o });
+  f = f || {};
+  if (t === "signal") {
+    const ax = 190, bx = 770, y = 290, k = p(0, 1.2);
+    circ(ax, y, 54 * k + 0.01); circ(bx, y, 16 * p(0.3, 1.3) + 0.01, { fill: MGI });
+    path("M " + (ax + 60) + " " + y + " L " + (bx - 24) + " " + y, { stroke: MGF, w: 2, dots: true, draw: p(0.4, 1.8) });
+    text(ax, y + 100, f.from, { id: "from", op: k }); text(bx, y + 100, f.to, { id: "to", op: p(0.4, 1.4) });
+    const T = Math.max(1.6, Math.min(4, d / 4)), q = Math.max(0, lt - 1.8), ph = (q % (yes(f.back) ? 2 * T : T)) / T, u = ph <= 1 ? ph : 2 - ph;
+    if (lt > 1.8) { const x = ax + 60 + (bx - 24 - ax - 60) * u; circ(x, y, 7, { fill: MGI, stroke: "none" }); circ(x, y, 18, { stroke: MGI, w: 1.5, op: 0.3 }); }
+    text(480, 150, f.time, { id: "time", size: 30, font: MGR, op: p(1.4, 2.4) });
+  } else if (t === "rings") {
+    circ(480, 1060, 640, { stroke: MGF, w: 2, op: p(0, 1) });
+    for (let i = 0; i < 5; i++) { const r = ((lt * 70 + i * 80) % 400); circ(480, 250, Math.max(0.01, r), { stroke: MGI, w: 2, op: lt < 0.6 ? 0 : (1 - r / 400) * 0.8 }); }
+    circ(480, 250, 9, { fill: MGI, stroke: "none", op: p(0, 0.6) });
+    text(480, 215, f.label, { id: "label", size: 20, op: p(0.4, 1.2) });
+    text(480, 480, f.caption, { id: "caption", size: 26, font: MGR, op: p(1.2, 2.2) });
+  } else if (t === "count") {
+    const raw = String(f.number || "0"), k = p(0.2, Math.max(1.2, Math.min(3.5, d * 0.5)));
+    let shown = raw; const mm = raw.match(/^(\d+):(\d\d)$/);
+    if (mm) { const tot = (+mm[1] * 60 + +mm[2]) * k; shown = Math.floor(tot / 60) + ":" + String(Math.floor(tot % 60)).padStart(2, "0"); }
+    else if (/^[\d,.]+$/.test(raw)) { const n = parseFloat(raw.replace(/,/g, "")), dec = (raw.split(".")[1] || "").length; shown = (n * k).toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, raw.includes(",") ? "," : ""); }
+    text(480, 300, shown, { id: "number", size: 150, weight: 500 });
+    path("M 330 340 L 630 340", { stroke: MGF, w: 2, draw: k });
+    text(480, 392, f.unit, { id: "unit", size: 26, op: p(0.6, 1.4) });
+    text(480, 470, f.caption, { id: "caption", size: 24, font: MGR, fill: "rgba(236,236,241,0.7)", op: p(Math.max(1.2, Math.min(3.5, d * 0.5)), Math.max(1.2, Math.min(3.5, d * 0.5)) + 1) });
+  } else if (t === "noise") {
+    const cols = 24, rows = 12, cw = 34, x0 = 480 - cols * cw / 2, y0 = 60, settle = p(0.5, Math.max(2, d * 0.7)), tick = Math.floor(lt * 8);
+    for (let i = 0; i < cols * rows; i++) { const cx = i % cols, cy = Math.floor(i / cols), dx = (cx - cols / 2 + 0.5) / 7, dy = (cy - rows / 2 + 0.5) / 5.2, inside = dx * dx + dy * dy < 1;
+      const target = inside ? 0.25 + 0.6 * (1 - Math.sqrt(dx * dx + dy * dy)) * (0.6 + 0.4 * (1 - (dx + dy) / 2)) : 0.03, noise = mgHash(i * 31 + tick) * 0.7;
+      rect(x0 + cx * cw + 1, y0 + cy * cw + 1, cw - 2, cw - 2, { op: noise * (1 - settle) + target * settle }); }
+    text(480, 515, settle < 0.5 ? f.from : f.to, { id: "words", size: 24, font: MGR });
+  } else if (t === "path") {
+    const ax = 170, ay = 420, bx = 790, by = 170, miss = yes(f.miss), ex = miss ? bx + 90 : bx, ey = miss ? by - 80 : by, cx = 380, cy = 80;
+    circ(ax, ay, 30 * p(0, 0.8) + 0.01); circ(bx, by, 40 * p(0.2, 1) + 0.01, miss ? {} : { fill: "rgba(236,236,241,0.12)" });
+    text(ax, ay + 66, f.from, { id: "from", op: p(0, 0.8) }); text(bx, by + 76, f.to, { id: "to", op: p(0.2, 1) });
+    const k = p(0.8, Math.max(2.4, d * 0.55));
+    path("M " + ax + " " + ay + " Q " + cx + " " + cy + " " + ex + " " + ey, { stroke: MGI, w: 2.5, draw: k });
+    if (k > 0 && k < 1) { const u = k, px = (1 - u) * (1 - u) * ax + 2 * (1 - u) * u * cx + u * u * ex, py = (1 - u) * (1 - u) * ay + 2 * (1 - u) * u * cy + u * u * ey; circ(px, py, 7, { fill: MGI, stroke: "none" }); }
+    if (k >= 1 && miss) text(ex + 10, ey - 24, "missed", { id: "missed", size: 22, fill: "#E3A29B", anchor: "start" });
+    text(70, 80, f.caption, { id: "caption", size: 24, font: MGR, anchor: "start", fill: "rgba(236,236,241,0.75)", op: p(0, 1) });
+  } else if (t === "quote") {
+    const lines = mgWrap(f.text, f.who ? 30 : 22), size = f.who ? 46 : 64, lh = size * 1.18, total = lines.join(" ").length, k = Math.min(total, Math.floor(Math.max(0, lt - 0.3) * Math.max(18, total / Math.max(1.5, d * 0.5))));
+    const top = 270 - (lines.length - 1) * lh / 2 - (f.who ? 30 : 0); let used = 0;
+    lines.forEach((ln, i) => { const show = Math.max(0, Math.min(ln.length, k - used)); used += ln.length + 1; text(110, top + i * lh, ln.slice(0, show), { id: "text", size, font: MGR, anchor: "start" }); });
+    if (f.who) { const y = top + lines.length * lh + 10; path("M 110 " + (y - 18) + " L 150 " + (y - 18), { stroke: MGF, w: 2, draw: k >= total ? p(0, 0.01) : 0 }); text(110, y + 14, f.who, { id: "who", size: 22, anchor: "start", fill: "rgba(236,236,241,0.6)", op: k >= total ? 1 : 0 }); }
+  } else if (t === "layers") {
+    const k = p(0.6, Math.max(2.2, d * 0.5)), fades = [["a", "rgba(236,236,241,0.16)", -230], ["b", "rgba(236,236,241,0.24)", 0], ["c", "rgba(236,236,241,0.32)", 230]];
+    fades.forEach(([id, fill, off], i) => { const x = 480 - 110 + off * (1 - k), y = 160 + (i - 1) * 26 * (1 - k); rect(x, y, 220, 160, { fill, op: p(i * 0.2, i * 0.2 + 0.5), rx: 4 }); text(480 + off * 1.25, 400, f[id], { id, size: 18, fill: "rgba(236,236,241,0.6)", op: Math.max(0, 1 - k * 2.5) }); });
+    rect(370, 160, 220, 160, { fill: "#C9705F", op: p(Math.max(2.2, d * 0.5), Math.max(2.2, d * 0.5) + 1) * 0.85, rx: 4 });
+    text(480, 400, f.result, { id: "result", size: 30, font: MGR, op: p(Math.max(2.2, d * 0.5), Math.max(2.2, d * 0.5) + 1) });
+  } else if (t === "print") {
+    const st = Math.max(1, Math.min(1.6, parseFloat(f.stretch) || 1)), h = 300, w = 300 * st, x0 = 480 - w / 2, y0 = 90, n = 40, k = p(0.3, Math.max(2.5, d * 0.7));
+    rect(x0 - 2, y0 - 2, w + 4, h + 4, { fill: "none", op: 1 });
+    R[R.length - 1].stroke = MGF;
+    for (let i = 0; i < n; i++) { if (i / n > k) break; for (let j = 0; j < 12; j++) { const dx = (j - 5.5) / 6, dy = (i - n / 2 + 0.5) / (n / 2), r2 = dx * dx + dy * dy, v = r2 < 1 ? 0.25 + 0.6 * (1 - r2) * (0.7 + 0.3 * mgHash(i * 13 + j)) : 0.04;
+      rect(x0 + j * w / 12, y0 + i * h / n, w / 12 + 0.5, h / n + 0.5, { op: v }); } }
+    text(480, y0 + h + 60, f.caption, { id: "caption", size: 22, font: MGR, fill: "rgba(236,236,241,0.75)", op: k });
+  } else if (t === "timeline") {
+    const items = String(f.items || "").split("\n").map(s => s.trim()).filter(Boolean).slice(0, 5).map(s => { const m = s.match(/^([^:]+):\s*(.*)$/); return m ? [m[1], m[2]] : [s, ""]; });
+    const n = Math.max(1, items.length), x0 = 110, x1 = 850, y = 280, each = Math.max(1, (d * 0.7 - 1) / n);
+    path("M " + x0 + " " + y + " L " + x1 + " " + y, { stroke: MGF, w: 2, draw: p(0, 1) });
+    items.forEach(([yr, what], i) => { const x = n === 1 ? 480 : x0 + 40 + i * (x1 - x0 - 80) / (n - 1), a = 1 + i * each, k = p(a, a + 0.6);
+      circ(x, y, 7 * k + 0.01, { fill: MGI, stroke: "none" }); text(x, y - 34, yr, { id: "year" + i, size: 34, font: MGR, op: k });
+      mgWrap(what, 18).slice(0, 3).forEach((ln, j) => text(x, y + 46 + j * 26, ln, { id: "what" + i, size: 19, fill: "rgba(236,236,241,0.7)", op: k })); });
+  } else if (t === "chart") {
+    const items = String(f.items || "").split("\n").map(s => s.trim()).filter(Boolean).slice(0, 6).map(s => { const m = s.match(/^(.*?):\s*([\d.,]+)/); return m ? [m[1], parseFloat(m[2].replace(/,/g, "")), m[2]] : [s, 0, ""]; });
+    const max = Math.max(1, ...items.map(x => x[1])), n = Math.max(1, items.length), bh = Math.min(56, 300 / n), gap = bh * 0.45, top = 270 - (n * (bh + gap) - gap) / 2 + 10;
+    items.forEach(([lab, v, raw], i) => { const y = top + i * (bh + gap), k = p(0.4 + i * 0.35, 1.6 + i * 0.35), w = 470 * (v / max) * k;
+      text(300, y + bh * 0.68, lab, { id: "lab" + i, size: 21, anchor: "end", fill: "rgba(236,236,241,0.75)", op: p(i * 0.3, i * 0.3 + 0.6) });
+      rect(320, y, Math.max(0.01, w), bh, { rx: 3, op: 0.85 }); text(330 + w, y + bh * 0.68, raw + (f.unit ? " " + f.unit : ""), { id: "val" + i, size: 21, anchor: "start", op: k }); });
+    text(480, 60, f.caption, { id: "caption", size: 26, font: MGR, op: p(0, 1) });
+  } else if (t === "wave") {
+    const on = Math.floor(lt / 0.55) % 2 === 0, bars = 48;
+    for (let i = 0; i < bars; i++) { const x = 180 + i * 12.5, a = on ? (0.25 + 0.75 * Math.abs(Math.sin(i * 0.9 + lt * 14)) * Math.exp(-Math.pow((i - bars / 2) / 14, 2))) : 0.04, h = 8 + 170 * a * p(0, 0.8);
+      rect(x, 260 - h / 2, 7, h, { rx: 3, op: on ? 0.9 : 0.35 }); }
+    text(480, 120, f.label, { id: "label", size: 24, op: p(0, 1) });
+    text(480, 450, f.caption, { id: "caption", size: 26, font: MGR, op: p(1, 2) });
+  } else if (t === "receipt") {
+    const V = { checked: ["Checked", "#5EC98F"], attributed: ["Attributed", "#E3A29B"], single: ["One source", "#E3A29B"], unsourced: ["Nothing backs this", "#E3A29B"] }, v = V[String(f.verdict || "").toLowerCase().split(" ")[0]] || V.checked;
+    rect(110, 90, 740, 360, { fill: "#16161B", op: p(0, 0.5), rx: 8 }); R[R.length - 1].stroke = MGF;
+    const lines = mgWrap(f.claim, 34).slice(0, 4), total = lines.join(" ").length, k = Math.min(total, Math.floor(Math.max(0, lt - 0.5) * Math.max(22, total / Math.max(1.2, d * 0.35)))); let used = 0;
+    lines.forEach((ln, i) => { const show = Math.max(0, Math.min(ln.length, k - used)); used += ln.length + 1; text(150, 170 + i * 48, ln.slice(0, show), { id: "claim", size: 38, font: MGR, anchor: "start" }); });
+    const done = k >= total ? p((total / Math.max(22, total / Math.max(1.2, d * 0.35))) + 0.5, (total / Math.max(22, total / Math.max(1.2, d * 0.35))) + 1.3) : 0;
+    path("M 150 " + (190 + lines.length * 48) + " L 810 " + (190 + lines.length * 48), { stroke: MGF, w: 1.5, draw: done });
+    text(150, 232 + lines.length * 48, f.source, { id: "source", size: 20, anchor: "start", fill: "rgba(236,236,241,0.65)", op: done });
+    text(810, 232 + lines.length * 48, v[0], { id: "verdict", size: 20, anchor: "end", fill: v[1], weight: 600, op: done });
+  } else if (t === "captions") {
+    const words = String(f.text || "").split(/\s+/).filter(Boolean), per = Math.max(0.25, (d - 0.5) / Math.max(1, words.length)), i = Math.min(words.length, Math.floor(lt / per) + 1);
+    const chunk = Math.floor((i - 1) / 8) * 8, lines = mgWrap(words.slice(chunk, chunk + 8).join(" "), 24);
+    let shownN = i - chunk; lines.forEach((ln, j) => { const ws = ln.split(" "), show = Math.max(0, Math.min(ws.length, shownN)); shownN -= ws.length;
+      text(480, 260 + (j - (lines.length - 1) / 2) * 70, ws.slice(0, show).join(" "), { id: "text", size: 56, weight: 600 }); });
+  } else if (t === "compare") {
+    const k = p(0.3, 1.3);
+    [[70, f.left], [500, f.right]].forEach(([x, lab], i) => { rect(x, 110, 390, 260, { fill: "#121216", op: p(i * 0.4, i * 0.4 + 0.6), rx: 6 }); R[R.length - 1].stroke = MGF;
+      for (let j = 0; j < 60; j++) rect(x + 10 + (j % 10) * 37, 120 + Math.floor(j / 10) * 40, 33, 36, { op: 0.04 + 0.12 * mgHash(j + i * 77 + Math.floor(lt * 3)), rx: 2 });
+      text(x + 195, 410, lab, { id: i ? "right" : "left", size: 22, op: p(i * 0.4 + 0.3, i * 0.4 + 0.9) }); });
+    path("M 480 100 L 480 380", { stroke: MGI, w: 2, draw: k });
+    text(480, 490, f.caption, { id: "caption", size: 26, font: MGR, op: p(1.2, 2) });
+  }
+  return { paths: P.map(o => ({ ...o, dash: o.dots ? "0.004 0.012" : "1", off: o.dots ? 0 : 1 - o.draw, op: o.dots ? o.op * (o.draw > 0 ? 1 : 0) : o.op })),
+    circles: C, texts: X.map(o => ({ ...o, l: (o.x / 9.6).toFixed(2), tp: (o.y / 5.4).toFixed(2), fs: (o.size / 9.6).toFixed(2), tf: "translate(" + (o.anchor === "middle" ? "-50%" : o.anchor === "end" ? "-100%" : "0") + ",-80%)" })), rects: R.map(o => ({ stroke: "none", ...o })) };
+}
+function mgLayout(o, pos) { pos = pos || {}; const A = pos.all || { dx: 0, dy: 0, k: 1 }, at = (x, y) => [480 + A.dx + (x - 480) * A.k, 270 + A.dy + (y - 270) * A.k];
+  return { ...o, gT: "translate(" + (480 + A.dx) + " " + (270 + A.dy) + ") scale(" + A.k + ") translate(-480 -270)",
+    texts: o.texts.map(t => { const q = pos[t.id] || { dx: 0, dy: 0, k: 1 }, [x, y] = at(t.x + q.dx, t.y + q.dy), size = t.size * A.k * q.k;
+      return { ...t, l: (x / 9.6).toFixed(2), tp: (y / 5.4).toFixed(2), fs: (size / 9.6).toFixed(2) }; }) }; }
+// a generated picture is shown as what it is: soft, drawn, and never photoreal
+function genDraw(lt, seed, style) {
+  const pal = style === "clay" ? ["#B7826A", "#D9B38C", "#8C6E5D", "#E8D5C0"] : style === "paper" ? ["#E8E1D3", "#C9705F", "#3E5C76", "#D9B38C"] : style === "painted" ? ["#6E5B8F", "#C9705F", "#D9B38C", "#3E5C76"] : style === "abstract" ? ["#ECECF1", "#6F8CFF", "#E3A29B", "#5EC98F"] : ["#3E4A6B", "#8A7F9E", "#D7CFC0", "#2B2F3A"];
+  const C = []; for (let i = 0; i < 6; i++) { const h = mgHash(seed + i), g = mgHash(seed + i + 9);
+    C.push({ cx: 480 + Math.sin(lt * 0.25 + i * 1.7) * 260 * h, cy: 270 + Math.cos(lt * 0.2 + i * 2.3) * 150 * g, r: 110 + 90 * h, fill: pal[i % pal.length], stroke: "none", w: 0, op: style === "abstract" ? 0.5 : 0.75 }); }
+  return { paths: [], circles: C, texts: [], rects: [] };
+}
+const MG_EMPTY = { paths: [], circles: [], texts: [], rects: [], gT: "" };
+
+// ── Treatments: how a scene is told. A shot can hold a sequence — a montage is one shot with many cuts.
+// Aldershot directs (which device, which sources, what rhythm); this code places every cut. The model never times anything.
+const DEVICES = [
+  ["held", "Held", "One picture stays while the words carry it.", true],
+  ["montage", "Montage on a beat", "Many short cuts — one to two seconds each — on a rhythm, sources found by Scout.", true],
+  ["countdown", "Countdown", "Numbers counting down across the cuts, to a hit on zero.", true],
+  ["glitch", "Glitch", "Each cut arrives torn — a signal breaking up — then settles.", true],
+  ["beeps", "Telemetry beeps", "A beep on every cut, so the rhythm is heard as well as seen.", true],
+  ["kinetic", "Words that move", "The spoken words, big, moving with a slow push on the picture — the promo style.", true],
+  ["compare", "Side by side", "Two things next to each other, with a wipe between, so the copy shows.", true],
+  ["reveal", "Archive reveal", "Start tight on a detail, pull back until the whole thing is seen.", true],
+  ["read", "Read it on screen", "The document itself, its passage lit as it’s read aloud, the camera pushing in.", true],
+  ["ramp", "Speed ramp", "Long footage compressed — months into seconds — then slowed to normal on the moment that matters.", true],
+  ["music", "Cut to music", "Cuts land on the downbeats of the score instead of the words.", true],
+  ["match", "Match cut", "A shape in one shot becomes the next — the Earth becomes a pixel.", false],
+  ["cutaways", "To camera, with cutaways", "You talking, cutting away to the thing on each key word.", false],
+  ["breathe", "Let it breathe", "Black, or a held frame, and only the sound — so the last line lands.", false],
+  ["flash", "One-frame flash", "A single frame of something, almost subliminal, before the cut.", false],
+];
+const DEV = Object.fromEntries(DEVICES.map(d => [d[0], { name: d[1], line: d[2], built: d[3] }]));
+
+// hand-written pitches for a few scenes; every other scene gets pitches made from its own shots (see pitchesFor in the Studio)
+const C7 = [["Frau im Mond, 1929 — the countdown intertitle", 1.8], ["Apollo 11 lifts off, 1969", 1.6], ["A theatre curtain rising, 1920s", 1.5], ["Parker Solar Probe launch, 2018", 1.6], ["Frau im Mond — the rocket on its gantry", 1.6],
+  ["Saturn V ignition, close", 1.5], ["Crowds on the beach at Cape Canaveral", 1.6], ["A silent-film audience, 1920s", 1.6], ["Mission control’s clocks", 1.5], ["Mercury-Redstone launch, 1961", 1.6], ["Frau im Mond — the rocket leaves the water", 1.7], ["", 1.4]];
+const PITCH = {
+  s7: [
+    { id: "s7-montage", name: "Countdown montage", why: "The countdown is a montage device, so tell it as one: twelve cuts in twenty seconds, counting down, a telemetry beep on every cut, glitched archive — fiction and launch cut together until you can’t tell which is which — landing on zero and the film that invented it.",
+      beats: { 0: { device: "montage", count: 10, beeps: true, glitch: true, last: "The countdown was invented for a film.", cuts: C7.map(([label, d]) => ({ label, d, src: label ? "archive" : "black" })) } } },
+    { id: "s7-compare", name: "1929 beside 1969", why: "Put the fiction next to the fact and let the viewer see the copy — Frau im Mond’s countdown on the left, Apollo 11’s on the right, one wipe between.",
+      beats: { 0: { device: "compare", left: "Frau im Mond, 1929", right: "Apollo 11, 1969", caption: "The same ten seconds, forty years apart" } } },
+  ],
+  s3: [{ id: "s3-read", name: "Read the letter", why: "Put the 1977 letter itself on screen and light his sentence as you say it — the viewer reads McLuhan, not a paraphrase of him.",
+    beats: { 0: { device: "read", title: "McLuhan, in a letter, 1977", passage: "NASA lives in the old visual space of Newton — purely rear-view mirror. The astronaut is a sort of Newtonian billiard ball." } } }],
+  s8: [{ id: "s8-music", name: "The world hears it", why: "Twenty seconds cut to music, a picture on every bar: front pages, radio amateurs with headphones, crowds looking up — the beep becoming a global event, felt before it’s explained.",
+    beats: { 2: { device: "music", bpm: 96, cuts: [["Newspaper front pages, 5 October 1957"], ["A radio amateur with headphones"], ["Crowds looking up at night"], ["The Sputnik model on display"], ["A schoolroom listening to the radio"], ["Moonwatch volunteers with telescopes"], ["Headlines in five languages"], ["The beep’s waveform on an oscilloscope"]].map(([label]) => ({ label, d: 2.5, src: "archive" })) } } }],
+  s12: [{ id: "s12-ramp", name: "Five months in fifteen seconds", why: "Run the five months at speed — the date racing from November to April over the noise — then drop to real time on the day it became readable again. The wait becomes something you sit through.",
+    beats: { 0: { device: "ramp", label: "Voyager 1 — gibberish", moment: "20 April 2024 — Voyager 1, readable again", fmt: "date", from: Date.UTC(2023, 10, 14), span: 158 * 86400 } } }],
+  s14: [{ id: "s14-ramp", name: "Eleven minutes, compressed", why: "Race the clock through the 11 minutes 22 seconds the signal takes to arrive, then stop on real time — the rover has already been down the whole while.",
+    beats: { 1: { device: "ramp", label: "The landing signal, on its way", moment: "It arrives. The rover is already down.", span: 682 } } }],
+  s16: [{ id: "s16-compare", name: "1976 beside 2001", why: "The same hill, twenty-five years apart, side by side with one wipe — so the face dissolves into the hill in front of the viewer instead of being explained away.",
+    beats: { 0: { device: "compare", left: "Viking 1, 1976", right: "Mars Global Surveyor, 2001", caption: "The same hill, twenty-five years apart" } } }],
+  s11: [{ id: "s11-reveal", name: "Archive reveal", why: "Start on the stretched Moon, so tight it’s just grain, and pull back until the whole front page is there — the viewer reads it the way Britain did.",
+    beats: { 0: { device: "reveal", label: "The Daily Express front page, February 1966" } } }],
+};
+const TF = { MGI: "#ECECF1", SANS: "'Instrument Sans',sans-serif", SERIF: "'Instrument Serif',serif" };
+function tFinish(P, C, X, R, gT) {
+  return { gT: gT || "", paths: P.map(o => ({ draw: 1, dots: false, ...o, dash: "1", off: 1 - (o.draw === undefined ? 1 : o.draw) })), circles: C.map(o => ({ filt: "none", ...o })), rects: R.map(o => ({ stroke: "none", rx: 0, ...o })),
+    texts: X.map(o => ({ ...o, l: (o.x / 9.6).toFixed(2), tp: (o.y / 5.4).toFixed(2), fs: (o.size / 9.6).toFixed(2), tf: "translate(" + (o.anchor === "middle" ? "-50%" : o.anchor === "end" ? "-100%" : "0") + ",-80%)" })) };
+}
+// which cut is on screen, and how far into it
+function cutAt(beat, lt) { const cuts = beat.cuts || []; let a = 0; for (let i = 0; i < cuts.length; i++) { if (lt < a + cuts[i].d || i === cuts.length - 1) return { i, cut: cuts[i], local: lt - a, cd: cuts[i].d, n: cuts.length }; a += cuts[i].d; } return null; }
+function plate(R, X, label, sub, seed, lt) {
+  R.push({ x: 0, y: 0, w: 960, h: 540, fill: "#17150F", op: 1 }); R.push({ x: 48, y: 40, w: 864, h: 460, fill: "none", stroke: "rgba(236,226,200,0.28)", op: 1 });
+  for (let k = 0; k < 36; k++) { const h = mgHash(seed * 31 + k + Math.floor(lt * 12) * 7); R.push({ x: 60 + mgHash(seed + k * 3) * 840, y: 50 + h * 440, w: 2 + h * 6, h: 1 + mgHash(k + seed) * 3, fill: "#E9E1CC", op: 0.05 + h * 0.12 }); }
+  if (label) X.push({ id: "label", x: 480, y: 262, t: label, size: 40, fill: "#E9E1CC", anchor: "middle", font: TF.SERIF, weight: 400, op: 1 });
+  if (sub) X.push({ id: "sub", x: 480, y: 316, t: sub, size: 18, fill: "rgba(233,225,204,0.55)", anchor: "middle", font: TF.SANS, weight: 400, op: 1 });
+}
+// draw one beat of a treatment at lt seconds into its shot
+function beatDraw(beat, lt, d, row) {
+  const P = [], C = [], X = [], R = [], e = v => v <= 0 ? 0 : v >= 1 ? 1 : 1 - Math.pow(1 - v, 3); let gT = "";
+  if (!beat || beat.device === "held") { plate(R, X, row ? String(row[2]).split(" — ")[0] : "", "", 3, lt); return tFinish(P, C, X, R); }
+  if (beat.device === "montage") {
+    const at = cutAt(beat, Math.min(lt, (beat.cuts || []).reduce((a, c) => a + c.d, 0) - 0.001)), total = (beat.cuts || []).reduce((a, c) => a + c.d, 0);
+    if (at) { const c = at.cut, torn = beat.glitch && at.local < 0.28;
+      if (c.src !== "black") plate(R, X, c.label, "Scout finds this", at.i + 1, lt);
+      if (torn) for (let k = 0; k < 7; k++) { const h = mgHash(at.i * 17 + k + Math.floor(lt * 30)); R.push({ x: (h - 0.5) * 120, y: h * 520, w: 960, h: 10 + h * 34, fill: k % 2 ? "rgba(239,91,79,0.35)" : "rgba(111,140,255,0.35)", op: 1 }); }
+      if (torn) X.forEach(t => { t.x += (mgHash(at.i + Math.floor(lt * 40)) - 0.5) * 30; });
+      if (beat.count !== undefined) { const n = Math.max(0, Math.round(beat.count - (beat.count * (lt / Math.max(0.1, total))))); X.push({ id: "count", x: 880, y: 500, t: String(n), size: 150, fill: "#FFFFFF", anchor: "end", font: TF.SANS, weight: 700, op: c.src === "black" ? 1 : 0.92 }); }
+      if (beat.beeps) C.push({ cx: 900, cy: 64, r: 7, fill: at.local < 0.18 ? "#EF5B4F" : "rgba(236,236,241,0.2)", stroke: "none", w: 0, op: 1 });
+      if (beat.last && at.i === at.n - 1) X.push({ id: "last", x: 480, y: 290, t: beat.last, size: 44, fill: "#FFFFFF", anchor: "middle", font: TF.SANS, weight: 700, op: e(at.local / 0.4) }); }
+    if (lt >= total) { plate(R, X, "", "", 99, lt); if (beat.last) X.push({ id: "last", x: 480, y: 290, t: beat.last, size: 44, fill: "#FFFFFF", anchor: "middle", font: TF.SANS, weight: 700, op: 1 }); }
+    return tFinish(P, C, X, R);
+  }
+  if (beat.device === "kinetic") { const k = 1.12 - 0.12 * Math.min(1, lt / Math.max(1, d)); gT = "translate(480 270) scale(" + k.toFixed(3) + ") translate(-480 -270)";
+    plate(R, [], "", "", 7, lt); R.push({ x: 0, y: 0, w: 960, h: 540, fill: "#000", op: 0.35 });
+    const words = String(beat.line || (row && row[5]) || "").split(/\s+/).filter(Boolean), per = 3, each = Math.max(0.9, d / Math.max(1, Math.ceil(words.length / per))), ci = Math.min(Math.ceil(words.length / per) - 1, Math.floor(lt / each)), local = lt - ci * each;
+    const chunk = words.slice(ci * per, ci * per + per).join(" "), s = 1.08 - 0.08 * e(local / 0.5);
+    X.push({ id: "kin", x: 480 + (ci % 2 ? 18 : -18) * (1 - e(local / 0.6)), y: 285, t: chunk, size: 78 * s, fill: "#FFFFFF", anchor: "middle", font: TF.SANS, weight: 700, op: e(local / 0.25) });
+    return tFinish(P, C, X, R, gT); }
+  if (beat.device === "compare") { const w = e(lt / 1.2);
+    [[40, beat.left], [500, beat.right]].forEach(([x, lab], i) => { R.push({ x, y: 90, w: 420, h: 300, fill: "#17150F", op: i ? w : 1 }); R.push({ x: x + 10, y: 100, w: 400, h: 280, fill: "none", stroke: "rgba(236,226,200,0.28)", op: i ? w : 1 });
+      X.push({ id: i ? "right" : "left", x: x + 210, y: 250, t: lab, size: 26, fill: "#E9E1CC", anchor: "middle", font: TF.SERIF, weight: 400, op: i ? w : 1 }); });
+    P.push({ d: "M 480 80 L 480 400", stroke: "#ECECF1", w: 2, op: 1, draw: w });
+    X.push({ id: "caption", x: 480, y: 470, t: beat.caption || "", size: 26, fill: "rgba(236,236,241,0.8)", anchor: "middle", font: TF.SERIF, weight: 400, op: e((lt - 1) / 0.8) });
+    return tFinish(P, C, X, R); }
+  if (beat.device === "reveal") { const k = 2.6 - 1.6 * e(lt / Math.max(2, d * 0.8)); gT = "translate(480 270) scale(" + k.toFixed(3) + ") translate(-480 -270)";
+    plate(R, X, beat.label || "", "", 11, lt); return tFinish(P, C, X, R, gT); }
+  if (beat.device === "read") { // a page, its passage lit word by word as it's read, the camera pushing in on it
+    const k = 1 + 0.35 * e(lt / Math.max(2, d * 0.9)); gT = "translate(480 300) scale(" + k.toFixed(3) + ") translate(-480 -300)";
+    R.push({ x: 0, y: 0, w: 960, h: 540, fill: "#0E0E11", op: 1 }); R.push({ x: 250, y: 40, w: 460, h: 600, fill: "#E9E4D6", op: 1 });
+    X.push({ id: "doc", x: 280, y: 84, t: beat.title || "", size: 15, fill: "#3A352C", anchor: "start", font: TF.SERIF, weight: 400, op: 1 });
+    for (let k2 = 0; k2 < 6; k2++) R.push({ x: 280, y: 104 + k2 * 22, w: 400 - (k2 % 3) * 40, h: 7, fill: "#B9B2A2", op: 0.8 });
+    const lines = mgWrap(beat.passage || (row && row[5]) || "", 34).slice(0, 5), all = lines.join(" ").split(" ").length, said = Math.min(all, Math.floor(lt * WPS_T) + 1); let used = 0;
+    lines.forEach((ln, i) => { const y = 262 + i * 30, n = ln.split(" ").length, lit = Math.max(0, Math.min(n, said - used)); used += n;
+      if (lit) R.push({ x: 276, y: y - 20, w: Math.min(410, 10 + ln.length * 11.6 * (lit / n)), h: 27, fill: "#F2D56B", op: 0.75 });
+      X.push({ id: "pass", x: 280, y, t: ln, size: 21, fill: "#1E1B16", anchor: "start", font: TF.SERIF, weight: 400, op: 1 }); });
+    for (let k2 = 0; k2 < 7; k2++) R.push({ x: 280, y: 262 + lines.length * 30 + 10 + k2 * 22, w: 400 - (k2 % 4) * 30, h: 7, fill: "#B9B2A2", op: 0.8 });
+    return tFinish(P, C, X, R, gT); }
+  if (beat.device === "ramp") { // a long stretch compressed, then slowed to real time on the moment
+    const rampEnd = Math.max(2, d * 0.7), u = Math.min(1, lt / rampEnd), held = lt >= rampEnd, speed = held ? 1 : Math.round((beat.span || 3600) / rampEnd * (1 - u * 0.9));
+    plate(R, X, held ? (beat.moment || "") : (beat.label || ""), "", 21, lt);
+    if (!held) for (let k2 = 0; k2 < 14; k2++) { const y = 60 + mgHash(k2 + 3) * 420, x = ((lt * (300 + mgHash(k2) * 900) + mgHash(k2 + 9) * 960) % 1100) - 120; R.push({ x, y, w: 60 + mgHash(k2 + 1) * 140, h: 2, fill: "#E9E1CC", op: 0.25 }); }
+    const at = (beat.span || 3600) * (held ? 1 : u * u);
+    X.push({ id: "clock", x: 80, y: 90, t: rampClock(beat, at), size: 30, fill: "#FFFFFF", anchor: "start", font: TF.SANS, weight: 600, op: 1 });
+    X.push({ id: "speed", x: 880, y: 90, t: held ? "real time" : "×" + speed.toLocaleString("en"), size: 22, fill: held ? "#5EC98F" : "rgba(236,236,241,0.8)", anchor: "end", font: TF.SANS, weight: 600, op: 1 });
+    return tFinish(P, C, X, R); }
+  if (beat.device === "music") { // cuts on the downbeats: every bar, four beats at the tempo
+    const bpm = beat.bpm || 96, bar = 240 / bpm, cuts = beat.cuts || [], i = Math.floor(lt / bar) % Math.max(1, cuts.length), bt = Math.floor(lt / (60 / bpm)) % 4, local = lt % bar;
+    plate(R, X, (cuts[i] || {}).label || "", "", 40 + i, lt);
+    for (let k2 = 0; k2 < 4; k2++) R.push({ x: 404 + k2 * 40, y: 470, w: 28, h: k2 === bt ? 18 : 6, fill: k2 === bt ? "#FFFFFF" : "rgba(236,236,241,0.3)", op: 1, rx: 2 });
+    if (local < 0.15) R.push({ x: 0, y: 0, w: 960, h: 540, fill: "#FFFFFF", op: 0.06 * (1 - local / 0.15) });
+    X.push({ id: "bpm", x: 880, y: 90, t: bpm + " bpm · cut every bar", size: 16, fill: "rgba(236,236,241,0.6)", anchor: "end", font: TF.SANS, weight: 400, op: 1 });
+    return tFinish(P, C, X, R); }
+  plate(R, X, beat.label || "", "", 5, lt); return tFinish(P, C, X, R);
+}
+const WPS_T = 2.5;
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function rampClock(beat, at) { if (beat.fmt === "date") { const dt = new Date((beat.from || 0) + at * 1000); return dt.getUTCDate() + " " + MON[dt.getUTCMonth()] + " " + dt.getUTCFullYear(); }
+  const s = Math.round(at + (beat.from || 0)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + "h " : "") + String(m).padStart(h ? 2 : 1, "0") + "m " + String(s % 60).padStart(2, "0") + "s"; }
+// your own description → a shot list. A few patterns, not a model: in the build this is the Direct capability, checked by the same solver.
+function parseTreatment(text, s) {
+  const t = String(text || ""), low = t.toLowerCase(), rows = s.rows;
+  const per = (low.match(/(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*sec/) || []), perS = per[1] ? (parseFloat(per[1]) + parseFloat(per[2])) / 2 : (low.match(/(\d+(?:\.\d+)?)\s*sec\w*\s+each/) || [])[1] ? parseFloat(low.match(/(\d+(?:\.\d+)?)\s*sec\w*\s+each/)[1]) : 1.6;
+  const tot = low.match(/(?:for|goes for|lasts?|about|say)\s*(\d+)\s*sec/) || low.match(/(\d+)\s*seconds?\s*(?:long|total|section)/);
+  const i = Math.max(0, rows.findIndex(r => r[4] === "silence" || r[4] === "breathe")), rowDur = rows[i][0], total = Math.min(rowDur, tot ? parseInt(tot[1], 10) : rowDur);
+  const found = []; const re = /(?:shots?|footage|clips?|images?|pictures?)\s+(?:from|of)\s+([^.;]+?)(?=,|\.|;|\bin the style\b|\bwith\b|\bthen\b|\blike\b|$)/gi; let m;
+  while ((m = re.exec(t))) { let rest = t.slice(m.index + m[0].length); const more = rest.match(/^,\s*(?:and\s+)?(?:some\s+)?([a-z][^.;,]{2,40}?)(?=,|\.|;|\bin the style\b|\bwith\b|$)/i);
+    found.push(m[1]); if (more && !/shots?|footage|style|beeps?|seconds?/i.test(more[1])) found.push(more[1]); }
+  const tidy = x => { x = x.replace(/^(\s*(some|the|old|a|an)\s+)+/i, "").replace(/\s+/g, " ").trim(); const org = x.match(/^([A-Z][A-Za-z]+) of (?:the )?(.+)$/); if (org) x = org[2] + " (" + org[1] + ")"; x = x.replace(/space ?craft/i, "spacecraft"); return x.charAt(0).toUpperCase() + x.slice(1); };
+  const sources = found.flatMap(x => x.split(/\band\b/i)).map(tidy).filter(x => x.length > 3 && x.length < 60).slice(0, 8);
+  const src = sources.length ? sources : rows.map(r => String(r[2]).split(" — ")[0]);
+  const n = Math.max(3, Math.round(total / perS)), cuts = Array.from({ length: n }, (_, k) => ({ label: src[k % src.length].charAt(0).toUpperCase() + src[k % src.length].slice(1), d: +(total / n).toFixed(2), src: "archive" }));
+  const beat = { device: /montage|cuts|quick|rapid|flash/.test(low) || n > 3 ? "montage" : "held", cuts, glitch: /glitch/.test(low), beeps: /beep|telemetry/.test(low), count: /count\s?down/.test(low) ? Math.min(10, n) : undefined,
+    last: /text|type|promo|words/.test(low) ? s.q : undefined };
+  const devs = ["montage", beat.count !== undefined ? "countdown" : "", beat.glitch ? "glitch" : "", beat.beeps ? "beeps" : "", beat.last ? "kinetic" : ""].filter(Boolean);
+  return { id: s.id + "-yours", name: "Yours", why: "From what you said: " + n + " cuts of about " + (total / n).toFixed(1) + " seconds over " + total + " seconds of shot " + (i + 1) + ", with " + devs.map(d => DEV[d].name.toLowerCase()).join(", ") + ". Scout searches for each source; nothing is downloaded from platforms that forbid it.", beats: { [i]: beat }, mine: true };
+}
+
+// ── export: the files that go out with a film, made here and handed over as one .zip ──
+// Everything in the package is computed from the same state the room shows; nothing is typed by hand.
+const XP = (() => {
+  const enc = s => new TextEncoder().encode(s);
+  let CRC = null;
+  const crc32 = b => { if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } }
+    let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  // a stored (uncompressed) zip: small, dependable, opens everywhere
+  function zip(files) {
+    const parts = [], central = []; let off = 0;
+    const u16 = n => [n & 255, (n >>> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+    files.forEach(f => { const name = enc(f.name), data = typeof f.data === "string" ? enc(f.data) : f.data, crc = crc32(data);
+      const head = [0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)];
+      parts.push(new Uint8Array(head), name, data);
+      central.push([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)], name);
+      off += head.length + name.length + data.length; });
+    let cenLen = 0; const cen = central.map(x => { const a = x instanceof Uint8Array ? x : new Uint8Array(x); cenLen += a.length; return a; });
+    const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cenLen), ...u32(off), ...u16(0)]);
+    const all = [...parts, ...cen, end], size = all.reduce((n, a) => n + a.length, 0), out = new Uint8Array(size); let p = 0; all.forEach(a => { out.set(a, p); p += a.length; }); return out;
+  }
+  // hand a file to the viewer: the platform's save prompt where it exists, an ordinary download where it doesn't
+  async function offer(filename, bytes) {
+    let C = null; try { C = window.claude || (window.parent && window.parent !== window && window.parent.claude) || null; } catch (e) { C = null; }
+    if (C && typeof C.use === "function") {
+      try { const d = await Promise.race([C.use("downloads"), new Promise(r => setTimeout(() => r(null), 4000))]);
+        if (d) { await d.save({ filename, data: bytes.slice ? bytes.slice(0) : bytes }); return "saved"; } }
+      catch (e) { if (e && e.code === "declined") return "declined"; if (e && e.code === "rate_limited") return "busy"; }
+    }
+    try { const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })), a = document.createElement("a");
+      a.href = url; a.download = filename; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); return "saved"; }
+    catch (e) { return "failed"; }
+  }
+  const p2 = n => String(Math.floor(n)).padStart(2, "0");
+  const tc = (s, fps) => { fps = fps || 25; const f = Math.round((s - Math.floor(s)) * fps); s = Math.floor(s); return p2(s / 3600) + ":" + p2(s % 3600 / 60) + ":" + p2(s % 60) + ":" + p2(f); };
+  const srtT = s => { const ms = Math.round((s % 1) * 1000); s = Math.floor(s); return p2(s / 3600) + ":" + p2(s % 3600 / 60) + ":" + p2(s % 60) + "," + String(ms).padStart(3, "0"); };
+  const hmsToS = ts => String(ts).split(":").map(Number).reduce((a, x) => a * 60 + x, 0);
+  // captions: a line split at sentence ends, then at 42 characters, timed by its share of the characters
+  function cues(text, a, b) {
+    const sents = String(text).replace(/\s+/g, " ").trim().split(/(?<=[.?!…])\s+/), chunks = [];
+    sents.forEach(s => { const w = s.split(" "); let cur = ""; w.forEach(x => { if ((cur + " " + x).trim().length > 42 && cur) { chunks.push(cur.trim()); cur = x; } else cur = (cur + " " + x).trim(); }); if (cur) chunks.push(cur); });
+    const total = chunks.reduce((n, c) => n + c.length, 0) || 1; let t = a;
+    return chunks.map(c => { const d = (b - a) * c.length / total, cue = { a: t, b: t + d, text: c }; t += d; return cue; });
+  }
+  const srt = list => list.map((c, i) => (i + 1) + "\n" + srtT(c.a) + " --> " + srtT(c.b) + "\n" + c.text + "\n").join("\n");
+  // CMX 3600 — the oldest edit list there is, and still what Resolve and Premiere read without asking questions
+  function edl(title, events) {
+    let rec = 3600, out = "TITLE: " + title.toUpperCase().slice(0, 60) + "\nFCM: NON-DROP FRAME\n\n";
+    events.forEach((e, i) => { const reel = (e.reel || "AX").replace(/[^A-Z0-9_]/gi, "").toUpperCase().slice(0, 8).padEnd(8, " ");
+      out += String(i + 1).padStart(3, "0") + "  " + reel + " V     C        " + tc(e.src) + " " + tc(e.src + e.dur) + " " + tc(rec) + " " + tc(rec + e.dur) + "\n";
+      if (e.name) out += "* FROM CLIP NAME: " + e.name + "\n"; (e.notes || []).forEach(n => { out += "* COMMENT: " + n + "\n"; }); out += "\n"; rec += e.dur; });
+    return out;
+  }
+  // Final Cut Pro 7 XML (xmeml 4): the one timeline format Premiere and Resolve both open. Every shot is a clip on V1
+  // pointing at a file by name (offline until you relink it), voice takes sit on A1, and what Aldershot knows about
+  // each shot — its source, its receipt, its line — rides along as a marker on the clip and on the timeline.
+  const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  function xml(spec) {
+    const fps = spec.fps || 25, F = s => Math.round(s * fps), rate = "<rate><timebase>" + fps + "</timebase><ntsc>FALSE</ntsc></rate>";
+    const total = spec.video.reduce((n, v) => n + F(v.dur), 0), files = {}; let fid = 0;
+    const fileTag = (path, dur, kind, srcEnd) => { if (files[path]) return "<file id=\"" + files[path] + "\"/>"; files[path] = "file-" + (++fid);
+      return "<file id=\"" + files[path] + "\"><name>" + esc(path.split("/").pop()) + "</name><pathurl>" + esc("file://localhost/" + encodeURI(spec.root + "/" + path)) + "</pathurl>" + rate + "<duration>" + Math.max(F(dur), srcEnd) + "</duration><media>" + (kind === "audio" ? "<audio><channelcount>1</channelcount></audio>" : "<video><samplecharacteristics>" + rate + "<width>1920</width><height>1080</height></samplecharacteristics></video>") + "</media></file>"; };
+    const mk = m => "<marker><name>" + esc(m.name) + "</name><comment>" + esc(m.comment || "") + "</comment><in>" + F(m.at || 0) + "</in><out>-1</out></marker>";
+    let t = 0, n = 0;
+    const vItems = spec.video.map(v => { const a = t, d = F(v.dur), i = F(v.src || 0); t += d; n++;
+      return "<clipitem id=\"clipitem-" + n + "\"><name>" + esc(v.name) + "</name><enabled>TRUE</enabled><duration>" + Math.max(F(v.fileDur || v.dur), i + d) + "</duration>" + rate + "<start>" + a + "</start><end>" + (a + d) + "</end><in>" + i + "</in><out>" + (i + d) + "</out>" + fileTag(v.file, v.fileDur || v.dur, "video", i + d) + (v.markers || []).map(m => mk({ ...m, at: (v.src || 0) + (m.at || 0) })).join("") + "</clipitem>"; });
+    const aItems = (spec.audio || []).map(v => { const a = F(v.at), d = F(v.dur); n++;
+      return "<clipitem id=\"clipitem-" + n + "\"><name>" + esc(v.name) + "</name><enabled>TRUE</enabled><duration>" + d + "</duration>" + rate + "<start>" + a + "</start><end>" + (a + d) + "</end><in>0</in><out>" + d + "</out>" + fileTag(v.file, v.dur, "audio", d) + "<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack></clipitem>"; });
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE xmeml>\n<xmeml version=\"4\">\n<sequence id=\"sequence-1\"><name>" + esc(spec.title) + "</name><duration>" + total + "</duration>" + rate +
+      "<timecode>" + rate + "<string>01:00:00:00</string><frame>" + (3600 * fps) + "</frame><displayformat>NDF</displayformat></timecode>" +
+      "<media><video><format><samplecharacteristics>" + rate + "<width>1920</width><height>1080</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>" +
+      "<track>\n" + vItems.join("\n") + "\n</track></video><audio><track>\n" + aItems.join("\n") + "\n</track></audio></media>\n" + spread(spec.markers || [], fps).map(mk).join("\n") + "\n</sequence>\n</xmeml>\n";
+  }
+  // Resolve reads timeline markers from an edit list of its own shape: Timeline › Import › Timeline Markers from EDL
+  const RCOL = { blue: "ResolveColorBlue", green: "ResolveColorGreen", yellow: "ResolveColorYellow", red: "ResolveColorRed", purple: "ResolveColorPurple", cyan: "ResolveColorCyan", pink: "ResolveColorPink" };
+  const spread = (markers, fps) => { const used = new Set(); return markers.map(m => { let f = Math.round((m.at || 0) * fps); while (used.has(f)) f++; used.add(f); return { ...m, at: f / fps }; }); };
+  function markerEdl(title, markers, fps) { fps = fps || 25; let out = "TITLE: " + String(title).slice(0, 60) + "\nFCM: NON-DROP FRAME\n\n";
+    spread(markers, fps).forEach((m, i) => { const a = 3600 + m.at, b = a + 1 / fps, clean = v => String(v || "").replace(/[|\n\r]/g, " ").replace(/[^\x20-\x7E]/g, c => ({ "—": "-", "–": "-", "’": "'", "‘": "'", "“": "\"", "”": "\"", "…": "...", "·": "-", "¢": "c" })[c] || "");
+      out += String(i + 1).padStart(3, "0") + "  001      V     C        " + tc(a, fps) + " " + tc(b, fps) + " " + tc(a, fps) + " " + tc(b, fps) + "  \n |C:" + (RCOL[m.color] || RCOL.blue) + " |M:" + clean(m.name + (m.comment ? " - " + m.comment : "")).slice(0, 160) + " |D:1\n\n"; });
+    return out; }
+  const csv = rows => rows.map(r => r.map(x => { const s = String(x == null ? "" : x); return /[",\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s; }).join(",")).join("\n") + "\n";
+  const slug = s => String(s).toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return { zip, offer, tc, srt, cues, edl, csv, slug, hmsToS, enc, xml, markerEdl, esc };
+})();
+
+// ── settings, shared by every page: one spending limit, one set of defaults ──
+const SET_KEY = "aldershot.settings.v1";
+const SET_DEFAULT = { v: 1, limit: 50, plan: "starter", services: { byok: false, pixabay: true, nasa: true, archive: true, podcasts: true, r2: false, eleven: false, youtube: false },
+  defaults: { format: "1080", shorts: "9:16", captions: "word", subs: "always", decide: "recommend", scout: "ask", depth: "words+screen", originals: "here" }, hook: "", restored: {} };
+function loadSettings() { try { const s = JSON.parse(localStorage.getItem(SET_KEY) || "null"); if (s && s.v === 1) return { ...SET_DEFAULT, ...s, services: { ...SET_DEFAULT.services, ...(s.services || {}) }, defaults: { ...SET_DEFAULT.defaults, ...(s.defaults || {}) } }; } catch (e) {} return JSON.parse(JSON.stringify(SET_DEFAULT)); }
+function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) {} return s; }
+
+// Scene by scene: the same film, one scene at a time — the rough cut beside what it's becoming, and the one next thing for each shot.
+const SB_KEY = "aldershot.scenes.v1";
+const madeP = r => ["have", "approved", "figures"].includes(r[3]);
+const voiceDone = r => r[4] !== "vo" || r[6] === "rec";
+const T_ = (t, l, tp, fs, o) => ({ t, l: String(l), tp: String(tp), fs: String(fs), font: "'Instrument Sans',sans-serif", weight: 400, fill: "#ECECF1", op: 1, tf: "translate(-50%,-50%)", ws: "normal", mw: "80%", ...(o || {}) });
+function frameOf(key, r, lt, mode, sh) {
+  const [dur, pk, pic, pst, sm] = r, o = (sh.over || {})[key] || {}, R = [], C = [], P = [], X = [];
+  const rect = (x, y, w, h, fill, op, rx, stroke, sw, dash) => R.push({ x, y, w, h, fill: fill || "none", op: op == null ? 1 : op, rx: rx || 0, stroke: stroke || "none", sw: sw || 0, dashA: dash || "none" });
+  const fin = mode === "now" && madeP(r);
+  const mg = () => { const m = pk === "card" ? cardOf(key, o, pic) : mgOf(key, o); const d = mgLayout(mgDraw(m.t, m.f, lt, dur), (m.pos || {})); return { gT: d.gT, rects: d.rects.map(q => ({ ...q, sw: 0, dashA: "none" })), circles: d.circles.map(c => ({ ...c, filt: "none" })), paths: d.paths, texts: d.texts.map(q => ({ ...q, tf: q.tf || "translate(-50%,-80%)", ws: "nowrap", mw: "none", fs: q.fs, l: q.l, tp: q.tp })) }; };
+  if ((pk === "sketch" || pk === "card") && (mode === "rough" || fin || pst === "drafted")) return mg();
+  if (pk === "gen" && (fin || pst === "drafted")) { const g = genDraw(lt, key.length * 7 + key.charCodeAt(1), o.style || "drawn"); return { gT: "", rects: [], circles: g.circles.map(c => ({ ...c, filt: "url(#sbBlur)" })), paths: [], texts: [T_("Made with AI", 50, 92, 1.8, { fill: "rgba(236,236,241,0.7)" })] }; }
+  if (pk === "hold" || pk === "black") { rect(0, 0, 960, 540, "#050506"); return { gT: "", rects: R, circles: C, paths: P, texts: [T_(pk === "hold" ? "Holding the frame" : "Black", 50, 50, 2, { fill: "rgba(236,236,241,0.3)" })] }; }
+  const real = fin || (mode === "now" && pst === "found");
+  if (!real) { // the gap sketch: a dashed frame that says what goes here
+    rect(0, 0, 960, 540, "#0A0A0C"); rect(60, 50, 840, 440, "none", 1, 16, "rgba(236,236,241,0.25)", 3, "14 12");
+    if (pk === "you") { C.push({ cx: 480, cy: 230, r: 62, fill: "none", stroke: "rgba(236,236,241,0.35)", w: 3, op: 1, filt: "none" }); P.push({ d: "M340 470 Q340 320 480 310 Q620 320 620 470", stroke: "rgba(236,236,241,0.35)", w: 3, fill: "none", dash: "1", off: 0, op: 1 }); }
+    else P.push({ d: "M300 330 Q480 " + (200 + Math.sin(lt * 1.4) * 26) + " 660 300", stroke: "rgba(236,236,241,0.35)", w: 3, fill: "none", dash: "0.5 0.5", off: -(lt * 0.25) % 1, op: 1 });
+    return { gT: "", rects: R, circles: C, paths: P, texts: [T_(pic, 50, pk === "you" ? 18 : 27, 2.6, { font: "'Instrument Serif',serif", fill: "rgba(236,236,241,0.6)", mw: "70%" })] };
+  }
+  if (pk === "you") { rect(0, 0, 960, 540, "#1D1C22"); C.push({ cx: 700, cy: 120, r: 260, fill: "#ECECF1", stroke: "none", w: 0, op: 0.04, filt: "none" }); const b = Math.sin(lt * 6) * 2;
+    C.push({ cx: 480, cy: 236 + b, r: 66, fill: "#0D0C10", stroke: "none", w: 0, op: 1, filt: "none" }); rect(334, 306 + b, 292, 300, "#0D0C10", 1, 126); return { gT: "", rects: R, circles: C, paths: P, texts: [] }; }
+  // found, archive, wanted made real: a plate standing in for the linked footage, credited
+  rect(0, 0, 960, 540, "#15130F"); for (let i = 0; i < 46; i++) rect((i * 89 + Math.floor(lt * 10) * 31) % 960, (i * 47) % 540, 2, 30, "#E8E0CC", 0.06);
+  rect(150, 80, 660, 330, "#22201B", 1, 6); for (let y = 0; y < 8; y++) for (let x = 0; x < 16; x++) { const v = (Math.sin(x * 0.6 + y * 0.9 + key.length) + 1) / 2; rect(170 + x * 39, 96 + y * 38, 36, 35, "rgb(" + Math.round(60 + v * 120) + "," + Math.round(55 + v * 100) + "," + Math.round(48 + v * 80) + ")", 0.85, 2); }
+  return { gT: "", rects: R, circles: C, paths: P, texts: [T_(pic, 50, 86, 2.3, { fill: "rgba(236,236,241,0.85)", mw: "80%" }), T_(pst === "found" ? "Scout’s find — waiting for your eye" : pk === "archive" ? "Your archive" : "Scout’s find · linked, credited", 96, 7, 1.7, { tf: "translate(-100%,-50%)", fill: "rgba(236,236,241,0.6)", ws: "nowrap", mw: "none" })] };
+}
+class Component extends DCLogic {
+  state = { sh: loadShared(), sid: null, T: 0, playing: false, work: {}, take: null, cele: null, flash: null, done0: null };
+  componentDidMount() {
+    let saved = {}; try { saved = JSON.parse(localStorage.getItem(SB_KEY) || "{}") || {}; } catch (e) {}
+    const F = this.film(), first = F.find(s => !this.sceneDone(s)) || F[0];
+    this.setState({ sid: saved.sid && F.find(s => s.id === saved.sid) ? saved.sid : first.id, done0: F.filter(s => this.sceneDone(s)).length, today: saved.today && saved.day === new Date().toDateString() ? saved.today : [] });
+    this.last = performance.now();
+    const loop = now => { const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now; const st = this.state;
+      const w = Object.entries(st.work || {}).filter(([, j]) => now - j.t0 >= j.ms); if (w.length) this.finishWork(w.map(([k]) => k));
+      if (st.playing) { const s = this.scene(); if (s) { const T = st.T + dt; this.setState({ T: T >= s.dur ? 0 : T }); } }
+      else if (st.take && st.take.phase === "rolling") this.setState({ take: { ...st.take, now } });
+      else if (Object.keys(st.work || {}).length) this.setState({ tick: now });
+      this.raf = requestAnimationFrame(loop); };
+    this.raf = requestAnimationFrame(loop);
+    this.onKey = e => { const tag = (e.target && e.target.tagName || "").toLowerCase(); if (tag === "input" || tag === "textarea") return;
+      if (e.key === " ") { e.preventDefault(); if (this.state.take) this.takeStep(); else this.setState({ playing: !this.state.playing }); }
+      if (e.key === "ArrowRight") this.go(1); if (e.key === "ArrowLeft") this.go(-1);
+      if (e.key === "Enter" && this.recAct) { e.preventDefault(); this.recAct(); } };
+    document.addEventListener("keydown", this.onKey);
+    this.onStore = e => { if (!e || e.key === KEY) this.setState({ sh: loadShared() }); }; window.addEventListener("storage", this.onStore);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); document.removeEventListener("keydown", this.onKey); window.removeEventListener("storage", this.onStore); }
+  film() { const sh = this.state.sh; return SEQ.map((s, n) => { const rows = s.rows.map((r0, i) => { const r = r0.slice(), o = (sh.over || {})[s.id + ":" + i] || {};
+      if (o.p) r[3] = o.p; if (o.pk) r[1] = o.pk; if (o.s) r[6] = o.s; if (o.dur) r[0] = o.dur; if (o.sm) r[4] = o.sm; if (typeof o.line === "string") r[5] = o.line; if (typeof o.pic === "string") r[2] = o.pic; return r; });
+      return { ...s, n: n + 1, rows, dur: rows.reduce((a, r) => a + r[0], 0) }; }); }
+  scene() { return this.film().find(s => s.id === this.state.sid) || this.film()[0]; }
+  sceneDone(s) { return s.rows.every(r => madeP(r) && voiceDone(r)); }
+  touched(s) { const o = this.state.sh.over || {}; return s.rows.some((r, i) => o[s.id + ":" + i]); }
+  remember(patch) { const s = { sid: this.state.sid, today: this.state.today || [], day: new Date().toDateString(), ...patch }; try { localStorage.setItem(SB_KEY, JSON.stringify(s)); } catch (e) {} }
+  go(d) { const F = this.film(), i = F.findIndex(s => s.id === this.state.sid), j = Math.max(0, Math.min(F.length - 1, i + d)); this.pick(F[j].id); }
+  pick(sid) { this.setState({ sid, T: 0, playing: false, take: null, cele: null }); this.remember({ sid }); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  over(key, eff, note) {
+    const sh = this.state.sh, before = this.scene(), wasDone = this.sceneDone(before);
+    const next = { ...sh, over: { ...sh.over, [key]: { ...((sh.over || {})[key] || {}), ...eff } } }; saveShared(next);
+    const today = [...(this.state.today || []), { key, note, at: Date.now() }];
+    this.setState({ sh: next, today, flash: key }); this.remember({ today });
+    const after = this.film().find(s => s.id === before.id) || before;
+    setTimeout(() => { const s = this.scene(); if (!wasDone && this.sceneDone(s)) this.setState({ cele: s.id }); }, 30);
+  }
+  startWork(key, route) { const ms = route === "scout" ? 2600 : route === "gen" ? 3200 : 2000; this.setState({ work: { ...this.state.work, [key]: { route, t0: performance.now(), ms } } }); }
+  finishWork(keys) { const work = { ...this.state.work }, sh = this.state.sh, over = { ...sh.over }, spend = { ...(sh.spend || {}) }, rule = id => ((sh.rules || {})[id] === undefined ? ({ look: "drawn" })[id] : sh.rules[id]);
+    keys.forEach(k => { const j = work[k]; delete work[k]; const [sid, ri] = k.split(":"), s = this.film().find(x => x.id === sid), r = s.rows[+ri];
+      over[k] = { ...(over[k] || {}), ...(j.route === "scout" ? { p: "found", pk: r[1] === "wanted" || r[1] === "found" ? "found" : r[1], ...(r[4] === "sync" ? { s: "found" } : {}) } : j.route === "gen" ? { p: "drafted", pk: "gen", gen: "still", style: rule("look"), way: "gstill" } : { p: "drafted", pk: r[1] === "card" ? "card" : "sketch" }) };
+      if (j.route === "gen") spend[k] = { usd: GEN_PRICE.still, tier: "std" }; });
+    const next = { ...sh, over, spend }; saveShared(next); this.setState({ work, sh: next, flash: keys[0] }); }
+  takeStep() { const tk = this.state.take; if (!tk) return; const now = performance.now();
+    if (tk.phase === "ready") this.setState({ take: { ...tk, phase: "rolling", t0: now, now } });
+    else if (tk.phase === "rolling") this.setState({ take: { ...tk, phase: "done", took: Math.max(1, Math.round((now - tk.t0) / 1000)) } }); }
+  renderVals() {
+    const st = this.state, sh = st.sh, F = this.film(), s = this.scene(), out = {}, now = performance.now();
+    if (!s) return { strip: [], pair: [], shots: [], steps: [], todayDots: [], sc: {}, cele: {} };
+    const rule = id => ((sh.rules || {})[id] === undefined ? ({ budget: "free", look: "drawn", genfacts: "depict" })[id] : sh.rules[id]);
+    const doneN = F.filter(x => this.sceneDone(x)).length;
+    out.tally = doneN + " of " + F.length + " scenes finished";
+    out.strip = F.map(x => { const d = this.sceneDone(x), t = this.touched(x), cur = x.id === s.id;
+      return { flex: String(x.dur), title: x.n + ". " + x.title + (d ? " — finished" : t ? " — on its way" : " — rough"), bg: d ? GREEN : t ? "rgba(111,140,255,0.55)" : "transparent", ring: [!d && !t ? "inset 0 0 0 1.5px rgba(236,236,241,0.22)" : "", cur ? "0 0 0 2px #ECECF1" : ""].filter(Boolean).join(", ") || "none", onGo: () => this.pick(x.id) }; });
+    out.sc = { where: "Scene " + s.n + " of " + F.length + " · " + ACTS[s.act].split(" · ")[0].replace("ACT", "Act") + " · " + fmt(s.dur), title: s.title, qKind: s.qk === "raises" ? "Raises" : "Answers", qColor: s.qk === "raises" ? "#B9C6FF" : GREEN, q: s.q };
+    // the two players, in step
+    let acc = 0; const at = s.rows.map(r => { const a = acc; acc += r[0]; return a; });
+    const T = Math.min(st.T, s.dur - 0.01), ri = Math.max(0, at.findIndex((a, i) => T >= a && T < a + s.rows[i][0])), r = s.rows[ri], key = s.id + ":" + ri, lt = st.playing ? T - at[ri] : Math.max(T - at[ri], Math.min(3, s.rows[ri][0] * 0.5));
+    const madeN = s.rows.filter(x => madeP(x)).length, fin = this.sceneDone(s);
+    const words = String(r[5] || ""), cap = r[4] === "vo" || r[4] === "sync" ? words : "";
+    const cutsOf = on => s.rows.map((x, i) => ({ flex: String(x[0]), bg: i === ri ? on : "rgba(236,236,241,0.12)", onGo: () => this.setState({ T: at[i] + 0.01 }) }));
+    const nowLabel = madeP(r) ? (r[1] === "found" || r[1] === "archive" ? "Found · credited" : r[1] === "gen" ? "Depiction · made with AI" : r[1] === "you" ? "You" : "Drawn in code") : r[3] === "found" ? "Scout’s find · check it" : r[3] === "drafted" ? "A draft · check it" : "Still rough";
+    out.pair = [
+      { name: "Rough", sub: "day one — every gap a sketch", ring: "rgba(255,255,255,0.07)", f: frameOf(key, s.rows[ri].slice(0, 3).concat(["ghost"]).concat(s.rows[ri].slice(4)), lt, "rough", sh), tag: r[1] === "sketch" || r[1] === "card" ? "Drawn in code" : "A sketch of what goes here", tagColor: "rgba(236,236,241,0.8)",
+        cap, capFont: "'Instrument Serif',serif", capStyle: "italic", capColor: "rgba(236,236,241,0.6)", cuts: cutsOf("rgba(236,236,241,0.6)") },
+      { name: fin ? "Finished" : "Now", sub: fin ? "every shot real, every line in your voice" : madeN + " of " + s.rows.length + " shots made", ring: fin ? "rgba(94,201,143,0.5)" : "rgba(111,140,255,0.3)", f: frameOf(key, r, lt, "now", sh), tag: nowLabel, tagColor: madeP(r) ? "#ECECF1" : r[3] === "found" || r[3] === "drafted" ? "#B9C6FF" : "rgba(236,236,241,0.6)",
+        cap, capFont: r[4] === "vo" && r[6] === "rec" ? "'Instrument Sans',sans-serif" : "'Instrument Serif',serif", capStyle: r[4] === "vo" && r[6] !== "rec" ? "italic" : "normal", capColor: r[4] === "vo" && r[6] !== "rec" ? "rgba(236,236,241,0.6)" : "#FFFFFF", cuts: cutsOf(fin ? GREEN : WORK) },
+    ];
+    out.paused = !st.playing; out.onPlay = () => this.setState({ playing: !st.playing }); out.playLabel = st.playing ? "Pause" : "Play the scene"; out.clock = fmt(T) + " / " + fmt(s.dur);
+    out.onPrev = () => this.go(-1); out.onNext = () => this.go(1);
+    // one card per shot, each with the one next thing
+    let recAct = null;
+    const btn = (label, onGo, kind, title) => ({ label, onGo, title: title || "", bg: kind === "rec" ? "rgba(111,140,255,0.16)" : kind === "red" ? REC : kind === "dim" ? "transparent" : "rgba(236,236,241,0.07)", color: kind === "rec" ? "#B9C6FF" : kind === "red" ? "#FFFFFF" : kind === "dim" ? "rgba(236,236,241,0.35)" : "rgba(236,236,241,0.85)", ring: kind === "rec" ? "inset 0 0 0 1px rgba(111,140,255,0.3)" : "none", cursor: kind === "dim" ? "default" : "pointer", op: "1" });
+    out.shots = s.rows.map((x, i) => { const k = s.id + ":" + i, W = st.work[k], tk = st.take && st.take.key === k ? st.take : null, claimed = (s.claims || []).length && (x[4] === "vo" || x[4] === "sync");
+      const pic = madeP(x), check = x[3] === "found" || x[3] === "drafted", voNeed = x[4] === "vo" && x[6] !== "rec";
+      let state = pic ? (voNeed ? "Pictured · your line to record" : "Done") : check ? (x[3] === "found" ? "Scout found it — is it right?" : "A draft — is it right?") : W ? "Being made" : "Still rough", acts = [], why = "";
+      if (W) {} else if (tk) {} else if (check) { acts = [btn("Use it", () => this.over(k, { p: x[3] === "found" ? "have" : "approved", ...(x[4] === "sync" && x[6] === "found" ? { s: "have" } : {}) }, "Used " + x[2]), "rec"), btn(x[3] === "found" ? "Find another" : "Draw it again", () => this.startWork(k, x[3] === "found" ? "scout" : x[1] === "gen" ? "gen" : "sketch"))]; why = x[3] === "found" ? "Linked at its source, credited on screen." : ""; }
+      else if (!pic) { const realK = ["found", "wanted", "archive"].includes(x[1]), you = x[1] === "you", strict = rule("genfacts") === "strict" && claimed, budget = rule("budget");
+        const find = btn("Find the real thing", () => this.startWork(k, "scout"), realK ? "rec" : "", "Scout looks in NASA, the archives, the news"), draw = btn("Keep it drawn", () => this.startWork(k, "sketch"), !realK && !you ? "rec" : "", "Sketch draws it in code — free"),
+          gen = strict ? btn("Generate", () => {}, "dim", "This film is Strict: nothing generated over a claim") : btn("Generate a depiction · " + usd(GEN_PRICE.still), () => this.startWork(k, "gen"), "", "From the sketch, " + rule("look") + ", labelled");
+        acts = you ? [btn("Shoot it in the Studio", () => { location.href = "Studio.dc.html"; }, "rec"), draw] : realK ? [find, draw, gen] : [draw, find, gen];
+        why = you ? "Only you can shoot this." : realK ? "Something real goes here." : claimed ? "A diagram from the facts says it best." : budget === "free" ? "Free at this budget." : ""; }
+      else if (voNeed) { acts = [btn("Record this line", () => this.setState({ take: { key: k, phase: "ready" }, playing: false }), "red")]; why = x[0] + " seconds"; }
+      if (!recAct && acts.length && acts[0].cursor === "pointer") recAct = acts[0].onGo;
+      const el = tk && tk.phase === "rolling" ? (now - tk.t0) / 1000 : tk && tk.took || 0;
+      if (tk) acts = tk.phase === "ready" ? [btn("Start", () => this.takeStep(), "red"), btn("Not now", () => this.setState({ take: null }))] : tk.phase === "rolling" ? [btn("Stop", () => this.takeStep(), "rec")] : [btn("Keep it", () => { this.over(k, { s: "rec" }, "Recorded a line"); this.setState({ take: null }); }, "rec"), btn("Again", () => this.setState({ take: { key: k, phase: "ready" } }))];
+      return { at: fmt(at[i]), dur: fmt(x[0]), pic: x[2], state, hasLine: !!x[5] && (x[4] === "vo" || x[4] === "sync"), line: x[5], lineEdge: x[4] === "vo" ? (x[6] === "rec" ? GREEN : "rgba(236,236,241,0.25)") : "rgba(236,236,241,0.15)", lineInk: x[4] === "vo" && x[6] !== "rec" ? "rgba(236,236,241,0.6)" : "#ECECF1",
+        dot: pic && !voNeed ? GREEN : W || check ? WORK : "transparent", dotRing: pic && !voNeed || W || check ? "none" : "inset 0 0 0 1.5px rgba(236,236,241,0.3)", dotAnim: W ? "sbPulse 1s ease infinite" : "none",
+        ring: i === ri && st.playing ? "rgba(236,236,241,0.3)" : "rgba(255,255,255,0.05)", anim: st.flash === k ? "sbLand 1.4s ease both" : "none",
+        hasWork: !!W, workW: W ? Math.min(100, (now - W.t0) / W.ms * 100).toFixed(0) + "%" : "0%", workLabel: W ? (W.route === "scout" ? "Scout is looking" : W.route === "gen" ? "Generating" : "Sketch is drawing") : "",
+        hasTake: !!tk, takeRolling: !!(tk && tk.phase === "rolling"), takeClock: fmt(el), takeNote: tk ? (tk.phase === "ready" ? "Say the line above. Space starts and stops." : tk.phase === "rolling" ? "Recording — " + x[0] + "s space" : el <= x[0] + 3 ? "That fits." : "A bit long — the space will grow to fit.") : "", takeW: Math.min(100, el / x[0] * 100).toFixed(0) + "%", takeRing: tk && tk.phase === "rolling" ? "rgba(239,91,79,0.6)" : "rgba(255,255,255,0.08)",
+        hasActs: acts.length > 0, acts, why }; });
+    this.recAct = recAct;
+    out.shotsLine = madeN + " of " + s.rows.length + " made · " + s.rows.filter(x => x[4] === "vo" && x[6] === "rec").length + " of " + s.rows.filter(x => x[4] === "vo").length + " lines recorded";
+    const cl = (s.claims || []).map(n => CLAIMS.find(c => c[0] === n)).filter(Boolean), weak = cl.filter(c => c[2] === "a" || c[2] === "u");
+    const vo = s.rows.filter(x => x[4] === "vo"), rec = vo.filter(x => x[6] === "rec").length, watched = !!(sh.watched || {})[s.id];
+    const STEPS = [["Written", true, vo.length ? "Every line drafted." : "No words — the pictures carry it."], ["Proven", !weak.length, !cl.length ? "Your own argument." : weak.length ? weak.length + " claim still needs its receipt." : "Every claim sourced."], ["Voiced", rec === vo.length, vo.length ? rec + " of " + vo.length + " lines." : "Nothing to record."], ["Pictured", madeN === s.rows.length, madeN + " of " + s.rows.length + " shots."], ["Watched", watched, watched ? "You watched it through." : "Play it once, start to finish."]];
+    const nx = STEPS.findIndex(x => !x[1]);
+    out.steps = STEPS.map(([name, d, detail], i) => ({ name, detail, mark: d ? "✓" : String(i + 1), bg: d ? GREEN : i === nx ? WORK : "transparent", ink: d || i === nx ? "#0E0E11" : "rgba(236,236,241,0.45)", ring: d || i === nx ? "none" : "inset 0 0 0 1.5px rgba(236,236,241,0.22)", nameInk: d ? "rgba(236,236,241,0.7)" : i === nx ? "#ECECF1" : "rgba(236,236,241,0.5)" }));
+    out.nextLine = nx < 0 ? "This scene is finished." : nx === 4 ? "Everything’s made. Watch it once, start to finish, and it’s done." : "Next: " + STEPS[nx][0].toLowerCase() + " — the first card on the left with a blue button.";
+    out.hasRec = nx === 4; out.recLabel = "Watch it through"; out.recBg = "rgba(111,140,255,0.16)"; out.recInk = "#B9C6FF";
+    out.onRec = () => { const next = { ...sh, watched: { ...(sh.watched || {}), [s.id]: true } }; saveShared(next); this.setState({ sh: next, T: 0, playing: true }); setTimeout(() => { if (this.sceneDone(this.scene())) this.setState({ cele: s.id }); }, 30); };
+    if (nx === 4 && !recAct) this.recAct = out.onRec;
+    // finished: say so, and offer the next scene
+    const nextScene = F.find(x => x.n > s.n && !this.sceneDone(x)) || F.find(x => !this.sceneDone(x));
+    out.cele = { has: st.cele === s.id && fin, head: "“" + s.title + "” is finished.", sub: doneN + " of " + F.length + " scenes done" + (st.done0 !== null && doneN > st.done0 ? " — " + (doneN - st.done0) + " today" : "") + ".", hasNext: !!nextScene, next: nextScene ? "Next: “" + nextScene.title + "”" : "", onNext: () => nextScene && this.pick(nextScene.id) };
+    const td = st.today || [];
+    out.today = td.length ? td.length + (td.length === 1 ? " thing" : " things") + " done today. Stop whenever you like — the film keeps everything." : "Nothing yet today. Each card’s blue button is the one thing to do next.";
+    out.todayDots = Array.from({ length: Math.max(6, td.length) }, (_, i) => ({ bg: i < td.length ? GREEN : "transparent", ring: i < td.length ? "none" : "inset 0 0 0 1.5px rgba(236,236,241,0.2)" }));
+    return out;
+  }
+}
+</script>
+</body>
+</html>

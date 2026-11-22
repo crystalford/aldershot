@@ -75,6 +75,17 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
     The rollup groups by outcome now and the panel carries one line: what the
     month spent and got nothing for. Not deducted from the total, because the
     total is what the bill will say.
+    **Generated video, priced from the model** (21 Nov). The meter said $1 a
+    second standard and $3.50 premium, set before any model was chosen. The
+    research pass found Veo 3.1 Fast at 12¢ a second and Veo 3.1 at 40¢, each
+    making clips of about 8 seconds, so $1 was eight times the cost of the
+    fast tier while the 3× this decision commits to was the intent. The meter
+    now follows the model: about 3× its list price per tier (36¢ and $1.20),
+    a still at 12¢, and a long shot priced by the seconds actually generated
+    — one clip that holds, a clip every 8 seconds, or a still that moves. The
+    3× stays, because drafts stay free and three tries per landed clip is
+    exactly what it pays for. The canvas briefly showed 1.5×; at 1.5× a
+    person who drafts twice before keeping costs more than they pay.
 39. **BYOK covers direction and reading; never falls back to our bill without opt-in.** *Blame attribution is a copy rule.*
 40. **Models are rented parts.** Contracts, an eval router, content-addressed invalidation. *Price per capability falls ~50× a year.*
 
