@@ -24,8 +24,6 @@ export interface Meter {
   color: string;
   /** Metered but never blocked — the cap is not enforced, so it is not shown. */
   uncapped?: boolean;
-  /** The spend cap, which the user sets. See the control in meterRow. */
-  editable?: boolean;
 }
 
 export interface CostLine {
@@ -60,6 +58,8 @@ export interface SettingsData {
     poolRows: Array<{ pool: string; verdict: string; failures: number; lastSays: string | null }>;
   } | null;
   meters: Meter[];
+  /** The monthly limit and what it has been charged this month. src/spend.ts. */
+  limit: { usd: number; chargedUsd: number };
   /** Whether Stripe is configured. A button that cannot charge is not shown. */
   billingReady: boolean;
   /** What is in the bin, so the "deleted pile" the subtitle promises exists. */
@@ -192,29 +192,6 @@ function planBlock(plan: string, meters: Meter[], billingReady: boolean): string
       </div>`
       }
       <div data-content style="font-size:${SIZE.meta};color:${C.ink32};margin-top:6px;line-height:1.5">${m.note}</div>
-      ${
-        /*
-         * THE ONE METER YOU CAN CHANGE, and the only one that needs a control.
-         *
-         * src/spend.ts stops every job at this number with a sentence reading
-         * "Nothing else will run until you raise it in Settings" — and until
-         * now Settings had nowhere to do it, because `spend_cap_usd` was read
-         * by capFor and written by nothing in the whole of src/. A product
-         * that tells somebody to do a thing has to let them do it.
-         *
-         * A number box rather than presets: it is their money and the right
-         * figure is whatever they say it is. Zero is allowed and means it —
-         * capVerdict has a sentence for that case.
-         */
-        m.editable
-          ? `<form class="cap-form" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <span style="font-size:${SIZE.meta};color:${C.ink45}">Stop at</span>
-              <input class="cap-usd" type="number" min="0" step="10" value="${m.cap}" aria-label="Monthly spend cap in dollars"
-                style="width:92px;font-size:${SIZE.secondary};font-family:${FONT.mono};padding:6px 9px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
-              <button type="submit" style="font-size:${SIZE.meta};font-weight:600;padding:6px 13px;border-radius:${RADIUS.button};background:${C.active};color:${C.ink};border:none;cursor:pointer;font-family:${FONT.ui}">Save the cap</button>
-            </form>`
-          : ""
-      }
     </div>`;
   };
 
@@ -502,11 +479,57 @@ function connectionsBlock(list: SettingsData["connections"]): string {
   </div>`;
 }
 
+/**
+ * YOUR MONTHLY LIMIT — the one money setting (doc 22, row 4).
+ *
+ * The canvas's card, design/canvas/Settings.dc.html: the figure large, what
+ * is left beside it, five amounts and a box for any other, and one sentence
+ * saying what it covers. A chip saves when pressed, like the canvas; there is
+ * no Save button to forget.
+ *
+ * What it does not say, on purpose: the brake behind it. src/spend.ts keeps a
+ * cap over all running costs that rises with this number, and it is not a
+ * second setting (the owner's choice, 22 Nov). Its refusal points here.
+ */
+export const LIMIT_CHOICES = [0, 25, 50, 100, 250];
+
+function limitBlock(lim: SettingsData["limit"]): string {
+  const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+  const left = Math.max(0, lim.usd - lim.chargedUsd);
+  const value = lim.usd ? money(lim.usd) : "Nothing";
+  const sub = lim.usd
+    ? `a month, for generated pictures and voices &middot; ${money(Math.round(left * 100) / 100)} left`
+    : "Nothing will be generated. Drawings, archives and your own footage only.";
+  const chip = (n: number) => {
+    const on = n === lim.usd;
+    return `<button type="button" class="limit-chip" data-usd="${n}" style="font-size:${SIZE.secondary};font-weight:600;padding:7px 13px;border-radius:${RADIUS.button};border:none;cursor:pointer;font-family:${FONT.ui};font-variant-numeric:tabular-nums;background:${on ? C.ink : C.pill};color:${on ? "#101013" : C.ink70}">${n ? `$${n}` : "None"}</button>`;
+  };
+  const custom = LIMIT_CHOICES.includes(lim.usd) ? "" : String(lim.usd);
+  return `${sectionLabel("Your monthly limit")}
+  <div class="limit-card" data-charged="${Math.round(lim.chargedUsd * 100) / 100}" style="margin-top:16px;padding:20px 18px;border-radius:${RADIUS.card};background:${C.surface}">
+    <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+      <span class="limit-value" data-content style="font-size:34px;font-weight:600;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">${value}</span>
+      <span class="limit-sub" data-content style="font-size:${SIZE.secondary};color:${C.ink70}">${sub}</span>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${LIMIT_CHOICES.map(chip).join("")}
+      <span style="display:inline-flex;align-items:center;gap:6px;margin-left:4px">
+        <span style="font-size:${SIZE.meta};color:${C.ink45}">or</span>
+        <span style="font-size:${SIZE.secondary};color:${C.ink45}">$</span>
+        <input class="limit-usd" type="number" min="0" step="5" value="${custom}" aria-label="Monthly limit in dollars"
+          style="width:84px;font-size:${SIZE.secondary};font-family:${FONT.mono};padding:6px 9px;border-radius:${RADIUS.button};background:${C.pill};color:${C.ink};border:none" />
+      </span>
+    </div>
+    <div style="margin-top:14px;font-size:${SIZE.secondary};line-height:1.6;color:${C.ink70};max-width:620px">One limit, everywhere. It covers what is generated for you, pictures and voices; reading footage and editing are never counted against it. Nothing generates past it until you raise it.</div>
+  </div>`;
+}
+
 export function renderSettings(d: SettingsData): string {
   return `<div style="font-size:${SIZE.pageTitle};font-weight:600;letter-spacing:-0.022em">Settings</div>
 <div style="font-size:${SIZE.body};color:rgba(236,236,241,0.42);margin-top:6px">Defaults, storage, and the deleted pile. Nothing here changes work you've already made.</div>
 ${account(d.name, d.email)}
 ${planBlock(d.plan, d.meters, d.billingReady)}
+${limitBlock(d.limit)}
 ${connectionsBlock(d.connections)}
 ${trashBlock(d.trash)}
 ${d.cost ? costPanel(d.cost) : ""}

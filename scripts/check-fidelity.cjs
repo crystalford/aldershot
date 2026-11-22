@@ -955,16 +955,23 @@ const SIGNED_OFF = new Map([
       "subject — and it produced \"#so\".",
   ],
   [
-    "Save the cap",
-    "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
-      "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +
-      "reading \"Top-ups stop here until you raise it\" and offers no way to " +
-      "raise it. src/spend.ts stops every job at that number with a sentence " +
-      "that says \"until you raise it in Settings\", and `spend_cap_usd` was " +
-      "read by capFor and written by nothing in the whole of src/ — so the " +
-      "product told somebody to do a thing it could not do. New behaviour " +
-      "rather than a paraphrase, and the smallest thing that makes the " +
-      "existing refusal true.",
+    "Your monthly limit",
+    "The one money setting, from design/canvas/Settings.dc.html, which is " +
+      "the newest prototype and not yet in this check's haystack (doc 22). " +
+      "It replaced the Save-the-cap form: the canvas has one limit, for what " +
+      "is generated, and the cap over all running costs became the brake " +
+      "behind it, which follows it (src/spend.ts; the owner's choice, 22 Nov).",
+  ],
+  [
+    "One limit, everywhere. It covers what is generated for you, pictures and voices; reading footage and editing are never counted against it. Nothing generates past it until you raise it.",
+    "The canvas's sentence under the limit, made true of this code: it " +
+      "generates voices today and pictures later (doc 22, row 8), and it " +
+      "drops the canvas's \"the Studio stops recommending generated pictures " +
+      "as you get close\", which nothing here does yet.",
+  ],
+  [
+    "Nothing will be generated. Drawings, archives and your own footage only.",
+    "The canvas's line for a limit of nothing, word for word.",
   ],
   /*
    * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.

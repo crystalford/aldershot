@@ -119,6 +119,7 @@ const settings = (wasted: { cost: number; count: number }): string =>
     isOwner: true,
     connections: [],
     meters: [],
+    limit: { usd: 50, chargedUsd: 0 },
     billingReady: true,
     trash: [],
     slo: null,

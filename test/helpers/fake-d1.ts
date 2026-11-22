@@ -94,7 +94,7 @@ export function fakeR2(seed: Record<string, number> = {}) {
 export function schema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE v2_users (id TEXT PRIMARY KEY, email TEXT, name TEXT, plan TEXT,
-      is_owner INTEGER DEFAULT 0, spend_cap_usd REAL, created_at INTEGER, stripe_customer_id TEXT,
+      is_owner INTEGER DEFAULT 0, spend_cap_usd REAL, gen_limit_usd REAL, created_at INTEGER, stripe_customer_id TEXT,
       /* Stripe does not guarantee event order; see applyEvent. */
       billing_event_at INTEGER,
       outside_pref TEXT, ask_mode TEXT);

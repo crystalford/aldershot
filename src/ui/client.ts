@@ -4948,43 +4948,57 @@ document.querySelectorAll(".short-make").forEach((btn) => {
 });
 
 /*
- * SAVE THE SPEND CAP.
+ * SAVE THE MONTHLY LIMIT.
  *
- * The one meter in Settings a person can change. Everything else there is a
- * reading; this is a decision, and src/spend.ts has been enforcing it against
- * a number nothing could write since the column was added.
+ * The one money setting (doc 22, row 4). A chip saves when pressed and the
+ * box saves when it changes, as in the canvas; there is no button to forget.
+ * The figure shown afterwards is the one the server stored, because setLimit
+ * clamps it, and showing what was asked for is how 99999 looks accepted and
+ * is not.
  */
-document.querySelectorAll(".cap-form").forEach((form) => {
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = form.querySelector(".cap-usd");
-    if (!input) return;
-    const btn = form.querySelector("button");
-    if (btn) btn.disabled = true;
+(function () {
+  const card = document.querySelector(".limit-card");
+  if (!card) return;
+  const money = (n) => "$" + n;
+  const save = async (usd) => {
     try {
-      const res = await fetch("/api/spend-cap", {
+      const res = await fetch("/api/spend-limit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ usd: Number(input.value) }),
+        body: JSON.stringify({ usd: usd }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) {
-        window.toast(out.error || "That cap didn't save.");
-        if (btn) btn.disabled = false;
+        window.toast(out.error || "That limit didn't save.");
         return;
       }
-      /* The figure comes back from the server because setCap clamps it, and
-         showing what was asked for rather than what was stored is how a cap
-         of 99999 looks accepted and is not. */
-      input.value = String(out.cap);
-      window.toast("Work stops at $" + out.cap + " a month.");
-      if (btn) btn.disabled = false;
+      const n = Number(out.limit);
+      card.querySelectorAll(".limit-chip").forEach((chip) => {
+        const on = Number(chip.getAttribute("data-usd")) === n;
+        /* The same two looks src/ui/pages/settings.ts draws: C.ink on, C.pill off. */
+        chip.style.background = on ? "#ECECF1" : "#232329";
+        chip.style.color = on ? "#101013" : "rgba(236,236,241,0.7)";
+      });
+      const value = card.querySelector(".limit-value");
+      if (value) value.textContent = n ? money(n) : "Nothing";
+      const sub = card.querySelector(".limit-sub");
+      const left = Math.max(0, n - Number(card.getAttribute("data-charged") || 0));
+      if (sub) sub.textContent = n
+        ? "a month, for generated pictures and voices \u00b7 $" + (Math.round(left * 100) / 100) + " left"
+        : "Nothing will be generated. Drawings, archives and your own footage only.";
+      const box = card.querySelector(".limit-usd");
+      if (box) box.value = [0, 25, 50, 100, 250].indexOf(n) < 0 ? String(n) : "";
+      window.toast(n ? "Your limit is " + money(n) + " a month." : "Nothing will be generated.");
     } catch {
-      window.toast("That cap didn't save.");
-      if (btn) btn.disabled = false;
+      window.toast("That limit didn't save.");
     }
+  };
+  card.querySelectorAll(".limit-chip").forEach((chip) => {
+    chip.addEventListener("click", () => save(Number(chip.getAttribute("data-usd"))));
   });
-});
+  const box = card.querySelector(".limit-usd");
+  if (box) box.addEventListener("change", () => { if (box.value !== "") save(Number(box.value)); });
+})();
 
 document.querySelectorAll(".rule-wins").forEach((btn) => {
   btn.addEventListener("click", async () => {
