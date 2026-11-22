@@ -76,7 +76,7 @@ paragraph of what the product is.
 5. Footage is read and charged once; editing is free.
 6. Nothing is deleted; rules switch off; cut moments wait 30 days.
 7. A job is complete only when every item is terminal and none failed silently. Silent partial failure is a P1.
-8. Pictures: own footage → user's documents → open world → generated. Generated is never photoreal and never over a claim or its proof. Graphics are code, never pixels.
+8. Pictures: own footage → user's documents → open world → generated. Generated is never photoreal and never the proof; over a claim only as a depiction a person chose, labelled so, with the claim's receipt unchanged. Graphics are code, never pixels.
 9. Scout finds and links; nothing in this codebase downloads audiovisual content from platforms that forbid it.
 10. The genre word never reaches the writer; the user's own words win where they exist.
 

@@ -11,8 +11,9 @@
  * what is forbidden; this file is that table and the refusals it implies.
  *
  * INVARIANT 8, which is the part with teeth: "own footage → user's documents
- * → open world → generated. Generated is never photoreal and never over a
- * claim or its proof." Phase 5's acceptance asks for the refusal to be
+ * → open world → generated. Generated is never photoreal and never the
+ * proof; over a claim only as a depiction a person chose, labelled so."
+ * (Until 21 Nov it was never over a claim at all; see allowed().) Phase 5's acceptance asks for the refusal to be
  * TESTED, not merely intended, which is why every rule here is a function
  * returning a reason rather than a policy written in a comment.
  *
@@ -146,6 +147,17 @@ export const KIND_LABEL: Record<PictureKind, string> = {
   synthetic: "Generated",
 };
 
+/**
+ * The label on a generated picture a person put over a claim, in the
+ * canvas's own words (design/canvas, the shot panel and the export's cue
+ * sheet). Says both things a viewer needs: that it shows what is being said
+ * rather than proving it, and that it was made. Decision 26 as of 21 Nov;
+ * see allowed(). The canvas labels a plain generated picture "Made with AI"
+ * where KIND_LABEL says "Generated"; that one is older and signed off, and
+ * changing it is its own PR (doc 22, row 3's note).
+ */
+export const DEPICTION_LABEL = "Depiction · made with AI";
+
 export interface Candidate {
   id: string;
   source: Source;
@@ -165,6 +177,27 @@ export interface Candidate {
 export interface Refusal {
   /** Null when it is allowed. */
   reason: string | null;
+  /**
+   * Allowed as a DEPICTION: a generated picture over a claim, which goes on
+   * screen labelled DEPICTION_LABEL with the claim's receipt unchanged.
+   */
+  depicts?: boolean;
+}
+
+export interface AllowOpts {
+  /**
+   * A PERSON CHOSE THIS PICTURE FOR A LINE KNOWN TO BE A CLAIM.
+   *
+   * Only then may a generated picture depict a claim. Two halves, both
+   * needed. Chosen: the automatic offer (place) never passes this, so the
+   * product never reaches for a generated picture over a claim on its own —
+   * doc 08's order still decides what is offered. Known: an unanswered line
+   * is `claim` (UNSURE, src/classify.ts) precisely so that a failure
+   * refuses, and a depiction granted on a guess would turn that around and
+   * let a misread piece of proof through. The caller says the line was
+   * classified; nothing here can tell.
+   */
+  depict?: boolean;
 }
 
 /**
@@ -174,13 +207,26 @@ export interface Refusal {
  * stated separately so the reason a person reads is the reason that
  * actually applied, rather than one sentence covering four cases.
  */
-export function allowed(move: Move, c: Candidate): Refusal {
+export function allowed(move: Move, c: Candidate, opts: AllowOpts = {}): Refusal {
   /*
-   * INVARIANT 8, THE HARD HALF: generated is never over a claim or its
-   * proof. Checked before the move's own source list, because the list is
-   * a preference and this is a prohibition — and because a reader looking
-   * for this rule should find it first.
+   * INVARIANT 8, THE HARD HALF: generated is never the proof, and never over
+   * a claim unless a person put it there as a depiction. Checked before the
+   * move's own source list, because the list is a preference and this is a
+   * prohibition — and because a reader looking for this rule should find it
+   * first.
+   *
+   * WHY A DEPICTION IS ALLOWED NOW (decision 26, 21 Nov). The owner, making
+   * an essay: "I should be able to use generative to simulate something, or
+   * build a scene that depicts what is being discussed." A depiction over a
+   * claim does not stand in for the claim's backing — the receipt is the
+   * same receipt — and it is labelled as what it is, on screen and in the
+   * cue sheet. What stays forbidden is the gavel problem's real harm: a
+   * picture passed off as the proof. So `evidence` refuses whatever anyone
+   * asks, and photoreal refuses below, on every move.
    */
+  if (c.source === "generated" && move === "claim" && opts.depict && !c.photoreal) {
+    return { reason: null, depicts: true };
+  }
   if (c.source === "generated" && (move === "evidence" || move === "claim")) {
     return {
       reason: `a generated picture cannot carry ${move === "evidence" ? "evidence" : "a claim"} — ${MOVE_RULES[move].refuses}`,

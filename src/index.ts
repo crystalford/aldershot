@@ -4773,7 +4773,9 @@ app.post("/api/projects/:id/beats", async (c) => {
   /*
    * INVARIANT 8, AT THE ONE PLACE IT CAN BITE TODAY.
    *
-   * "Generated is never photoreal and never over a claim or its proof."
+   * "Generated is never photoreal and never the proof; over a claim only
+   * as a depiction a person chose, labelled so." This route is where a
+   * person chooses, so it is the one place a depiction can be granted.
    * `generated` and `stock` are two of the five kinds this route accepts,
    * so this is where a picture that is not the user's own footage actually
    * enters a cut — and the line it lands against decides whether it may.
@@ -4790,6 +4792,7 @@ app.post("/api/projects/:id/beats", async (c) => {
    * never a generated card over somebody's proof. That is the direction
    * the invariant demands.
    */
+  let overClaim = false;
   if (kind === "generated" || kind === "stock") {
     const source: PictureSource = kind === "generated" ? "generated" : "world";
     const lines = (await blocksForProject(c.env.DB, project, user.id)).blocks
@@ -4800,13 +4803,20 @@ app.post("/api/projects/:id/beats", async (c) => {
     const against = lines[Math.min(at, lines.length - 1)];
     if (against) {
       let move: Move = UNSURE;
+      /* Whether the move is an answer or the default. Only an answer can
+         grant a depiction; see AllowOpts in src/pictures.ts. */
+      let known = false;
       try {
-        move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+        const found = (await classify(c.env, lines)).lines.find((x) => x.id === against.id);
+        if (found) { move = found.move; known = found.answered; }
       } catch {
         /* Unknown, which is `claim`, which refuses. */
       }
-      const no = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" });
-      if (no.reason) return c.json({ error: no.reason }, 422);
+      /* A person asked for this picture on this line, which is what a
+         depiction needs besides a line known to be a claim. */
+      const r = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" }, { depict: known });
+      if (r.reason) return c.json({ error: r.reason }, 422);
+      overClaim = !!r.depicts;
     }
   }
 
@@ -4815,6 +4825,7 @@ app.post("/api/projects/:id/beats", async (c) => {
     act: b.act ?? null,
     text: b.text ?? null,
     clip_id: b.clipId ?? null,
+    over_claim: overClaim,
   });
   return c.json({ beats });
 });

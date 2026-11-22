@@ -645,6 +645,7 @@ ALTER TABLE plan_beats ADD COLUMN by_user INTEGER;
 ALTER TABLE beats ADD COLUMN take_verdict TEXT;
 ALTER TABLE beats ADD COLUMN take_reason TEXT;
 ALTER TABLE beats ADD COLUMN take_words TEXT;
+ALTER TABLE beats ADD COLUMN over_claim INTEGER;
 ALTER TABLE sources ADD COLUMN timing_source TEXT;
 ALTER TABLE sources ADD COLUMN aligned_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER;

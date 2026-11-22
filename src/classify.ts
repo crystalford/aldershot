@@ -55,6 +55,14 @@ export interface Classified {
   move: Move;
   /** True when a person or a rule decided it, rather than the model. */
   certain: boolean;
+  /**
+   * False when the move is UNSURE because nobody said anything — a line the
+   * model skipped, or a move it named that doesn't exist. UNSURE is `claim`
+   * so that not knowing refuses; this is how a caller tells a line that IS a
+   * claim from a line that is only being treated as one. A depiction over a
+   * claim needs the first (src/pictures.ts, AllowOpts).
+   */
+  answered: boolean;
   /** Why, in a few words. Null when nothing said. */
   why: string | null;
   model: string;
@@ -182,12 +190,14 @@ export function parseMoves(response: unknown, lines: Line[], ids: Map<string, st
     if (!line || said.has(line.id)) continue;
 
     const raw = String(r.move ?? "");
-    const move = (MOVES as readonly string[]).includes(raw) ? (raw as Move) : UNSURE;
+    const valid = (MOVES as readonly string[]).includes(raw);
+    const move = valid ? (raw as Move) : UNSURE;
     const why = String(r.why ?? "").trim();
     said.set(line.id, {
       id: line.id,
       move,
       certain: false,
+      answered: valid,
       why: usableWhy(why, line.text) ? why : null,
       model,
       version: CLASSIFY_VERSION,
@@ -200,6 +210,7 @@ export function parseMoves(response: unknown, lines: Line[], ids: Map<string, st
         id: l.id,
         move: UNSURE,
         certain: false,
+        answered: false,
         why: null,
         model,
         version: CLASSIFY_VERSION,
@@ -241,6 +252,7 @@ export async function classify(env: Env, lines: Line[]): Promise<ClassifyResult>
         id: l.id,
         move: k.move,
         certain: true,
+        answered: true,
         why: k.why,
         model: "",
         version: CLASSIFY_VERSION,
