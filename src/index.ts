@@ -126,6 +126,7 @@ import { candidatesFor } from "./beat-find.ts";
 import { draftAngles, parseAngles, priceAngles } from "./angles.ts";
 import { priceRevision, proposeRevision } from "./revise.ts";
 import { otioJson } from "./otio.ts";
+import { asRate, resolveMarkers, xmemlTimeline } from "./xmeml.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { LEGACY_LABELLER, isVerdict, labellerName, setProgress, type Verdict } from "./eval-set.ts";
@@ -4171,6 +4172,60 @@ app.get("/api/projects/:id/timeline.otio", async (c) => {
       "content-type": "application/json",
       "content-disposition": `attachment; filename="${(project.title || "timeline").replace(/[^\w.\- ]/g, "_")}.otio"`,
     },
+  });
+});
+
+/**
+ * THE SAME CUT FOR PREMIERE AND RESOLVE, AS FINAL CUT 7 XML — doc 22, row 2.
+ *
+ * Beside the .otio, not instead of it: Premiere's OTIO import is a beta that
+ * has to be switched on, and XML is the format both editors import as they
+ * come. Built from the same `edlForProject` as the render and the .otio, with
+ * the same filenames, for the same reasons. What it adds is a marker on every
+ * clip, carrying what the .otio keeps in metadata an editor never shows —
+ * plus, for a picture that isn't the person's own, the cue sheet's label and
+ * how it was made.
+ *
+ * ?fps= picks the timeline's rate (24, 25 or 30; anything else is 25). See
+ * src/xmeml.ts for why the rate is a choice here and a fact nowhere.
+ */
+async function xmemlInputs(c: Ctx) {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return { error: c.json({ error: "not found" }, 404) } as const;
+  const built = await edlForProject(c.env, project, user.id);
+  if (!built || !built.edl.cuts.length) return { error: c.json({ error: "there is nothing in this cut to export yet" }, 422) } as const;
+  const sources = await listSources(c.env.DB, user.id, "newest");
+  const media = new Map(
+    sources.map((s) => [s.r2_key, { name: s.filename || `${s.title}.mp4`, durationMs: s.duration_s ? s.duration_s * 1000 : null }]),
+  );
+  const timing = await timingForProject(c.env, project.id);
+  /* The cue sheet's word on each picture that isn't the person's own, keyed
+     the way an EDL cut names a beat. */
+  const notes = new Map(
+    (await cueSheetFor(c.env.DB, project.id)).map((e) => [`b:${e.beatId}`, [`${e.how}`, `Label on screen: ${e.label}.`]]),
+  );
+  const opts = { name: project.title, media, timing: timing.source, fps: asRate(c.req.query("fps")), notes };
+  const file = (project.title || "timeline").replace(/[^\w.\- ]/g, "_");
+  return { edl: built.edl, opts, file } as const;
+}
+
+app.get("/api/projects/:id/timeline.xml", async (c) => {
+  const x = await xmemlInputs(c);
+  if ("error" in x) return x.error;
+  return new Response(xmemlTimeline(x.edl, x.opts), {
+    headers: { "content-type": "application/xml; charset=utf-8", "content-disposition": `attachment; filename="${x.file}.xml"` },
+  });
+});
+
+/* Resolve leaves an XML's markers behind; this is the file it reads them from
+   (Timeline › Import › Timeline Markers from EDL). Same rate as the XML. */
+app.get("/api/projects/:id/markers.edl", async (c) => {
+  const x = await xmemlInputs(c);
+  if ("error" in x) return x.error;
+  return new Response(resolveMarkers(x.edl, x.opts), {
+    headers: { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="${x.file} markers.edl"` },
   });
 });
 
