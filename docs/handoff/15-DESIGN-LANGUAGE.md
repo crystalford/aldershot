@@ -6,7 +6,7 @@ The prototype's tightness comes from constraints applied without exception. Buil
 
 - Background `#101013`. Surfaces step up by one: card `#141418`, nested `#17171B` / `#1A1A1F`, control fill `#232329`, control hover `#2E2E36`, control active `#2A2A31`.
 - Ink is near-white `#ECECF1` at fixed opacities: 0.88 body · 0.72–0.8 secondary · 0.5–0.55 muted · 0.42–0.45 section labels and metadata · 0.35 hints.
-- **Gold `#D9B36A` means the system**: the wordmark bars, rule numbers, recommendations, flags, ghosts and missions, the claim card, the system's avatar. Nothing else is gold — not links (ink), not Undo (the user's action, ink), not category tags like ESSAY or A VIDEO (violet, the story accent), not pricing highlights or eyebrows (ink). Audited 15 Oct 2026 across Home and Landing; the Editor and Settings already held to it.
+- **Gold — see the 20 Nov amendment below for `design/next/`.** Gold `#D9B36A` means the system: the wordmark bars, rule numbers, recommendations, flags, ghosts and missions, the claim card, the system's avatar. Nothing else is gold — not links (ink), not Undo (the user's action, ink), not category tags like ESSAY or A VIDEO (violet, the story accent), not pricing highlights or eyebrows (ink). Audited 15 Oct 2026 across Home and Landing; the Editor and Settings already held to it.
 - **Green `#5EC98F` means kept / verified / on**; **red `#E06A6A` means cut / out / expiring**; teal `#5EB8C9` and violet `#B08CD4` identify sources, never states. No other colours.
 - No gradients, no drop shadows. Edges are `inset 0 0 0 1px rgba(255,255,255,0.06)`; emphasis is a 1.5–2px inset ring in the state colour.
 
@@ -67,3 +67,32 @@ Three bars that rotate blue → green → red → yellow, one step per visit and
 ```
 https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap
 ```
+
+## Amended 20 Nov 2026 — `design/next/` (doc 21)
+
+Three departures, each argued rather than assumed:
+
+- **Gold narrows to "yours to do".** In `design/next/` gold marks you: your
+  voice and takes, lines yours to record, ghosts and missions waiting on you,
+  the button that does them. The system's own marks — rule numbers,
+  recommendations, the claim card, Aldershot's messages — are ink. *Why:* the
+  owner found gold everywhere ("I saw too much of it"), and One Take's own
+  comment already said *gold is you, to camera*. When gold means the system,
+  everything is gold, because nearly everything on screen is the system. When
+  gold means you, it is the colour of the next thing to do, which is the one
+  thing a busy screen most needs to point at. The audit in the canvas took One
+  Take from 86 gold uses to 46.
+- **Teal is also Scout's looking state and "still needed".** That matches
+  Scout's own states (teal looking) and extends it to the slot he is looking
+  to fill. Teal and violet still identify sources in the One Take room.
+- **A third typeface, for the film only.** Instrument Serif sets the *film's*
+  words: on-screen type in the rough film, and voice-over lines in the
+  two-column script. It never appears in UI chrome. The two-font rule stands
+  for the interface.
+- **Quiet by default, one status per thing.** In the one room a section card
+  shows its title, three dots (said · shown · proven, green when done), one
+  word of status and its length — nothing else until it is opened. Block rows
+  carry no labels; the colour of the rule beside the sound says its mode.
+  *Why:* the owner's verdict on the first one-room draw was "quite cluttered",
+  and every badge removed was a fact also available one click down. Folding
+  detail until asked for is the working-memory argument in doc 21 Part three.

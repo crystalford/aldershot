@@ -955,16 +955,23 @@ const SIGNED_OFF = new Map([
       "subject — and it produced \"#so\".",
   ],
   [
-    "Save the cap",
-    "The control that raises the monthly spend cap. NEITHER PROTOTYPE HAS " +
-      "ONE: Aldershot Settings.dc.html draws the cap as a read-only meter " +
-      "reading \"Top-ups stop here until you raise it\" and offers no way to " +
-      "raise it. src/spend.ts stops every job at that number with a sentence " +
-      "that says \"until you raise it in Settings\", and `spend_cap_usd` was " +
-      "read by capFor and written by nothing in the whole of src/ — so the " +
-      "product told somebody to do a thing it could not do. New behaviour " +
-      "rather than a paraphrase, and the smallest thing that makes the " +
-      "existing refusal true.",
+    "Your monthly limit",
+    "The one money setting, from design/canvas/Settings.dc.html, which is " +
+      "the newest prototype and not yet in this check's haystack (doc 22). " +
+      "It replaced the Save-the-cap form: the canvas has one limit, for what " +
+      "is generated, and the cap over all running costs became the brake " +
+      "behind it, which follows it (src/spend.ts; the owner's choice, 22 Nov).",
+  ],
+  [
+    "One limit, everywhere. It covers what is generated for you, pictures and voices; reading footage and editing are never counted against it. Nothing generates past it until you raise it.",
+    "The canvas's sentence under the limit, made true of this code: it " +
+      "generates voices today and pictures later (doc 22, row 8), and it " +
+      "drops the canvas's \"the Studio stops recommending generated pictures " +
+      "as you get close\", which nothing here does yet.",
+  ],
+  [
+    "Nothing will be generated. Drawings, archives and your own footage only.",
+    "The canvas's line for a limit of nothing, word for word.",
   ],
   /*
    * THE RECEIPTS ADMIN PAGE, crawlable from 28 Oct 2026 and not before.
@@ -1523,6 +1530,24 @@ const SIGNED_OFF = new Map([
       "The entity rather than the character, because this check reads the " +
       "markup and does not decode one. Said here so the next person to " +
       "paste a signed-off string does not spend an evening on it.",
+  ],
+  [
+    "For Premiere &nearr;",
+    "The Final Cut XML export, beside the OTIO link. The canvas (design/canvas, " +
+      "doc 22 row 2) carries the same file as edit.xml in its package; this " +
+      "page has links rather than a package, so the link says who it is for: " +
+      "Premiere is the editor that can't open the .otio above it.",
+  ],
+  [
+    "Resolve&rsquo;s markers &nearr;",
+    "Resolve's marker file, beside the XML. Named for whose it is, because " +
+      "nobody else needs it: Resolve imports an XML's cuts and leaves its " +
+      "markers, and reads them from this file instead.",
+  ],
+  [
+    "The same cuts as Final Cut XML, which Premiere and Resolve both import, with a marker on every clip saying what is said in it, where it came from and what its timings are worth. Resolve leaves an XML&rsquo;s markers behind, so they come separately: Timeline, then Import, then Timeline Markers from EDL.",
+    "What the two links above give, and the one step Resolve needs that " +
+      "nobody would guess. The menu path is Resolve's own words.",
   ],
   [
     "The cue sheet &nearr;",

@@ -44,7 +44,21 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 ## Pictures
 
 25. **The picture answers "why am I seeing this".** Move → job → source order. *The stock gavel is an integrity problem.*
-26. **Own → documents → open world → generated; generated never photoreal, never over a claim or its proof.** *AI imagery lowers trust even when labelled.*
+26. **Own → documents → open world → generated; generated never photoreal, never the proof.** *AI imagery lowers trust even when labelled.*
+
+    **And over a claim, as a depiction a person chose** (21 Nov). The rule
+    said never over a claim. The owner, making an essay: "I should be able to
+    use generative to simulate something, or build a scene that depicts what
+    is being discussed." The harm the rule guards against is a picture passed
+    off as backing — the gavel problem — and a depiction labelled as one,
+    over a claim whose receipt is unchanged, is not that. So a generated
+    picture may sit over a line known to be a claim when a person put it
+    there, labelled "Depiction · made with AI" on screen and in the cue sheet.
+    Still refused: over evidence, photoreal, chosen by the product on its own
+    (the offer follows doc 08's order and holds on the speaker), and over a
+    line the classifier did not answer, because not knowing is treated as a
+    claim precisely so that it refuses. A film-wide Strict switch, back to
+    the old rule, arrives with the Rules lens (doc 22, row 9).
 27. **Graphics are code, never pixels; bars start at zero; the receipt shot is the house move.** *Pixel models can't draw a word; truncated axes mislead even when explained.*
 28. **Style belongs to the user.** Tokens per project; the constructivist look is a preset. *Aldershot is the mechanism, not the style.*
 
@@ -64,6 +78,14 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 37. **Same model, another pool, before another model.** *Same weights, no drift.*
 38. **Meter footage-hours and landed generated seconds at ~3× cost; a spend cap.** *Charge for what drives cost; absorb the failed attempts.*
 
+    **The cap became a limit and a brake** (22 Nov, the owner's choice). The
+    canvas has one money setting: a limit on what is generated, $50, that
+    reading footage and editing never touch. The code had a cap over every
+    job's running cost, $400. Both are kept and only the limit is a setting:
+    it gates generation at what the person is charged (3× running cost, this
+    decision), and the brake over all work rises with it, so the one control
+    answers both refusals.
+
     **And show what is being absorbed** (31 Oct). "Absorb the failed attempts"
     makes every failure the business's, which is right — and for as long as
     nothing counted them, the figure this decision commits to paying was
@@ -75,6 +97,17 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
     The rollup groups by outcome now and the panel carries one line: what the
     month spent and got nothing for. Not deducted from the total, because the
     total is what the bill will say.
+    **Generated video, priced from the model** (21 Nov). The meter said $1 a
+    second standard and $3.50 premium, set before any model was chosen. The
+    research pass found Veo 3.1 Fast at 12¢ a second and Veo 3.1 at 40¢, each
+    making clips of about 8 seconds, so $1 was eight times the cost of the
+    fast tier while the 3× this decision commits to was the intent. The meter
+    now follows the model: about 3× its list price per tier (36¢ and $1.20),
+    a still at 12¢, and a long shot priced by the seconds actually generated
+    — one clip that holds, a clip every 8 seconds, or a still that moves. The
+    3× stays, because drafts stay free and three tries per landed clip is
+    exactly what it pays for. The canvas briefly showed 1.5×; at 1.5× a
+    person who drafts twice before keeping costs more than they pay.
 39. **BYOK covers direction and reading; never falls back to our bill without opt-in.** *Blame attribution is a copy rule.*
 40. **Models are rented parts.** Contracts, an eval router, content-addressed invalidation. *Price per capability falls ~50× a year.*
 

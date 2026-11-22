@@ -28,6 +28,13 @@ const STATEMENTS: string[] = [
       * nobody.
       */
      spend_cap_usd REAL,
+     /*
+      * The person's monthly limit for what is generated for them, in
+      * dollars of what they are charged. NULL is "never set", read as
+      * DEFAULT_LIMIT_USD. The one money setting in Settings (doc 22, row 4);
+      * spend_cap_usd above is no longer read by anything and stays as history.
+      */
+     gen_limit_usd REAL,
      is_owner INTEGER NOT NULL DEFAULT 0,
      created_at INTEGER NOT NULL
    )`,
@@ -1125,6 +1132,14 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /* Word timings for the take, same shape as a segment's: seconds, because
      that is what every other stored word list in this product uses. */
   { table: "beats", column: "take_words", ddl: "ALTER TABLE beats ADD COLUMN take_words TEXT" },
+  /*
+   * A GENERATED PICTURE A PERSON PUT OVER A CLAIM, as a depiction (decision
+   * 26). Stored at the insert because that is the only moment anything knows
+   * which line the beat was placed against — the move is classified there
+   * and nowhere downstream — and the label it decides is the one thing that
+   * must not be left off. 1, or null.
+   */
+  { table: "beats", column: "over_claim", ddl: "ALTER TABLE beats ADD COLUMN over_claim INTEGER" },
 
   { table: "sources", column: "timing_source", ddl: "ALTER TABLE sources ADD COLUMN timing_source TEXT" },
   /* When it ran. Null while it has never been tried; a source whose
@@ -1365,6 +1380,7 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; ddl: string }> = [
   /* The spend cap. See the v2_users table above; here as well because there
      is no migration runner and every existing account already has a row. */
   { table: "v2_users", column: "spend_cap_usd", ddl: "ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL" },
+  { table: "v2_users", column: "gen_limit_usd", ddl: "ALTER TABLE v2_users ADD COLUMN gen_limit_usd REAL" },
   /*
    * WHEN THE LAST BILLING EVENT WE ACTED ON WAS MADE.
    *

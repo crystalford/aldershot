@@ -56,7 +56,7 @@ import { importFromBucket, listConnections, saveConnection, usableConnection } f
 import { ROLES, draftPlan, findForBeats, needAdvice, type Role } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { addBeat, createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
-import { setCap, underCap } from "./spend.ts";
+import { setLimit, underLimit } from "./spend.ts";
 import { renderBeforePost } from "./ui/pages/beforepost.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
@@ -126,6 +126,7 @@ import { candidatesFor } from "./beat-find.ts";
 import { draftAngles, parseAngles, priceAngles } from "./angles.ts";
 import { priceRevision, proposeRevision } from "./revise.ts";
 import { otioJson } from "./otio.ts";
+import { asRate, resolveMarkers, xmemlTimeline } from "./xmeml.ts";
 import { renderPlan } from "./ui/pages/plan.ts";
 import { renderEval, type EvalData } from "./ui/pages/eval.ts";
 import { LEGACY_LABELLER, isVerdict, labellerName, setProgress, type Verdict } from "./eval-set.ts";
@@ -4175,6 +4176,60 @@ app.get("/api/projects/:id/timeline.otio", async (c) => {
 });
 
 /**
+ * THE SAME CUT FOR PREMIERE AND RESOLVE, AS FINAL CUT 7 XML — doc 22, row 2.
+ *
+ * Beside the .otio, not instead of it: Premiere's OTIO import is a beta that
+ * has to be switched on, and XML is the format both editors import as they
+ * come. Built from the same `edlForProject` as the render and the .otio, with
+ * the same filenames, for the same reasons. What it adds is a marker on every
+ * clip, carrying what the .otio keeps in metadata an editor never shows —
+ * plus, for a picture that isn't the person's own, the cue sheet's label and
+ * how it was made.
+ *
+ * ?fps= picks the timeline's rate (24, 25 or 30; anything else is 25). See
+ * src/xmeml.ts for why the rate is a choice here and a fact nowhere.
+ */
+async function xmemlInputs(c: Ctx) {
+  await ensureV2Schema(c.env.DB);
+  const user = await requireUser(c);
+  const project = await getProject(c.env.DB, c.req.param("id") ?? "", user.id);
+  if (!project) return { error: c.json({ error: "not found" }, 404) } as const;
+  const built = await edlForProject(c.env, project, user.id);
+  if (!built || !built.edl.cuts.length) return { error: c.json({ error: "there is nothing in this cut to export yet" }, 422) } as const;
+  const sources = await listSources(c.env.DB, user.id, "newest");
+  const media = new Map(
+    sources.map((s) => [s.r2_key, { name: s.filename || `${s.title}.mp4`, durationMs: s.duration_s ? s.duration_s * 1000 : null }]),
+  );
+  const timing = await timingForProject(c.env, project.id);
+  /* The cue sheet's word on each picture that isn't the person's own, keyed
+     the way an EDL cut names a beat. */
+  const notes = new Map(
+    (await cueSheetFor(c.env.DB, project.id)).map((e) => [`b:${e.beatId}`, [`${e.how}`, `Label on screen: ${e.label}.`]]),
+  );
+  const opts = { name: project.title, media, timing: timing.source, fps: asRate(c.req.query("fps")), notes };
+  const file = (project.title || "timeline").replace(/[^\w.\- ]/g, "_");
+  return { edl: built.edl, opts, file } as const;
+}
+
+app.get("/api/projects/:id/timeline.xml", async (c) => {
+  const x = await xmemlInputs(c);
+  if ("error" in x) return x.error;
+  return new Response(xmemlTimeline(x.edl, x.opts), {
+    headers: { "content-type": "application/xml; charset=utf-8", "content-disposition": `attachment; filename="${x.file}.xml"` },
+  });
+});
+
+/* Resolve leaves an XML's markers behind; this is the file it reads them from
+   (Timeline › Import › Timeline Markers from EDL). Same rate as the XML. */
+app.get("/api/projects/:id/markers.edl", async (c) => {
+  const x = await xmemlInputs(c);
+  if ("error" in x) return x.error;
+  return new Response(resolveMarkers(x.edl, x.opts), {
+    headers: { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="${x.file} markers.edl"` },
+  });
+});
+
+/**
  * THE CUE SHEET, which ships with the file.
  *
  * Doc 09 lists it among the export formats beside the subtitle file and the
@@ -4718,7 +4773,9 @@ app.post("/api/projects/:id/beats", async (c) => {
   /*
    * INVARIANT 8, AT THE ONE PLACE IT CAN BITE TODAY.
    *
-   * "Generated is never photoreal and never over a claim or its proof."
+   * "Generated is never photoreal and never the proof; over a claim only
+   * as a depiction a person chose, labelled so." This route is where a
+   * person chooses, so it is the one place a depiction can be granted.
    * `generated` and `stock` are two of the five kinds this route accepts,
    * so this is where a picture that is not the user's own footage actually
    * enters a cut — and the line it lands against decides whether it may.
@@ -4735,6 +4792,7 @@ app.post("/api/projects/:id/beats", async (c) => {
    * never a generated card over somebody's proof. That is the direction
    * the invariant demands.
    */
+  let overClaim = false;
   if (kind === "generated" || kind === "stock") {
     const source: PictureSource = kind === "generated" ? "generated" : "world";
     const lines = (await blocksForProject(c.env.DB, project, user.id)).blocks
@@ -4745,13 +4803,20 @@ app.post("/api/projects/:id/beats", async (c) => {
     const against = lines[Math.min(at, lines.length - 1)];
     if (against) {
       let move: Move = UNSURE;
+      /* Whether the move is an answer or the default. Only an answer can
+         grant a depiction; see AllowOpts in src/pictures.ts. */
+      let known = false;
       try {
-        move = (await classify(c.env, lines)).lines.find((x) => x.id === against.id)?.move ?? UNSURE;
+        const found = (await classify(c.env, lines)).lines.find((x) => x.id === against.id);
+        if (found) { move = found.move; known = found.answered; }
       } catch {
         /* Unknown, which is `claim`, which refuses. */
       }
-      const no = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" });
-      if (no.reason) return c.json({ error: no.reason }, 422);
+      /* A person asked for this picture on this line, which is what a
+         depiction needs besides a line known to be a claim. */
+      const r = allowed(move, { id: "new", source, kind: source === "generated" ? "synthetic" : "illustration" }, { depict: known });
+      if (r.reason) return c.json({ error: r.reason }, 422);
+      overClaim = !!r.depicts;
     }
   }
 
@@ -4760,6 +4825,7 @@ app.post("/api/projects/:id/beats", async (c) => {
     act: b.act ?? null,
     text: b.text ?? null,
     clip_id: b.clipId ?? null,
+    over_claim: overClaim,
   });
   return c.json({ beats });
 });
@@ -5222,6 +5288,15 @@ app.post("/api/beats/:id/tts", async (c) => {
 
   const text = (beat.text ?? "").trim();
   if (!text) return c.json({ error: "there's nothing written on this beat yet" }, 400);
+
+  /*
+   * THE LIMIT, in front of the one thing this product generates today. This
+   * route runs the model in the request and never reaches the dispatcher,
+   * so the brake in queue.ts has never seen it: a generated voice was the
+   * one cost nothing checked. Doc 22, row 4.
+   */
+  const limit = await underLimit(c.env.DB, user.id);
+  if (!limit.allowed) return c.json({ error: limit.says }, 402);
 
   try {
     /*
@@ -6152,14 +6227,6 @@ app.get("/landing", async (c) => {
 });
 
 /**
- * SET THE SPEND CAP, because the refusal tells people to.
- *
- * src/spend.ts stops work at the cap and its sentence says "until you raise
- * it in Settings". Nothing could: `spend_cap_usd` was read and never written,
- * so there was no way to raise it from anywhere in the product. This is the
- * missing half of a control that was already enforcing.
- */
-/**
  * CONNECT A BUCKET YOU OWN.
  *
  * "Point sources at a bucket you own" has been on the landing page and in
@@ -6236,14 +6303,21 @@ app.get("/api/connections", async (c) => {
   return c.json({ connections: await listConnections(c.env.DB, user.id) });
 });
 
-app.post("/api/spend-cap", async (c) => {
+/**
+ * SET THE MONTHLY LIMIT, because both refusals tell people to.
+ *
+ * It replaced /api/spend-cap (doc 22, row 4). That route existed because the
+ * cap's sentence said "until you raise it in Settings" and nothing could; the
+ * cap now follows the limit, so this one control lifts both.
+ */
+app.post("/api/spend-limit", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const b = await body<{ usd?: number }>(c);
   const usd = Number(b.usd);
   if (!Number.isFinite(usd)) return c.json({ error: "that isn't a number" }, 422);
-  const cap = await setCap(c.env.DB, user.id, usd);
-  return c.json({ ok: true, cap });
+  const limit = await setLimit(c.env.DB, user.id, usd);
+  return c.json({ ok: true, limit });
 });
 
 app.get("/settings", async (c) => {
@@ -6273,7 +6347,9 @@ app.get("/settings", async (c) => {
   const limits = PLANS[user.plan] ?? PLANS.free;
   /* The same verdict the dispatcher refuses on, so the figure a person reads
      and the figure enforced against them are one figure. */
-  const spend = await underCap(c.env.DB, user.id);
+  /* The limit, as generation reads it (src/spend.ts). The brake behind it is
+     not shown: it is not a setting, it follows this one. */
+  const limit = await underLimit(c.env.DB, user.id);
   /* The owner is metered and never blocked — checkCap and checkStorage both
      pass them — so a ceiling here would be a number nothing enforces. What
      they have used is the point, and it stays. */
@@ -6309,30 +6385,6 @@ app.get("/settings", async (c) => {
       unit: "GB",
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
-    },
-    /*
-     * THE SPEND CAP, which has been stopping work without ever appearing.
-     *
-     * src/spend.ts checks it on every dispatch and fails the job when it is
-     * reached, with a sentence that reads "Nothing else will run until you
-     * raise it in Settings". Settings had no such row and no such control, and
-     * `spend_cap_usd` was read by capFor and written by nothing at all — so
-     * the cap could not be raised from anywhere, and the only warning
-     * (`nearingCap`) went to a server log.
-     *
-     * The one meter here denominated in money rather than work, which is why
-     * it is last: the two above are what you have used, this is what it cost.
-     */
-    {
-      label: "Monthly spend cap",
-      used: Math.round(spend.spentUsd * 100) / 100,
-      cap: Math.round(spend.capUsd),
-      /* Enforced on EVERY account, the owner's included — unlike the two
-         above, which the owner is exempt from. So it is never `uncapped`. */
-      unit: "USD",
-      color: ACCENT_GOLD,
-      editable: true,
-      note: "What running your jobs has actually cost this month. Work stops here until you raise it.",
     },
   ];
 
@@ -6402,6 +6454,7 @@ app.get("/settings", async (c) => {
           last_import_at: x.last_import_at,
         })),
         meters,
+        limit: { usd: limit.capUsd, chargedUsd: limit.spentUsd },
         cost,
         /*
          * Owner-only: whether this product is working is a fact about our

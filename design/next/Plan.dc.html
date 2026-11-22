@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; background:#101013; }
+  * { box-sizing:border-box; }
+  a { color:rgba(236,236,241,0.85); text-decoration:none; } a:hover { color:#FFFFFF; }
+  a:focus-visible, [role=button]:focus-visible { outline:2px solid #ECECF1; outline-offset:2px; }
+  @keyframes spIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  @keyframes spGrain { 0% { background-position:0 0; } 25% { background-position:-7px 3px; } 50% { background-position:4px -6px; } 75% { background-position:-3px -2px; } 100% { background-position:0 0; } }
+  input::placeholder { color:rgba(236,236,241,0.35); }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <!-- header row 1 -->
+  <div style="display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="Studio.dc.html" title="The Studio" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="flex:1;display:flex;justify-content:flex-end;align-items:center">
+      <a href="../one-take/Aldershot Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#ECECF1" style-hover="background:#2E2E36">C</a>
+    </div>
+  </div>
+
+  <!-- header row 2 -->
+  <div style="display:flex;align-items:center;gap:14px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:10px;overflow:hidden;white-space:nowrap">
+      <span style="font-size:13.5px;font-weight:600">NASA as a medium</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">video essay · 20 min target</span>
+    </div>
+<div style="flex:none;display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);overflow-x:auto;max-width:100%">
+      <a href="Studio.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Studio</a>
+      <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:#2E2E36;color:#ECECF1;white-space:nowrap">Plan</span>
+      <a href="Footage.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Footage</a>
+      <a href="Trailer.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Trailer</a>
+      <a href="../one-take/Aldershot One Take.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Editor</a>
+    </div>
+  </div>
+
+  <div style="max-width:1000px;margin:0 auto;padding:32px 20px 120px">
+
+    <!-- the film in one line -->
+    <div style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">THE ARGUMENT</div>
+    <div style="margin-top:8px;font-family:'Instrument Serif',serif;font-size:clamp(26px,4vw,36px);line-height:1.15;letter-spacing:-0.01em;text-wrap:balance">NASA didn’t borrow science fiction’s look. <i>It paid for it.</i></div>
+    <div style="margin-top:12px;display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.55)">
+      <span style="color:{{ lenColor }}">{{ lenText }}</span><span>{{ shapeText }}</span><span>{{ voText }}</span>
+    </div>
+
+    <!-- the whole film as one bar: sequences over the sound weave -->
+    <div style="margin-top:24px">
+      <div style="display:flex;gap:2px">
+        <sc-for list="{{ actBar }}" as="ab" hint-placeholder-count="3">
+          <div style="flex:{{ ab.flex }} 1 0;min-width:0;font-size:10px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.42);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px 5px">{{ ab.name }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:2px">
+        <sc-for list="{{ seqBar }}" as="sb" hint-placeholder-count="11">
+          <div tabindex="0" role="button" onclick="{{ sb.onGo }}" title="{{ sb.title }}" style="flex:{{ sb.flex }} 1 0;min-width:0;height:30px;border-radius:5px;background:{{ sb.bg }};box-shadow:{{ sb.ring }};cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.6);animation:{{ sb.anim }}" style-hover="background:#24242B">{{ sb.n }}</div>
+        </sc-for>
+      </div>
+      <div style="margin-top:3px;display:flex;gap:2px;height:10px">
+        <sc-for list="{{ weaveBar }}" as="wb" hint-placeholder-count="11">
+          <div style="flex:{{ wb.flex }} 1 0;min-width:0;display:flex;gap:1px">
+            <sc-for list="{{ wb.parts }}" as="wp" hint-placeholder-count="4"><span title="{{ wp.title }}" style="flex:{{ wp.flex }} 1 0;min-width:0;border-radius:2px;background:{{ wp.bg }};box-shadow:{{ wp.ring }}"></span></sc-for>
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.42)">
+        <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:#D9B36A;margin-right:5px"></span>your voice</span>
+        <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;box-shadow:inset 0 0 0 1px #D9B36A;margin-right:5px"></span>not recorded</span>
+        <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:#5EB8C9;margin-right:5px"></span>in their words</span>
+        <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;background:rgba(236,236,241,0.28);margin-right:5px"></span>breathe</span>
+        <span><span style="display:inline-block;width:10px;height:6px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.25);margin-right:5px"></span>silence</span>
+        <span style="margin-left:auto">{{ rulerText }}</span>
+      </div>
+      <sc-if value="{{ isFilm }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-top:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <div tabindex="0" role="button" onclick="{{ onPlayAll }}" style="font-size:14px;font-weight:600;padding:10px 18px;border-radius:10px;background:#ECECF1;color:#101013;cursor:pointer">▶ Play the whole film</div>
+          <span style="font-size:12.5px;color:rgba(236,236,241,0.5)">A rough cut, straight from the script. Talk over it to leave notes.</span>
+        </div>
+      </sc-if>
+    </div>
+
+    <!-- ═════════════ FILM LEVEL ═════════════ -->
+    <sc-if value="{{ isFilm }}" hint-placeholder-val="{{ true }}">
+
+      <!-- Aldershot's notes: one at a time -->
+      <sc-if value="{{ hasNote }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-top:32px;padding:20px 22px;border-radius:14px;background:#16161B;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.14);animation:spIn .35s ease both">
+          <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#ECECF1">ALDERSHOT</span>
+            <span style="font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.42)">{{ note.tag }}</span>
+          </div>
+          <div style="margin-top:10px;font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-0.01em">{{ note.title }}</div>
+          <div style="margin-top:8px;font-size:14px;line-height:1.6;color:rgba(236,236,241,0.68)">{{ note.body }}</div>
+          <div style="margin-top:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+            <div tabindex="0" role="button" onclick="{{ note.onYes }}" style="font-size:14px;font-weight:600;padding:9px 16px;border-radius:9px;background:#ECECF1;color:#101013;cursor:pointer">{{ note.yes }}</div>
+            <span tabindex="0" role="button" onclick="{{ note.onNo }}" style="font-size:13px;color:rgba(236,236,241,0.5);cursor:pointer" style-hover="color:#ECECF1">{{ note.no }}</span>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- acts → sequences -->
+      <sc-for list="{{ acts }}" as="act" hint-placeholder-count="3">
+        <div style="margin-top:36px">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.5)">{{ act.label }}</span>
+            <span style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.38)">{{ act.span }}</span>
+          </div>
+          <div style="margin-top:4px;font-size:14px;color:rgba(236,236,241,0.6)">{{ act.job }}</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ act.seqs }}" as="sq" hint-placeholder-count="4">
+              <div tabindex="0" role="button" onclick="{{ sq.onGo }}" style="display:flex;gap:16px;align-items:center;padding:13px 16px;border-radius:11px;background:#141418;box-shadow:inset 0 0 0 1px {{ sq.ring }};cursor:pointer;flex-wrap:wrap;animation:{{ sq.anim }}" style-hover="background:#19191E">
+                <span style="flex:none;width:22px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.4)">{{ sq.n }}</span>
+                <div style="flex:1 1 260px;min-width:0">
+                  <div style="font-size:15px;font-weight:600">{{ sq.title }}</div>
+                  <div style="margin-top:3px;font-size:13px;line-height:1.45;color:rgba(236,236,241,0.55)"><span style="font-size:10px;font-weight:600;letter-spacing:.09em;color:{{ sq.qColor }};margin-right:6px">{{ sq.qKind }}</span>{{ sq.q }}</div>
+                </div>
+                <div style="flex:0 0 150px;display:flex;gap:1px;height:8px">
+                  <sc-for list="{{ sq.weave }}" as="wp" hint-placeholder-count="4"><span style="flex:{{ wp.flex }} 1 0;min-width:0;border-radius:2px;background:{{ wp.bg }};box-shadow:{{ wp.ring }}"></span></sc-for>
+                </div>
+                <span style="flex:0 0 92px;font-size:11.5px;color:{{ sq.stColor }};text-align:right">{{ sq.st }}</span>
+                <span style="flex:0 0 40px;font-size:12px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.55);text-align:right">{{ sq.len }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="margin-top:28px;font-size:12.5px;line-height:1.6;color:rgba(236,236,241,0.45)">Every section either raises a question or answers one — that’s what pulls someone through twenty minutes. Open one to see its two-column script: picture on the left, sound on the right.</div>
+    </sc-if>
+
+    <!-- ═════════════ SEQUENCE LEVEL ═════════════ -->
+    <sc-if value="{{ isSeq }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:30px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px">
+        <span tabindex="0" role="button" onclick="{{ onFilm }}" style="color:rgba(236,236,241,0.6);cursor:pointer" style-hover="color:#ECECF1">The whole film</span>
+        <span style="color:rgba(236,236,241,0.3)">›</span>
+        <span style="color:rgba(236,236,241,0.6)">{{ seq.actName }}</span>
+        <span style="color:rgba(236,236,241,0.3)">›</span>
+        <span style="color:#ECECF1">{{ seq.n }} · {{ seq.title }}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <span tabindex="0" role="button" onclick="{{ onPrev }}" title="Previous section" style="padding:5px 10px;border-radius:6px;background:#17171B;color:{{ prevColor }};cursor:pointer">←</span>
+          <span tabindex="0" role="button" onclick="{{ onNext }}" title="Next section" style="padding:5px 10px;border-radius:6px;background:#17171B;color:{{ nextColor }};cursor:pointer">→</span>
+        </span>
+      </div>
+
+      <div style="margin-top:18px;display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap;animation:spIn .3s ease both">
+        <div style="flex:1 1 420px;min-width:0">
+          <div style="font-size:clamp(24px,3.4vw,30px);font-weight:600;letter-spacing:-0.02em;line-height:1.15">{{ seq.title }}</div>
+          <div style="margin-top:8px;font-size:15px;line-height:1.55;color:rgba(236,236,241,0.7)"><span style="font-size:10.5px;font-weight:600;letter-spacing:.09em;color:{{ seq.qColor }};margin-right:8px">{{ seq.qKind }}</span>{{ seq.q }}</div>
+        </div>
+        <div style="flex:none;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.7;color:rgba(236,236,241,0.55)">
+          <div style="font-size:20px;color:#ECECF1">{{ seq.len }}</div>
+          <div>{{ seq.span }}</div>
+        </div>
+      </div>
+
+      <!-- ── the player: this sequence, played straight from its script ── -->
+      <div style="margin-top:20px;position:relative;aspect-ratio:16/9;container-type:inline-size;overflow:hidden;border-radius:14px;background:#0B0B0E;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+        <div style="position:absolute;inset:0;opacity:{{ pl.op }}">
+          <sc-if value="{{ pl.isYou }}" hint-placeholder-val="{{ true }}">
+            <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+              <circle cx="480" cy="170" r="54" fill="none" stroke="rgba(217,179,106,0.75)" stroke-width="1.6" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ pl.draw }}"></circle>
+              <path d="M 340 390 C 352 290 410 248 480 246 C 550 248 608 290 620 390" fill="none" stroke="rgba(217,179,106,0.75)" stroke-width="1.6" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ pl.draw }}"></path>
+            </svg>
+          </sc-if>
+          <sc-if value="{{ pl.isFramed }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:20%;top:11%;width:60%;aspect-ratio:16/9;border-radius:0.6cqw;background:{{ pl.frameBg }};border:1.5px {{ pl.frameStyle }} {{ pl.frameColor }};overflow:hidden">
+              <sc-if value="{{ pl.grain }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;inset:0;opacity:.9;background-image:radial-gradient(rgba(255,255,255,0.09) 0.6px, transparent 0.8px),radial-gradient(rgba(0,0,0,0.25) 0.6px, transparent 0.8px);background-size:3px 3px,5px 5px;animation:spGrain .32s steps(4) infinite;mix-blend-mode:overlay"></div></sc-if>
+              <div style="position:absolute;left:5%;right:5%;top:50%;transform:translateY(-50%);text-align:center;font-size:1.8cqw;line-height:1.45;color:rgba(236,236,241,0.6)">{{ pl.pic }}</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ pl.isSketch }}" hint-placeholder-val="{{ false }}">
+            <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+              <path d="M 200 380 L 760 380 M 200 380 L 200 60" stroke="rgba(236,236,241,0.22)" stroke-width="1" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ pl.draw }}"></path>
+              <circle cx="480" cy="220" r="120" fill="none" stroke="rgba(236,236,241,0.35)" stroke-width="1.2" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ pl.draw2 }}"></circle>
+              <path d="M 240 340 C 360 120 600 120 720 300" fill="none" stroke="#ECECF1" stroke-width="2" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="{{ pl.draw3 }}"></path>
+            </svg>
+            <div style="position:absolute;left:20%;right:20%;top:69%;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.04em;line-height:1.5;color:rgba(236,236,241,0.55)">SKETCH WILL DRAW · {{ pl.pic }}</div>
+          </sc-if>
+          <sc-if value="{{ pl.isCard }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 10%;text-align:center;font-family:'Instrument Serif',serif;font-size:6cqw;line-height:1.1;color:#ECECF1">{{ pl.cardText }}</div>
+          </sc-if>
+        </div>
+        <!-- sound, as it would be heard -->
+        <sc-if value="{{ pl.isVo }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:8%;right:8%;bottom:6%;font-family:'Instrument Serif',serif;font-size:3.3cqw;line-height:1.18;text-shadow:0 0 2cqw rgba(11,11,14,0.95)"><span style="color:{{ pl.voColor }}">{{ pl.voShown }}</span><span style="color:transparent;text-shadow:none">{{ pl.voRest }}</span></div>
+        </sc-if>
+        <sc-if value="{{ pl.isSync }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:8%;right:8%;bottom:7%;font-size:1.9cqw;line-height:1.4;color:rgba(236,236,241,0.75)"><span style="font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.08em;color:#5EB8C9;margin-right:1cqw">IN THEIR WORDS</span>{{ pl.sound }}</div>
+        </sc-if>
+        <sc-if value="{{ pl.isQuiet }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:8%;bottom:7%;font-family:'IBM Plex Mono',monospace;font-size:1.2cqw;letter-spacing:.08em;color:rgba(236,236,241,0.4)">{{ pl.quiet }}</div>
+        </sc-if>
+        <div style="position:absolute;left:3%;top:4.5%;display:flex;gap:0.8cqw;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;letter-spacing:.08em;color:{{ pl.labelColor }}"><span style="width:0.7cqw;height:0.7cqw;border-radius:50%;background:{{ pl.labelColor }}"></span>{{ pl.label }}</div>
+        <div style="position:absolute;right:3%;top:4.5%;font-family:'IBM Plex Mono',monospace;font-size:1.1cqw;color:rgba(236,236,241,0.4)">{{ pl.clock }}</div>
+      </div>
+
+      <!-- controls + this sequence's strip, with your notes pinned on it -->
+      <div style="margin-top:12px;display:flex;align-items:center;gap:14px">
+        <div tabindex="0" role="button" onclick="{{ onPlay }}" title="{{ playTitle }}" style="flex:none;width:40px;height:40px;border-radius:50%;background:#ECECF1;color:#101013;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px">{{ playIcon }}</div>
+        <div style="flex:1;min-width:0;position:relative">
+          <div style="display:flex;gap:2px;height:16px">
+            <sc-for list="{{ strip }}" as="sr" hint-placeholder-count="5"><span tabindex="0" role="button" onclick="{{ sr.onGo }}" title="{{ sr.title }}" style="flex:{{ sr.flex }} 1 0;min-width:0;border-radius:3px;background:{{ sr.pBg }};box-shadow:{{ sr.pRing }};cursor:pointer"></span></sc-for>
+          </div>
+          <div style="margin-top:2px;display:flex;gap:2px;height:8px">
+            <sc-for list="{{ strip }}" as="sr" hint-placeholder-count="5"><span style="flex:{{ sr.flex }} 1 0;min-width:0;border-radius:2px;background:{{ sr.sBg }};box-shadow:{{ sr.sRing }}"></span></sc-for>
+          </div>
+          <sc-for list="{{ pins }}" as="pn" hint-placeholder-count="2"><span title="{{ pn.text }}" style="position:absolute;top:-9px;left:{{ pn.left }};width:9px;height:9px;margin-left:-4.5px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#D9B36A"></span></sc-for>
+          <div style="position:absolute;top:-4px;bottom:-4px;left:{{ plHead }};width:2px;margin-left:-1px;border-radius:2px;background:#ECECF1;pointer-events:none"></div>
+        </div>
+        <span style="flex:none;font-size:11.5px;color:rgba(236,236,241,0.45);white-space:nowrap">{{ autoText }}</span>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div tabindex="0" role="button" onclick="{{ onMic }}" title="Talk — your note pins at the playhead" style="flex:none;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;background:{{ micBg }};color:{{ micColor }};box-shadow:inset 0 0 0 1px rgba(217,179,106,0.5);cursor:pointer;white-space:nowrap">{{ micLabel }}</div>
+        <input value="{{ draft }}" oninput="{{ onDraft }}" onkeydown="{{ onKey }}" placeholder="{{ placeholder }}" style="flex:1 1 260px;min-width:0;padding:10px 12px;border-radius:9px;border:none;outline:none;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);color:#ECECF1;font:inherit;font-size:14px"/>
+        <div tabindex="0" role="button" onclick="{{ onPin }}" style="flex:none;font-size:13px;font-weight:600;padding:9px 14px;border-radius:9px;background:#232329;color:#ECECF1;cursor:pointer">Pin at {{ pinAt }}</div>
+      </div>
+      <sc-if value="{{ hasMicMsg }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;font-size:12px;color:rgba(236,236,241,0.5)">{{ micMsg }}</div></sc-if>
+      <sc-if value="{{ hasNotes }}" hint-placeholder-val="{{ true }}">
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ seqNotes }}" as="nt" hint-placeholder-count="2">
+            <div style="display:flex;gap:12px;align-items:baseline;padding:10px 14px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(217,179,106,0.18);flex-wrap:wrap;animation:{{ nt.anim }}">
+              <span tabindex="0" role="button" onclick="{{ nt.onGo }}" title="Jump here" style="flex:none;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#D9B36A;cursor:pointer">{{ nt.at }}</span>
+              <span style="flex:1 1 240px;min-width:0;font-size:14px;line-height:1.45">“{{ nt.text }}”</span>
+              <span style="flex:none;font-size:10px;font-weight:600;letter-spacing:.09em;padding:3px 7px;border-radius:4px;color:{{ nt.kColor }};box-shadow:inset 0 0 0 1px {{ nt.kColor }}">{{ nt.kind }}</span>
+              <span style="flex:none;font-size:12px;color:rgba(236,236,241,0.5)">{{ nt.then }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- the two-column script -->
+      <div style="margin-top:28px;display:flex;gap:16px;padding:0 0 8px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:10.5px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.42)">
+        <span style="flex:0 0 52px">TIME</span><span style="flex:1 1 0">PICTURE</span><span style="flex:1.25 1 0">SOUND</span>
+      </div>
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+        <div onclick="{{ r.onGo }}" style="display:flex;gap:16px;padding:14px 10px;margin:0 -10px;border-radius:8px;background:{{ r.bg }};border-bottom:1px solid rgba(255,255,255,0.06);flex-wrap:wrap;align-items:flex-start;cursor:pointer;transition:background .25s">
+          <div style="flex:0 0 52px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.5;color:rgba(236,236,241,0.5)">{{ r.at }}<span style="display:block;color:rgba(236,236,241,0.32)">{{ r.dur }}</span></div>
+          <div style="flex:1 1 220px;min-width:0">
+            <span style="display:inline-block;font-size:10px;font-weight:600;letter-spacing:.09em;padding:3px 7px;border-radius:4px;color:{{ r.pColor }};box-shadow:inset 0 0 0 1px {{ r.pRing }}">{{ r.pKind }}</span>
+            <div style="margin-top:7px;font-size:13.5px;line-height:1.5;color:rgba(236,236,241,0.78)">{{ r.pic }}</div>
+            <div style="margin-top:4px;font-size:11.5px;color:{{ r.pStColor }}">{{ r.pSt }}</div>
+          </div>
+          <div style="flex:1.25 1 280px;min-width:0;padding-left:14px;border-left:2px solid {{ r.sRule }}">
+            <span style="font-size:10px;font-weight:600;letter-spacing:.09em;color:{{ r.sColor }}">{{ r.sKind }}</span>
+            <div style="margin-top:5px;font-family:{{ r.sFont }};font-size:{{ r.sSize }};line-height:1.45;color:{{ r.sTextColor }}">{{ r.sound }}</div>
+            <sc-if value="{{ r.canRecord }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <div tabindex="0" role="button" onclick="{{ r.onRecord }}" style="font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:7px;background:#D9B36A;color:#101013;cursor:pointer">Record · {{ r.dur }}</div>
+                <span style="font-size:11.5px;color:rgba(236,236,241,0.42)">{{ r.words }}</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ r.hasSt }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;font-size:11.5px;color:{{ r.sStColor }}">{{ r.sSt }}</div></sc-if>
+          </div>
+        </div>
+      </sc-for>
+      <div style="margin-top:18px;font-size:12.5px;line-height:1.6;color:rgba(236,236,241,0.45)">Voiceover lines are drafts in your voice, at about 150 words a minute. Say them your way — the script follows what you actually said, not the other way round.</div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1500}}'>
+// The Spine: the whole film as one structure you can zoom through.
+// Film → acts → sequences → the two-column script (picture | sound). The sound column is the spine:
+// your voiceover, the clip speaking for itself, breathing room, silence — the weave that makes it a film.
+// The outline is a hypothesis; the material argues back. The Story editor proposes changes one at a time.
+const GOLD = "#D9B36A", CYAN = "#5EB8C9", GREEN = "#5EC98F", RED = "#E06A6A";
+const TARGET = 1200;
+const WPS = 2.5; // ~150 words a minute
+const fmt = s => Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0");
+
+// picture kinds
+const PK = {
+  you:     { name: "YOU", color: GOLD, ring: "rgba(217,179,106,0.4)" },
+  archive: { name: "ARCHIVE", color: "rgba(236,236,241,0.7)", ring: "rgba(236,236,241,0.22)" },
+  sketch:  { name: "DRAWN · SKETCH", color: "#ECECF1", ring: "rgba(236,236,241,0.35)" },
+  found:   { name: "SCOUT FOUND", color: CYAN, ring: "rgba(94,184,201,0.45)" },
+  wanted:  { name: "WANTED", color: CYAN, ring: "rgba(94,184,201,0.45)" },
+  card:    { name: "TEXT CARD", color: "rgba(236,236,241,0.7)", ring: "rgba(236,236,241,0.22)" },
+  hold:    { name: "HOLD", color: "rgba(236,236,241,0.5)", ring: "rgba(236,236,241,0.15)" },
+};
+// sound modes
+const SM = {
+  vo:      { name: "YOUR VOICE", color: GOLD },
+  sync:    { name: "IN THEIR WORDS", color: CYAN },
+  breathe: { name: "BREATHE", color: "rgba(236,236,241,0.55)" },
+  silence: { name: "SILENCE", color: "rgba(236,236,241,0.45)" },
+};
+
+// [dur, picKind, picture, picStatus, soundMode, sound, soundStatus]
+// statuses: have · found · wanted · figures · rec · draft
+const SEQ = [
+  { id: "s1", act: 0, title: "Cheap science fiction", qk: "raises", q: "What did McLuhan see that the rest of us missed?", rows: [
+    [9, "archive", "McLuhan interview, close on him", "have", "sync", "McLuhan: the “cheap science fiction” line, in his words", "have"],
+    [4, "hold", "Hold on his face, then cut to black", "have", "silence", "Nothing. Let the line sit.", ""],
+    [22, "you", "You, on camera, close", "have", "vo", "He said it like a throwaway. I think it’s the whole story: the space age wasn’t just broadcast. It was produced.", "rec"],
+    [10, "card", "Title: NASA as a medium", "have", "breathe", "Music comes up under the title", ""] ] },
+  { id: "s2", act: 0, title: "Before NASA, there was Disney", qk: "raises", q: "Who sold space before anyone had flown?", rows: [
+    [20, "wanted", "“Man in Space”, Disneyland TV, 1955 — von Braun at the model rocket", "wanted", "vo", "In 1955, three years before NASA existed, Wernher von Braun went on Disney’s television show to explain how we’d get to space.", "draft"],
+    [25, "found", "The episode’s animated rocket sequence", "found", "sync", "The broadcast’s own narrator, 25 seconds", "found"],
+    [6, "sketch", "The cartoon rocket freezes and redraws as an engineering drawing", "have", "breathe", "Music only", ""],
+    [30, "you", "You, on camera", "have", "vo", "The audience saw the future before the engineers had built it. Picture first, hardware later — that’s the pattern to watch.", "draft"],
+    [24, "sketch", "A timeline draws itself: 1955 broadcast → 1958 NASA → 1961 first American in space", "have", "vo", "Watch how fast a picture becomes a program.", "draft"] ] },
+  { id: "s3", act: 0, title: "Mercury on TV", qk: "answers", q: "The launches were staged like episodes.", rows: [
+    [6, "archive", "Montage: seven anchors counting down", "have", "sync", "The countdowns, overlapping", "have"],
+    [6, "you", "Your bridge line", "have", "vo", "Before anyone flew, the launches were scheduled like episodes.", "draft"],
+    [30, "archive", "John Glenn’s launch, 1962, as it aired", "have", "sync", "The broadcast commentary, 30 seconds", "have"],
+    [4, "hold", "Hold on the rocket clearing the tower", "have", "breathe", "Crowd sound, then music", ""],
+    [44, "sketch", "Each flight drawn as an episode card: cast, date, cliffhanger", "figures", "vo", "Every flight had a cast, a cliffhanger, and a live audience. The schedule read like a season.", "draft"],
+    [30, "you", "You, on the stream", "have", "vo", "TV didn’t cover the space program. It was the space program’s medium.", "rec"] ] },
+  { id: "s4", act: 0, title: "The posters", qk: "raises", q: "When the agency pays for the picture, who is the picture for?", rows: [
+    [10, "archive", "Your poster scans, one at a time", "have", "vo", "In 1962 NASA started its own art program.", "rec"],
+    [30, "sketch", "A poster redrawn as line art — the planet draws itself", "have", "vo", "It invited artists to its launches and paid them to paint what they saw.", "rec"],
+    [20, "found", "Norman Rockwell’s painting of astronauts suiting up, 1965", "found", "vo", "Norman Rockwell. Later, Robert Rauschenberg.", "draft"],
+    [8, "hold", "Slow pan across the paintings", "have", "breathe", "Music", ""],
+    [52, "archive", "Your three poster scans, side by side", "have", "vo", "Here’s the question nobody asked at the time: when the agency pays for the picture, who is the picture for?", "draft"] ] },
+  { id: "s5", act: 1, title: "It was arithmetic", qk: "answers", q: "The real planning looked nothing like the posters.", rows: [
+    [4, "you", "Your line", "have", "vo", "The real planning looked nothing like the posters.", "rec"],
+    [6, "sketch", "The transfer orbit draws itself; the camera dives into Mars", "have", "vo", "It was arithmetic.", "rec"],
+    [6, "found", "Mariner 4’s first picture of Mars, coloured by hand, 1965", "found", "vo", "The first picture of Mars was coloured in by hand.", "rec"],
+    [18, "wanted", "A JPL engineer remembering the hand-coloured image", "wanted", "sync", "In their words, 18 seconds", "wanted"],
+    [4, "hold", "Hold on the finished image", "have", "breathe", "Music up", ""],
+    [8, "wanted", "A launch broadcast, today", "wanted", "vo", "Sixty years on, the launches still stream like episodes.", "draft"],
+    [104, "sketch", "Orbits, launch windows and fuel, drawn", "have", "vo", "Mars only lines up every twenty-six months. Miss the window and you wait two years. None of that fits on a poster.", "draft"] ] },
+  { id: "s6", act: 1, title: "The engineers’ view", qk: "raises", q: "Did the people doing the work believe the show?", rows: [
+    [20, "archive", "Your video at 3:12", "have", "vo", "The people doing the work thought the publicity was a distraction.", "rec"],
+    [40, "found", "Oral history: an engineer on the press", "found", "sync", "The engineer’s line — you pick it from three Scout marked", "found"],
+    [5, "hold", "Hold on the transcript page", "have", "breathe", "Room tone", ""],
+    [55, "archive", "Control-room footage", "have", "vo", "And yet they did the work inside the show — every test, every countdown, on camera.", "draft"] ] },
+  { id: "s7", act: 1, title: "The fire", qk: "raises", q: "What did the show cost?", rows: [
+    [10, "card", "January 27, 1967", "have", "silence", "Nothing.", ""],
+    [40, "wanted", "The news bulletin about the Apollo 1 fire, as it aired", "wanted", "sync", "The bulletin, as it aired", "wanted"],
+    [8, "hold", "Black", "have", "silence", "Nothing.", ""],
+    [60, "sketch", "The capsule and its hatch, drawn from the review board report", "figures", "vo", "Three astronauts — Gus Grissom, Ed White and Roger Chaffee — died in a fire during a launch rehearsal on the pad.", "draft"],
+    [32, "you", "You, on camera", "have", "vo", "For almost two years, no American crew flew.", "draft"] ] },
+  { id: "s8", act: 2, title: "Apollo 11, the finale", qk: "answers", q: "The broadcast was the product.", rows: [
+    [30, "wanted", "The landing, July 20, 1969, as broadcast", "wanted", "sync", "The broadcast audio", "wanted"],
+    [6, "hold", "Hold on the grainy picture", "have", "breathe", "Static, then music", ""],
+    [50, "sketch", "The signal path drawn: the Moon → dishes at Goldstone, Honeysuckle Creek and Parkes → Houston → the networks", "have", "vo", "The picture of the century came down through three dish antennas on three continents before anyone at home saw it.", "draft"],
+    [34, "you", "You, on camera", "have", "vo", "The mission had two payloads: two men on the Moon, and a picture of them.", "draft"] ] },
+  { id: "s9", act: 2, title: "The cuts", qk: "answers", q: "Once the picture was delivered, the money left.", rows: [
+    [45, "sketch", "NASA’s share of federal spending, drawn as a line", "figures", "vo", "NASA’s share of federal spending peaked around four and a half percent in 1966. By the time Apollo 17 flew, the last three Moon missions had already been cancelled.", "draft"],
+    [20, "wanted", "Apollo 17 lifting off the Moon, 1972", "wanted", "sync", "The mission audio", "wanted"],
+    [40, "you", "You, on camera", "have", "vo", "The audience had seen the ending. Nobody pays for a sequel to a finale.", "draft"] ] },
+  { id: "s10", act: 2, title: "Streamed like episodes", qk: "raises", q: "Is it happening again?", rows: [
+    [30, "wanted", "A recent launch livestream", "wanted", "sync", "The stream’s own commentary", "wanted"],
+    [4, "hold", "Hold on the rocket", "have", "breathe", "Crowd cheering on the stream", ""],
+    [56, "you", "You, on camera", "have", "vo", "Sixty years on, the launches still stream like episodes. Only now the network and the rocket belong to the same company.", "draft"] ] },
+  { id: "s11", act: 2, title: "The close", qk: "answers", q: "The fiction wasn’t decoration. It was the funding model.", rows: [
+    [8, "archive", "McLuhan again — the same line, shorter", "have", "sync", "McLuhan, 8 seconds", "have"],
+    [40, "you", "You, on camera", "have", "vo", "The fiction wasn’t decoration. It was the funding model. — Your last line goes here; write it last.", "draft"],
+    [12, "sketch", "The budget line redraws itself, then fades", "have", "breathe", "Music", ""],
+    [15, "card", "End card: NASA as a medium", "have", "breathe", "Music out", ""] ] },
+];
+// what the Story editor proposes
+const BOTH = { id: "s6b", act: 1, title: "Both were true", qk: "answers", q: "NASA ran on publicity and hated it — at the same time.", rows: [
+  [20, "archive", "Your stream at 41:50", "have", "sync", "You, on the stream: “it ran on publicity”", "have"],
+  [20, "archive", "Your video at 3:12", "have", "sync", "You, on video: “NASA hated publicity”", "have"],
+  [4, "hold", "Split screen, both of you, frozen", "have", "breathe", "Silence, then music", ""],
+  [46, "you", "You, on camera, now", "have", "vo", "Both of me were right. The engineers hated the show, and the show paid for the engineers.", "draft"] ] };
+
+// ── one film, shared by every tab (Studio, Plan, Footage, Trailer) ──
+// Kept in this browser, so a change made on any page shows up on all of them.
+const KEY = "aldershot.nasa.v1";
+const SEED_NOTES = [{ seq: "s5", t: 13, text: "hold on the Mariner picture longer, let it breathe" }, { seq: "s5", t: 70, text: "draw the launch window as a calendar, every 26 months" }];
+const loadShared = () => { let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {} return { over: {}, notes: SEED_NOTES, ...o }; };
+const saveShared = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} };
+
+const COLD = { id: "s0", act: 0, title: "Cold open: the numbers", qk: "raises", q: "What is this picture, and why is it made of numbers?", rows: [
+  [20, "found", "Mariner 4’s first data colouring itself in, strip by strip — no explanation yet", "found", "breathe", "No voice. Just the picture arriving.", ""] ] };
+const ACTS = [
+  { label: "ACT 1 · THE PROMISE", job: "What the audience was sold — before and during the first flights." },
+  { label: "ACT 2 · THE MACHINE BEHIND IT", job: "How the work actually happened, and what it cost." },
+  { label: "ACT 3 · THE BILL", job: "The finale, the cuts, and the same show running again." },
+];
+
+class Component extends DCLogic {
+  state = { view: "film", seq: null, sh: loadShared(), justRec: {}, noteIdx: 0, fresh: null,
+    playing: false, pt: 0, draft: "", listening: false, micMsg: "", freshNote: null };
+
+  componentDidMount() {
+    this.iv = setInterval(() => {
+      const st = this.state; if (!st.playing || st.view !== "seq") return;
+      const list = this.seqs(), i = list.findIndex(s => s.id === st.seq); if (i < 0) return;
+      const dur = list[i].rows.reduce((x, r) => x + r[0], 0);
+      const pt = st.pt + 0.05;
+      if (pt < dur) this.setState({ pt });
+      else if (i < list.length - 1) this.setState({ seq: list[i + 1].id, pt: 0 });   // play on into the next sequence
+      else this.setState({ playing: false, pt: dur });
+    }, 50);
+    this.key = e => { if (e.code === "Space" && e.target === document.body && this.state.view === "seq") { e.preventDefault(); this.setState(s => ({ playing: !s.playing })); } };
+    document.addEventListener("keydown", this.key);
+    this.onStore = e => { if (!e || e.key === KEY || e.key === null) this.setState({ sh: loadShared() }); };
+    window.addEventListener("storage", this.onStore);
+  }
+  componentWillUnmount() { clearInterval(this.iv); document.removeEventListener("keydown", this.key); window.removeEventListener("storage", this.onStore); try { this.rec && this.rec.stop(); } catch (e) {} }
+
+  pin(text, t) {
+    const txt = (text || "").trim(); if (!txt) return;
+    const at = t === undefined ? this.state.pt : t;
+    const notes = this.state.sh.notes || []; this.share({ notes: [...notes, { seq: this.state.seq, t: at, text: txt }] }); this.setState({ draft: "", freshNote: notes.length });
+  }
+  mic() {
+    if (this.state.listening) { try { this.rec.stop(); } catch (e) {} return; }
+    const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!R) { this.setState({ micMsg: "Talking isn’t available in this browser — type the note instead; it pins the same way." }); return; }
+    try {
+      const r = new R(); this.rec = r; r.lang = "en-US"; r.interimResults = true; r.continuous = false;
+      const t0 = this.state.pt; let said = "";
+      r.onresult = e => { said = Array.from(e.results).map(x => x[0].transcript).join(" "); this.setState({ draft: said }); };
+      r.onerror = e => this.setState({ listening: false, micMsg: "Couldn’t hear you (" + (e.error || "no microphone") + ") — type the note instead." });
+      r.onend = () => { this.setState({ listening: false }); if (said.trim()) this.pin(said, t0); };
+      r.start(); this.setState({ listening: true, micMsg: "" });
+    } catch (e) { this.setState({ micMsg: "Talking isn’t available here — type the note instead." }); }
+  }
+
+
+
+  share(patch) { const sh = { ...this.state.sh, ...patch }; saveShared(sh); this.setState({ sh }); return sh; }
+  shareOver(key, eff) { const sh = this.state.sh; return this.share({ over: { ...sh.over, [key]: { ...(sh.over[key] || {}), ...eff } } }); }
+
+
+  // the film, with every shared change applied
+  buildFilm(sh) {
+    let list = SEQ.map(s => ({ ...s, rows: s.rows.map(r => r.slice()) }));
+    if (sh.both) { const i = list.findIndex(s => s.id === "s6"); list.splice(i + 1, 0, { ...BOTH, rows: BOTH.rows.map(r => r.slice()) }); }
+    if (sh.coldOpen) { list.unshift({ ...COLD, rows: COLD.rows.map(r => r.slice()) }); list.find(s => s.id === "s5").rows[6][0] -= 20; }
+    if (sh.trimS9) { const s9 = list.find(s => s.id === "s9"); s9.rows = s9.rows.slice(0, 2); }
+    if (sh.trimS5) list.find(s => s.id === "s5").rows[6][0] -= 50;
+    Object.keys(sh.over || {}).forEach(k => { const [sid, ri] = k.split(":"); const s = list.find(x => x.id === sid); if (!s || !s.rows[+ri]) return;
+      const o = sh.over[k]; if (o.p) s.rows[+ri][3] = o.p; if (o.pk) s.rows[+ri][1] = o.pk; if (o.s) s.rows[+ri][6] = o.s; });
+    return list;
+  }
+  seqs() { return this.buildFilm(this.state.sh); }
+
+  renderVals() {
+    const st = this.state, out = {};
+    const list = this.seqs();
+    let at = 0;
+    list.forEach((s, i) => { s.n = i + 1; s.a = at; s.dur = s.rows.reduce((x, r) => x + r[0], 0); at += s.dur; s.b = at; });
+    const total = at;
+
+    // headline numbers
+    const vo = list.flatMap(s => s.rows).filter(r => r[4] === "vo");
+    const voSec = vo.reduce((x, r) => x + r[0], 0), recSec = vo.filter(r => r[6] === "rec").reduce((x, r) => x + r[0], 0);
+    const togo = Math.round((voSec - recSec) * WPS / 50) * 50;
+    const over = total - TARGET;
+    out.lenText = fmt(total) + (over > 0 ? " · " + fmt(over) + " over the 20:00 target" : over < 0 ? " · " + fmt(-over) + " under target" : " · right on the 20:00 target");
+    out.lenColor = over > 0 ? RED : "rgba(236,236,241,0.75)";
+    out.shapeText = "3 acts · " + list.length + " sections";
+    out.voText = "your voice: " + fmt(recSec) + " recorded of " + fmt(voSec) + " · about " + togo.toLocaleString() + " words to go";
+
+    // the bar
+    const weaveOf = rows => rows.map(r => { const m = r[4], rec = r[6] === "rec";
+      return { flex: r[0], title: SM[m].name.toLowerCase() + " · " + r[0] + " sec",
+        bg: m === "vo" ? (rec ? GOLD : "transparent") : m === "sync" ? (r[6] === "wanted" || r[6] === "found" ? "rgba(94,184,201,0.4)" : CYAN) : m === "breathe" ? "rgba(236,236,241,0.28)" : "transparent",
+        ring: m === "vo" && !rec ? "inset 0 0 0 1px " + GOLD : m === "silence" ? "inset 0 0 0 1px rgba(236,236,241,0.25)" : "none" }; });
+    out.actBar = ACTS.map((a, i) => ({ name: a.label.replace("ACT ", ""), flex: list.filter(s => s.act === i).reduce((x, s) => x + s.dur, 0) }));
+    out.seqBar = list.map(s => ({ n: String(s.n), flex: s.dur, title: s.n + " · " + s.title + " · " + fmt(s.dur),
+      bg: st.view === "seq" && st.seq === s.id ? "#2A2A31" : "#18181D", ring: st.view === "seq" && st.seq === s.id ? "inset 0 0 0 1px rgba(236,236,241,0.4)" : "inset 0 0 0 1px rgba(255,255,255,0.05)",
+      anim: s.id === st.fresh ? "spIn .4s ease both" : "none", onGo: () => this.setState({ view: "seq", seq: s.id, pt: 0 }) }));
+    out.onPlayAll = () => this.setState({ view: "seq", seq: list[0].id, pt: 0, playing: true });
+    out.weaveBar = list.map(s => ({ flex: s.dur, parts: weaveOf(s.rows) }));
+    out.rulerText = "0:00 ——— " + fmt(total);
+
+    // status of a sequence
+    const statusOf = s => {
+      const wanted = s.rows.filter(r => r[3] === "wanted" || r[6] === "wanted").length;
+      const found = s.rows.filter(r => r[3] === "found" || r[6] === "found").length;
+      const draft = s.rows.filter(r => r[4] === "vo" && r[6] !== "rec").length;
+      if (wanted) return [wanted + (wanted === 1 ? " clip wanted" : " clips wanted"), CYAN];
+      if (found) return [found + " to check", CYAN];
+      if (draft) return [draft + (draft === 1 ? " line to record" : " lines to record"), GOLD];
+      return ["ready", GREEN];
+    };
+
+    // film level
+    out.isFilm = st.view === "film"; out.isSeq = st.view === "seq";
+    out.acts = ACTS.map((a, i) => { const ss = list.filter(s => s.act === i);
+      return { label: a.label, job: a.job, span: fmt(ss[0].a) + "–" + fmt(ss[ss.length - 1].b),
+        seqs: ss.map(s => { const sv = statusOf(s);
+          return { n: String(s.n), title: s.title, q: s.q, qKind: s.qk === "raises" ? "RAISES" : "ANSWERS", qColor: s.qk === "raises" ? CYAN : GREEN,
+            weave: weaveOf(s.rows), st: sv[0], stColor: sv[1], len: fmt(s.dur),
+            ring: s.id === st.fresh ? "rgba(236,236,241,0.35)" : "rgba(255,255,255,0.06)", anim: s.id === st.fresh ? "spIn .45s ease both" : "none",
+            onGo: () => this.setState({ view: "seq", seq: s.id, pt: 0, playing: false }) }; }) }; });
+
+    // the story editor's notes, one at a time
+    const NOTES = [
+      { tag: "material is pulling the story", title: "Your stream at 41:50 and your video at 3:12 disagree. That might be the essay.",
+        body: "On the stream you say NASA ran on publicity; on video you say it hated publicity. Instead of picking one, add a short section to Act 2 where both of you speak — then you settle it. It adds 1:30.",
+        yes: "Add “Both were true”", no: "Not now", show: !st.sh.both, onYes: () => { this.share({ both: true }); this.setState({ fresh: "s6b", noteIdx: 0 }); } },
+      { tag: "length", title: "That puts the film 1:30 over. Here’s where it can come from.",
+        body: "Cut the 40 seconds of you to camera at the end of “The cuts” — the budget line already says it — and tighten the orbits section in “It was arithmetic” by 50 seconds. Back to 20:00, nothing important lost.",
+        yes: "Trim both", no: "Leave it long", show: !!st.sh.both && !(st.sh.trimS9 && st.sh.trimS5), onYes: () => { this.share({ trimS9: true, trimS5: true }); this.setState({ fresh: null }); } },
+      { tag: "a gap to know about", title: "“The fire” has no footage yet.",
+        body: "Scout is looking for the news bulletin as it aired. Until something turns up, the section plays as the drawn capsule and your voice — which might be the right register anyway.",
+        yes: "Got it", no: "", show: true, onYes: () => this.setState({ noteIdx: 3 }) },
+    ];
+    const live = NOTES.filter((n, i) => n.show && i >= st.noteIdx);
+    const note = live[0];
+    out.hasNote = !!note;
+    out.note = note ? { tag: note.tag, title: note.title, body: note.body, yes: note.yes, no: note.no, onYes: note.onYes,
+      onNo: () => this.setState({ noteIdx: NOTES.indexOf(note) + 1 }) } : { tag: "", title: "", body: "", yes: "", no: "", onYes: () => {}, onNo: () => {} };
+
+    // sequence level
+    const si = Math.max(0, list.findIndex(s => s.id === st.seq));
+    const s = list[si];
+    out.onFilm = () => this.setState({ view: "film", playing: false });
+    out.onPrev = () => si > 0 && this.setState({ seq: list[si - 1].id, pt: 0 });
+    out.onNext = () => si < list.length - 1 && this.setState({ seq: list[si + 1].id, pt: 0 });
+    out.prevColor = si > 0 ? "#ECECF1" : "rgba(236,236,241,0.25)";
+    out.nextColor = si < list.length - 1 ? "#ECECF1" : "rgba(236,236,241,0.25)";
+    out.seq = { n: String(s.n), title: s.title, q: s.q, qKind: s.qk === "raises" ? "RAISES" : "ANSWERS", qColor: s.qk === "raises" ? CYAN : GREEN,
+      actName: ACTS[s.act].label.split(" · ")[1].toLowerCase().replace(/^\w/, c => c.toUpperCase()), len: fmt(s.dur), span: fmt(s.a) + "–" + fmt(s.b) + " in the film" };
+    let ra = s.a;
+    const baseRows = (SEQ.find(x => x.id === s.id) || BOTH).rows;
+    out.rows = s.rows.map((r, i) => {
+      const [dur, pk, pic, pst, sm, sound, sst] = r; const at0 = ra; ra += dur;
+      const P = PK[pk], S = SM[sm];
+      const isVo = sm === "vo", rec = sst === "rec";
+      const pSt = pst === "wanted" ? "Wanted — Scout’s looking" : pst === "found" ? "Scout found it — yours to check" : pst === "figures" ? "Drawn from figures — check them" : pst === "drafted" ? "Drafted by Sketch — yours to approve" : pst === "approved" ? "Approved" : "";
+      const sSt = sm === "sync" ? (sst === "wanted" ? "Wanted — in their own words, once Scout finds it" : sst === "found" ? "Found — yours to check" : "In your footage") : isVo && rec ? (this.state.justRec[s.id + ":" + i] ? "Recorded just now" : "Recorded") : "";
+      return { at: fmt(at0), dur: dur + " sec", pKind: P.name, pColor: P.color, pRing: P.ring, pic, pSt, pStColor: pst === "figures" ? "rgba(236,236,241,0.5)" : CYAN,
+        sKind: S.name + (isVo ? (rec ? " · RECORDED" : " · DRAFT") : ""), sColor: S.color, sRule: isVo ? (rec ? GOLD : "rgba(217,179,106,0.35)") : sm === "sync" ? "rgba(94,184,201,0.5)" : "rgba(236,236,241,0.12)",
+        sound: isVo ? sound : sound, sFont: isVo ? "'Instrument Serif',serif" : "'Instrument Sans',sans-serif", sSize: isVo ? "19px" : "13.5px",
+        sTextColor: isVo ? (rec ? "#ECECF1" : "rgba(236,236,241,0.72)") : "rgba(236,236,241,0.62)",
+        canRecord: isVo && !rec, onRecord: () => { this.shareOver(s.id + ":" + i, { s: "rec" }); this.setState({ justRec: { ...this.state.justRec, [s.id + ":" + i]: true } }); },
+        words: "about " + Math.round(dur * WPS) + " words at your pace · draft has " + sound.split(/\s+/).length,
+        hasSt: !!sSt, sSt, sStColor: rec || sst === "have" ? GREEN : CYAN,
+        bg: st.view === "seq" && st.pt >= at0 - s.a && st.pt < ra - s.a ? "rgba(236,236,241,0.045)" : "transparent",
+        onGo: () => this.setState({ pt: at0 - s.a + 0.01 }) };
+    });
+
+    // ── the player ──
+    const pt = Math.min(st.pt, s.dur - 0.001);
+    let ri = 0, r0 = 0; for (let i = 0, acc = 0; i < s.rows.length; i++) { if (pt >= acc && pt < acc + s.rows[i][0]) { ri = i; r0 = acc; break; } acc += s.rows[i][0]; }
+    const row = s.rows[ri], [rdur, pk, pic, pst, sm, sound, sst] = row, lt = pt - r0;
+    const k = x => x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.pow(1 - x, 3);
+    const framed = pk === "archive" || pk === "found" || pk === "wanted";
+    const words = sound.split(/\s+/), shown = Math.min(words.length, Math.floor(lt * 2.6) + 1);
+    const LBL = { you: ["YOU · ON CAMERA", GOLD], archive: ["ARCHIVE · " + (pst === "have" ? "IN YOUR FOOTAGE" : ""), "rgba(236,236,241,0.6)"], sketch: ["DRAWN BY SKETCH", "#ECECF1"],
+      found: ["SCOUT FOUND · PREVIEW, NOT CHECKED", CYAN], wanted: ["WANTED · " + rdur + " SEC · SCOUT’S LOOKING", CYAN], card: ["TEXT CARD", "rgba(236,236,241,0.6)"], hold: ["HOLD", "rgba(236,236,241,0.5)"] }[pk];
+    out.pl = { op: (pk === "hold" ? 0.5 : 1) * k(lt / 0.35), isYou: pk === "you", isFramed: framed, isSketch: pk === "sketch", isCard: pk === "card",
+      grain: pk !== "wanted", frameBg: pk === "wanted" ? "transparent" : "#121216", frameStyle: pk === "wanted" ? "dashed" : "solid",
+      frameColor: pk === "archive" ? "rgba(236,236,241,0.2)" : "rgba(94,184,201,0.5)", pic, cardText: pic.replace(/^Title: |^End card: /, ""),
+      draw: 1 - k(lt / 1.4), draw2: 1 - k((lt - 0.4) / 1.8), draw3: 1 - k((lt - 1.0) / Math.max(1.5, rdur * 0.6)),
+      isVo: sm === "vo", voShown: words.slice(0, shown).join(" "), voRest: shown < words.length ? " " + words.slice(shown).join(" ") : "",
+      voColor: sst === "rec" ? "#F2E6CF" : "rgba(236,236,241,0.6)",
+      isSync: sm === "sync", sound, isQuiet: sm === "breathe" || sm === "silence", quiet: sm === "silence" ? "SILENCE" : "♪  " + sound.toUpperCase(),
+      label: sm === "vo" && sst !== "rec" ? LBL[0] + " · VOICE NOT RECORDED" : LBL[0], labelColor: LBL[1],
+      clock: fmt(s.a + pt) + " / " + fmt(total) };
+    out.playIcon = st.playing ? "❚❚" : "▶";
+    out.playTitle = st.playing ? "Pause (space)" : "Play (space)";
+    out.onPlay = () => this.setState({ playing: !st.playing, pt: st.pt >= s.dur - 0.05 ? 0 : st.pt });
+    out.plHead = (pt / s.dur * 100).toFixed(2) + "%";
+    out.autoText = si < list.length - 1 ? "plays on into " + (si + 2) + " · " + list[si + 1].title : "the end";
+    let acc2 = 0;
+    out.strip = s.rows.map(r => { const a0 = acc2; acc2 += r[0]; const P = PK[r[1]], m = r[4], rec = r[6] === "rec";
+      return { flex: r[0], title: P.name.toLowerCase() + " · " + r[0] + " sec", onGo: () => this.setState({ pt: a0 + 0.01 }),
+        pBg: r[1] === "you" ? "rgba(217,179,106,0.35)" : r[1] === "wanted" ? "transparent" : r[1] === "found" ? "rgba(94,184,201,0.3)" : r[1] === "sketch" ? "rgba(236,236,241,0.22)" : "rgba(236,236,241,0.1)",
+        pRing: r[1] === "wanted" ? "inset 0 0 0 1px rgba(94,184,201,0.6)" : "none",
+        sBg: m === "vo" ? (rec ? GOLD : "transparent") : m === "sync" ? CYAN : m === "breathe" ? "rgba(236,236,241,0.28)" : "transparent",
+        sRing: m === "vo" && !rec ? "inset 0 0 0 1px " + GOLD : m === "silence" ? "inset 0 0 0 1px rgba(236,236,241,0.25)" : "none" }; });
+
+    // ── notes pinned at the playhead ──
+    const KINDS = [
+      [/\b(draw|diagram|chart|animate|graphic|calendar)\b/i, "SKETCH", "#ECECF1", "Sketch drafts it for that moment"],
+      [/\b(move|earlier|later|before|after|swap|open on|start with)\b/i, "MOVE", CYAN, "Aldershot proposes where it goes"],
+      [/\b(cut|shorter|trim|too long|drags?|faster)\b/i, "TRIM", CYAN, "Aldershot proposes a trim"],
+      [/\b(hold|longer|breathe|slow|pause|beat)\b/i, "TIMING", GREEN, "the cut holds here longer"],
+      [/\b(need|find|footage|clip|map|interview|archive|source)\b/i, "SCOUT", CYAN, "becomes a search for Scout"],
+      [/\b(say|line|word|wording|narrat|voice|rewrite)\b/i, "SCRIPT", GOLD, "a rewrite of the voice line, in your words"],
+    ];
+    const classify = txt => (KINDS.find(x => x[0].test(txt)) || [null, "NOTE", "rgba(236,236,241,0.6)", "kept with this moment"]);
+    const mine = (st.sh.notes || []).map((n, i) => ({ ...n, i })).filter(n => n.seq === s.id).sort((a, b) => a.t - b.t);
+    out.pins = mine.map(n => ({ left: (Math.min(n.t, s.dur) / s.dur * 100).toFixed(2) + "%", text: n.text }));
+    out.hasNotes = mine.length > 0;
+    out.seqNotes = mine.map(n => { const c = classify(n.text);
+      return { at: fmt(s.a + n.t), text: n.text, kind: c[1], kColor: c[2], then: "→ " + c[3], anim: n.i === st.freshNote ? "spIn .4s ease both" : "none",
+        onGo: () => this.setState({ pt: n.t }) }; });
+    out.draft = st.draft;
+    out.onDraft = e => this.setState({ draft: e && e.target ? e.target.value : "" });
+    out.onKey = e => { if (e && e.key === "Enter") { e.preventDefault(); this.pin(e.target.value); } };
+    out.onPin = () => this.pin(st.draft);
+    out.pinAt = fmt(s.a + pt);
+    out.placeholder = "What would you change at " + fmt(s.a + pt) + "? — e.g. “this needs a map”";
+    out.onMic = () => this.mic();
+    out.micLabel = st.listening ? "● Listening — tap to stop" : "Talk";
+    out.micBg = st.listening ? "#D9B36A" : "transparent"; out.micColor = st.listening ? "#101013" : "#D9B36A";
+    out.hasMicMsg = !!st.micMsg; out.micMsg = st.micMsg;
+    return out;
+  }
+}
+</script>
+</body>
+</html>

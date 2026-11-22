@@ -166,10 +166,25 @@ test("the insert route is where a picture that is not yours enters a cut", () =>
 
   assert.match(upto, /kind === "generated" \|\| kind === "stock"/, "the two kinds that are not your footage");
   assert.match(upto, /allowed\(move, \{/, "and the refusal is the one in pictures.ts");
-  assert.match(upto, /return c\.json\(\{ error: no\.reason \}, 422\)/, "refused with the reason, not a code");
+  assert.match(upto, /return c\.json\(\{ error: r\.reason \}, 422\)/, "refused with the reason, not a code");
+  /* A depiction needs an ANSWER: the permission comes from `answered`,
+     never from having a move, because UNSURE is a move too. */
+  assert.match(upto, /known = found\.answered;/);
+  assert.match(upto, /\{ depict: known \}/);
+  assert.match(upto, /over_claim: overClaim/, "and what it decided is stored with the beat, for the label");
   /* The catch leaves `move` at UNSURE rather than letting it through. */
   assert.match(upto, /let move: Move = UNSURE;/);
   assert.doesNotMatch(upto, /catch[\s\S]{0,80}move = /, "a failed classification must not become a permission");
+});
+
+test("a skipped line, or a move that doesn't exist, comes back UNSURE and NOT answered", () => {
+  /* So it can never grant a depiction: UNSURE is `claim`, and a claim the
+     model never said is a claim nobody knows about. */
+  const [said, nonsense] = answer([{ line: "l1", move: "claim" }, { line: "l2", move: "verdict" }]);
+  assert.deepEqual([said.move, said.answered], ["claim", true]);
+  assert.deepEqual([nonsense.move, nonsense.answered], [UNSURE, false]);
+  const [, skipped] = answer([{ line: "l1", move: "claim" }]);
+  assert.deepEqual([skipped.move, skipped.answered], [UNSURE, false]);
 });
 
 test("the default refuses both kinds the route can insert", () => {

@@ -63,7 +63,7 @@ test("a generated picture with an asset records how and when", () => {
   const [e] = cueSheet([
     cue({ kind: "generated", media_r2_key: "u/1/b/gen.png", recorded_at: Date.UTC(2026, 9, 21) }),
   ]);
-  assert.match(e.how, /not photoreal, and never over a claim or its proof/);
+  assert.match(e.how, /not photoreal, and never the proof of anything/);
   assert.equal(e.when, "2026-10-21");
 });
 

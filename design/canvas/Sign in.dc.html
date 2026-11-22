@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+html, body { margin: 0; padding: 0; background: #101013; }
+* { box-sizing: border-box; }
+a { color: #ECECF1; text-decoration: none; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #ECECF1; outline-offset: 2px; }
+button { font-family: inherit; border: none; cursor: pointer; }
+input::placeholder { color: rgba(236,236,241,0.5); }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px">
+  <div style="width:min(380px,100%)">
+    <a href="Landing.dc.html" aria-label="Aldershot home" style="display:inline-flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em">aldershot<span aria-hidden="true" style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <h1 style="margin:28px 0 0;font-size:28px;font-weight:700;letter-spacing:-0.03em">Sign in</h1>
+    <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:rgba(236,236,241,0.72)">We email you a link. There is no password to remember.</p>
+
+    <sc-if value="{{ notSent }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:22px;display:flex;flex-direction:column;gap:8px">
+        <label for="si-email" style="font-size:12.5px;color:rgba(236,236,241,0.72)">Email</label>
+        <input id="si-email" type="email" value="{{ email }}" onInput="{{ onEmail }}" placeholder="you@yourdomain.com" style="font-family:inherit;font-size:14.5px;padding:11px 12px;border-radius:6px;background:#17171B;color:#ECECF1;border:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1)"/>
+        <button type="button" onClick="{{ send }}" style="margin-top:6px;font-size:14px;font-weight:600;padding:11px;border-radius:5px;background:#ECECF1;color:#131316">Email me a link</button>
+        <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}"><div role="alert" style="font-size:12.5px;color:#E06A6A">That doesn’t look like an email address.</div></sc-if>
+      </div>
+    </sc-if>
+    <sc-if value="{{ sent }}" hint-placeholder-val="{{ false }}">
+      <div role="status" style="margin-top:22px;padding:14px 16px;border-radius:9px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(94,201,143,0.35)">
+        <div style="font-size:14px;font-weight:600">Check your inbox.</div>
+        <div style="margin-top:4px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.75)">A link is on its way to {{ email }}. It works once and expires in 20 minutes.</div>
+        <a href="Studio.dc.html" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:5px;background:#ECECF1;color:#131316">Open the link (demo)</a>
+      </div>
+    </sc-if>
+
+    <p style="margin:22px 0 0;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.65)">New here? The same box starts an account — <a href="Studio.dc.html" style="color:#ECECF1;text-decoration:underline;text-underline-offset:3px">or start free</a>.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  state = { email: "", sent: false, error: false };
+  renderVals() {
+    const s = this.state;
+    return {
+      email: s.email, notSent: !s.sent, sent: s.sent, hasError: s.error,
+      onEmail: (e) => this.setState({ email: e.target.value, error: false }),
+      send: () => /.+@.+\..+/.test(s.email) ? this.setState({ sent: true }) : this.setState({ error: true }),
+    };
+  }
+}
+</script>
+</body>
+</html>

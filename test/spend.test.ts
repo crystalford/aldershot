@@ -15,16 +15,25 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { fakeD1 } from "./helpers/fake-d1.ts";
 import {
+  CHARGE_MULTIPLE,
   DEFAULT_CAP_USD,
-  MAX_CAP_USD,
+  DEFAULT_LIMIT_USD,
+  LIMITED_JOBS,
+  MAX_LIMIT_USD,
   WARN_AT,
+  brakeFor,
   capFor,
   capOrDefault,
   capVerdict,
+  chargedThisMonth,
+  limitFor,
+  limitVerdict,
   monthStart,
   nearingCap,
-  setCap,
+  setLimit,
+  underLimit,
 } from "../src/spend.ts";
+import { renderSettings, LIMIT_CHOICES } from "../src/ui/pages/settings.ts";
 
 test("ACCEPTANCE: past the cap, nothing else runs", () => {
   const v = capVerdict({ spentUsd: 410, capUsd: 400 });
@@ -141,67 +150,109 @@ test("nonsense spending is treated as none, not as infinity", () => {
   assert.equal(capVerdict({ spentUsd: -3, capUsd: 400 }).spentUsd, 0);
 });
 
-/* ── Raising it, which the refusal has always told people to do ─────────── */
+/* ── The limit, and the brake that follows it (doc 22, row 4) ───────────── */
 
-/**
- * THE HALF THAT WAS NOT BUILT.
- *
- * capVerdict's own refusal reads "Nothing else will run until you raise it in
- * Settings", and `spend_cap_usd` was READ by capFor and WRITTEN BY NOTHING —
- * no route, no control, no code path anywhere in src/. So every account sat
- * at DEFAULT_CAP_USD for ever, work stopped there, and the message named a
- * place where the thing it asked for could not be done.
- */
-test("setCap writes the cap capFor reads", async () => {
+const users = () => {
   const raw = new DatabaseSync(":memory:");
-  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
-  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
-  const db = fakeD1(raw) as never;
+  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL, gen_limit_usd REAL)");
+  raw.exec(`CREATE TABLE usage_events(id TEXT, user_id TEXT, job_type TEXT, cost_usd REAL, created_at INTEGER)`);
+  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL, NULL)").run();
+  return { raw, db: fakeD1(raw) as never };
+};
 
-  assert.equal(await capFor(db, "u1"), DEFAULT_CAP_USD, "an unset cap is the default");
-  assert.equal(await setCap(db, "u1", 250), 250);
-  assert.equal(await capFor(db, "u1"), 250, "and the enforcer reads what was set");
+test("an unset limit is the canvas's $50, and setLimit writes what limitFor reads", async () => {
+  const { db } = users();
+  assert.equal(await limitFor(db, "u1"), DEFAULT_LIMIT_USD);
+  assert.equal(DEFAULT_LIMIT_USD, 50);
+  assert.equal(await setLimit(db, "u1", 100), 100);
+  assert.equal(await limitFor(db, "u1"), 100);
 });
 
-test("the cap is clamped, so a typo cannot become a policy", async () => {
-  const raw = new DatabaseSync(":memory:");
-  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
-  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
-  const db = fakeD1(raw) as never;
-
-  assert.equal(await setCap(db, "u1", -40), 0, "a negative cap is not a cap");
-  assert.equal(await setCap(db, "u1", 99_999_999), MAX_CAP_USD, "and neither is an unbounded one");
-  assert.equal(await setCap(db, "u1", Number.NaN), DEFAULT_CAP_USD, "not-a-number falls back rather than storing NaN");
-});
-
-test("zero is allowed, and means it", async () => {
-  /* A legitimate thing to want on an account you are stepping away from, and
-     capVerdict has a sentence for exactly this case. */
-  const raw = new DatabaseSync(":memory:");
-  raw.exec("CREATE TABLE v2_users(id TEXT PRIMARY KEY, spend_cap_usd REAL)");
-  raw.prepare("INSERT INTO v2_users VALUES('u1', NULL)").run();
-  const db = fakeD1(raw) as never;
-
-  await setCap(db, "u1", 0);
-  assert.equal(await capFor(db, "u1"), 0);
-  const v = capVerdict({ spentUsd: 0, capUsd: 0 });
+test("the limit is clamped, so a typo cannot become a policy; zero is allowed and means it", async () => {
+  const { db } = users();
+  assert.equal(await setLimit(db, "u1", -40), 0);
+  assert.equal(await setLimit(db, "u1", 99_999_999), MAX_LIMIT_USD);
+  assert.equal(await setLimit(db, "u1", Number.NaN), DEFAULT_LIMIT_USD);
+  await setLimit(db, "u1", 0);
+  const v = limitVerdict({ chargedUsd: 0, limitUsd: await limitFor(db, "u1") });
   assert.equal(v.allowed, false);
-  assert.match(v.says, /set to nothing/);
+  assert.match(v.says, /set to nothing, so nothing will be generated/);
 });
 
-test("the refusal names a place that now has the control", () => {
-  /*
-   * The sentence and the surface, pinned together. Changing either without
-   * the other is how this got broken in the first place: a refusal that
-   * points somewhere, and nothing there.
-   */
-  const says = capVerdict({ spentUsd: 500, capUsd: 400 }).says;
-  assert.match(says, /raise it in Settings/);
+test("ACCEPTANCE: only generated work counts, at what the person is charged", async () => {
+  /* The canvas's promise: "reading footage and editing are never counted
+     against it". A transcription and a render cost money and move nothing;
+     a generated voice moves it by three times its running cost. */
+  const { raw, db } = users();
+  const now = Date.UTC(2026, 10, 22);
+  const ins = raw.prepare("INSERT INTO usage_events VALUES(?,?,?,?,?)");
+  ins.run("e1", "u1", "transcribe", 9, now);
+  ins.run("e2", "u1", "render", 4, now);
+  ins.run("e3", "u1", "tts", 2, now);
+  ins.run("e4", "u1", "tts", 5, Date.UTC(2026, 9, 30));
+  ins.run("e5", "u2", "tts", 5, now);
+  assert.deepEqual([...LIMITED_JOBS], ["tts"]);
+  assert.equal(await chargedThisMonth(db, "u1", now), 2 * CHARGE_MULTIPLE);
+  assert.equal(CHARGE_MULTIPLE, 3, "decision 38's three times");
+});
 
-  const settings = readFileSync(join(import.meta.dirname, "..", "src", "ui", "pages", "settings.ts"), "utf8");
-  assert.match(settings, /cap-form/, "Settings renders the form");
-  assert.match(settings, /cap-usd/, "with the figure in it");
+test("ACCEPTANCE: at the limit, nothing more is generated, and the sentence says where to raise it", async () => {
+  const { raw, db } = users();
+  const now = Date.UTC(2026, 10, 22);
+  raw.prepare("INSERT INTO usage_events VALUES(?,?,?,?,?)").run("e1", "u1", "tts", 50 / CHARGE_MULTIPLE, now);
+  const v = await underLimit(db, "u1", now);
+  assert.equal(v.allowed, false, "exactly at the limit is past it");
+  assert.match(v.says, /Nothing more will be generated until you raise it in Settings/);
+  assert.equal((await underLimit(db, "u1", Date.UTC(2026, 11, 1))).allowed, true, "and a new month starts clean");
+});
+
+test("the brake follows the limit, so the person it stops has something to do", async () => {
+  const { db } = users();
+  assert.equal(brakeFor(DEFAULT_LIMIT_USD), DEFAULT_CAP_USD + DEFAULT_LIMIT_USD / CHARGE_MULTIPLE);
+  assert.equal(await capFor(db, "u1"), brakeFor(DEFAULT_LIMIT_USD));
+  await setLimit(db, "u1", 3000);
+  assert.equal(await capFor(db, "u1"), DEFAULT_CAP_USD + 1000,
+    "a month of generating at the limit can't walk into the brake on that same work");
+  await setLimit(db, "u1", 0);
+  assert.equal(await capFor(db, "u1"), DEFAULT_CAP_USD, "and a zero limit never makes the brake a stop");
+});
+
+test("an old spend_cap_usd is no longer read, so a stored zero can't be a stop nobody lifts", async () => {
+  const { raw, db } = users();
+  raw.prepare("UPDATE v2_users SET spend_cap_usd = 0 WHERE id='u1'").run();
+  assert.equal(await capFor(db, "u1"), brakeFor(DEFAULT_LIMIT_USD));
+});
+
+test("the refusals name a place that has the control", () => {
+  /* Pinned together, sentence and surface, for the reason setCap was once
+     written: a refusal that points somewhere, and nothing there. */
+  assert.match(capVerdict({ spentUsd: 500, capUsd: 400 }).says, /as far as your monthly limit lets it go/);
+  assert.match(capVerdict({ spentUsd: 500, capUsd: 400 }).says, /raise it in Settings/);
+  assert.match(limitVerdict({ chargedUsd: 60, limitUsd: 50 }).says, /raise it in Settings/);
+
+  const page = renderSettings({
+    name: null, email: "a@b.c", plan: "free", isOwner: false, meters: [], billingReady: false, trash: [], cost: null,
+    limit: { usd: 50, chargedUsd: 12 },
+  });
+  assert.match(page, /Your monthly limit/);
+  for (const n of LIMIT_CHOICES) assert.match(page, new RegExp(`class="limit-chip" data-usd="${n}"`));
+  assert.match(page, /\$38 left/, "what is left, from the same two numbers");
+  assert.match(page, /reading footage and editing are never counted against it/);
 
   const client = readFileSync(join(import.meta.dirname, "..", "src", "ui", "client.ts"), "utf8");
-  assert.match(client, /\/api\/spend-cap/, "and something posts it");
+  assert.match(client, /\/api\/spend-limit/, "and something posts it");
+  const index = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  assert.match(index, /app\.post\("\/api\/spend-limit"/, "to a route that exists");
+});
+
+test("the one thing generated today asks the limit first", () => {
+  /* The TTS route runs its model in the request and never reaches the
+     dispatcher, so the brake in queue.ts never saw it. */
+  const index = readFileSync(join(import.meta.dirname, "..", "src", "index.ts"), "utf8");
+  const route = index.slice(index.indexOf('app.post("/api/beats/:id/tts"'));
+  const gate = route.indexOf("await underLimit(c.env.DB, user.id)");
+  const model = route.indexOf("env.AI.run");
+  assert.ok(gate > 0, "the route checks the limit");
+  assert.ok(model < 0 || gate < model, "before it calls the model");
+  assert.match(route.slice(gate, gate + 200), /if \(!limit\.allowed\) return c\.json\(\{ error: limit\.says \}, 402\)/);
 });

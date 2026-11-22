@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS v2_users (
      * nobody.
      */
     spend_cap_usd REAL,
+    /*
+     * The person's monthly limit for what is generated for them, in
+     * dollars of what they are charged. NULL is "never set", read as
+     * DEFAULT_LIMIT_USD. The one money setting in Settings (doc 22, row 4);
+     * spend_cap_usd above is no longer read by anything and stays as history.
+     */
+    gen_limit_usd REAL,
     is_owner INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
@@ -645,6 +652,7 @@ ALTER TABLE plan_beats ADD COLUMN by_user INTEGER;
 ALTER TABLE beats ADD COLUMN take_verdict TEXT;
 ALTER TABLE beats ADD COLUMN take_reason TEXT;
 ALTER TABLE beats ADD COLUMN take_words TEXT;
+ALTER TABLE beats ADD COLUMN over_claim INTEGER;
 ALTER TABLE sources ADD COLUMN timing_source TEXT;
 ALTER TABLE sources ADD COLUMN aligned_at INTEGER;
 ALTER TABLE v2_clips ADD COLUMN embedded_at INTEGER;
@@ -668,6 +676,7 @@ ALTER TABLE rules ADD COLUMN params TEXT;
 ALTER TABLE renders ADD COLUMN lufs REAL;
 ALTER TABLE renders ADD COLUMN true_peak REAL;
 ALTER TABLE v2_users ADD COLUMN spend_cap_usd REAL;
+ALTER TABLE v2_users ADD COLUMN gen_limit_usd REAL;
 ALTER TABLE v2_users ADD COLUMN billing_event_at INTEGER;
 ALTER TABLE v2_users ADD COLUMN outside_pref TEXT;
 ALTER TABLE v2_users ADD COLUMN ask_mode TEXT;

@@ -128,6 +128,8 @@ export interface SegmentLike {
 
 export interface BeatLike {
   id: string;
+  /** Placed over a claim as a depiction; decides the label. */
+  over_claim?: number | null;
   idx: number;
   kind: string;
   text: string | null;
@@ -342,7 +344,7 @@ function takeWords(json: string | null | undefined): Array<{ s: number; e: numbe
     takeVerdict:
       b.take_verdict === "drifted" || b.take_verdict === "unclear" ? b.take_verdict : null,
     /* No user action: the kind decides the type, the type decides the label. */
-    label: labelFor(b.kind),
+    label: labelFor(b.kind, b.over_claim),
     /* A recording is small and has no separate copy — it is its own preview. */
     mediaKey: b.media_r2_key,
     previewKey: b.media_r2_key,
