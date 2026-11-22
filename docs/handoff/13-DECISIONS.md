@@ -78,6 +78,14 @@ The decisions that shaped the product, with the reasoning — so nobody re-opens
 37. **Same model, another pool, before another model.** *Same weights, no drift.*
 38. **Meter footage-hours and landed generated seconds at ~3× cost; a spend cap.** *Charge for what drives cost; absorb the failed attempts.*
 
+    **The cap became a limit and a brake** (22 Nov, the owner's choice). The
+    canvas has one money setting: a limit on what is generated, $50, that
+    reading footage and editing never touch. The code had a cap over every
+    job's running cost, $400. Both are kept and only the limit is a setting:
+    it gates generation at what the person is charged (3× running cost, this
+    decision), and the brake over all work rises with it, so the one control
+    answers both refusals.
+
     **And show what is being absorbed** (31 Oct). "Absorb the failed attempts"
     makes every failure the business's, which is right — and for as long as
     nothing counted them, the figure this decision commits to paying was

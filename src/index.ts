@@ -56,7 +56,7 @@ import { importFromBucket, listConnections, saveConnection, usableConnection } f
 import { ROLES, draftPlan, findForBeats, needAdvice, type Role } from "./plan.ts";
 import { readIntent } from "./intent.ts";
 import { addBeat, createPlan, getPlan, listPlans, setBeatKept, setFound, setPlanProject } from "./plan-store.ts";
-import { setCap, underCap } from "./spend.ts";
+import { setLimit, underLimit } from "./spend.ts";
 import { renderBeforePost } from "./ui/pages/beforepost.ts";
 import { addCuts, fillerCuts, findPhrase, isSegmentCut, isWordCut, parseCuts, pauseCuts, phraseCuts, serialiseCuts, timeSaved, toggleSegment, toggleWord, type Cut } from "./cuts.ts";
 import { ASPECTS, CAPTION_STYLES, createRender, edlForProject, isAspect, isFormat, listFinished, listRenders, type Aspect, type Format } from "./render-job.ts";
@@ -5289,6 +5289,15 @@ app.post("/api/beats/:id/tts", async (c) => {
   const text = (beat.text ?? "").trim();
   if (!text) return c.json({ error: "there's nothing written on this beat yet" }, 400);
 
+  /*
+   * THE LIMIT, in front of the one thing this product generates today. This
+   * route runs the model in the request and never reaches the dispatcher,
+   * so the brake in queue.ts has never seen it: a generated voice was the
+   * one cost nothing checked. Doc 22, row 4.
+   */
+  const limit = await underLimit(c.env.DB, user.id);
+  if (!limit.allowed) return c.json({ error: limit.says }, 402);
+
   try {
     /*
      * `lang` is required by this model; without it the call fails with a bare
@@ -6218,14 +6227,6 @@ app.get("/landing", async (c) => {
 });
 
 /**
- * SET THE SPEND CAP, because the refusal tells people to.
- *
- * src/spend.ts stops work at the cap and its sentence says "until you raise
- * it in Settings". Nothing could: `spend_cap_usd` was read and never written,
- * so there was no way to raise it from anywhere in the product. This is the
- * missing half of a control that was already enforcing.
- */
-/**
  * CONNECT A BUCKET YOU OWN.
  *
  * "Point sources at a bucket you own" has been on the landing page and in
@@ -6302,14 +6303,21 @@ app.get("/api/connections", async (c) => {
   return c.json({ connections: await listConnections(c.env.DB, user.id) });
 });
 
-app.post("/api/spend-cap", async (c) => {
+/**
+ * SET THE MONTHLY LIMIT, because both refusals tell people to.
+ *
+ * It replaced /api/spend-cap (doc 22, row 4). That route existed because the
+ * cap's sentence said "until you raise it in Settings" and nothing could; the
+ * cap now follows the limit, so this one control lifts both.
+ */
+app.post("/api/spend-limit", async (c) => {
   await ensureV2Schema(c.env.DB);
   const user = await requireUser(c);
   const b = await body<{ usd?: number }>(c);
   const usd = Number(b.usd);
   if (!Number.isFinite(usd)) return c.json({ error: "that isn't a number" }, 422);
-  const cap = await setCap(c.env.DB, user.id, usd);
-  return c.json({ ok: true, cap });
+  const limit = await setLimit(c.env.DB, user.id, usd);
+  return c.json({ ok: true, limit });
 });
 
 app.get("/settings", async (c) => {
@@ -6339,7 +6347,9 @@ app.get("/settings", async (c) => {
   const limits = PLANS[user.plan] ?? PLANS.free;
   /* The same verdict the dispatcher refuses on, so the figure a person reads
      and the figure enforced against them are one figure. */
-  const spend = await underCap(c.env.DB, user.id);
+  /* The limit, as generation reads it (src/spend.ts). The brake behind it is
+     not shown: it is not a setting, it follows this one. */
+  const limit = await underLimit(c.env.DB, user.id);
   /* The owner is metered and never blocked — checkCap and checkStorage both
      pass them — so a ceiling here would be a number nothing enforces. What
      they have used is the point, and it stays. */
@@ -6375,30 +6385,6 @@ app.get("/settings", async (c) => {
       unit: "GB",
       color: ACCENT_GREEN,
       note: "Source videos are the bulk of it. Nothing expires — need more room, add storage or point sources at your own bucket below.",
-    },
-    /*
-     * THE SPEND CAP, which has been stopping work without ever appearing.
-     *
-     * src/spend.ts checks it on every dispatch and fails the job when it is
-     * reached, with a sentence that reads "Nothing else will run until you
-     * raise it in Settings". Settings had no such row and no such control, and
-     * `spend_cap_usd` was read by capFor and written by nothing at all — so
-     * the cap could not be raised from anywhere, and the only warning
-     * (`nearingCap`) went to a server log.
-     *
-     * The one meter here denominated in money rather than work, which is why
-     * it is last: the two above are what you have used, this is what it cost.
-     */
-    {
-      label: "Monthly spend cap",
-      used: Math.round(spend.spentUsd * 100) / 100,
-      cap: Math.round(spend.capUsd),
-      /* Enforced on EVERY account, the owner's included — unlike the two
-         above, which the owner is exempt from. So it is never `uncapped`. */
-      unit: "USD",
-      color: ACCENT_GOLD,
-      editable: true,
-      note: "What running your jobs has actually cost this month. Work stops here until you raise it.",
     },
   ];
 
@@ -6468,6 +6454,7 @@ app.get("/settings", async (c) => {
           last_import_at: x.last_import_at,
         })),
         meters,
+        limit: { usd: limit.capUsd, chargedUsd: limit.spentUsd },
         cost,
         /*
          * Owner-only: whether this product is working is a fact about our

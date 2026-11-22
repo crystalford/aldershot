@@ -48,7 +48,8 @@ Meter what drives cost, at about 3× expected cost:
 
 - **Footage-hour** — $12; counted once when footage is first read; every cut, short and revision afterwards is free.
 - **Generated video** is made in clips of up to 8 seconds (Veo 3.1's limit; the models like it are close). Priced at about 3× the model's list price per second: **Fast** 36¢ a second (Veo 3.1 Fast lists at 12¢), **Full quality** $1.20 (Veo 3.1 lists at 40¢). A **generated still** is 12¢. A shot longer than one clip is one clip that then holds its last frame, a clip every 8 seconds cut together, or a still that moves; each is priced by the seconds actually generated. **Billed only for what lands in the final cut**; failed and rejected attempts are absorbed. List prices are November 2026 and are re-read before launch.
-- A **monthly spend cap** per account; nothing runs past it without the user raising it.
+- **One monthly limit**, the person's, set in Settings: what generated pictures and voices may be charged this month, $50 until they choose. Nothing generates past it until they raise it; reading footage and editing never count against it.
+- Behind it, a **brake** on what all of an account's work costs to run — $400 plus what the limit lets generation cost — so a runaway job stops the same day. It is not a second setting; it rises with the limit, and its refusal says to raise the limit. (22 Nov; doc 22, row 4. Until then the brake was the setting, and `spend_cap_usd` is kept but no longer read.)
 
 | Plan | $/mo | Included |
 |---|---|---|
