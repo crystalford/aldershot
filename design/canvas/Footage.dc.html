@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Footage</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; background:#101013; }
+  * { box-sizing:border-box; }
+  a { color:rgba(236,236,241,0.85); text-decoration:none; } a:hover { color:#FFFFFF; }
+  a:focus-visible, [role=button]:focus-visible { outline:2px solid #ECECF1; outline-offset:2px; }
+  *::-webkit-scrollbar { width:8px; } *::-webkit-scrollbar-thumb { background:rgba(236,236,241,0.1); border-radius:99px; }
+  @keyframes libIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <!-- header row 1 — as One Take -->
+  <div style="display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="Studio.dc.html" title="The Studio" onmouseenter="{{ onMarkNext }}" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em;color:#ECECF1">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:{{ markColor }};transition:background .4s;border-radius:2px"></span><span style="width:5.5px;height:11px;background:{{ markColor }};transition:background .4s;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:{{ markColor }};transition:background .4s;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="flex:1;display:flex;justify-content:flex-end;align-items:center">
+      <a href="Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#ECECF1" style-hover="background:#2E2E36">C</a>
+    </div>
+  </div>
+
+  <!-- header row 2 — project switcher + Studio / Library -->
+  <div style="position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:10px;overflow:hidden">
+      <span tabindex="0" role="button" onclick="{{ onSwitcher }}" title="Switch project" style="flex:0 1 auto;min-width:0;display:inline-flex;align-items:baseline;gap:6px;cursor:pointer;padding:3px 7px;margin:-3px -7px;border-radius:5px;background:{{ switcherBg }}" style-hover="background:#1C1C22"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;font-weight:600;white-space:nowrap">{{ title }}</span><span style="flex:none;font-size:9px;color:rgba(236,236,241,0.5);transform:translateY(-1px)">▼</span></span>
+    </div>
+<div style="flex:none;display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);overflow-x:auto;max-width:100%">
+      <a href="Studio.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Studio</a>
+      <a href="Plan.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Plan</a>
+      <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:#2E2E36;color:#ECECF1;white-space:nowrap">Footage</span>
+      <a href="Trailer.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Trailer</a>
+      <a href="Editor.dc.html" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;color:rgba(236,236,241,0.5);white-space:nowrap" style-hover="color:#ECECF1">Editor</a>
+    </div>
+    <sc-if value="{{ switcherOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:calc(100% + 4px);left:16px;width:min(320px,calc(100vw - 32px));padding:6px;border-radius:10px;background:#18181D;box-shadow:0 12px 32px rgba(0,0,0,0.5),inset 0 0 0 1px rgba(255,255,255,0.08);animation:libIn .18s ease both">
+        <sc-for list="{{ projects }}" as="pj" hint-placeholder-count="2">
+          <div tabindex="0" role="button" onclick="{{ pj.onGo }}" style="display:flex;gap:10px;align-items:baseline;padding:9px 10px;border-radius:6px;background:{{ pj.bg }};cursor:pointer" style-hover="background:#222228">
+            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600">{{ pj.name }}</span>
+            <span style="flex:none;font-size:10.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ pj.kind }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="max-width:680px;margin:0 auto;padding:0 20px 120px">
+
+    <!-- 1 · where you are, in one line -->
+    <div style="padding:44px 0 0;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="display:flex;gap:4px">
+        <sc-for list="{{ pips }}" as="p" hint-placeholder-count="5">
+          <span style="width:28px;height:6px;border-radius:99px;background:{{ p.bg }};transition:background .5s"></span>
+        </sc-for>
+      </div>
+      <span style="font-size:13px;color:rgba(236,236,241,0.62)">{{ progText }}</span>
+    </div>
+
+    <!-- 2 · the one thing to do now -->
+    <sc-if value="{{ justDid }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:20px;display:flex;gap:10px;align-items:baseline;font-size:14px;color:#5EC98F;animation:libIn .35s ease both"><span>✓</span><span>{{ justDidText }}</span></div>
+    </sc-if>
+
+    <sc-if value="{{ hasCurrent }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:20px;padding:26px 26px 22px;border-radius:16px;background:#16161B;box-shadow:inset 0 0 0 1px {{ cur.ring }};animation:{{ curAnim }}">
+        <div style="display:flex;align-items:center;gap:12px">
+          <dc-import name="Scout" state="{{ cur.scout }}" size="30" hint-size="30px,32px"></dc-import>
+          <span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:{{ cur.kindColor }}">{{ cur.kind }}</span>
+          <span style="margin-left:auto;font-size:12px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.5)">{{ cur.cost }}</span>
+        </div>
+        <div style="margin-top:16px;font-size:clamp(22px,4vw,27px);font-weight:600;letter-spacing:-0.02em;line-height:1.2;text-wrap:balance">{{ cur.title }}</div>
+        <sc-if value="{{ cur.hasQuote }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:14px;padding-left:14px;border-left:2px solid {{ cur.quoteRule }};font-size:15px;line-height:1.55;color:rgba(236,236,241,0.88)">{{ cur.quote }}<span style="display:block;margin-top:5px;font-size:11.5px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.45)">{{ cur.from }}</span></div>
+        </sc-if>
+        <div style="margin-top:14px;font-size:15px;line-height:1.6;color:rgba(236,236,241,0.72)">{{ cur.unlocks }}</div>
+        <div style="margin-top:22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+          <div tabindex="0" role="button" onclick="{{ cur.onAction }}" style="font-size:15px;font-weight:600;padding:12px 22px;border-radius:10px;background:{{ cur.btnBg }};color:#101013;cursor:pointer;white-space:nowrap">{{ cur.action }}</div>
+          <span tabindex="0" role="button" onclick="{{ cur.onLater }}" style="font-size:13px;color:rgba(236,236,241,0.5);cursor:pointer" style-hover="color:#ECECF1">Not now</span>
+          <span tabindex="0" role="button" onclick="{{ onWhy }}" style="margin-left:auto;font-size:13px;color:rgba(236,236,241,0.5);cursor:pointer" style-hover="color:#ECECF1">{{ whyLabel }}</span>
+        </div>
+        <sc-if value="{{ showWhy }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);font-size:13.5px;line-height:1.6;color:rgba(236,236,241,0.62);animation:libIn .25s ease both">{{ cur.detail }} <span style="color:rgba(236,236,241,0.42)">Fills: {{ cur.where }}.</span></div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ allDone }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:20px;padding:26px;border-radius:16px;background:#16161B;box-shadow:inset 0 0 0 1px rgba(94,201,143,0.35);animation:libIn .4s ease both">
+        <div style="display:flex;align-items:center;gap:12px"><dc-import name="Scout" state="found" size="30" hint-size="30px,32px"></dc-import><span style="font-size:11px;font-weight:600;letter-spacing:.09em;color:#5EC98F">UNLOCKED</span></div>
+        <div style="margin-top:16px;font-size:clamp(22px,4vw,27px);font-weight:600;letter-spacing:-0.02em;line-height:1.2">{{ unlockName }}</div>
+        <div style="margin-top:12px;font-size:15px;line-height:1.6;color:rgba(236,236,241,0.72)">{{ unlockText }}</div>
+        <div style="margin-top:22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+          <a href="Studio.dc.html" style="font-size:15px;font-weight:600;padding:12px 22px;border-radius:10px;background:#ECECF1;color:#101013">{{ doneLink }}</a>
+          <span tabindex="0" role="button" onclick="{{ onReset }}" style="font-size:13px;color:rgba(236,236,241,0.5);cursor:pointer" style-hover="color:#ECECF1">Reset the sample</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- 3 · after this — titles only -->
+    <sc-if value="{{ hasQueue }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:14px;padding:0 4px;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline">
+        <span style="font-size:12px;color:rgba(236,236,241,0.42)">After this:</span>
+        <sc-for list="{{ queue }}" as="q" hint-placeholder-count="3">
+          <span tabindex="0" role="button" onclick="{{ q.onGo }}" title="Do this one instead" style="font-size:12.5px;color:rgba(236,236,241,0.62);cursor:pointer" style-hover="color:#ECECF1">{{ q.title }} <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:rgba(236,236,241,0.35)">{{ q.cost }}</span></span>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- 4 · the map — one tile per section, open one at a time -->
+    <div style="margin-top:52px;font-size:11px;font-weight:600;letter-spacing:.09em;color:rgba(236,236,241,0.45)">{{ mapTitle }}</div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,46%),1fr));gap:8px">
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+        <div tabindex="0" role="button" onclick="{{ r.onOpen }}" style="padding:14px 14px 12px;border-radius:12px;background:{{ r.bg }};box-shadow:inset 0 0 0 1px {{ r.ring }};cursor:pointer;transition:background .2s" style-hover="background:#1A1A1F">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ r.dot }};box-shadow:{{ r.dotRing }}"></span>
+            <span style="font-size:11.5px;color:{{ r.statusColor }}">{{ r.status }}</span>
+            <span style="margin-left:auto;font-size:11px;font-family:'IBM Plex Mono',monospace;color:rgba(236,236,241,0.32)">{{ r.num }}</span>
+          </div>
+          <div style="margin-top:8px;font-size:14.5px;font-weight:600;line-height:1.3">{{ r.short }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <sc-if value="{{ hasOpenRow }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:8px;padding:18px 20px;border-radius:12px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07);animation:libIn .25s ease both">
+        <div style="font-size:15px;font-weight:600">{{ openRow.name }}</div>
+        <div style="margin-top:4px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.55)">{{ openRow.argues }}</div>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+          <sc-for list="{{ openRow.slots }}" as="sl" hint-placeholder-count="3">
+            <div style="display:flex;gap:12px;align-items:baseline;padding:9px 12px;border-radius:8px;background:{{ sl.bg }};box-shadow:{{ sl.ring }};animation:{{ sl.anim }}">
+              <span style="flex:0 0 64px;font-size:10px;font-weight:600;letter-spacing:.09em;color:{{ sl.labelColor }}">{{ sl.label }}</span>
+              <span style="flex:1;min-width:0;font-size:13px;line-height:1.45;color:{{ sl.color }}">{{ sl.text }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- 5 · everything else, folded -->
+    <div style="margin-top:52px;border-top:1px solid rgba(255,255,255,0.06)">
+      <sc-for list="{{ more }}" as="mo" hint-placeholder-count="3">
+        <div style="border-bottom:1px solid rgba(255,255,255,0.06)">
+          <div tabindex="0" role="button" onclick="{{ mo.onToggle }}" style="display:flex;align-items:baseline;gap:12px;padding:15px 2px;cursor:pointer">
+            <span style="flex:none;width:12px;font-size:11px;color:rgba(236,236,241,0.45)">{{ mo.chev }}</span>
+            <span style="flex:none;font-size:14px;font-weight:600;color:rgba(236,236,241,0.85);white-space:nowrap">{{ mo.name }}</span>
+            <span style="margin-left:auto;font-size:12px;color:rgba(236,236,241,0.42);text-align:right">{{ mo.summary }}</span>
+          </div>
+          <sc-if value="{{ mo.isOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:0 2px 16px 26px;display:flex;flex-direction:column;gap:12px;animation:libIn .25s ease both">
+              <sc-for list="{{ mo.items }}" as="it" hint-placeholder-count="4">
+                <div style="display:flex;gap:10px;align-items:baseline">
+                  <span style="flex:none;width:12px;font-size:12px;color:{{ it.markColor }}">{{ it.mark }}</span>
+                  <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600;color:{{ it.nameColor }}">{{ it.name }}</div><div style="margin-top:2px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.52)">{{ it.what }}</div></div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1400}}'>
+// The Library, calm version. One thing to do at a time; everything else is folded until asked for.
+// Built for a reader who loses the thread in dense screens: one primary button, in the same place every time;
+// the next task picked for you (with "Not now" and "After this" if you'd rather choose); each task says how long
+// it takes and what it gets you; finishing one shows what changed and moves straight on.
+// Colour, as One Take: gold = you (yours to record or approve), cyan = Scout / someone else / still needed,
+// green = done, red = thin.
+const GOLD = "#D9B36A", CYAN = "#5EB8C9", GREEN = "#5EC98F", RED = "#E06A6A";
+const MUTE = "rgba(236,236,241,0.42)";
+const NUM = ["No", "One", "Two", "Three", "Four", "Five", "Six"];
+
+/* ───────────── NASA as a medium — a documentary ───────────── */
+const NASA = {
+  key: "nasa", name: "NASA as a medium", kind: "documentary",
+  cols: ["SAID", "SHOWN", "PROVEN"],
+  rows: [
+    { short: "Open on the quote", name: "Open on the quote", argues: "McLuhan already said it in one line — start where he did.",
+      cells: [["have", "your voice, after it · take 2"], ["have", "McLuhan interview · 0:09"], ["have", "source credited on screen"]] },
+    { short: "Mercury on TV", name: "Mercury on television", argues: "Before anyone flew, the launches were scheduled like episodes.",
+      cells: [["slot", "the bridge · 15 sec, not recorded yet"], ["have", "montage · 7 anchors counting down"], ["have", "1962 broadcast, “next exciting chapter”"]] },
+    { short: "The posters", name: "The posters", argues: "NASA’s own art department drew the future it then had to fly to.",
+      cells: [["have", "you, stream 22:31 · 1 take"], ["have", "3 poster scans, your folder"], ["have", "NASA Art Program, 1962 · checked"]] },
+    { short: "Mars and orbits", name: "The first Mars mission and orbital mechanics", argues: "The real planning looked nothing like the posters. It was arithmetic.",
+      cells: [["have", "scripted · 1 take kept"], ["slot", "a transfer orbit to show"], ["found", "Scout found one — waiting for you"]] },
+    { short: "The engineers’ view", name: "The engineers’ view", argues: "The people doing the work thought the PR was a distraction.",
+      cells: [["have", "you, video 3:12"], ["have", "control-room footage · NASA"], ["thin", "only your word so far"]] },
+    { short: "The close", name: "Why they wanted the public to dream", argues: "The fiction wasn’t decoration; it was the funding model.",
+      cells: [["slot", "the last line — write it last"], ["look", "Scout’s looking"], ["look", "Scout’s looking"]], later: true },
+  ],
+  missions: [
+    { id: "n1", kind: "you", row: 1, col: 0, where: "Mercury on TV · said",
+      title: "Record the bridge into Mercury",
+      quote: "Before anyone flew, the launches were already being scheduled like episodes.", from: "your script line — change it as you say it", quoteRule: "rgba(217,179,106,0.55)",
+      detail: "Phone, mic, or the car — it opens straight on this line.",
+      unlocks: "Gets you a whole section done, so the first half plays without a hole.",
+      action: "Record", cost: "15 sec",
+      text: "your bridge · recorded just now", done: "Recorded. Mercury on TV is ready." },
+    { id: "n2", kind: "scout", row: 3, col: 2, where: "Mars and orbits · proven",
+      title: "Check what Scout found for Mars",
+      quote: "July 1965: Mariner 4’s first look at Mars came back as numbers. JPL engineers printed them in strips and coloured them in by hand.", from: "NASA / JPL archive · free to use · credit NASA/JPL", quoteRule: "rgba(94,184,201,0.5)",
+      detail: "Scout thinks this is your section in one object: the first picture of another planet was arithmetic, filled in with pastels.",
+      unlocks: "Gets you proof for the Mars section that’s also something to look at.",
+      action: "Use it", cost: "1 min",
+      text: "Mariner 4, hand-coloured · JPL 1965", done: "In. The Mars section has its proof." },
+    { id: "n3", kind: "draw", row: 3, col: 1, where: "Mars and orbits · shown",
+      title: "Draw the transfer orbit",
+      detail: "Earth’s orbit, Mars’s orbit, and the half-ellipse between them — drawn from the real orbits, labelled in your words, timed to your take.",
+      unlocks: "Gets you a picture of the arithmetic itself, instead of you talking over posters.",
+      action: "Draw it", cost: "1 min",
+      text: "transfer-orbit diagram · approved", done: "Drawn. The Mars section is ready." },
+    { id: "n4", kind: "scout", row: 4, col: 2, where: "The engineers’ view · proven",
+      title: "Pick the engineer’s line",
+      detail: "Scout read NASA’s Johnson Space Center oral histories and marked three passages where engineers talk about the press. The two you don’t pick stay in your footage.",
+      unlocks: "Gets you the other side in someone else’s words, not just yours.",
+      action: "Read 3", cost: "2 min",
+      text: "JSC oral history · engineer, on the press", done: "Picked. The engineers’ view is ready." },
+  ],
+  total: 5, unit: "sections", mapTitle: "YOUR SECTIONS",
+  progress: (n, t) => n === t ? "Rough cut unlocked" : n + " of " + t + " sections ready for a rough cut",
+  unlockName: "A rough cut you can watch.",
+  unlockText: "Sections one to five play end to end. The close is the one gap left, marked as a gap — and Scout’s still on it.",
+  doneLink: "Watch it",
+  ladder: (all, togo) => [
+    ["done", "Find any line by what it means", "Ask for “the bit about publicity” and get 3:12 and 41:50 — and that they disagree."],
+    ["done", "Six sections from one sentence", "Your seed, laid out as a plan the Studio fills."],
+    ["done", "Every quote carries its source", "Credited on screen automatically, with the rights note kept."],
+    [all ? "done" : "next", "A rough cut you can watch", all ? "Unlocked." : togo + (togo === 1 ? " small thing" : " small things") + " away."],
+    [all ? "next" : "later", "Safe to publish", "Every shot rights-clear, every claim sourced, credits written for you."],
+    ["later", "Three ways to tell it", "In order, by argument, or cold open on Mariner 4 — you pick."],
+  ],
+  ways: [
+    ["Your voice", "Phone or mic. Opens on the next line you haven’t recorded."],
+    ["Reading", "Highlight a passage in a PDF or scan. It becomes proof, with its page."],
+    ["From the browser", "Send a page or video. It keeps the link and the rights note."],
+    ["Archives", "NASA, Internet Archive, Wikimedia — rights checked first."],
+    ["Draw it", "Diagrams from real numbers, labelled in your words."],
+  ],
+  trail: [
+    ["Archive · McLuhan 0:09", "→ Open on the quote, credited on screen"],
+    ["Folder · 3 poster scans", "→ The posters, as proof on each line"],
+    ["Your stream · 22:31", "→ The posters, you talking about them"],
+    ["Your video · 3:12", "→ The engineers’ view, your own counterpoint"],
+    ["Your stream · 41:50", "Not used — it contradicts 3:12. That might be the essay.", true],
+  ],
+};
+
+/* ───────────── Whether to leave — a vlog ───────────── */
+const LEAVE = {
+  key: "leave", name: "Whether to leave", kind: "vlog",
+  cols: ["ANGLE 1", "ANGLE 2"],
+  rows: [
+    { short: "Why leave", name: "why leave", argues: "Everything you have on this was said on one Tuesday in the kitchen.", cells: [["have", "Tuesday · kitchen · 3 moments"], ["need", "a second angle"]] },
+    { short: "What it costs", name: "what it costs", argues: "Priced in rent, then the price that’s embarrassing to say.", cells: [["have", "Thursday · the drive · 2 moments"], ["have", "The Backseat Show · 12:34 · verified"]] },
+    { short: "The house", name: "the house", argues: "The room that gets sun until four — described twice, never shown.", cells: [["have", "Thursday · the drive · 2 moments"], ["need", "pictures of the room"]] },
+    { short: "What I’d miss", name: "what I’d miss", argues: "Tuesday nights, and the version of you that shows up for them.", cells: [["have", "Sunday · the house · 3 moments"], ["found", "Scout found one — waiting for you"]] },
+    { short: "Landing it", name: "landing it", argues: "Said once, late, plainly — Sunday at 44:02.", cells: [["have", "Sunday · the house · 1 moment"], ["found", "Scout heard one — needs a link"]] },
+  ],
+  missions: [
+    { id: "v1", kind: "you", row: 0, col: 1, where: "Why leave · second angle",
+      title: "Say why you’d leave — anywhere but the kitchen",
+      detail: "One sentence, wherever you are. It opens straight on this.",
+      unlocks: "Gets you a second angle, so the opening isn’t all one Tuesday.",
+      action: "Record", cost: "30 sec", text: "phone · recorded just now", done: "Recorded. Why leave has two angles." },
+    { id: "v2", kind: "you", row: 2, col: 1, where: "The house · second angle",
+      title: "Film the room that gets sun until four",
+      detail: "No talking — just the room, next time you’re there.",
+      unlocks: "Gets you pictures under the house, instead of a talking head.",
+      action: "Record", cost: "20 sec", text: "phone · the room · just now", done: "Filmed. The house has pictures." },
+    { id: "v3", kind: "scout", row: 3, col: 1, where: "What I’d miss · second angle",
+      title: "Check what Scout found for what you’d miss",
+      quote: "“I visit twice a year and every time there’s less of me there to visit.”", from: "The Backseat Show · 41:08", quoteRule: "rgba(94,184,201,0.5)",
+      detail: "Scout thinks it answers your Sunday line at 31:20 — the same thought, from someone who left.",
+      unlocks: "Gets you a voice that isn’t yours on the case for staying.",
+      action: "Use it", cost: "24 sec", text: "The Backseat Show · 41:08 · verified", done: "In. What I’d miss has two angles." },
+    { id: "v4", kind: "scout", row: 4, col: 1, where: "Landing it · second angle",
+      title: "Pull the stream line for the landing",
+      quote: "“You don’t decide to leave. You notice you already have, and then you do the paperwork.”", from: "DSP · Twitch stream · 2:13:58", quoteRule: "rgba(94,184,201,0.5)",
+      detail: "Scout heard it on a Twitch stream, and Aldershot never downloads from Twitch. Paste the link and it’s linked at 2:13:58 — it plays from the source, credited.",
+      unlocks: "Gets you the landing said twice — by you, and by someone who lived it.",
+      action: "Paste link", cost: "1 link", text: "DSP stream · 2:13:58 · verified", done: "Linked. Landing it has two angles." },
+  ],
+  total: 5, unit: "threads", mapTitle: "YOUR THREADS",
+  progress: (n, t) => n === t ? "Three-ways unlocked" : n + " of " + t + " threads have two angles",
+  unlockName: "Three ways to build any section.",
+  unlockText: "Every thread has two angles now, so the Studio can lay out any section three ways and you pick.",
+  doneLink: "Open the Studio",
+  ladder: (all, togo) => [
+    ["done", "Find any line by what it means", "Ask for “the money bit” and get 11:48 on the drive."],
+    ["done", "A first cut on leaving", "Every thread has a moment, so there’s a whole video to start from."],
+    [all ? "done" : "next", "Three ways to build any section", all ? "Unlocked." : togo + (togo === 1 ? " small thing" : " small things") + " away."],
+    ["later", "A short for every thread", "60 seconds per thread, from its strongest moments."],
+  ],
+  ways: [
+    ["Phone", "Opens on your next task. Record, and it’s in."],
+    ["Voice memo", "Talking counts. Say it in the car."],
+    ["Drop a file", "Any video, any length."],
+    ["Paste a link", "YouTube, a podcast, a Twitch VOD."],
+  ],
+  trail: [
+    ["Thu · the drive · 11:48", "→ “The money is the alibi”, in the cut"],
+    ["The Backseat Show · 12:34", "→ “What it costs other people”, verified"],
+    ["Sun · the house · 44:02", "→ The landing"],
+  ],
+};
+const PROJECTS = [NASA, LEAVE];
+
+// ── one film, shared by every tab (Studio, Plan, Footage, Trailer) ──
+// Kept in this browser, so a change made on any page shows up on all of them.
+const KEY = "aldershot.nasa.v1";
+const SEED_NOTES = [{ seq: "s5", t: 13, text: "hold on the Mariner picture longer, let it breathe" }, { seq: "s5", t: 70, text: "draw the launch window as a calendar, every 26 months" }];
+const loadShared = () => { let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {} return { over: {}, notes: SEED_NOTES, ...o }; };
+const saveShared = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} };
+
+// the documentary's missions are the same moments the Studio and Spine show
+const NASA_LINK = { n1: ["s3:1", { s: "rec" }], n2: ["s5:2", { p: "have" }], n3: ["s5:1", { p: "approved" }], n4: ["s6:1", { p: "have", s: "have" }] };
+const linkedDone = sh => { const d = {}; Object.keys(NASA_LINK).forEach(id => { const [k, eff] = NASA_LINK[id], o = (sh.over || {})[k] || {}; if (Object.keys(eff).every(x => o[x] === eff[x])) d[id] = true; }); return d; };
+
+const STY = {
+  have:  { bg: "#1A1A1F", ring: "none", color: "rgba(236,236,241,0.8)", label: MUTE },
+  slot:  { bg: "transparent", ring: "inset 0 0 0 1px rgba(217,179,106,0.45)", color: GOLD, label: "rgba(217,179,106,0.7)" },
+  need:  { bg: "transparent", ring: "inset 0 0 0 1px rgba(94,184,201,0.4)", color: CYAN, label: "rgba(94,184,201,0.65)" },
+  found: { bg: "transparent", ring: "inset 0 0 0 1px rgba(94,184,201,0.45)", color: CYAN, label: "rgba(94,184,201,0.7)" },
+  look:  { bg: "transparent", ring: "inset 0 0 0 1px rgba(94,184,201,0.22)", color: "rgba(94,184,201,0.75)", label: "rgba(94,184,201,0.5)" },
+  thin:  { bg: "transparent", ring: "inset 0 0 0 1px rgba(224,106,106,0.4)", color: RED, label: "rgba(224,106,106,0.65)" },
+};
+
+class Component extends DCLogic {
+  state = { proj: "nasa", done: {}, sh: loadShared(), later: [], pick: null, fresh: null, openRow: null, moreOpen: null, why: false, markIdx: null, switcherOpen: false };
+
+
+
+  share(patch) { const sh = { ...this.state.sh, ...patch }; saveShared(sh); this.setState({ sh }); return sh; }
+  shareOver(key, eff) { const sh = this.state.sh; return this.share({ over: { ...sh.over, [key]: { ...(sh.over[key] || {}), ...eff } } }); }
+
+  componentDidMount() { this.onStore = e => { if (!e || e.key === KEY || e.key === null) this.setState({ sh: loadShared() }); }; window.addEventListener("storage", this.onStore); }
+  componentWillUnmount() { window.removeEventListener("storage", this.onStore); }
+  act(id) {
+    if (NASA_LINK[id]) this.shareOver(NASA_LINK[id][0], NASA_LINK[id][1]);
+    else this.setState({ done: { ...this.state.done, [id]: true } });
+    this.setState({ fresh: id, pick: null, why: false });
+  }
+
+  renderVals() {
+    const s = this.state, done = { ...(s.done || {}), ...linkedDone(s.sh) };
+    const P = PROJECTS.find(p => p.key === s.proj) || NASA;
+    const out = {};
+
+    // header
+    const PAL = ["#5EB8C9", "#5EC98F", "#E06A6A", "#ECECF1"];
+    const mi = s.markIdx === null ? 3 : s.markIdx;
+    out.markColor = PAL[mi % 4];
+    out.onMarkNext = () => this.setState({ markIdx: (mi + 1) % 4 });
+    out.title = P.name;
+    out.switcherOpen = !!s.switcherOpen; out.switcherBg = s.switcherOpen ? "#1C1C22" : "transparent";
+    out.onSwitcher = () => this.setState({ switcherOpen: !s.switcherOpen });
+    out.projects = PROJECTS.map(p => ({ name: p.name, kind: p.kind, bg: p.key === P.key ? "#232329" : "transparent",
+      onGo: () => this.setState({ proj: p.key, switcherOpen: false, fresh: null, pick: null, openRow: null, moreOpen: null, why: false }) }));
+    out.onReset = () => { if (P.key === "nasa") { const over = { ...(s.sh.over || {}) }; Object.values(NASA_LINK).forEach(v => delete over[v[0]]); this.share({ over }); }
+      this.setState({ done: {}, later: [], pick: null, fresh: null, openRow: null, why: false }); };
+
+    // fill the map from what's done
+    const rows = P.rows.map(r => ({ ...r, cells: r.cells.map(c => ({ st: c[0], text: c[1], fresh: false })) }));
+    P.missions.forEach(m => { if (done[m.id]) rows[m.row].cells[m.col] = { st: "have", text: m.text, fresh: m.id === s.fresh }; });
+
+    // the task queue: undone, "not now" ones moved to the back
+    const later = s.later || [];
+    const open = P.missions.filter(m => !done[m.id]);
+    const queue = [...open.filter(m => !later.includes(m.id)), ...later.map(id => open.find(m => m.id === id)).filter(Boolean)];
+    const cur = queue.find(m => m.id === s.pick) || queue[0] || null;
+
+    // progress
+    let ready = 0;
+    rows.forEach(r => { if (!r.later && r.cells.every(c => c.st === "have")) ready++; });
+    out.allDone = !cur;
+    out.pips = Array.from({ length: P.total }, (_, i) => ({ bg: i < ready ? GREEN : "rgba(236,236,241,0.1)" }));
+    out.progText = P.progress(ready, P.total);
+
+    // the one task
+    out.hasCurrent = !!cur;
+    out.justDid = !!s.fresh && !!done[s.fresh];
+    const freshM = P.missions.find(m => m.id === s.fresh);
+    out.justDidText = freshM ? freshM.done : "";
+    out.curAnim = s.fresh ? "libIn .4s ease both" : "none";
+    if (cur) {
+      const you = cur.kind !== "scout";
+      out.cur = { title: cur.title, action: cur.action, cost: cur.cost, unlocks: cur.unlocks, detail: cur.detail, where: cur.where,
+        kind: cur.kind === "you" ? "YOURS TO RECORD" : cur.kind === "draw" ? "YOURS TO APPROVE" : "SCOUT FOUND THIS",
+        kindColor: you ? GOLD : CYAN, btnBg: you ? GOLD : CYAN, ring: you ? "rgba(217,179,106,0.28)" : "rgba(94,184,201,0.28)",
+        scout: you ? "mission" : "found",
+        hasQuote: !!cur.quote, quote: cur.quote || "", from: cur.from || "", quoteRule: cur.quoteRule || "transparent",
+        onAction: () => this.act(cur.id),
+        onLater: () => this.setState({ later: [...later.filter(x => x !== cur.id), cur.id], pick: null, fresh: null, why: false }) };
+    } else out.cur = { title: "", action: "", cost: "", unlocks: "", detail: "", where: "", kind: "", kindColor: GOLD, btnBg: GOLD, ring: "transparent", scout: "idle", hasQuote: false, quote: "", from: "", quoteRule: "transparent", onAction: () => {}, onLater: () => {} };
+    out.showWhy = !!s.why && !!cur;
+    out.whyLabel = s.why ? "Less" : "Why this?";
+    out.onWhy = () => this.setState({ why: !s.why });
+    out.unlockName = P.unlockName; out.unlockText = P.unlockText; out.doneLink = P.doneLink;
+
+    const rest = queue.filter(m => !cur || m.id !== cur.id);
+    out.hasQueue = rest.length > 0;
+    out.queue = rest.map(m => ({ title: m.title, cost: m.cost,
+      onGo: () => this.setState({ pick: m.id, fresh: null, why: false }) }));
+
+    // the map
+    out.mapTitle = P.mapTitle;
+    out.rows = rows.map((r, i) => {
+      const gaps = r.cells.filter(c => c.st !== "have").length;
+      const isTarget = cur && cur.row === i;
+      const isOpen = s.openRow === i;
+      const st = r.later ? ["Scout’s on it", CYAN, "transparent", "inset 0 0 0 1.5px " + CYAN]
+        : gaps === 0 ? ["Ready", GREEN, GREEN, "none"]
+        : [gaps + (gaps === 1 ? " gap" : " gaps"), "rgba(236,236,241,0.55)", "transparent", "inset 0 0 0 1.5px rgba(236,236,241,0.4)"];
+      return { num: String(i + 1), short: r.short, status: isTarget ? "Next up" : st[0], statusColor: isTarget ? (cur.kind === "scout" ? CYAN : GOLD) : st[1],
+        dot: isTarget ? (cur.kind === "scout" ? CYAN : GOLD) : st[2], dotRing: isTarget ? "none" : st[3],
+        bg: isOpen ? "#1A1A1F" : "#141418",
+        ring: isOpen ? "rgba(236,236,241,0.28)" : isTarget ? (cur.kind === "scout" ? "rgba(94,184,201,0.35)" : "rgba(217,179,106,0.35)") : "rgba(255,255,255,0.06)",
+        onOpen: () => this.setState({ openRow: isOpen ? null : i }) };
+    });
+    const orw = s.openRow !== null && rows[s.openRow];
+    out.hasOpenRow = !!orw;
+    out.openRow = orw ? { name: orw.name, argues: orw.argues, slots: orw.cells.map((c, ci) => { const y = STY[c.st] || STY.have;
+      return { label: P.cols[ci] || "", text: c.text, bg: y.bg, color: y.color, labelColor: y.label,
+        ring: c.fresh ? "inset 0 0 0 1px rgba(94,201,143,0.5)" : y.ring, anim: c.fresh ? "libIn .4s ease both" : "none" }; }) }
+      : { name: "", argues: "", slots: [] };
+
+    // folded: what it unlocks, ways in, where things went
+    const lad = P.ladder(out.allDone, open.length);
+    const doneCount = lad.filter(l => l[0] === "done").length;
+    const nextL = lad.find(l => l[0] === "next");
+    const fold = (key, name, summary, items) => ({ name, summary, chev: s.moreOpen === key ? "▾" : "▸", isOpen: s.moreOpen === key, items,
+      onToggle: () => this.setState({ moreOpen: s.moreOpen === key ? null : key }) });
+    const mineTrail = P.missions.filter(m => done[m.id]).reverse().map(m => ({ mark: "•", markColor: m.kind === "scout" ? CYAN : GOLD, name: "Just now", nameColor: "#ECECF1", what: "→ " + m.where }));
+    out.more = [
+      fold("unlocks", "What it can do", doneCount + " unlocked" + (nextL ? " · next: " + nextL[1].toLowerCase() : ""),
+        lad.map(l => ({ mark: l[0] === "done" ? "✓" : l[0] === "next" ? "→" : "·", markColor: l[0] === "done" ? GREEN : l[0] === "next" ? CYAN : "rgba(236,236,241,0.3)",
+          name: l[1], nameColor: l[0] === "later" ? "rgba(236,236,241,0.55)" : "#ECECF1", what: l[2] }))),
+      fold("ways", "Ways to add things", P.ways.length + " ways in",
+        P.ways.map(w => ({ mark: "+", markColor: "rgba(236,236,241,0.4)", name: w[0], nameColor: "#ECECF1", what: w[1] }))),
+      fold("trail", "Where things went", (P.trail.length + mineTrail.length) + " captures used",
+        [...mineTrail, ...P.trail.map(t => ({ mark: "•", markColor: t[2] ? RED : "rgba(236,236,241,0.4)", name: t[0], nameColor: "#ECECF1", what: t[1] }))]),
+    ];
+    return out;
+  }
+}
+</script>
+</body>
+</html>

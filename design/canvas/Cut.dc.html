@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio — a cut</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; background:#101013; }
+  * { box-sizing:border-box; }
+  a { color:inherit; text-decoration:none; }
+  a:focus-visible, [role=button]:focus-visible { outline:2px solid #ECECF1; outline-offset:2px; }
+  textarea::placeholder { color:rgba(236,236,241,0.35); }
+  .rm-scroll::-webkit-scrollbar { width:8px; height:8px; } .rm-scroll::-webkit-scrollbar-thumb { background:rgba(236,236,241,0.08); border-radius:99px; }
+  @keyframes rmIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  @keyframes rmPulse { 0%, 100% { opacity:1; } 50% { opacity:.25; } }
+  @keyframes rmDots { 0%, 100% { opacity:.25; } 50% { opacity:1; } }
+  @keyframes rmLand { 0% { box-shadow:inset 0 0 0 1.5px rgba(111,140,255,0.9); } 100% { box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06); } }
+  .rm-root { height:100vh; display:flex; flex-direction:column; }
+  .rm-body { flex:1; min-height:0; display:flex; }
+  .rm-left { flex:none; width:350px; border-right:1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; min-height:0; }
+  .rm-centre { flex:1; min-width:0; overflow-y:auto; }
+  .rm-right { flex:none; width:330px; border-left:1px solid rgba(255,255,255,0.06); overflow-y:auto; }
+  .ct-row { transition:background .15s; }
+  .ct-row:hover { background:#18181D; }
+  .ct-thumb { flex:none; width:112px; aspect-ratio:16/9; position:relative; border-radius:5px; overflow:hidden; container-type:inline-size; background:#0B0B0E; }
+  .ct-word { cursor:pointer; border-radius:3px; }
+  .ct-word:hover { background:rgba(236,236,241,0.1); }
+  .ct-grid { display:grid; grid-template-columns:150px repeat(3, 1fr) 1.4fr; gap:1px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden; }
+  .ct-grid > div { background:#131317; padding:10px 12px; }
+  .ct-shorts { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; }
+  @media (max-width: 1100px) { .rm-right { width:290px; } .rm-left { width:310px; } }
+  @media (max-width: 900px) {
+    .rm-root { height:auto; } .rm-body { flex-direction:column; }
+    .rm-left, .rm-right { width:auto; border:none; border-bottom:1px solid rgba(255,255,255,0.06); }
+    .rm-right { order:-1; } .rm-left { order:2; } .rm-centre { order:1; overflow:visible; }
+    .rm-msgs { max-height:420px; }
+  }
+  @media (max-width: 600px) { .xp-name { width:auto !important; flex:1 1 auto !important; } .ct-thumb { width:84px; } .ct-grid { grid-template-columns:96px repeat(3, 1fr); } .ct-gridnote { display:none; } .ct-hide { display:none !important; } }
+</style>
+</helmet>
+<div class="rm-root" style="background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+
+  <!-- header row 1 -->
+  <div style="flex:none;display:flex;align-items:center;gap:22px;padding:0 24px;height:52px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13.5px">
+    <a href="Home.dc.html" title="Home" style="display:flex;align-items:baseline;gap:4px;font-weight:600;font-size:15px;letter-spacing:-0.01em">aldershot<span style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="display:flex;gap:18px;font-size:13px"><a href="Home.dc.html" style="color:rgba(236,236,241,0.55)" style-hover="color:#ECECF1">Home</a><a href="Library.dc.html" style="color:rgba(236,236,241,0.55)" style-hover="color:#ECECF1">Library</a></div>
+    <div style="flex:1"></div>
+    <a href="Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#ECECF1" style-hover="background:#2E2E36">C</a>
+  </div>
+
+  <!-- header row 2: the project, the lenses, export -->
+  <div style="flex:none;position:relative;z-index:20;display:flex;align-items:center;gap:14px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-wrap:wrap">
+    <div style="flex:1 1 auto;min-width:min(160px,40%);display:flex;align-items:baseline;gap:8px;overflow:hidden">
+      <span tabindex="0" role="button" onclick="{{ onSwitcher }}" title="Switch project" style="flex:0 1 auto;min-width:0;display:inline-flex;align-items:baseline;gap:6px;cursor:pointer;padding:3px 7px;margin:-3px -7px;border-radius:5px;background:{{ switcherBg }}" style-hover="background:#1C1C22"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:14.5px;font-weight:600;white-space:nowrap">Working out whether to move</span><span style="flex:none;font-size:9px;color:rgba(236,236,241,0.5)">▼</span></span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:rgba(236,236,241,0.4);white-space:nowrap">A cut, from three vlogs</span>
+    </div>
+    <div style="flex:none;display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+      <sc-for list="{{ lenses }}" as="ln" hint-placeholder-count="5">
+        <div tabindex="0" role="button" onclick="{{ ln.onGo }}" title="{{ ln.title }}" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:{{ ln.bg }};color:{{ ln.color }};cursor:pointer;white-space:nowrap">{{ ln.name }}</div>
+      </sc-for>
+    </div>
+    <div tabindex="0" role="button" onclick="{{ onAlso }}" style="flex:none;display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:5px;background:#ECECF1;color:#131316;cursor:pointer;white-space:nowrap">Export<span style="font-size:9px;opacity:.6">▼</span></div>
+
+    <sc-if value="{{ switcherOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:calc(100% + 4px);left:16px;width:min(340px,calc(100vw - 32px));padding:6px;border-radius:10px;background:#16161B;box-shadow:0 18px 50px rgba(0,0,0,0.6),inset 0 0 0 1px rgba(255,255,255,0.09);animation:rmIn .18s ease both">
+        <div style="padding:8px 10px 6px;font-size:12px;font-weight:600;color:rgba(236,236,241,0.4)">Projects</div>
+        <a href="Studio.dc.html" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px" style-hover="background:#1F1F26"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:500">NASA as a medium</div><div style="margin-top:1px;font-size:10.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">video essay · 20:00 · 21 scenes</div></div></a>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;background:#232329"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:500">Working out whether to move</div><div style="margin-top:1px;font-size:10.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">{{ switchStat }}</div></div><span style="font-size:11px;color:#5EC98F">open</span></div>
+        <a href="Home.dc.html" style="display:block;margin-top:4px;padding:9px 10px;border-radius:7px;border-top:1px solid rgba(255,255,255,0.06);font-size:12.5px;font-weight:600;color:rgba(236,236,241,0.75)" style-hover="background:#1F1F26">All projects, and start a new one</a>
+      </div>
+    </sc-if>
+    <sc-if value="{{ alsoOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:calc(100% + 4px);right:16px;width:min(360px,calc(100vw - 32px));padding:6px;border-radius:10px;background:#16161B;box-shadow:0 18px 50px rgba(0,0,0,0.6),inset 0 0 0 1px rgba(255,255,255,0.09);animation:rmIn .18s ease both">
+        <div style="padding:10px 10px 12px">
+          <div style="display:flex;gap:8px;align-items:baseline"><span style="font-size:13.5px;font-weight:600">The cut</span><span style="font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ exp.len }}</span></div>
+          <div style="margin-top:3px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.6)">What it would go out with:</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ exp.checks }}" as="ck" hint-placeholder-count="3"><div style="display:flex;gap:8px;align-items:baseline;font-size:12px;line-height:1.45;color:rgba(236,236,241,0.8)"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ ck.color }};transform:translateY(-1px)"></span>{{ ck.text }}</div></sc-for>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div tabindex="0" role="button" onclick="{{ onExport }}" style="font-size:12.5px;font-weight:600;padding:6px 13px;border-radius:6px;background:#ECECF1;color:#101013;cursor:pointer">{{ exp.go }}</div><span style="font-size:11.5px;color:rgba(236,236,241,0.45)">{{ exp.note }}</span></div>
+        </div>
+        <div style="height:1px;margin:2px 10px;background:rgba(255,255,255,0.07)"></div>
+        <div style="padding:8px 10px 4px;font-size:11.5px;color:rgba(236,236,241,0.45)">Made from the same moments</div>
+        <div tabindex="0" role="button" onclick="{{ onExpShorts }}" style="display:block;padding:9px 10px;border-radius:7px;cursor:pointer" style-hover="background:#1F1F26"><div style="font-size:13px;font-weight:600">{{ exp.shorts }}</div><div style="margin-top:2px;font-size:12px;color:rgba(236,236,241,0.55)">Vertical clips, each with the reason it made the list.</div></div>
+        <a href="Library.dc.html" style="display:block;padding:9px 10px;border-radius:7px" style-hover="background:#1F1F26"><div style="font-size:13px;font-weight:600">Where every moment went</div><div style="margin-top:2px;font-size:12px;color:rgba(236,236,241,0.55)">In the Library — what’s in, what’s out, and the rule that decided.</div></a>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ hasErr }}" hint-placeholder-val="{{ false }}"><div style="padding:16px 24px;font-size:13.5px;color:#E3A29B">{{ err }}</div></sc-if>
+  <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 24px;font-size:13.5px;color:rgba(236,236,241,0.5)">Reading the three vlogs…</div></sc-if>
+
+  <sc-if value="{{ ready }}" hint-placeholder-val="{{ true }}">
+  <div class="rm-body">
+
+    <!-- ═══════ LEFT: the conversation ═══════ -->
+    <div class="rm-left">
+      <div class="rm-scroll rm-msgs" style="flex:1;min-height:0;overflow-y:auto;padding:18px 22px 10px;display:flex;flex-direction:column-reverse;gap:16px">
+        <sc-for list="{{ msgs }}" as="m" hint-placeholder-count="4">
+          <div style="display:flex;gap:10px;align-items:flex-start;justify-content:{{ m.justify }};animation:rmIn .25s ease both">
+            <sc-if value="{{ m.isAl }}" hint-placeholder-val="{{ true }}">
+              <span style="flex:none;margin-top:5px;display:inline-flex;align-items:flex-end;gap:2px;height:11px"><span style="width:3px;height:11px;border-radius:1.5px;background:#ECECF1"></span><span style="width:3px;height:11px;border-radius:1.5px;background:#ECECF1;opacity:.5"></span><span style="width:3px;height:11px;border-radius:1.5px;background:#ECECF1;opacity:.22"></span></span>
+            </sc-if>
+            <div style="min-width:0;max-width:{{ m.maxW }}">
+              <div style="padding:{{ m.pad }};border-radius:10px;background:{{ m.bg }};font-size:13.5px;line-height:1.55;color:{{ m.color }};text-wrap:pretty;text-decoration:{{ m.deco }}">{{ m.text }}</div>
+              <sc-if value="{{ m.hasList }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+                  <sc-for list="{{ m.list }}" as="li" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ li.onGo }}" style="display:flex;gap:9px;font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.75);cursor:pointer" style-hover="color:#ECECF1"><span style="flex:none;width:58px;font-variant-numeric:tabular-nums;color:{{ li.color }}">{{ li.when }}</span><span>{{ li.text }}</span></div></sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.hasProp }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <div tabindex="0" role="button" onclick="{{ m.onYes }}" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;background:rgba(111,140,255,0.16);color:#B9C6FF;box-shadow:inset 0 0 0 1px rgba(111,140,255,0.28);cursor:pointer;white-space:nowrap" style-hover="background:rgba(111,140,255,0.24)">{{ m.yes }}</div>
+                  <div tabindex="0" role="button" onclick="{{ m.onNo }}" style="font-size:12px;font-weight:500;padding:6px 10px;border-radius:5px;color:rgba(236,236,241,0.55);cursor:pointer;white-space:nowrap" style-hover="color:#ECECF1">{{ m.no }}</div>
+                  <span style="flex:1"></span><span style="font-size:11px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ m.would }}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.hasDiff }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:6px;display:flex;gap:10px;align-items:baseline;font-size:11.5px;font-variant-numeric:tabular-nums"><span style="color:{{ m.diffColor }}">{{ m.diff }}</span><sc-if value="{{ m.canUndo }}" hint-placeholder-val="{{ false }}"><span tabindex="0" role="button" onclick="{{ onUndo }}" style="color:rgba(236,236,241,0.5);text-decoration:underline;text-underline-offset:3px;cursor:pointer" style-hover="color:#ECECF1">Undo</span></sc-if></div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex:none;padding:10px 22px 18px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <sc-for list="{{ chips }}" as="ch" hint-placeholder-count="4">
+            <span tabindex="0" role="button" onclick="{{ ch.onGo }}" style="font-size:11.5px;padding:4px 9px;border-radius:5px;background:rgba(236,236,241,0.09);color:rgba(236,236,241,0.75);cursor:pointer;white-space:nowrap" style-hover="background:rgba(236,236,241,0.16);color:#ECECF1">{{ ch.text }}</span>
+          </sc-for>
+        </div>
+        <div style="border-radius:10px;background:#1C1C24;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)">
+          <textarea value="{{ draft }}" oninput="{{ onDraft }}" onkeydown="{{ onKey }}" rows="2" placeholder="Say what to change, or ask about your footage" style="width:100%;resize:none;font-family:'Instrument Sans',sans-serif;font-size:14px;line-height:1.55;padding:12px 15px 4px;border-radius:10px;border:none;outline:none;background:transparent;color:#ECECF1"></textarea>
+          <div style="display:flex;align-items:center;gap:6px;padding:0 10px 10px">
+            <div tabindex="0" role="button" onclick="{{ onMic }}" title="Talk instead of typing" style="flex:none;display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:6px;background:{{ micBg }};color:{{ micColor }};cursor:pointer;font-size:11.5px;font-weight:600">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg>{{ micLabel }}
+            </div>
+            <div tabindex="0" role="button" onclick="{{ onSend }}" style="flex:none;margin-left:auto;font-size:12.5px;font-weight:500;padding:6px 14px;border-radius:5px;background:{{ runBg }};color:{{ runColor }};cursor:pointer;white-space:nowrap">Run it</div>
+          </div>
+        </div>
+        <sc-if value="{{ hasMicMsg }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;font-size:12px;color:rgba(236,236,241,0.5)">{{ micMsg }}</div></sc-if>
+        <div style="margin-top:8px;font-size:11.5px;line-height:1.5;color:rgba(236,236,241,0.4)"><span tabindex="0" role="button" onclick="{{ onResetAll }}" style="text-decoration:underline;text-underline-offset:3px;cursor:pointer">Reset the sample cut</span><span style="margin:0 6px">·</span><a href="Map.dc.html" style="color:rgba(236,236,241,0.4);text-decoration:underline;text-underline-offset:3px">Map</a><span style="margin:0 6px">·</span><a href="Start here.dc.html" style="color:rgba(236,236,241,0.4);text-decoration:underline;text-underline-offset:3px">Changelog</a></div>
+      </div>
+    </div>
+
+    <!-- ═══════ CENTRE ═══════ -->
+    <div class="rm-centre rm-scroll" id="ctCentre">
+      <div style="max-width:780px;margin:0 auto;padding:22px 26px 120px">
+
+        <!-- ── CUT ── -->
+        <sc-if value="{{ isCut }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:26px;font-weight:600;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">{{ head.len }}</span><span style="font-size:13.5px;color:rgba(236,236,241,0.55)">{{ head.what }}</span></div>
+          <div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.5)">{{ head.order }}</div>
+          <div style="margin-top:14px;display:flex;gap:2px;height:14px">
+            <sc-for list="{{ strip }}" as="b" hint-placeholder-count="12"><div tabindex="0" role="button" onclick="{{ b.onGo }}" title="{{ b.title }}" style="flex:{{ b.flex }};min-width:3px;border-radius:2px;background:{{ b.bg }};box-shadow:{{ b.ring }};cursor:pointer;opacity:{{ b.op }}"></div></sc-for>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:rgba(236,236,241,0.5)">
+            <sc-for list="{{ legend }}" as="lg" hint-placeholder-count="3"><span style="display:inline-flex;gap:6px;align-items:center"><span style="width:9px;height:9px;border-radius:2px;background:{{ lg.bg }};box-shadow:{{ lg.ring }}"></span>{{ lg.name }}</span></sc-for>
+          </div>
+          <sc-if value="{{ head.hasRec }}" hint-placeholder-val="{{ true }}">
+            <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:10px;background:#16161B;box-shadow:inset 0 0 0 1px rgba(239,91,79,0.25)">
+              <div style="flex:1 1 240px;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.8)">{{ head.recLine }}</div>
+              <div tabindex="0" role="button" onclick="{{ head.onRec }}" style="flex:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:7px;background:#EF5B4F;color:#FFFFFF;cursor:pointer"><span style="width:7px;height:7px;border-radius:50%;background:#FFFFFF"></span>{{ head.recBtn }}</div>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+            <div style="margin-top:30px">
+              <div style="display:flex;align-items:baseline;gap:10px;padding:0 2px 10px"><span style="font-size:12.5px;color:rgba(236,236,241,0.45)">{{ g.kicker }}</span><span style="font-size:17px;font-weight:600;letter-spacing:-0.01em">{{ g.name }}</span><span style="margin-left:auto;font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45);white-space:nowrap">{{ g.meta }}</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                  <div id="{{ r.domId }}" class="ct-row" style="display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:#141418;box-shadow:{{ r.ring }};animation:{{ r.anim }}">
+                    <div class="ct-thumb" tabindex="0" role="button" onclick="{{ r.onPlay }}" title="Play from here" style="cursor:pointer;outline:{{ r.thOutline }};outline-offset:-1px">
+                      <sc-if value="{{ r.hasStill }}" hint-placeholder-val="{{ true }}">
+                        <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%;opacity:{{ r.thOp }}" aria-hidden="true">
+                          <sc-for list="{{ r.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                          <sc-for list="{{ r.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                          <sc-for list="{{ r.g.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+                        </svg>
+                      </sc-if>
+                      <sc-if value="{{ r.isGap }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11cqw;font-weight:600;color:{{ r.gapInk }};border:1.5px dashed {{ r.gapEdge }};border-radius:5px">{{ r.gapMark }}</div></sc-if>
+                      <div style="position:absolute;left:5%;bottom:6%;font-size:8.5cqw;font-weight:600;color:rgba(255,255,255,0.85);text-shadow:0 1px 3px rgba(0,0,0,0.8)">{{ r.badge }}</div>
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;gap:8px;align-items:baseline;font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)"><span style="width:7px;height:7px;border-radius:50%;background:{{ r.dot }};flex:none;transform:translateY(-1px)"></span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.meta }}</span><span style="margin-left:auto;flex:none">{{ r.dur }}</span></div>
+                      <div style="margin-top:5px;font-family:{{ r.font }};font-size:{{ r.size }};line-height:1.4;color:{{ r.ink }};text-wrap:pretty">{{ r.text }}</div>
+                      <div style="margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+                        <span style="flex:1 1 200px;font-size:12px;line-height:1.45;color:{{ r.whyColor }}">{{ r.why }}</span>
+                        <sc-if value="{{ r.hasBtn }}" hint-placeholder-val="{{ true }}"><span tabindex="0" role="button" onclick="{{ r.onBtn }}" style="flex:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:{{ r.btnBg }};color:{{ r.btnColor }};box-shadow:{{ r.btnRing }};cursor:pointer;white-space:nowrap">{{ r.btn }}</span></sc-if>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+          <!-- what's left out, and why -->
+          <div style="margin-top:40px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.07)">
+            <div tabindex="0" role="button" onclick="{{ onOuts }}" style="display:flex;align-items:baseline;gap:10px;cursor:pointer"><span style="font-size:17px;font-weight:600">{{ outHead }}</span><span style="font-size:12.5px;color:rgba(236,236,241,0.5)">Nothing is deleted. Each one says what left it out.</span><span style="margin-left:auto;font-size:11px;color:rgba(236,236,241,0.5)">{{ outToggle }}</span></div>
+            <sc-if value="{{ outsOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:12px;display:flex;flex-direction:column;gap:4px">
+                <sc-for list="{{ outs }}" as="o" hint-placeholder-count="4">
+                  <div class="ct-row" style="display:flex;gap:12px;align-items:baseline;padding:9px 12px;border-radius:8px">
+                    <span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ o.dot }};transform:translateY(-1px)"></span>
+                    <span style="flex:none;width:92px;font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ o.when }}</span>
+                    <div style="flex:1;min-width:0"><div style="font-family:'Instrument Serif',serif;font-size:15px;line-height:1.4;color:rgba(236,236,241,0.8)">{{ o.text }}</div><div style="margin-top:3px;font-size:12px;line-height:1.45;color:{{ o.whyColor }}">{{ o.why }}</div></div>
+                    <span tabindex="0" role="button" onclick="{{ o.onBack }}" style="flex:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.18);color:rgba(236,236,241,0.85);cursor:pointer;white-space:nowrap">Put it back</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ── WORDS ── -->
+        <sc-if value="{{ isWords }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em">Words</div>
+          <div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.6);max-width:620px">Everything you said, as it was transcribed. The moments are marked; the bright ones are in the cut. Click a word in a bright moment to cut it — the cut tightens and the recording keeps every word.</div>
+          <div style="margin-top:18px;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.07)">
+            <sc-for list="{{ wtabs }}" as="t" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ t.onGo }}" style="font-size:13.5px;padding:8px 0 10px;margin-bottom:-1px;border-bottom:2px solid {{ t.line }};color:{{ t.color }};cursor:pointer;white-space:nowrap"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:{{ t.dot }};margin-right:7px;transform:translateY(-1px)"></span>{{ t.name }}<span style="margin-left:6px;font-size:12px;color:rgba(236,236,241,0.4)">{{ t.len }}</span></div></sc-for>
+          </div>
+          <div style="margin-top:12px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.55);font-style:italic">{{ wsum }}</div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ wlines }}" as="l" hint-placeholder-count="6">
+              <div id="{{ l.domId }}" style="display:flex;gap:14px;align-items:baseline;padding:9px 12px;border-radius:8px;background:{{ l.bg }};box-shadow:{{ l.ring }}">
+                <span style="flex:none;width:44px;font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">{{ l.t }}</span>
+                <div style="flex:1;min-width:0">
+                  <sc-if value="{{ l.notYou }}" hint-placeholder-val="{{ false }}"><div style="font-size:11px;font-weight:600;color:rgba(236,236,241,0.5);margin-bottom:2px">{{ l.sp }}</div></sc-if>
+                  <div style="font-family:{{ l.font }};font-size:{{ l.size }};line-height:1.5;color:{{ l.ink }}"><sc-for list="{{ l.words }}" as="w" hint-placeholder-count="8"><span class="{{ w.cls }}" onclick="{{ w.onStrike }}" style="text-decoration:{{ w.deco }};color:{{ w.color }}">{{ w.text }}</span> </sc-for></div>
+                  <sc-if value="{{ l.hasWhy }}" hint-placeholder-val="{{ false }}"><div style="margin-top:4px;font-size:11.5px;color:{{ l.whyColor }}">{{ l.why }}</div></sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- ── FOOTAGE ── -->
+        <sc-if value="{{ isFootage }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em">Footage</div>
+          <div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.6);max-width:620px">{{ fsum }}</div>
+          <div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+            <sc-for list="{{ fsrc }}" as="f" hint-placeholder-count="3">
+              <div style="padding:14px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+                <div style="position:relative;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:#0B0B0E">
+                  <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+                    <sc-for list="{{ f.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                    <sc-for list="{{ f.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                    <sc-for list="{{ f.g.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+                  </svg>
+                </div>
+                <div style="margin-top:10px;display:flex;gap:8px;align-items:baseline"><span style="width:8px;height:8px;border-radius:50%;background:{{ f.dot }};flex:none;transform:translateY(-1px)"></span><span style="font-size:14px;font-weight:600">{{ f.name }}</span><span style="margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ f.len }}</span></div>
+                <div style="margin-top:6px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.62)">{{ f.sum }}</div>
+                <div style="margin-top:8px;font-size:11.5px;color:rgba(236,236,241,0.45)">{{ f.read }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:34px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:17px;font-weight:600">By thread</span><span style="font-size:12.5px;color:rgba(236,236,241,0.5)">What you have on each question, from which day, and what’s missing. Filled dots are in the cut.</span></div>
+          <div class="ct-grid" style="margin-top:12px">
+            <div style="font-size:11.5px;color:rgba(236,236,241,0.45)">Thread</div>
+            <sc-for list="{{ fcols }}" as="c" hint-placeholder-count="3"><div style="font-size:11.5px;color:rgba(236,236,241,0.45)"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:{{ c.dot }};margin-right:6px"></span>{{ c.name }}</div></sc-for>
+            <div class="ct-gridnote" style="font-size:11.5px;color:rgba(236,236,241,0.45)">What it has</div>
+            <sc-for list="{{ fgrid }}" as="row" hint-placeholder-count="5">
+              <div style="font-size:13px;font-weight:600">{{ row.name }}</div>
+              <sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="3"><div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;min-height:20px"><sc-for list="{{ c.dots }}" as="d" hint-placeholder-count="2"><span tabindex="0" role="button" onclick="{{ d.onGo }}" title="{{ d.title }}" style="width:12px;height:12px;border-radius:50%;background:{{ d.bg }};box-shadow:inset 0 0 0 1.5px {{ d.ring }};cursor:pointer"></span></sc-for></div></sc-for>
+              <div class="ct-gridnote" style="font-size:12px;line-height:1.45;color:{{ row.noteColor }}">{{ row.note }}</div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:34px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:17px;font-weight:600">From outside your footage</span><span style="font-size:12.5px;color:rgba(236,236,241,0.5)">Scout finds other people making the same point. Linked, never downloaded — they play from their own source.</span></div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ fext }}" as="x" hint-placeholder-count="3">
+              <div style="display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+                <div class="ct-thumb" style="outline:{{ x.outline }};outline-offset:-1px">
+                  <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+                    <sc-for list="{{ x.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                    <sc-for list="{{ x.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                  </svg>
+                  <div style="position:absolute;left:5%;bottom:6%;font-size:8.5cqw;font-weight:600;color:rgba(255,255,255,0.85)">{{ x.badge }}</div>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:11.5px;color:rgba(236,236,241,0.5)">{{ x.where }}</div>
+                  <div style="margin-top:4px;font-family:'Instrument Serif',serif;font-size:16px;line-height:1.4">{{ x.text }}</div>
+                  <div style="margin-top:6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><span style="flex:1 1 200px;font-size:12px;line-height:1.45;color:{{ x.stColor }}">{{ x.status }}</span><span tabindex="0" role="button" onclick="{{ x.onGo }}" style="flex:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:{{ x.btnBg }};color:{{ x.btnColor }};cursor:pointer;white-space:nowrap">{{ x.btn }}</span></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- ── SHORTS ── -->
+        <sc-if value="{{ isShorts }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">Shorts</span><span style="font-size:13px;color:rgba(236,236,241,0.55)">{{ sh.stats }}</span></div>
+          <div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.6);max-width:640px">The same moments, judged on whether they stand alone. Each gets a band and the lines that put it there — no scores. Your rules apply here too.</div>
+          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div style="display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B"><sc-for list="{{ sh.lens }}" as="o" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ o.onGo }}" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:{{ o.bg }};color:{{ o.color }};cursor:pointer;white-space:nowrap">{{ o.name }}</div></sc-for></div>
+            <div style="display:flex;gap:2px;padding:3px;border-radius:7px;background:#17171B"><sc-for list="{{ sh.counts }}" as="o" hint-placeholder-count="3"><div tabindex="0" role="button" onclick="{{ o.onGo }}" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px;background:{{ o.bg }};color:{{ o.color }};cursor:pointer;white-space:nowrap">{{ o.name }}</div></sc-for></div>
+          </div>
+          <div class="ct-shorts rm-scroll" style="margin-top:16px">
+            <sc-for list="{{ sh.cards }}" as="c" hint-placeholder-count="6">
+              <div tabindex="0" role="button" onclick="{{ c.onSel }}" style="flex:none;width:118px;cursor:pointer;opacity:{{ c.op }}">
+                <div style="position:relative;aspect-ratio:9/16;border-radius:8px;overflow:hidden;background:#0B0B0E;box-shadow:{{ c.ring }};container-type:inline-size">
+                  <svg viewBox="0 0 960 540" style="{{ c.svgStyle }}" aria-hidden="true">
+                    <sc-for list="{{ c.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                    <sc-for list="{{ c.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                    <sc-for list="{{ c.g.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+                  </svg>
+                  <div style="position:absolute;left:6%;top:5%;font-size:8.5cqw;font-weight:600;padding:2px 5px;border-radius:3px;background:{{ c.bandBg }};color:{{ c.bandInk }}">{{ c.band }}</div>
+                  <div style="position:absolute;right:6%;top:5%;font-size:8.5cqw;font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.85)">{{ c.dur }}</div>
+                  <div style="position:absolute;left:8%;right:8%;bottom:9%;text-align:center;font-size:10.5cqw;font-weight:600;line-height:1.2;color:#FFFFFF;text-shadow:0 1px 4px rgba(0,0,0,0.9)">{{ c.cap }}</div>
+                </div>
+                <div style="margin-top:6px;font-size:11px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ c.tc }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <sc-if value="{{ sh.hasSel }}" hint-placeholder-val="{{ true }}">
+            <div style="margin-top:20px;display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap">
+              <div style="flex:none;width:210px">
+                <div style="position:relative;aspect-ratio:9/16;border-radius:10px;overflow:hidden;background:{{ sh.sel.stageBg }};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1);container-type:inline-size">
+                  <svg viewBox="0 0 960 540" style="{{ sh.sel.svgStyle }}" aria-hidden="true">
+                    <sc-for list="{{ sh.sel.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                    <sc-for list="{{ sh.sel.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                    <sc-for list="{{ sh.sel.g.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+                  </svg>
+                  <sc-if value="{{ sh.sel.hasCap }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:7%;right:7%;bottom:12%;text-align:center;font-size:{{ sh.sel.capSize }};font-weight:600;line-height:1.25;color:#FFFFFF;text-shadow:0 1px 5px rgba(0,0,0,0.9)">{{ sh.sel.cap }}</div></sc-if>
+                  <div style="position:absolute;left:6%;top:4%;font-size:6cqw;font-weight:600;padding:2px 6px;border-radius:3px;background:{{ sh.sel.bandBg }};color:{{ sh.sel.bandInk }}">{{ sh.sel.band }}</div>
+                  <div style="position:absolute;right:6%;top:4%;font-size:6cqw;font-variant-numeric:tabular-nums;color:rgba(255,255,255,0.85)">{{ sh.sel.dur }}</div>
+                </div>
+                <div style="margin-top:8px;font-size:11.5px;color:rgba(236,236,241,0.5)">{{ sh.sel.origin }}</div>
+              </div>
+              <div style="flex:1 1 300px;min-width:0">
+                <div style="display:flex;gap:8px;align-items:baseline"><span style="font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:4px;background:{{ sh.sel.stateBg }};color:{{ sh.sel.stateInk }}">{{ sh.sel.state }}</span><span style="font-size:12px;color:rgba(236,236,241,0.5)">{{ sh.sel.rank }}</span></div>
+                <div style="margin-top:10px;font-family:'Instrument Serif',serif;font-size:21px;line-height:1.35">{{ sh.sel.text }}</div>
+                <div style="margin-top:14px;display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ sh.sel.why }}" as="w" hint-placeholder-count="3"><div style="display:flex;gap:10px;align-items:baseline;font-size:12.5px;line-height:1.45"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ w.color }};transform:translateY(-1px)"></span><span style="flex:none;width:84px;font-weight:600">{{ w.name }}</span><span style="color:rgba(236,236,241,0.7)">{{ w.text }}</span></div></sc-for>
+                </div>
+                <div style="margin-top:18px;font-size:12px;font-weight:600;color:rgba(236,236,241,0.5)">Trim by words — click one to cut it from this short</div>
+                <div style="margin-top:6px;font-size:15px;line-height:1.6"><sc-for list="{{ sh.sel.words }}" as="w" hint-placeholder-count="8"><span class="ct-word" onclick="{{ w.onStrike }}" style="text-decoration:{{ w.deco }};color:{{ w.color }}">{{ w.text }}</span> </sc-for></div>
+                <sc-for list="{{ sh.sel.opts }}" as="og" hint-placeholder-count="2">
+                  <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="width:70px;font-size:12px;color:rgba(236,236,241,0.5)">{{ og.label }}</span><sc-for list="{{ og.opts }}" as="o" hint-placeholder-count="3"><span tabindex="0" role="button" onclick="{{ o.onGo }}" style="font-size:12px;padding:4px 10px;border-radius:5px;background:{{ o.bg }};color:{{ o.color }};cursor:pointer;white-space:nowrap">{{ o.name }}</span></sc-for></div>
+                </sc-for>
+                <div style="margin-top:16px;padding:12px 14px;border-radius:9px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+                  <div style="font-size:11.5px;font-weight:600;color:rgba(236,236,241,0.45)">Post copy, written from the short</div>
+                  <div style="margin-top:6px;font-size:13px;font-weight:600;line-height:1.5">{{ sh.sel.postTitle }}</div>
+                  <div style="margin-top:4px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.65)">{{ sh.sel.postBody }}</div>
+                </div>
+                <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+                  <div tabindex="0" role="button" onclick="{{ sh.sel.onKeep }}" style="font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:7px;background:{{ sh.sel.keepBg }};color:{{ sh.sel.keepInk }};cursor:pointer">{{ sh.sel.keepLabel }}</div>
+                  <div tabindex="0" role="button" onclick="{{ sh.sel.onToCut }}" style="font-size:12.5px;padding:7px 13px;border-radius:7px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.18);color:rgba(236,236,241,0.85);cursor:pointer">{{ sh.sel.toCut }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ sh.hasOuts }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:30px;font-size:13.5px;font-weight:600">Not on the list</div>
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+              <sc-for list="{{ sh.outs }}" as="o" hint-placeholder-count="3"><div class="ct-row" style="display:flex;gap:12px;align-items:baseline;padding:8px 12px;border-radius:8px"><span style="flex:none;width:92px;font-size:11.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ o.when }}</span><div style="flex:1;min-width:0"><div style="font-size:13px;line-height:1.45;color:rgba(236,236,241,0.75)">{{ o.text }}</div><div style="margin-top:2px;font-size:11.5px;color:rgba(236,236,241,0.5)">{{ o.why }}</div></div><span tabindex="0" role="button" onclick="{{ o.onForce }}" style="flex:none;font-size:12px;padding:4px 10px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.18);color:rgba(236,236,241,0.8);cursor:pointer">Make it a short</span></div></sc-for>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ── RULES ── -->
+        <sc-if value="{{ isRules }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:22px;font-weight:600;letter-spacing:-0.02em">Rules</div>
+          <div style="margin-top:6px;font-size:13.5px;line-height:1.55;color:rgba(236,236,241,0.6);max-width:640px">The cut is made from these and nothing else — it isn’t stored, it’s re-made every time one changes. Switch one off to see what it was doing. When two disagree, the later rule wins. To add one, say it in the conversation.</div>
+          <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ rl }}" as="r" hint-placeholder-count="4">
+              <div style="padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);opacity:{{ r.op }}">
+                <div style="display:flex;gap:12px;align-items:flex-start">
+                  <span style="flex:none;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.4);padding-top:2px">{{ r.n }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:15px;line-height:1.45">{{ r.text }}</div>
+                    <div style="margin-top:4px;font-size:12.5px;line-height:1.45;color:{{ r.effColor }}">{{ r.effect }}</div>
+                    <div style="margin-top:2px;font-size:12px;line-height:1.45;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.45)">{{ r.off }}</div>
+                    <sc-if value="{{ r.isOrder }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ r.orders }}" as="o" hint-placeholder-count="3"><span tabindex="0" role="button" onclick="{{ o.onGo }}" style="font-size:12px;padding:4px 10px;border-radius:5px;background:{{ o.bg }};color:{{ o.color }};cursor:pointer;white-space:nowrap">{{ o.name }}</span></sc-for></div>
+                      <div style="margin-top:6px;font-size:12px;color:rgba(236,236,241,0.5)">{{ r.orderWhy }}</div>
+                    </sc-if>
+                  </div>
+                  <div tabindex="0" role="button" onclick="{{ r.onToggle }}" title="{{ r.toggleTitle }}" style="flex:none;width:38px;height:22px;border-radius:11px;background:{{ r.swBg }};position:relative;cursor:pointer;transition:background .2s"><span style="position:absolute;top:3px;left:{{ r.knob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left .2s"></span></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ hasHand }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:28px;font-size:15px;font-weight:600">By hand</div>
+            <div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.5)">One-off calls you made on single moments. They sit above every rule, and they switch off the same way.</div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ hand }}" as="h" hint-placeholder-count="2">
+                <div style="display:flex;gap:12px;align-items:center;padding:10px 14px;border-radius:9px;background:#141418;opacity:{{ h.op }}"><span style="flex:1;min-width:0;font-size:13.5px;line-height:1.45">{{ h.text }}</span><div tabindex="0" role="button" onclick="{{ h.onToggle }}" style="flex:none;width:38px;height:22px;border-radius:11px;background:{{ h.swBg }};position:relative;cursor:pointer"><span style="position:absolute;top:3px;left:{{ h.knob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF"></span></div></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="margin-top:28px;padding:14px 16px;border-radius:10px;background:#141418;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06)">
+            <div style="font-size:13.5px;font-weight:600">Things you can say</div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ sayable }}" as="sx" hint-placeholder-count="6"><span tabindex="0" role="button" onclick="{{ sx.onGo }}" style="font-size:12px;padding:4px 10px;border-radius:5px;background:rgba(236,236,241,0.08);color:rgba(236,236,241,0.8);cursor:pointer;white-space:nowrap" style-hover="background:rgba(236,236,241,0.16)">{{ sx.text }}</span></sc-for></div>
+            <div style="margin-top:10px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.5)">Each becomes a rule you can read and switch off. Anything that can’t become a rule says so, instead of guessing.</div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <!-- ═══════ RIGHT: now, or a take ═══════ -->
+    <div class="rm-right rm-scroll">
+      <div style="padding:18px 18px 30px">
+        <sc-if value="{{ hasTake }}" hint-placeholder-val="{{ false }}">
+          <div style="animation:rmIn .3s ease both">
+            <div style="display:flex;gap:8px;align-items:baseline;font-size:11px;color:rgba(236,236,241,0.45)"><span style="font-weight:600;font-size:12px;color:#EF5B4F">Take</span><span style="color:rgba(236,236,241,0.7)">{{ take.where }}</span><span style="margin-left:auto">{{ take.slot }}</span></div>
+            <div style="margin-top:10px;position:relative;border-radius:10px;background:#0B0B0E;box-shadow:inset 0 0 0 1px {{ take.ring }};padding:20px 18px 18px;min-height:190px">
+              <div style="font-family:'Instrument Serif',serif;font-size:23px;line-height:1.35">{{ take.prompt }}</div>
+              <div style="margin-top:14px;font-size:11.5px;font-weight:600;color:rgba(236,236,241,0.45)">What you said on it</div>
+              <div style="margin-top:6px;display:flex;flex-direction:column;gap:5px"><sc-for list="{{ take.said }}" as="sd" hint-placeholder-count="2"><div style="font-size:12.5px;line-height:1.45;color:rgba(236,236,241,0.7)">“{{ sd.text }}”</div></sc-for></div>
+              <sc-if value="{{ take.isCount }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Instrument Serif',serif;font-size:84px;color:#ECECF1;background:rgba(11,11,14,0.85);border-radius:10px">{{ take.countN }}</div></sc-if>
+            </div>
+            <div style="margin-top:12px;height:4px;border-radius:2px;background:rgba(236,236,241,0.08);overflow:hidden"><div style="height:100%;width:{{ take.barW }};background:{{ take.barColor }};border-radius:2px"></div></div>
+            <div style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:11px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)"><sc-if value="{{ take.isRolling }}" hint-placeholder-val="{{ false }}"><span style="width:7px;height:7px;border-radius:50%;background:#EF5B4F;animation:rmPulse 1s ease infinite"></span></sc-if><span>{{ take.clock }}</span><span style="margin-left:auto">0:12 space</span></div>
+            <sc-if value="{{ take.isReady }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:12px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.62)">Twelve seconds, to camera. Say what the thread adds up to — not what happened. Three, two, one, then go.</div>
+              <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                <div tabindex="0" role="button" onclick="{{ take.onGo }}" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;padding:9px 16px;border-radius:8px;background:#EF5B4F;color:#FFFFFF;cursor:pointer"><span style="width:8px;height:8px;border-radius:50%;background:#FFFFFF"></span>Start</div>
+                <div tabindex="0" role="button" onclick="{{ take.onClose }}" style="font-size:12.5px;padding:9px 12px;color:rgba(236,236,241,0.55);cursor:pointer" style-hover="color:#ECECF1">Not now</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ take.isRolling }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:12px;display:flex;gap:8px;align-items:center"><div tabindex="0" role="button" onclick="{{ take.onStop }}" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;padding:9px 16px;border-radius:7px;background:#ECECF1;color:#101013;cursor:pointer"><span style="width:8px;height:8px;border-radius:1px;background:#101013"></span>Stop</div><span style="font-size:11.5px;color:rgba(236,236,241,0.45)">or press space</span></div>
+            </sc-if>
+            <sc-if value="{{ take.isDone }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:12px;font-size:13px;line-height:1.55;color:{{ take.verdictColor }}">{{ take.verdict }}</div>
+              <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><div tabindex="0" role="button" onclick="{{ take.onKeep }}" style="font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:7px;background:#ECECF1;color:#101013;cursor:pointer">Keep it</div><div tabindex="0" role="button" onclick="{{ take.onAgain }}" style="font-size:12.5px;padding:8px 12px;border-radius:7px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.16);color:rgba(236,236,241,0.8);cursor:pointer">Again</div></div>
+            </sc-if>
+            <div style="margin-top:14px;font-size:11px;line-height:1.5;color:rgba(236,236,241,0.4)">The canvas times your take; the built app records it.</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noTake }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:8px;align-items:baseline;font-size:12px;white-space:nowrap;overflow:hidden"><span style="font-weight:600;color:#ECECF1">Now</span><span style="color:rgba(236,236,241,0.6);overflow:hidden;text-overflow:ellipsis">{{ now.where }}</span><span style="margin-left:auto;color:rgba(236,236,241,0.45)">{{ now.state }}</span></div>
+          <div tabindex="0" role="button" onclick="{{ onPlay }}" style="margin-top:10px;position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#0B0B0E;container-type:inline-size;cursor:pointer;outline:{{ now.outline }};outline-offset:-1px">
+            <sc-if value="{{ now.hasStill }}" hint-placeholder-val="{{ true }}">
+              <svg viewBox="0 0 960 540" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+                <sc-for list="{{ now.g.rects }}" as="q" hint-placeholder-count="3"><rect x="{{ q.x }}" y="{{ q.y }}" width="{{ q.w }}" height="{{ q.h }}" rx="{{ q.rx }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="4" opacity="{{ q.op }}"></rect></sc-for>
+                <sc-for list="{{ now.g.circles }}" as="q" hint-placeholder-count="2"><circle cx="{{ q.cx }}" cy="{{ q.cy }}" r="{{ q.r }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" opacity="{{ q.op }}"></circle></sc-for>
+                <sc-for list="{{ now.g.paths }}" as="q" hint-placeholder-count="2"><path d="{{ q.d }}" fill="{{ q.fill }}" stroke="{{ q.stroke }}" stroke-width="{{ q.w }}" stroke-linecap="round" pathLength="1" stroke-dasharray="{{ q.dash }}" stroke-dashoffset="{{ q.off }}" opacity="{{ q.op }}"></path></sc-for>
+              </svg>
+            </sc-if>
+            <sc-if value="{{ now.isEmpty }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;inset:7%;border-radius:1cqw;border:1.5px dashed rgba(239,91,79,0.6);display:flex;align-items:center;justify-content:center;padding:0 8%;text-align:center;font-size:4.4cqw;line-height:1.45;color:rgba(236,236,241,0.7)">{{ now.emptyText }}</div></sc-if>
+            <sc-if value="{{ now.hasCap }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:6%;right:6%;bottom:7%;text-align:center;font-size:4.6cqw;font-weight:600;line-height:1.3;text-shadow:0 1px 4px rgba(0,0,0,0.95)"><sc-for list="{{ now.cap }}" as="w" hint-placeholder-count="6"><span style="color:{{ w.color }}">{{ w.text }} </span></sc-for></div></sc-if>
+            <sc-if value="{{ now.hasCredit }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:3%;top:4%;font-size:2.8cqw;padding:2px 6px;border-radius:3px;background:rgba(8,8,10,0.7);color:rgba(236,236,241,0.85)">{{ now.credit }}</div></sc-if>
+            <sc-if value="{{ now.isPaused }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:13cqw;height:13cqw;border-radius:50%;background:rgba(236,236,241,0.9);display:flex;align-items:center;justify-content:center"><span style="width:0;height:0;border-left:4cqw solid #101013;border-top:2.4cqw solid transparent;border-bottom:2.4cqw solid transparent;margin-left:1cqw"></span></div></sc-if>
+          </div>
+          <div style="margin-top:12px;font-family:'Instrument Serif',serif;font-size:17px;line-height:1.4;color:rgba(236,236,241,0.9)">{{ now.text }}</div>
+          <div style="margin-top:6px;font-size:12px;line-height:1.45;color:{{ now.whyColor }}">{{ now.why }}</div>
+          <sc-if value="{{ now.canRec }}" hint-placeholder-val="{{ false }}"><div tabindex="0" role="button" onclick="{{ now.onRec }}" style="margin-top:10px;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:7px;background:#EF5B4F;color:#FFFFFF;cursor:pointer"><span style="width:7px;height:7px;border-radius:50%;background:#FFFFFF"></span>Record it</div></sc-if>
+          <div style="margin-top:16px;display:flex;gap:6px;align-items:center">
+            <div tabindex="0" role="button" onclick="{{ onPrev }}" title="Previous moment" style="width:30px;height:30px;border-radius:6px;background:#1C1C22;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px">‹</div>
+            <div tabindex="0" role="button" onclick="{{ onPlay }}" title="Play or pause (space)" style="width:34px;height:34px;border-radius:6px;background:#ECECF1;color:#101013;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px">{{ playIcon }}</div>
+            <div tabindex="0" role="button" onclick="{{ onNext }}" title="Next moment" style="width:30px;height:30px;border-radius:6px;background:#1C1C22;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px">›</div>
+            <span style="margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.6)">{{ now.clock }}</span>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:2px;height:8px">
+            <sc-for list="{{ strip }}" as="b" hint-placeholder-count="12"><div tabindex="0" role="button" onclick="{{ b.onGo }}" title="{{ b.title }}" style="flex:{{ b.flex }};min-width:2px;border-radius:2px;background:{{ b.bg }};box-shadow:{{ b.ring }};cursor:pointer;opacity:{{ b.op }}"></div></sc-for>
+          </div>
+          <div style="margin-top:8px;display:flex;justify-content:space-between;font-size:11px;color:rgba(236,236,241,0.45)"><span>{{ now.pos }}</span><span>space play · ← → moment · ⌘Z undo</span></div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+  <!-- ═══════ Before it goes out — the export check ═══════ -->
+  <sc-if value="{{ xpOpen }}" hint-placeholder-val="{{ false }}">
+    <div onclick="{{ xp.onBackdrop }}" style="position:fixed;inset:0;z-index:80;background:rgba(6,6,8,0.74);display:flex;align-items:flex-start;justify-content:center;padding:clamp(12px,6vh,64px) 16px 40px;overflow-y:auto;animation:rmIn .18s ease both">
+      <div id="xpSheet" onclick="{{ xp.onStay }}" role="dialog" aria-label="Before it goes out" style="width:min(720px,100%);border-radius:14px;background:#141418;box-shadow:0 30px 90px rgba(0,0,0,0.65),inset 0 0 0 1px rgba(255,255,255,0.08);padding:24px clamp(16px,4vw,28px) 24px;color:#ECECF1;font-family:'Instrument Sans',sans-serif">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <span style="font-size:20px;font-weight:600;letter-spacing:-0.01em">Before it goes out</span>
+          <span style="font-size:12.5px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ xp.what }}</span>
+          <span tabindex="0" role="button" onclick="{{ xp.onClose }}" title="Close" style="margin-left:auto;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;color:rgba(236,236,241,0.6);cursor:pointer" style-hover="background:#1F1F26;color:#ECECF1">×</span>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:10px;background:{{ xp.verdictBg }};box-shadow:inset 0 0 0 1px {{ xp.verdictRing }}">
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:{{ xp.verdictDot }};margin-top:6px"></span>
+          <div><div style="font-size:15px;font-weight:600;line-height:1.45">{{ xp.verdict }}</div><div style="margin-top:3px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.62)">{{ xp.verdictSub }}</div></div>
+        </div>
+        <div style="margin-top:16px;display:flex;flex-direction:column">
+          <sc-for list="{{ xp.checks }}" as="ck" hint-placeholder-count="6">
+            <div style="display:flex;gap:6px 14px;align-items:flex-start;flex-wrap:wrap;padding:12px 2px;border-top:1px solid rgba(255,255,255,0.06)">
+              <span style="flex:none;width:8px;height:8px;border-radius:50%;background:{{ ck.dot }};margin-top:6px"></span>
+              <div style="flex:none;width:150px;font-size:13.5px;font-weight:600;line-height:1.45" class="xp-name">{{ ck.name }}</div>
+              <div style="flex:1 1 260px;min-width:0">
+                <div style="font-size:13px;line-height:1.55;color:rgba(236,236,241,0.75)">{{ ck.line }}</div>
+                <sc-if value="{{ ck.hasFix }}" hint-placeholder-val="{{ false }}"><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ ck.fixes }}" as="fx" hint-placeholder-count="1"><span tabindex="0" role="button" onclick="{{ fx.onGo }}" style="font-size:12px;font-weight:600;padding:5px 11px;border-radius:6px;background:{{ fx.bg }};color:{{ fx.color }};box-shadow:{{ fx.ring }};cursor:pointer;white-space:nowrap">{{ fx.label }}</span></sc-for></div></sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top:8px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08)">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span style="font-size:14px;font-weight:600">What goes with it</span><span style="font-size:12px;color:rgba(236,236,241,0.5)">Made from the project as it is now — the edit list opens in Resolve or Premiere.</span></div>
+          <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px">
+            <sc-for list="{{ xp.files }}" as="f" hint-placeholder-count="6"><div style="padding:9px 11px;border-radius:8px;background:#1A1A1F"><div style="font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums">{{ f.name }}</div><div style="margin-top:2px;font-size:11.5px;line-height:1.45;color:rgba(236,236,241,0.55)">{{ f.what }}</div></div></sc-for>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div tabindex="0" role="button" onclick="{{ xp.onZip }}" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;background:#ECECF1;color:#101013;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>{{ xp.zipLabel }}</div>
+            <div tabindex="0" role="button" onclick="{{ xp.onRender }}" style="font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;background:rgba(111,140,255,0.14);color:#B9C6FF;cursor:pointer">{{ xp.renderLabel }}</div>
+          </div>
+          <sc-if value="{{ xp.hasMsg }}" hint-placeholder-val="{{ false }}"><div style="margin-top:10px;font-size:12.5px;line-height:1.5;color:{{ xp.msgColor }};animation:rmIn .25s ease both">{{ xp.msg }}</div></sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+
+// ── export: the files that go out with a film, made here and handed over as one .zip ──
+// Everything in the package is computed from the same state the room shows; nothing is typed by hand.
+const XP = (() => {
+  const enc = s => new TextEncoder().encode(s);
+  let CRC = null;
+  const crc32 = b => { if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } }
+    let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  // a stored (uncompressed) zip: small, dependable, opens everywhere
+  function zip(files) {
+    const parts = [], central = []; let off = 0;
+    const u16 = n => [n & 255, (n >>> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+    files.forEach(f => { const name = enc(f.name), data = typeof f.data === "string" ? enc(f.data) : f.data, crc = crc32(data);
+      const head = [0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)];
+      parts.push(new Uint8Array(head), name, data);
+      central.push([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)], name);
+      off += head.length + name.length + data.length; });
+    let cenLen = 0; const cen = central.map(x => { const a = x instanceof Uint8Array ? x : new Uint8Array(x); cenLen += a.length; return a; });
+    const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cenLen), ...u32(off), ...u16(0)]);
+    const all = [...parts, ...cen, end], size = all.reduce((n, a) => n + a.length, 0), out = new Uint8Array(size); let p = 0; all.forEach(a => { out.set(a, p); p += a.length; }); return out;
+  }
+  // hand a file to the viewer: the platform's save prompt where it exists, an ordinary download where it doesn't
+  async function offer(filename, bytes) {
+    let C = null; try { C = window.claude || (window.parent && window.parent !== window && window.parent.claude) || null; } catch (e) { C = null; }
+    if (C && typeof C.use === "function") {
+      try { const d = await Promise.race([C.use("downloads"), new Promise(r => setTimeout(() => r(null), 4000))]);
+        if (d) { await d.save({ filename, data: bytes.slice ? bytes.slice(0) : bytes }); return "saved"; } }
+      catch (e) { if (e && e.code === "declined") return "declined"; if (e && e.code === "rate_limited") return "busy"; }
+    }
+    try { const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })), a = document.createElement("a");
+      a.href = url; a.download = filename; a.rel = "noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); return "saved"; }
+    catch (e) { return "failed"; }
+  }
+  const p2 = n => String(Math.floor(n)).padStart(2, "0");
+  const tc = (s, fps) => { fps = fps || 25; const f = Math.round((s - Math.floor(s)) * fps); s = Math.floor(s); return p2(s / 3600) + ":" + p2(s % 3600 / 60) + ":" + p2(s % 60) + ":" + p2(f); };
+  const srtT = s => { const ms = Math.round((s % 1) * 1000); s = Math.floor(s); return p2(s / 3600) + ":" + p2(s % 3600 / 60) + ":" + p2(s % 60) + "," + String(ms).padStart(3, "0"); };
+  const hmsToS = ts => String(ts).split(":").map(Number).reduce((a, x) => a * 60 + x, 0);
+  // captions: a line split at sentence ends, then at 42 characters, timed by its share of the characters
+  function cues(text, a, b) {
+    const sents = String(text).replace(/\s+/g, " ").trim().split(/(?<=[.?!…])\s+/), chunks = [];
+    sents.forEach(s => { const w = s.split(" "); let cur = ""; w.forEach(x => { if ((cur + " " + x).trim().length > 42 && cur) { chunks.push(cur.trim()); cur = x; } else cur = (cur + " " + x).trim(); }); if (cur) chunks.push(cur); });
+    const total = chunks.reduce((n, c) => n + c.length, 0) || 1; let t = a;
+    return chunks.map(c => { const d = (b - a) * c.length / total, cue = { a: t, b: t + d, text: c }; t += d; return cue; });
+  }
+  const srt = list => list.map((c, i) => (i + 1) + "\n" + srtT(c.a) + " --> " + srtT(c.b) + "\n" + c.text + "\n").join("\n");
+  // CMX 3600 — the oldest edit list there is, and still what Resolve and Premiere read without asking questions
+  function edl(title, events) {
+    let rec = 3600, out = "TITLE: " + title.toUpperCase().slice(0, 60) + "\nFCM: NON-DROP FRAME\n\n";
+    events.forEach((e, i) => { const reel = (e.reel || "AX").replace(/[^A-Z0-9_]/gi, "").toUpperCase().slice(0, 8).padEnd(8, " ");
+      out += String(i + 1).padStart(3, "0") + "  " + reel + " V     C        " + tc(e.src) + " " + tc(e.src + e.dur) + " " + tc(rec) + " " + tc(rec + e.dur) + "\n";
+      if (e.name) out += "* FROM CLIP NAME: " + e.name + "\n"; (e.notes || []).forEach(n => { out += "* COMMENT: " + n + "\n"; }); out += "\n"; rec += e.dur; });
+    return out;
+  }
+  // Final Cut Pro 7 XML (xmeml 4): the one timeline format Premiere and Resolve both open. Every shot is a clip on V1
+  // pointing at a file by name (offline until you relink it), voice takes sit on A1, and what Aldershot knows about
+  // each shot — its source, its receipt, its line — rides along as a marker on the clip and on the timeline.
+  const esc = v => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  function xml(spec) {
+    const fps = spec.fps || 25, F = s => Math.round(s * fps), rate = "<rate><timebase>" + fps + "</timebase><ntsc>FALSE</ntsc></rate>";
+    const total = spec.video.reduce((n, v) => n + F(v.dur), 0), files = {}; let fid = 0;
+    const fileTag = (path, dur, kind, srcEnd) => { if (files[path]) return "<file id=\"" + files[path] + "\"/>"; files[path] = "file-" + (++fid);
+      return "<file id=\"" + files[path] + "\"><name>" + esc(path.split("/").pop()) + "</name><pathurl>" + esc("file://localhost/" + encodeURI(spec.root + "/" + path)) + "</pathurl>" + rate + "<duration>" + Math.max(F(dur), srcEnd) + "</duration><media>" + (kind === "audio" ? "<audio><channelcount>1</channelcount></audio>" : "<video><samplecharacteristics>" + rate + "<width>1920</width><height>1080</height></samplecharacteristics></video>") + "</media></file>"; };
+    const mk = m => "<marker><name>" + esc(m.name) + "</name><comment>" + esc(m.comment || "") + "</comment><in>" + F(m.at || 0) + "</in><out>-1</out></marker>";
+    let t = 0, n = 0;
+    const vItems = spec.video.map(v => { const a = t, d = F(v.dur), i = F(v.src || 0); t += d; n++;
+      return "<clipitem id=\"clipitem-" + n + "\"><name>" + esc(v.name) + "</name><enabled>TRUE</enabled><duration>" + Math.max(F(v.fileDur || v.dur), i + d) + "</duration>" + rate + "<start>" + a + "</start><end>" + (a + d) + "</end><in>" + i + "</in><out>" + (i + d) + "</out>" + fileTag(v.file, v.fileDur || v.dur, "video", i + d) + (v.markers || []).map(m => mk({ ...m, at: (v.src || 0) + (m.at || 0) })).join("") + "</clipitem>"; });
+    const aItems = (spec.audio || []).map(v => { const a = F(v.at), d = F(v.dur); n++;
+      return "<clipitem id=\"clipitem-" + n + "\"><name>" + esc(v.name) + "</name><enabled>TRUE</enabled><duration>" + d + "</duration>" + rate + "<start>" + a + "</start><end>" + (a + d) + "</end><in>0</in><out>" + d + "</out>" + fileTag(v.file, v.dur, "audio", d) + "<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack></clipitem>"; });
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE xmeml>\n<xmeml version=\"4\">\n<sequence id=\"sequence-1\"><name>" + esc(spec.title) + "</name><duration>" + total + "</duration>" + rate +
+      "<timecode>" + rate + "<string>01:00:00:00</string><frame>" + (3600 * fps) + "</frame><displayformat>NDF</displayformat></timecode>" +
+      "<media><video><format><samplecharacteristics>" + rate + "<width>1920</width><height>1080</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>" +
+      "<track>\n" + vItems.join("\n") + "\n</track></video><audio><track>\n" + aItems.join("\n") + "\n</track></audio></media>\n" + spread(spec.markers || [], fps).map(mk).join("\n") + "\n</sequence>\n</xmeml>\n";
+  }
+  // Resolve reads timeline markers from an edit list of its own shape: Timeline › Import › Timeline Markers from EDL
+  const RCOL = { blue: "ResolveColorBlue", green: "ResolveColorGreen", yellow: "ResolveColorYellow", red: "ResolveColorRed", purple: "ResolveColorPurple", cyan: "ResolveColorCyan", pink: "ResolveColorPink" };
+  const spread = (markers, fps) => { const used = new Set(); return markers.map(m => { let f = Math.round((m.at || 0) * fps); while (used.has(f)) f++; used.add(f); return { ...m, at: f / fps }; }); };
+  function markerEdl(title, markers, fps) { fps = fps || 25; let out = "TITLE: " + String(title).slice(0, 60) + "\nFCM: NON-DROP FRAME\n\n";
+    spread(markers, fps).forEach((m, i) => { const a = 3600 + m.at, b = a + 1 / fps, clean = v => String(v || "").replace(/[|\n\r]/g, " ").replace(/[^\x20-\x7E]/g, c => ({ "—": "-", "–": "-", "’": "'", "‘": "'", "“": "\"", "”": "\"", "…": "...", "·": "-", "¢": "c" })[c] || "");
+      out += String(i + 1).padStart(3, "0") + "  001      V     C        " + tc(a, fps) + " " + tc(b, fps) + " " + tc(a, fps) + " " + tc(b, fps) + "  \n |C:" + (RCOL[m.color] || RCOL.blue) + " |M:" + clean(m.name + (m.comment ? " - " + m.comment : "")).slice(0, 160) + " |D:1\n\n"; });
+    return out; }
+  const csv = rows => rows.map(r => r.map(x => { const s = String(x == null ? "" : x); return /[",\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s; }).join(",")).join("\n") + "\n";
+  const slug = s => String(s).toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return { zip, offer, tc, srt, cues, edl, csv, slug, hmsToS, enc, xml, markerEdl, esc };
+})();
+
+// ── settings, shared by every page: one spending limit, one set of defaults ──
+const SET_KEY = "aldershot.settings.v1";
+const SET_DEFAULT = { v: 1, limit: 50, plan: "starter", services: { byok: false, pixabay: true, nasa: true, archive: true, podcasts: true, r2: false, eleven: false, youtube: false },
+  defaults: { format: "1080", shorts: "9:16", captions: "word", subs: "always", decide: "recommend", scout: "ask", depth: "words+screen", originals: "here" }, hook: "", restored: {} };
+function loadSettings() { try { const s = JSON.parse(localStorage.getItem(SET_KEY) || "null"); if (s && s.v === 1) return { ...SET_DEFAULT, ...s, services: { ...SET_DEFAULT.services, ...(s.services || {}) }, defaults: { ...SET_DEFAULT.defaults, ...(s.defaults || {}) } }; } catch (e) {} return JSON.parse(JSON.stringify(SET_DEFAULT)); }
+function saveSettings(s) { try { localStorage.setItem(SET_KEY, JSON.stringify(s)); } catch (e) {} return s; }
+
+// The Studio, led by footage. Same room as the essay: the conversation on the left, the work in the middle, now on the right.
+// The cut is never stored — it is compute(rules, moments) from footage.js, the engine One Take used, every render.
+const KEY = "aldershot.cut.v1";
+const REC = "#EF5B4F", GREEN = "#5EC98F", WORK = "#6F8CFF", ROSE = "#E3A29B", INK = "#ECECF1";
+const SCOL = { A: "#D8CFB8", B: "#8FA3B8", C: "#9A8FD0", X1: "#C9A9A6", X2: "#A3B0C9" };
+const DAY = { A: "Tuesday", B: "Thursday", C: "Sunday" };
+const fmt = n => { n = Math.max(0, Math.round(n)); return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0"); };
+const hms = n => { n = Math.round(n); return n >= 3600 ? Math.floor(n / 3600) + ":" + String(Math.floor(n % 3600 / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0") : fmt(n); };
+const pad2 = n => String(n).padStart(2, "0");
+const cap1 = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const stub = (t, n) => t.length > (n || 60) ? t.slice(0, n || 60).replace(/\s+\S*$/, "").replace(/[.,;:—–-]+$/, "") + "…" : t;
+const mins = s => s % 60 === 0 ? (s / 60) + (s === 60 ? " minute" : " minutes") : fmt(s);
+const NUMW = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, ninety: 90 };
+const STOP = new Set("the a an and of to in on it its that this one bit line part about where when what i me my you your is was be keep cut put back take out drop lose remove use include with for from say said bring leave get rid skip please".split(" "));
+const QSTOP = new Set("when where what did do does i ever talk talked talking about say said mention mentioned how many times much is was the a an my me any anything something there which who why have has".split(" "));
+const TAGWORDS = [[/\b(hellos?|hi|mic|mics|where.?was.?i|small talk|chat|chatter|preamble|warm.?up|sign.?off|housekeeping|asides?)\b/, "chat"], [/hedg|i don.?t know|unsure|doubts?\b|second.?guess/, "hedge"], [/\b(land|landing|lands|decision|decide|ending|resolve|going|answer|verdict)\b/, "resolve"], [/\b(house|room|mum)\b/, "house"], [/\b(hard|sharp|sharpest|strong|strongest|best)\b/, "strong"], [/\b(working|thinking|core)\b/, "core"]];
+const SCOUT_LINE = "Scout found someone else making your trade, on “what it costs”: The Backseat Show, March 2024 — “Nobody tells you the rent is the cheap part.” It’s cleared to use with a credit, and it plays from the show’s own link.";
+const TAGPRI = ["resolve", "hedge", "chat", "house", "strong", "core", "ext"];
+
+// A coded stand-in for each recording's picture — the built app shows your frames; this shows where they'd be.
+function still(src, id, t, live) {
+  const R = [], C = [], P = [];
+  const rect = (x, y, w, h, fill, op, rx, stroke) => R.push({ x, y, w, h, fill, op: op == null ? 1 : op, rx: rx || 0, stroke: stroke || "none" });
+  const circ = (cx, cy, r, fill, op, stroke, w) => C.push({ cx, cy, r, fill, op: op == null ? 1 : op, stroke: stroke || "none", w: w || 0 });
+  const path = (d, fill, op, stroke, w, dash, off) => P.push({ d, fill: fill || "none", op: op == null ? 1 : op, stroke: stroke || "none", w: w || 0, dash: dash || "none", off: off || 0 });
+  const talk = live ? Math.sin(t * 6.3) * 1.8 + Math.sin(t * 1.9) * 2.6 : 0;
+  const lean = ((id * 37) % 44) - 22;
+  let px = 480;
+  const person = (x, y, s, col, rim) => { px = x; rect(x - 145 * s, y + 70 * s + talk, 290 * s, 320 * s, col, 1, 125 * s, rim); circ(x, y + talk, 64 * s, col, 1, rim || "none", rim ? 4 : 0); };
+  if (src === "A") {
+    rect(0, 0, 960, 540, "#2B2622"); rect(48, 44, 330, 156, "#34302A", 1, 6); rect(58, 54, 150, 136, "#2F2A25", 1, 4); rect(218, 54, 150, 136, "#2F2A25", 1, 4);
+    rect(612, 64, 268, 232, "#2E3A4A", 1, 4); rect(742, 64, 8, 232, "#2B2622"); rect(612, 176, 268, 8, "#2B2622");
+    circ(300, 30, 130, "#E8C890", 0.07); path("M300 0 L300 26", null, 1, "#4A443C", 3); circ(300, 36, 12, "#E8C890", 0.8);
+    rect(0, 388, 960, 152, "#1E1A17"); rect(0, 380, 960, 10, "#3A342D"); rect(150, 344, 38, 40, "#4A4038", 1, 6);
+    person(470 + lean, 252, 1, "#131116");
+  } else if (src === "B") {
+    const road = live ? (t * 0.9) % 1 : (id * 0.137) % 1;
+    rect(0, 0, 960, 540, "#111318"); path("M70 30 L890 30 L930 310 L30 310 Z", "#222B36"); path("M30 214 L930 214 L930 310 L30 310 Z", "#1A1F27");
+    path("M330 310 L630 310 L494 214 L466 214 Z", "#15181D"); path("M480 310 L480 216", null, 0.7, "#BFC4CC", 5, "0.1 0.1", -road);
+    path("M120 60 L170 120", null, 0.18, "#AFC0D6", 2); path("M760 70 L800 128", null, 0.18, "#AFC0D6", 2);
+    rect(0, 300, 960, 240, "#0C0D10"); circ(210, 590, 200, "none", 1, "#1D1F25", 26); rect(706, 286, 28, 14, "#2C2F36", 1, 3);
+    person(560 + lean * 0.5, 232, 0.95, "#0A0B0E", "#38404E");
+  } else if (src === "C") {
+    const sun = ((live ? t * 4 : 0) + (id % 5) * 18);
+    rect(0, 0, 960, 540, "#2E2924"); rect(0, 404, 960, 136, "#25211C"); rect(84, 120, 150, 284, "none", 1, 0, "#3D362F");
+    circ(755, 210, 200, "#E8D6AA", 0.07); rect(650, 86, 210, 250, "#DCCCA6", 0.5, 3); rect(752, 86, 6, 250, "#2E2924"); rect(650, 206, 210, 6, "#2E2924");
+    path("M" + (560 - sun) + " 420 L" + (790 - sun) + " 420 L" + (730 - sun) + " 540 L" + (470 - sun) + " 540 Z", "#E8D6AA", 0.17);
+    person(410 + lean, 254, 1, "#141117");
+  } else if (src === "X1") {
+    rect(0, 0, 960, 540, "#17151A");
+    for (let i = 0; i < 52; i++) { const h = 16 + Math.abs(Math.sin(i * 0.73 + (live ? t * 3 : id))) * 150 * (0.35 + ((i * 13) % 7) / 10); rect(128 + i * 13.5, 270 - h / 2, 8, h, "#C9A9A6", 0.8, 3); }
+  } else if (src === "X2") {
+    rect(0, 0, 960, 540, "#0F1014"); rect(40, 40, 640, 400, "#1C2230", 1, 6); rect(700, 40, 220, 460, "#15171D", 1, 6);
+    for (let i = 0; i < 9; i++) rect(716, 60 + i * 46, 90 + ((i * 37) % 100), 12, "#2A2E38", 1, 4);
+    rect(60, 320, 170, 104, "#2A2F3A", 1, 4); circ(145, 360, 20, "#0C0D10"); rect(108, 382, 74, 50, "#0C0D10", 1, 26);
+  } else {
+    rect(0, 0, 960, 540, "#1D1C21"); circ(700, 120, 260, "#ECECF1", 0.04); person(480, 250, 1.05, "#0D0C10");
+  }
+  return { rects: R, circles: C, paths: P, px };
+}
+// a 16:9 frame inside a 9:16 box: follow the speaker (centred on them) or the whole frame, letterboxed
+const vstyle = (g, mode) => mode === "whole" ? "position:absolute;left:0;width:100%;top:50%;transform:translateY(-50%);aspect-ratio:16/9" : "position:absolute;top:0;height:100%;left:50%;aspect-ratio:16/9;transform:translateX(" + (-50 - Math.max(-34, Math.min(34, (g.px - 480) / 960 * 100))).toFixed(1) + "%)";
+
+function loadCut() { try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.v === 1) return s; } catch (e) {} return null; }
+function freshCut(F) { return { v: 1, rules: F.SEED.map(r => ({ ...r })), struck: {}, ext: {}, rec: {}, hist: [], msgs: null, asked: {}, sh: { len: "m", count: 6, skip: {}, forced: {}, struck: {}, cap: (typeof loadSettings === "function" ? loadSettings().defaults.captions : "word"), frame: "follow", sel: null } }; }
+
+class Component extends DCLogic {
+  state = { F: null, err: "", s: null, lens: "cut", T: 0, playing: false, switcherOpen: false, alsoOpen: false, draft: "", take: null, wsrc: "A", outsOpen: true, flash: null, jump: null, hear: false, micMsg: "" };
+
+  componentDidMount() {
+    import(new URL("footage.js", document.baseURI).href).then(F => {
+      const s = loadCut() || freshCut(F);
+      if (!s.msgs) s.msgs = this.opening(F, s);
+      this.setState({ F, s });
+    }).catch(e => this.setState({ err: "Couldn’t read the footage file (footage.js): " + (e && e.message || e) + ". The cut can’t be made until it loads." }));
+    this.last = performance.now();
+    const loop = now => {
+      const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
+      const st = this.state, tk = st.take;
+      if (tk && tk.phase === "count") { if (now - tk.t0 >= 3000) this.setState({ take: { ...tk, phase: "rolling", t0: now, now } }); else this.setState({ take: { ...tk, now } }); }
+      else if (tk && tk.phase === "rolling") { if (now - tk.t0 >= 20000) this.stopTake(); else this.setState({ take: { ...tk, now } }); }
+      else if (st.playing && st.F && st.s) { const total = this.cut().secs; const T = st.T + dt; if (T >= total) this.setState({ T: total, playing: false }); else this.setState({ T }); }
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+    this.onDocKey = e => {
+      const tag = (e.target && e.target.tagName || "").toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && tag !== "textarea" && tag !== "input") { e.preventDefault(); this.undo(); return; }
+      if (e.key === "Escape" && this.state.xpOpen) { this.setState({ xpOpen: false }); return; }
+      if (tag === "textarea" || tag === "input" || !this.state.s) return;
+      if (e.key === " ") { e.preventDefault(); const tk = this.state.take; if (tk && tk.phase === "rolling") this.stopTake(); else if (tk && tk.phase === "ready") this.startTake(); else this.setState({ playing: !this.state.playing }); }
+      if (e.key === "ArrowRight") this.step(1); if (e.key === "ArrowLeft") this.step(-1);
+    };
+    document.addEventListener("keydown", this.onDocKey);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); document.removeEventListener("keydown", this.onDocKey); }
+
+  // ── the footage set and the cut ──
+  setOf(s) { const F = this.state.F, SRC = {};
+    Object.keys(F.SRC).forEach(k => { SRC[k] = { ...F.SRC[k], color: SCOL[k] }; }); Object.keys(F.EXT_SRC).forEach(k => { SRC[k] = { ...F.EXT_SRC[k], color: SCOL[k] }; });
+    return { SRC, CLIPS: [...F.CLIPS, ...F.EXT.filter(c => s.ext[c.id])], STRANDS: F.STRANDS }; }
+  cutOf(s, rules) {
+    const F = this.state.F, set = this.setOf(s), rs = rules || s.rules, cap = rs.find(r => r.kind === "cap" && r.on);
+    let R = F.compute(rs, s.struck, [], {}, null, set);
+    // the engine's length rule counts moments only; the spaces to camera count too, so take them off the budget and run it again
+    for (let i = 0; cap && i < 2; i++) { const V = R.rows.filter(r => r.voice).reduce((n, r) => n + (s.rec[r.key] ? Math.max(3, s.rec[r.key]) : r.secs), 0); R = F.compute(rs.map(r => r === cap ? { ...r, secs: cap.secs - V } : r), s.struck, [], {}, null, set); }
+    let at = 0;
+    R.rows.forEach(r => { if (r.voice && s.rec[r.key]) r.secs = Math.max(3, s.rec[r.key]); r.at = at; at += r.secs; }); R.secs = at; return R; }
+  cut() { return this.cutOf(this.state.s); }
+  count(R) { return { secs: R.secs, n: R.rows.filter(r => r.kind === "clip").length, gaps: R.rows.filter(r => r.voice).length }; }
+  dl(a, b) { const x = this.count(a), y = this.count(b), out = [];
+    if (x.secs !== y.secs) out.push(fmt(x.secs) + " → " + fmt(y.secs)); if (x.n !== y.n) out.push(x.n + " → " + y.n + " moments"); if (x.gaps !== y.gaps) out.push(x.gaps + " → " + y.gaps + " spaces");
+    return out.length ? out.join(" · ") : a.ord !== b.ord ? "Same length, new order" : "The cut is the same"; }
+  idx(s, id) { const i = s.rules.filter(r => !r.hand).findIndex(r => r.id === id); return pad2(i + 1); }
+  nextId(s) { return Math.max(0, ...s.rules.map(r => r.id)) + 1; }
+
+  opening(F, s) {
+    const R = F.compute(s.rules, s.struck, [], {}, null, null), n = R.rows.filter(r => r.kind === "clip").length, g = R.rows.filter(r => r.voice).length;
+    const total = Object.values(F.SRC).reduce((a, x) => a + x.secs, 0);
+    return [
+      { id: 1, who: "al", text: F.ARCHIVE_SUMMARY },
+      { id: 2, who: "al", text: "I read all three once — " + hms(total) + ", " + F.CLIPS.length + " moments, five threads. Your four rules make a " + fmt(R.secs) + " cut from " + n + " of them, one thread at a time, with " + g + " spaces for you to say what each thread adds up to." },
+      { id: 3, who: "al", prop: "resolve", text: "One thing I’d change. Sunday at 44:02 — “So I’m going. Not because it’s better there…” — isn’t in the cut. No rule keeps the moment where you land it, so the film asks the question and never answers it." },
+    ];
+  }
+
+  save(s, extra) {
+    // a summary rides along so Home and the Studio's switcher can show this project without running the engine
+    try { const R = this.cutOf(s), gaps = R.rows.filter(r => r.voice); s.sum = { secs: R.secs, n: R.rows.filter(r => r.kind === "clip" && r.provenance !== "external").length, of: this.state.F.CLIPS.length, gaps: gaps.length, rec: gaps.filter(r => s.rec[r.key]).length, open: gaps.filter(r => !s.rec[r.key]).reduce((n, r) => n + r.secs, 0) }; } catch (e) {}
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} this.setState({ s, ...(extra || {}) }); }
+  mid() { return Date.now() + Math.random(); }
+  commit(patch, said, reply, opts) {
+    opts = opts || {}; const s0 = this.state.s, before = { rules: s0.rules, struck: s0.struck, ext: s0.ext, rec: s0.rec };
+    const R0 = this.cutOf(s0), s1 = { ...s0, ...patch }, R1 = this.cutOf(s1), id = this.mid(), msgs = [...s0.msgs];
+    if (said) msgs.push({ id: id + 1, who: "you", text: said });
+    if (reply) msgs.push({ id, who: "al", text: reply, diff: this.dl(R0, R1), undo: true, list: opts.list });
+    (opts.more || []).forEach(m => msgs.push({ id: this.mid(), who: "al", ...m }));
+    s1.msgs = msgs.slice(-40); s1.hist = [...(s0.hist || []), { id, before }].slice(-30);
+    this.save(s1, { ...(opts.state || {}), flash: opts.flash || null });
+    if (opts.flash) this.flashTo("ct-" + opts.flash);
+  }
+  quiet(patch) { const s0 = this.state.s, before = { rules: s0.rules, struck: s0.struck, ext: s0.ext, rec: s0.rec }; this.save({ ...s0, ...patch, hist: [...(s0.hist || []), { id: "q" + Date.now(), before }].slice(-30) }); }
+  undo() {
+    const s0 = this.state.s; if (!s0) return; const h = (s0.hist || []).slice(-1)[0];
+    if (!h) return this.say(null, "There’s nothing to undo yet.");
+    const R0 = this.cutOf(s0), s1 = { ...s0, ...h.before, hist: s0.hist.slice(0, -1) }, R1 = this.cutOf(s1);
+    s1.msgs = s0.msgs.map(m => m.id === h.id ? { ...m, undone: true, undo: false } : m).concat([{ id: this.mid(), who: "al", text: "Undone — it’s back how it was.", diff: this.dl(R0, R1) }]).slice(-40);
+    this.save(s1);
+  }
+  say(said, reply, opts) { opts = opts || {}; const s0 = this.state.s, msgs = [...s0.msgs]; if (said) msgs.push({ id: this.mid(), who: "you", text: said }); msgs.push({ id: this.mid(), who: "al", text: reply, list: opts.list, prop: opts.prop }); (opts.more || []).forEach(m => msgs.push({ id: this.mid(), who: "al", ...m })); this.save({ ...s0, msgs: msgs.slice(-40), ...(opts.patch || {}) }, opts.state); }
+
+  // ── the two things Aldershot proposes ──
+  propYes(kind) {
+    const s = this.state.s, asked = { ...s.asked, [kind]: "yes" };
+    if (kind === "resolve") { const id = this.nextId(s);
+      this.commit({ rules: [...s.rules, { id, kind: "keep", tag: "resolve", on: true, wins: true, text: "Keep the moment where you land it." }], asked }, null,
+        "Rule " + pad2(s.rules.filter(r => !r.hand).length + 1) + " keeps where you land it. The film ends on Sunday at 44:02 now, with one more space for you after it.",
+        { more: [{ prop: "scout", text: SCOUT_LINE }], flash: "c13" }); }
+    if (kind === "scout") this.commit({ ext: { ...s.ext, 101: true }, asked }, null, "It’s in “what it costs”, with the show’s name on screen while it plays. Nothing was downloaded — the cut points at their file.", { flash: "c101" });
+  }
+  propNo(kind) {
+    const s = this.state.s, asked = { ...s.asked, [kind]: "no" };
+    if (kind === "resolve") this.say(null, "Left open. The film asks the question and lets whoever’s watching answer it.", { patch: { asked }, more: [{ prop: "scout", text: SCOUT_LINE }] });
+    if (kind === "scout") this.say(null, "Left out. It stays in Footage, under Scout’s finds, if you want it later.", { patch: { asked } });
+  }
+  wouldBe(kind) { const s = this.state.s; let s1 = s;
+    if (kind === "resolve") s1 = { ...s, rules: [...s.rules, { id: 999, kind: "keep", tag: "resolve", on: true, wins: true }] };
+    if (kind === "scout") s1 = { ...s, ext: { ...s.ext, 101: true } };
+    return "Would be " + fmt(this.cutOf(s1).secs); }
+
+  // ── a sentence becomes a rule, or an answer, or says plainly that it can’t ──
+  run(text) {
+    const said = String(text || "").trim(); if (!said || !this.state.s) return;
+    this.setState({ draft: "" });
+    const F = this.state.F, s = this.state.s, R = this.cut(), t = said.toLowerCase().replace(/[’‘]/g, "'").replace(/[.!]+$/, "").trim();
+    const id = this.nextId(s), n = pad2(s.rules.filter(r => !r.hand).length + 1), rep = (rules, reply, o) => this.commit({ rules }, said, reply, o);
+    if (/^(undo|undo that|take that back)$/.test(t)) { this.say(said, "Taking back the last change."); return setTimeout(() => this.undo(), 0); }
+    if (/^(why|when|where|what|did|do|how|which|who|is|was|have)\b/.test(t) || /\?$/.test(said)) return this.answer(said, t);
+    if (/\bshorts?\b/.test(t) && !/\b(cut|keep|drop)\b/.test(t)) return this.say(said, "Here are the shorts — the same moments, judged on whether each stands alone.", { state: { lens: "shorts" } });
+    const nm = t.match(/(\d+(?:\.\d+)?)\s*(minutes?|mins?|m\b|seconds?|secs?|s\b)/), wm = t.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|forty|ninety)\s+(minutes?|seconds?)/);
+    const num = nm ? Math.round(Number(nm[1]) * (/^m/.test(nm[2]) ? 60 : 1)) : wm ? NUMW[wm[1]] * (/^m/.test(wm[2]) ? 60 : 1) : null;
+    const capOn = s.rules.find(r => r.kind === "cap" && r.on);
+    if (num && /(under|below|at most|max|no (more|longer) than|keep it to|down to|shorter|cap|within|less than|make it|fit)/.test(t))
+      { const rules = F.applyRule(s.rules, { id, kind: "cap", secs: num, on: true, text: "Keep it under " + mins(num) + "." }), got = this.cutOf({ ...s, rules }).secs;
+        return rep(rules, "Rule " + (capOn ? this.idx(s, capOn.id) : n) + " keeps it under " + mins(num) + ". To fit, the longest moments go first — never the hard lines." + (got > num ? " The hard lines and your spaces alone run " + fmt(got) + ", so that’s as short as it goes without cutting one of them." : "")); }
+    if (/(shorter|tighter|trim it|too long)/.test(t)) { const secs = Math.max(120, Math.floor((R.secs - 15) / 60) * 60);
+      return rep(F.applyRule(s.rules, { id, kind: "cap", secs, on: true, text: "Keep it under " + mins(secs) + "." }), "Under " + mins(secs) + " — the longest quieter moments go first, never the hard lines."); }
+    if (/(no (length|limit|cap)|as long as it needs|let it run|any length)/.test(t)) { if (!capOn) return this.say(said, "There’s no length rule on — it already runs as long as the rules make it.");
+      return rep(s.rules.map(r => r.id === capOn.id ? { ...r, on: false } : r), "Rule " + this.idx(s, capOn.id) + " is off — no length limit."); }
+    const ord = /(as it happened|in order|chronolog|day by day|in the order)/.test(t) ? "time" : /((start|open|begin)s? (on|with)|sharpest line first|hook first|lead with)/.test(t) ? "open" : (/(one thread at a time|by thread|by topic|by theme|threads)/.test(t) && !/\b(cut|drop|keep)\b/.test(t)) ? "strand" : null;
+    if (ord) { const o = s.rules.find(r => r.kind === "order"); if (o && o.order === ord && o.on) return this.say(said, "It already runs " + F.ORDERS[ord].name + ".");
+      return rep(F.applyRule(s.rules, { id, kind: "order", order: ord }), "Rule " + (o ? this.idx(s, o.id) : n) + " now runs it " + F.ORDERS[ord].name + ". " + F.ORDERS[ord].why + (ord === "time" ? " The spaces to camera only sit between threads, so they step aside." : "")); }
+    const gap = s.rules.find(r => r.kind === "gap");
+    if (/(no|without|drop|lose|cut|skip|remove) (the |my )?(gaps?|spaces?|to.?camera|bits to camera|pieces to camera)/.test(t)) { if (!gap || !gap.on) return this.say(said, "The spaces to camera are already off.");
+      return rep(s.rules.map(r => r.id === gap.id ? { ...r, on: false } : r), "Rule " + this.idx(s, gap.id) + " is off — no spaces to camera. Your takes are kept if you switch it back."); }
+    if (/((leave|give) me .*(camera|space)|(gaps?|spaces) back)/.test(t) && gap) return rep(s.rules.map(r => r.id === gap.id ? { ...r, on: true } : r), "Rule " + this.idx(s, gap.id) + " is back on — a space for you after each thread.");
+    const km = t.match(/^(?:please\s+|can you\s+|let's\s+)?(keep|put back|include|use|leave in|bring back|cut|take out|drop|lose|remove|get rid of|skip)\s+(.*)$/);
+    if (km) {
+      const drop = /^(cut|take out|drop|lose|remove|get rid of|skip)/.test(km[1]), obj = km[2];
+      const lineMode = /\b(line|bit|one|part|moment|where i|when i)\b/.test(obj), hit = lineMode ? null : TAGWORDS.find(([re]) => re.test(obj)), tag = hit && hit[1];
+      if (tag) { const exist = s.rules.find(r => !r.hand && r.tag === tag && r.kind === (drop ? "drop" : "keep"));
+        if (exist && exist.on) return this.say(said, "Rule " + this.idx(s, exist.id) + " already does that: " + exist.text);
+        if (exist) return rep(s.rules.map(r => r.id === exist.id ? { ...r, on: true } : r), "Rule " + this.idx(s, exist.id) + " is back on: " + exist.text);
+        const rule = { id, kind: drop ? "drop" : "keep", tag, on: true, wins: !drop, text: (drop ? "Take out " : "Keep ") + F.TAGNAME[tag].replace(/^the /, "the ") + "." };
+        const Rn = this.cutOf({ ...s, rules: [...s.rules, rule] }), hits = Rn.st.filter(c => drop ? c.dropId === id : c.byId === id).length;
+        return rep([...s.rules, rule], "Rule " + n + ": " + rule.text + " " + (hits ? (drop ? "It takes out " : "It keeps ") + hits + (hits === 1 ? " moment." : " moments.") : (drop ? "Nothing in the cut is that right now, so it changes nothing yet." : "Nothing new comes in — those moments were already in, or a later rule cuts them."))); }
+      const words = obj.split(/[^a-z0-9']+/).filter(w => w.length >= 3 && !STOP.has(w)), set = this.setOf(s);
+      const best = set.CLIPS.map(c => ({ c, n: words.filter(w => c.text.toLowerCase().indexOf(w) >= 0).length })).filter(x => x.n).sort((a, b) => b.n - a.n)[0];
+      if (best) return this.hand(best.c, !drop, said);
+      return this.say(said, "I couldn’t find a line like that. Try a few of the words you said — “keep the line about the room” — or a kind of moment, like the hedging or the hellos.");
+    }
+    return this.say(said, "I can’t turn that into a rule yet. I can keep or cut a kind of moment or one line, change the order, set a length, or switch the spaces to camera — or answer a question about what you said.");
+  }
+  hand(c, keep, said) {
+    const s = this.state.s, id = this.nextId(s), rules = s.rules.filter(r => !(r.hand && r.cid === c.id));
+    const R0 = this.cut(), was = R0.st.find(x => x.id === c.id), when = (DAY[c.src] || c.src) + " " + c.ts;
+    if (keep && was && was.in) return this.say(said, "“" + stub(c.text, 50) + "” is already in.");
+    if (!keep && was && !was.in) return this.say(said, "“" + stub(c.text, 50) + "” is already out.");
+    this.commit({ rules: [...rules, { id, kind: keep ? "keep" : "drop", hand: true, cid: c.id, on: true, text: (keep ? "Put back by hand: " : "Cut by hand: ") + "“" + stub(c.text, 44) + "” (" + when + ")" }] }, said,
+      keep ? "Put back: " + when + ". It goes where the order puts it." : "Cut: " + when + ". It’s in the list of what’s out, if you want it back.", { flash: keep ? "c" + c.id : null });
+  }
+  answer(said, t) {
+    const F = this.state.F, s = this.state.s, R = this.cut(), set = this.setOf(s);
+    if (/^why\b/.test(t)) { const words = t.split(/[^a-z0-9']+/).filter(w => w.length >= 3 && !STOP.has(w) && !QSTOP.has(w));
+      const best = set.CLIPS.map(c => ({ c, n: words.filter(w => c.text.toLowerCase().indexOf(w) >= 0).length + (/(decision|ending|land)/.test(t) && c.tags.indexOf("resolve") >= 0 ? 2 : 0) })).filter(x => x.n).sort((a, b) => b.n - a.n)[0];
+      if (best) { const c = R.st.find(x => x.id === best.c.id), why = this.reason(c, s); return this.say(said, "“" + stub(best.c.text, 48) + "” — " + (c.in ? "it’s in. " : "it’s out. ") + cap1(why) + "."); } }
+    const q = t.split(/[^a-z0-9']+/).filter(w => w.length > 2 && !QSTOP.has(w)).join(" ");
+    const hits = q ? F.searchLines(q, "meaning") : [];
+    if (!hits.length) return this.say(said, "Nothing in the three vlogs comes close to that. I search by meaning — “money” also finds rent and pricing — so try the thing itself rather than the words around it.");
+    const inIds = {}; R.st.forEach(c => { inIds[c.id] = c.in; });
+    const inCut = hits.filter(h => h.line.m && inIds[h.line.m]).length;
+    this.say(said, "You come back to it " + (hits.length === 1 ? "once" : hits.length + " times") + (inCut ? " — " + inCut + " of those are in the cut." : ", and none of it is in the cut yet."),
+      { list: hits.slice(0, 5).map(h => ({ when: DAY[h.src] + " " + h.line.t, text: "“" + stub(h.line.text, 70) + "”", src: h.src, t: h.line.t, kept: !!(h.line.m && inIds[h.line.m]) })) });
+  }
+  reason(c, s) {
+    const F = this.state.F, d = s.rules.find(x => x.id === c.dropId), k = s.rules.find(x => x.id === c.byId);
+    if (c.in) return k ? (k.hand ? "you put it back by hand" : "rule " + this.idx(s, k.id) + " keeps it (“" + k.text.replace(/\.$/, "") + "”)") : "kept";
+    if (d && d.hand) return "you cut it by hand";
+    if (d && c.contest && c.contest.d === d.id) return "rule " + this.idx(s, c.contest.k) + " keeps it and rule " + this.idx(s, d.id) + " cuts it — the later rule wins";
+    if (d && d.kind === "cap") return "rule " + this.idx(s, d.id) + " — it didn’t fit the length; the longest quieter moments go first";
+    if (d) return "rule " + this.idx(s, d.id) + " cuts it (“" + d.text.replace(/\.$/, "") + "”)";
+    const tag = TAGPRI.find(x => c.tags.indexOf(x) >= 0); return "no rule keeps it — it’s " + (F.TAGNAME[tag] || "not tagged");
+  }
+
+  // ── takes for the spaces to camera ──
+  openTake(key) { this.setState({ take: { key, phase: "ready" }, playing: false }); }
+  startTake() { const tk = this.state.take; if (tk) this.setState({ take: { ...tk, phase: "count", t0: performance.now(), now: performance.now() } }); }
+  stopTake() { const tk = this.state.take; if (tk && tk.phase === "rolling") this.setState({ take: { ...tk, phase: "done", took: Math.max(1, Math.round((performance.now() - tk.t0) / 1000)) } }); }
+  keepTake() { const tk = this.state.take, s = this.state.s, R = this.cut(), row = R.rows.find(r => r.key === tk.key);
+    const left = R.rows.filter(r => r.voice && !s.rec[r.key] && r.key !== tk.key), nx = left[0];
+    this.commit({ rec: { ...s.rec, [tk.key]: tk.took } }, null, "Kept your take on “" + (row ? row.strand : "") + "” — " + tk.took + " seconds." + (nx ? " " + left.length + " to go." : " That’s every space."), { state: { take: nx ? { key: nx.key, phase: "ready" } : null } }); }
+
+  seek(T) { this.setState({ T: Math.max(0, T) + 0.01 }); }
+  step(d) { const R = this.cut(), i = R.rows.findIndex(r => this.state.T >= r.at && this.state.T < r.at + r.secs), j = Math.max(0, Math.min(R.rows.length - 1, (i < 0 ? 0 : i) + d)); this.seek(R.rows[j].at); }
+  flashTo(id) { setTimeout(() => { const el = document.getElementById(id); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 90); }
+
+  // ── Before it goes out: the check, and the package — the edit list points at your three recordings by their own timecodes ──
+  exportCheck(R, set, SH) {
+    const st = this.state, s = st.s, F = st.F, close = () => this.setState({ xpOpen: false }), go = fn => () => { close(); setTimeout(fn, 40); };
+    const clips = R.rows.filter(r => r.kind === "clip"), ext = clips.filter(r => r.provenance === "external"), ghosts = ext.filter(r => r.ghost), gaps = R.rows.filter(r => r.voice), unrec = gaps.filter(r => !s.rec[r.key]);
+    const outs = R.st.filter(c => !c.in), struckN = Object.values(s.struck).reduce((n, o) => n + Object.keys(o).length, 0);
+    const textOf = r => r.text.split(" ").filter((w, i) => !((s.struck[r.id] || {})[i])).join(" "), fast = clips.filter(r => textOf(r).length / r.secs > 17);
+    const C = [
+      { name: "From outside", state: ghosts.length ? "stop" : "ok", line: !ext.length ? "Everything in it is yours." : ghosts.length ? ghosts.length + " clip from outside isn’t cleared — “" + stub(ghosts[0].text, 50) + "”. It can’t go out as it is." : ext.length + (ext.length === 1 ? " clip is" : " clips are") + " someone else’s — credited on screen when " + (ext.length === 1 ? "it plays" : "they play") + ", linked rather than downloaded, and listed in the dispute file with how much of each is used.",
+        fixes: ghosts.length ? [["Take it out", () => this.commit({ ext: { ...s.ext, [ghosts[0].id]: false } }, null, "Took out the clip that wasn’t cleared.")]] : [] },
+      { name: "Spaces to camera", state: unrec.length ? "look" : "ok", line: !gaps.length ? "No spaces to camera — rule " + this.idx(s, (s.rules.find(r => r.kind === "gap") || {}).id) + " is off." : unrec.length ? unrec.length + " of " + gaps.length + " aren’t recorded. They’d go out as a black card with the line on it." : "All " + gaps.length + " recorded.", fixes: unrec.length ? [["Record the next one", go(() => this.openTake(unrec[0].key))]] : [] },
+      { name: "What’s left out", state: "ok", line: outs.length + " of " + R.st.length + " moments left out, each with the rule that cut it. The ledger goes with the cut, so anyone can see what wasn’t used and why.", fixes: [] },
+      { name: "Trims", state: "ok", line: struckN ? struckN + (struckN === 1 ? " word" : " words") + " trimmed inside moments. The recordings keep every one." : "No words trimmed inside moments.", fixes: [] },
+      { name: "Captions", state: "ok", line: "A subtitle file goes with it, timed to what you say." + (fast.length ? " " + fast.length + (fast.length === 1 ? " moment runs" : " moments run") + " faster than 17 characters a second, so they’re split into shorter captions." : " Every caption reads at an easy pace."), fixes: [] },
+      { name: "Sound", state: "ok", line: "Levels matched across the kitchen, the car and the house; near −14 LUFS with peaks under −1 dB — measured on the render itself.", fixes: [] },
+    ];
+    const stopN = C.filter(c => c.state === "stop").length, lookN = C.filter(c => c.state === "look").length, dot = x => x === "stop" ? ROSE : x === "look" ? WORK : GREEN;
+    const title = "Working out whether to move", cueList = [];
+    clips.forEach(r => cueList.push(...XP.cues(textOf(r), r.at, r.at + r.secs)));
+    // the cut for an editor: clips point at your recordings by their own timecodes; why each is in rides along as a marker
+    const p3 = i => String(i + 1).padStart(3, "0"), stOf = r => R.st.find(c => c.id === r.id), DAYN = k => (DAY[k] || set.SRC[k].name);
+    const marks = R.rows.map((r, i) => r.voice ? { at: r.at, name: p3(i) + (s.rec[r.key] ? " Your take" : " Not recorded yet") + " · to camera, " + r.strand, comment: s.rec[r.key] ? "Recorded, " + s.rec[r.key] + " seconds." : "Goes out as a black card with the line until it’s recorded.", color: s.rec[r.key] ? "cyan" : "red" }
+      : { at: r.at, name: p3(i) + " " + DAYN(r.src) + " " + r.ts, comment: "“" + textOf(r) + "” — " + (stOf(r) ? this.reason(stOf(r), s) : "in the cut") + (r.provenance === "external" ? " Linked from " + set.SRC[r.src].name + ", not downloaded." + (r.ghost ? " Not cleared yet." : "") : ""), color: r.provenance === "external" ? (r.ghost ? "red" : "green") : "blue" });
+    const xmlSpec = { title, fps: 25, root: "Aldershot/" + XP.slug(title),
+      video: R.rows.map((r, i) => r.voice ? { name: "To camera · " + r.strand, file: (s.rec[r.key] ? "takes/" : "cards/") + p3(i) + "-to-camera.mov", src: 0, dur: r.secs, markers: [{ at: 0, name: marks[i].name, comment: marks[i].comment }] }
+        : { name: DAYN(r.src) + " " + r.ts, file: (r.provenance === "external" ? "linked/" : "recordings/") + XP.slug(set.SRC[r.src].name) + ".mov", fileDur: set.SRC[r.src].secs || 0, src: XP.hmsToS(r.ts), dur: r.secs, markers: [{ at: 0, name: marks[i].name.replace(/^\d+ /, ""), comment: marks[i].comment }] }),
+      markers: [] };
+    const files = [
+      { name: "cut.xml", what: "The cut for Premiere or Resolve: " + R.rows.length + " clips pointing at your recordings by their own timecodes, each with a marker saying why it’s in.", data: XP.xml(xmlSpec) },
+      { name: "markers.edl", what: "The same markers for Resolve: Timeline › Import › Timeline Markers from EDL.", data: XP.markerEdl(title, marks, 25) },
+      { name: "cut.edl", what: R.rows.length + " events, each pointing at its recording and timecode — opens in Resolve or Premiere.", data: XP.edl(title, R.rows.map(r => r.voice ? { reel: s.rec[r.key] ? "TAKE" : "BL", src: 0, dur: r.secs, name: "To camera — " + r.strand, notes: [s.rec[r.key] ? "Your take, " + s.rec[r.key] + "s" : "Not recorded: a black card with the line"] }
+          : { reel: r.src, src: XP.hmsToS(r.ts), dur: r.secs, name: set.SRC[r.src].name, notes: [textOf(r), ...(Object.keys(s.struck[r.id] || {}).length ? [Object.keys(s.struck[r.id]).length + " words trimmed inside this moment"] : []), ...(r.provenance === "external" ? ["Linked from " + set.SRC[r.src].name + ", not downloaded"] : [])] })) },
+      { name: "captions.srt", what: cueList.length + " captions, timed to what you say.", data: XP.srt(cueList) },
+      { name: "ledger.md", what: "Every moment, in or out, and the rule that decided.", data: "# The cut ledger — " + title + "\n\nThe cut is made from these rules:\n\n" + s.rules.filter(r => !r.hand).map(r => "- " + this.idx(s, r.id) + ". " + r.text + (r.on ? "" : " (off)")).join("\n") + "\n\n## In\n\n" + R.st.filter(c => c.in).map(c => "- " + (DAY[c.src] || set.SRC[c.src].name) + " " + c.ts + " — “" + c.text + "” — " + this.reason(c, s)).join("\n") + "\n\n## Out\n\n" + outs.map(c => "- " + (DAY[c.src] || set.SRC[c.src].name) + " " + c.ts + " — “" + c.text + "” — " + this.reason(c, s)).join("\n") + "\n" },
+      { name: "credits.md", what: ext.length ? ext.length + " credit" + (ext.length === 1 ? "" : "s") + " for clips from outside." : "Nothing from outside to credit.", data: "# Credits — " + title + "\n\n" + (ext.length ? ext.map(r => "- " + fmt(r.at) + " — " + set.SRC[r.src].name + ", " + r.ts + (r.ghost ? " (not cleared)" : "")).join("\n") : "Everything in this cut is yours.") + "\n" },
+      { name: "shorts.csv", what: SH.list.length + " shorts, each with its band and the reasons.", data: XP.csv([["band", "from", "at", "length", "keeping", "the line", "on its own", "opening", "text"], ...SH.list.map(c => [c.j.band, F.SRC[c.src].name, c.ts, c.d + "s", s.sh.skip[c.id] ? "skipped" : "yes", ...c.j.why.map(w => w.text), c.text])]) },
+      { name: "manifest.json", what: "The provenance record: rules, moments, sources.", data: JSON.stringify({ title, length: fmt(R.secs), made: new Date().toISOString(), engine: "footage.js compute()", rules: s.rules, rows: R.rows.map(r => ({ at: fmt(r.at), seconds: r.secs, kind: r.voice ? "to camera" : "moment", source: r.voice ? null : set.SRC[r.src].name, timecode: r.ts || null, text: r.voice ? null : textOf(r), recorded: r.voice ? !!s.rec[r.key] : null, linked: r.provenance === "external" || null })) }, null, 2) },
+    ];
+    files.push({ name: "README.txt", what: "What each file is.", data: title + " — the package\n\n" + files.map(f => f.name + "  —  " + f.what).join("\n") + "\n\nReels in the edit list: A = " + F.SRC.A.name + ", B = " + F.SRC.B.name + ", C = " + F.SRC.C.name + ". Relink them to your original files.\n\nOpening it in your editor\n\nPremiere Pro: File › Import, and choose cut.xml. Each clip already points at the right moment in its recording; relink the three recordings and it plays.\nDaVinci Resolve: File › Import › Timeline, and choose cut.xml. Then Timeline › Import › Timeline Markers from EDL, and choose markers.edl.\n" });
+    const zipName = XP.slug(title) + ".zip";
+    return { what: fmt(R.secs), verdict: stopN ? "Not yet — " + stopN + (stopN === 1 ? " thing would go out wrong." : " things would go out wrong.") : lookN ? "It can go out, with " + (lookN === 1 ? "one thing" : lookN + " things") + " worth a look." : "Ready. Everything checks.",
+      verdictSub: stopN ? "Fix " + (stopN === 1 ? "it" : "them") + " first." : lookN ? "Nothing in it will be mistaken for something it isn’t." : "Every moment has its rule, every space has your take.",
+      verdictDot: stopN ? ROSE : lookN ? WORK : GREEN, verdictBg: stopN ? "rgba(227,162,155,0.08)" : lookN ? "rgba(111,140,255,0.08)" : "rgba(94,201,143,0.08)", verdictRing: stopN ? "rgba(227,162,155,0.3)" : lookN ? "rgba(111,140,255,0.3)" : "rgba(94,201,143,0.3)",
+      checks: C.map(c => ({ name: c.name, line: c.line, dot: dot(c.state), hasFix: c.fixes.length > 0, fixes: c.fixes.map(([label, onGo]) => ({ label, onGo, bg: "rgba(111,140,255,0.14)", color: "#B9C6FF", ring: "none" })) })),
+      files: files.map(f => ({ name: f.name, what: f.what })), zipLabel: "Download the package · " + files.length + " files", renderLabel: "Render the cut · " + fmt(R.secs),
+      hasMsg: !!st.xpMsg, msg: st.xpMsg || "", msgColor: st.xpMsgColor || "rgba(236,236,241,0.62)",
+      onBackdrop: () => close(), onStay: e => { if (e && e.stopPropagation) e.stopPropagation(); }, onClose: () => close(),
+      onZip: async () => { this.setState({ xpMsg: "Packing " + files.length + " files…", xpMsgColor: "rgba(236,236,241,0.62)" }); const bytes = XP.zip(files), r = await XP.offer(zipName, bytes);
+        this.setState({ xpMsg: r === "saved" ? "Downloaded " + zipName + " — " + files.length + " files, " + Math.max(1, Math.round(bytes.length / 1024)) + " KB." : r === "declined" ? "Not downloaded — you said no to the save." : r === "busy" ? "A save is already waiting for an answer." : "This view can’t hand over files. Open the page on its own and try again.", xpMsgColor: r === "saved" ? GREEN : "rgba(236,236,241,0.62)" }); },
+      onRender: () => this.setState({ xpMsg: "Rendering the video is the one part this canvas can’t do — the built app renders it from your recordings and tells you when it’s ready. The edit list above already opens in Resolve or Premiere.", xpMsgColor: "rgba(236,236,241,0.62)" }) };
+  }
+
+  // ── shorts: the same moments, banded with reasons ──
+  shorts(R) {
+    const s = this.state.s, sh = s.sh, LEN = { s: [15, 35, "15–35s"], m: [20, 60, "20–60s"], l: [40, 90, "40–90s"] }, range = LEN[sh.len] || LEN.m;
+    const durOf = c => { const k = Object.keys((sh.struck || {})[c.id] || {}).length, w = c.text.split(" ").length; return Math.max(4, Math.round(c.dur * (1 - k / w))); };
+    const judge = c => { const has = x => c.tags.indexOf(x) >= 0, open = c.text.split(/[.?!—]/)[0].trim().split(/\s+/).length; let p = 0; const why = [];
+      if (has("strong")) { p += 2; why.push({ name: "The line", text: "one of the hard lines in the three vlogs", color: GREEN }); } else why.push({ name: "The line", text: "honest, but quieter than the hard lines", color: "rgba(236,236,241,0.35)" });
+      if (has("resolve")) { p += 1; why.push({ name: "On its own", text: "lands the point without anything before it", color: GREEN }); }
+      else if (has("hedge")) { p -= 1; why.push({ name: "On its own", text: "trails off — it leans on the line before it", color: ROSE }); }
+      else why.push({ name: "On its own", text: "needs a line of context to land", color: "rgba(236,236,241,0.35)" });
+      if (open <= 8) { p += 1; why.push({ name: "Opening", text: "the first sentence is " + open + (open === 1 ? " word" : " words") + " — it starts fast", color: GREEN }); }
+      else why.push({ name: "Opening", text: "takes " + open + " words to reach the first full stop", color: "rgba(236,236,241,0.35)" });
+      return { p, why, band: p >= 3 ? "Strong" : p >= 1 ? "Worth a look" : "Long shot" }; };
+    const all = R.st.filter(c => c.tags.indexOf("chat") < 0 && c.provenance !== "external").map(c => ({ ...c, d: durOf(c), j: judge(c) })).sort((a, b) => b.j.p - a.j.p || b.dur - a.dur);
+    const list = [], outs = [];
+    all.forEach(c => { const d = c.dropId ? s.rules.find(x => x.id === c.dropId) : null; let why = "";
+      if (d && !d.hand && d.kind !== "cap") why = "out by rule " + this.idx(s, d.id) + " — your rules apply to shorts too";
+      else if (c.d < range[0] || c.d > range[1]) why = c.d + "s — outside " + range[2];
+      if (sh.forced[c.id]) why = "";
+      if (why) outs.push({ c, why }); else list.push(c); });
+    const ranked = list.filter(c => !sh.forced[c.id]).slice(sh.count); ranked.forEach(c => outs.push({ c, why: "ranked below the best " + sh.count }));
+    const keep = list.filter(c => ranked.indexOf(c) < 0);
+    return { list: keep, outs, range, LEN, durOf };
+  }
+
+  renderVals() {
+    const st = this.state, F = st.F, s = st.s, out = {};
+    out.hasErr = !!st.err; out.err = st.err; out.loading = !F && !st.err; out.ready = !!(F && s);
+    out.lenses = [["cut", "Cut", "The cut, top to bottom"], ["words", "Words", "Everything you said"], ["footage", "Footage", "The recordings, by thread, and Scout’s finds"], ["shorts", "Shorts", "Vertical clips from the same moments"], ["rules", "Rules", "What the cut is made from"]].map(l => ({ name: l[1], title: l[2],
+      bg: st.lens === l[0] ? "#2E2E36" : "transparent", color: st.lens === l[0] ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => { this.setState({ lens: l[0] }); const c = document.getElementById("ctCentre"); if (c) c.scrollTop = 0; } }));
+    out.switcherOpen = st.switcherOpen; out.switcherBg = st.switcherOpen ? "#1C1C22" : "transparent";
+    out.onSwitcher = () => this.setState({ switcherOpen: !st.switcherOpen, alsoOpen: false });
+    out.alsoOpen = st.alsoOpen; out.onAlso = () => this.setState({ alsoOpen: !st.alsoOpen, switcherOpen: false });
+    out.switchStat = "cut · three vlogs";
+    if (!out.ready) { Object.assign(out, { msgs: [], chips: [], exp: { checks: [] } }); return out; }
+
+    const R = this.cut(), set = this.setOf(s), rows = R.rows, total = R.secs || 1, ruleById = id => s.rules.find(r => r.id === id);
+    const T = Math.min(st.T, total), cur = rows.find(r => T >= r.at && T < r.at + r.secs) || rows[rows.length - 1];
+    const own = rows.filter(r => r.kind === "clip" && r.provenance !== "external"), ext = rows.filter(r => r.kind === "clip" && r.provenance === "external"), gaps = rows.filter(r => r.voice);
+    const unrec = gaps.filter(r => !s.rec[r.key]), ghosts = ext.filter(r => r.ghost);
+    out.switchStat = "cut · " + fmt(R.secs) + " · three vlogs";
+
+    // ── conversation ──
+    const lastUndo = (s.hist || []).length ? s.hist[s.hist.length - 1].id : null;
+    out.msgs = s.msgs.slice().reverse().map(m => { const al = m.who === "al", prop = m.prop && !s.asked[m.prop];
+      return { isAl: al, text: m.text, justify: al ? "flex-start" : "flex-end", maxW: al ? "100%" : "85%", pad: al ? "0" : "8px 12px", bg: al ? "transparent" : "#24242C", color: m.undone ? "rgba(236,236,241,0.4)" : "rgba(236,236,241,0.85)", deco: m.undone ? "line-through" : "none",
+        hasList: !!(m.list && m.list.length), list: (m.list || []).map(li => ({ when: li.when, text: li.text, color: li.kept ? GREEN : "rgba(236,236,241,0.5)", onGo: () => { this.setState({ lens: "words", wsrc: li.src, jump: li.src + li.t }); this.flashTo("w-" + li.src + "-" + li.t.replace(":", "-")); } })),
+        hasProp: !!prop, yes: m.prop === "resolve" ? "Keep where I land it (Recommended)" : "Put it in (Recommended)", no: m.prop === "resolve" ? "Leave it open" : "Not now",
+        would: prop ? this.wouldBe(m.prop) : "", onYes: () => this.propYes(m.prop), onNo: () => this.propNo(m.prop),
+        hasDiff: !!m.diff, diff: m.diff || "", diffColor: m.undone ? "rgba(236,236,241,0.35)" : "rgba(236,236,241,0.6)", canUndo: !!(m.undo && m.id === lastUndo) }; });
+    out.onUndo = () => this.undo();
+    const chipList = [["Under five minutes", "Keep it under five minutes"], ["Start on the sharpest line", "Start on the sharpest line"], ["Keep the hedging", "Keep the hedging"], ["When did I talk about money?", "When did I talk about money?"]];
+    if (R.ord !== "strand") chipList[1] = ["One thread at a time", "Run it one thread at a time"];
+    out.chips = chipList.map(([label, said]) => ({ text: label, onGo: () => this.run(said) }));
+    out.draft = st.draft; out.onDraft = e => this.setState({ draft: e.target.value });
+    out.onKey = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.run(e.target.value); } };
+    out.onSend = () => this.run(st.draft);
+    out.runBg = st.draft.trim() ? "#ECECF1" : "rgba(236,236,241,0.1)"; out.runColor = st.draft.trim() ? "#131316" : "rgba(236,236,241,0.4)";
+    out.micBg = st.hear ? "rgba(239,91,79,0.18)" : "rgba(236,236,241,0.08)"; out.micColor = st.hear ? REC : "rgba(236,236,241,0.75)"; out.micLabel = st.hear ? "Listening" : "Talk";
+    out.hasMicMsg = !!st.micMsg; out.micMsg = st.micMsg;
+    out.onMic = () => { const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return this.setState({ micMsg: "This browser can’t listen. Type it instead — it works the same." });
+      if (this.rec) { try { this.rec.stop(); } catch (e) {} return; }
+      const rec = new SR(); rec.interimResults = true; rec.lang = "en-GB"; this.rec = rec; let final = "";
+      rec.onresult = ev => { let txt = ""; for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript; final = txt; this.setState({ draft: txt }); };
+      rec.onend = () => { this.rec = null; this.setState({ hear: false }); if (final.trim()) this.run(final); };
+      rec.onerror = () => { this.rec = null; this.setState({ hear: false, micMsg: "Couldn’t hear you — check the microphone, or type it." }); };
+      try { rec.start(); this.setState({ hear: true, micMsg: "" }); } catch (e) { this.setState({ micMsg: "Couldn’t start listening." }); } };
+    out.onResetAll = () => { try { localStorage.removeItem(KEY); } catch (e) {} const s0 = freshCut(F); s0.msgs = this.opening(F, s0); this.setState({ s: s0, T: 0, playing: false, take: null, lens: "cut" }); };
+
+    // ── export ──
+    const struckN = Object.values(s.struck).reduce((n, o) => n + Object.keys(o).length, 0);
+    const SH = this.shorts(R), shKept = SH.list.filter(c => !s.sh.skip[c.id]);
+    out.exp = { len: fmt(R.secs), go: "Check and export the cut", note: "Editing after costs nothing.",
+      shorts: "Shorts · " + shKept.length + " kept",
+      checks: [
+        { color: GREEN, text: own.length + " of your moments, each with the rule that kept it" },
+        ext.length ? { color: ghosts.length ? ROSE : GREEN, text: ghosts.length ? ghosts.length + " from outside isn’t cleared — it can’t go out as it is" : ext.length + " from outside, credited on screen and played from its own link" } : null,
+        gaps.length ? { color: unrec.length ? REC : GREEN, text: unrec.length ? unrec.length + " of " + gaps.length + " spaces to camera not recorded yet — they’d go out as a black card with the line" : "Every space to camera recorded" } : null,
+        struckN ? { color: "rgba(236,236,241,0.45)", text: struckN + (struckN === 1 ? " word" : " words") + " trimmed — the recordings keep every one" } : null,
+      ].filter(Boolean) };
+    out.onExport = () => this.setState({ xpOpen: true, alsoOpen: false, xpMsg: "" });
+    out.xpOpen = !!st.xpOpen; out.xp = st.xpOpen ? this.exportCheck(R, set, SH) : { checks: [], files: [] };
+    out.onExpShorts = () => this.setState({ lens: "shorts", alsoOpen: false });
+
+    // ── strip ──
+    out.strip = rows.map(r => ({ flex: String(r.secs), title: r.voice ? "To camera · " + r.strand : (DAY[r.src] || set.SRC[r.src].name) + " " + r.ts, op: cur === r ? "1" : "0.8",
+      bg: r.voice ? (s.rec[r.key] ? "rgba(236,236,241,0.75)" : "transparent") : SCOL[r.src], ring: [r.voice && !s.rec[r.key] ? "inset 0 0 0 1.5px " + REC : "", cur === r ? "0 0 0 1.5px #ECECF1" : ""].filter(Boolean).join(", ") || "none",
+      onGo: () => this.seek(r.at) }));
+    out.legend = [...["A", "B", "C"].map(k => ({ name: F.SRC[k].name, bg: SCOL[k], ring: "none" })), ...(ext.length ? [{ name: "From outside", bg: SCOL.X1, ring: "none" }] : []), ...(gaps.length ? [{ name: "You, to camera", bg: "transparent", ring: "inset 0 0 0 1.5px " + REC }] : [])];
+
+    // ── CUT lens ──
+    out.isCut = st.lens === "cut";
+    const order = s.rules.find(r => r.kind === "order" && r.on);
+    out.head = { len: fmt(R.secs), what: own.length + " of " + F.CLIPS.length + " moments" + (ext.length ? " · " + ext.length + " from outside" : "") + " · 3 vlogs" + (gaps.length ? " · " + gaps.length + " spaces to camera" : ""),
+      order: "Runs " + F.ORDERS[R.ord].name + (order ? " — rule " + this.idx(s, order.id) : "") + ". " + F.ORDERS[R.ord].why,
+      hasRec: unrec.length > 0, recLine: unrec.length + (unrec.length === 1 ? " space" : " spaces") + " to camera left — twelve seconds each, saying what a thread adds up to. About " + Math.ceil(unrec.length * 40 / 60) + " minutes, sitting down.",
+      recBtn: "Record " + (unrec.length === 1 ? "it" : "the " + unrec.length), onRec: () => unrec[0] && this.openTake(unrec[0].key) };
+    const groups = [], gkey = r => R.ord === "time" ? r.src : (r.strand || "hand");
+    rows.forEach(r => { const k = gkey(r); if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, rows: [] }); groups[groups.length - 1].rows.push(r); });
+    let tn = 0;
+    out.groups = groups.map((g, gi) => {
+      const secs = g.rows.reduce((n, r) => n + r.secs, 0), nm = g.rows.filter(r => r.kind === "clip").length;
+      const isOpen = R.ord === "open" && gi === 0, name = R.ord === "time" ? (set.SRC[g.k] ? set.SRC[g.k].name : g.k) : g.k === "hand" ? "Put back by hand" : cap1(g.k);
+      if (!isOpen && R.ord !== "time" && g.k !== "hand") tn++;
+      return { kicker: isOpen ? "Opens on" : R.ord === "time" ? "" : g.k === "hand" ? "" : "Thread " + tn, name, meta: nm + (nm === 1 ? " moment" : " moments") + " · " + fmt(g.rows[0].at) + " to " + fmt(g.rows[0].at + secs),
+        rows: g.rows.map(r => {
+          const here = cur === r, flash = st.flash && st.flash === r.key;
+          const base = { key: r.key, domId: "ct-" + r.key, ring: here ? "inset 0 0 0 1.5px rgba(236,236,241,0.5)" : "inset 0 0 0 1px rgba(255,255,255,0.05)", anim: flash ? "rmLand 1.6s ease both" : "none", onPlay: () => { this.seek(r.at); this.setState({ playing: true }); } };
+          if (r.voice) { const took = s.rec[r.key];
+            return { ...base, isGap: true, hasStill: !!took, g: still("YOU", 0, 0, false), thOp: "1", thOutline: "none", gapMark: took ? "" : "12s", gapInk: REC, gapEdge: took ? "transparent" : "rgba(239,91,79,0.6)", badge: took ? "You" : "",
+              dot: took ? GREEN : REC, meta: "To camera · yours" + (took ? " · recorded, " + took + "s" : " · to record"), dur: fmt(r.secs), font: "'Instrument Sans',sans-serif", size: "15px", ink: "#ECECF1",
+              text: "What “" + r.strand + "” adds up to", why: "Rule " + this.idx(s, r.byId) + " · " + (ruleById(r.byId) || {}).text, whyColor: "rgba(236,236,241,0.5)",
+              hasBtn: true, btn: took ? "Again" : "Record", btnBg: took ? "transparent" : REC, btnColor: took ? "rgba(236,236,241,0.8)" : "#FFFFFF", btnRing: took ? "inset 0 0 0 1px rgba(236,236,241,0.18)" : "none", onBtn: () => this.openTake(r.key) }; }
+          const isX = r.provenance === "external", sk = s.struck[r.id] || {}, words = r.text.split(" "), kept = words.filter((w, i) => !sk[i]);
+          const k = ruleById(r.byId), sname = set.SRC[r.src];
+          let why = k ? (k.hand ? "You put it back by hand" : "Rule " + this.idx(s, k.id) + " · " + k.text) : "";
+          if (isX) why = (r.ghost ? "A ghost — Scout found it, but it isn’t cleared, so it can’t go out yet. " : "Credited on screen. ") + "Plays from the source; nothing downloaded.";
+          const trim = Object.keys(sk).length;
+          return { ...base, isGap: false, hasStill: true, g: still(r.src, r.id, 0, false), thOp: r.ghost ? "0.45" : "1", thOutline: r.ghost ? "1.5px dashed rgba(227,162,155,0.8)" : isX ? "1px solid rgba(236,236,241,0.35)" : "none",
+            gapMark: "", gapInk: "transparent", gapEdge: "transparent", badge: isX ? (sname.host || "Found") : "", dot: SCOL[r.src],
+            meta: (isX ? sname.name : sname.name) + " · " + r.ts + (trim ? " · " + trim + (trim === 1 ? " word" : " words") + " trimmed" : ""), dur: fmt(r.secs),
+            font: "'Instrument Serif',serif", size: "17px", ink: r.ghost ? "rgba(236,236,241,0.6)" : "#ECECF1", text: kept.join(" "), why, whyColor: r.ghost ? ROSE : "rgba(236,236,241,0.5)",
+            hasBtn: true, btn: isX ? "Take it out" : "Cut it", btnBg: "transparent", btnColor: "rgba(236,236,241,0.7)", btnRing: "inset 0 0 0 1px rgba(236,236,241,0.15)",
+            onBtn: () => isX ? this.commit({ ext: { ...s.ext, [r.id]: false } }, null, "Took out the clip from " + sname.name + ". It’s still in Footage, under Scout’s finds.") : this.hand(r, false, null) };
+        }) };
+    });
+    const outs = R.st.filter(c => !c.in);
+    out.outHead = outs.length + " left out"; out.outsOpen = st.outsOpen; out.outToggle = st.outsOpen ? "Hide" : "Show"; out.onOuts = () => this.setState({ outsOpen: !st.outsOpen });
+    out.outs = outs.map(c => { const why = this.reason(c, s), noRule = /^no rule/.test(why);
+      return { when: (DAY[c.src] || set.SRC[c.src].name) + " " + c.ts, dot: SCOL[c.src], text: c.text, why: cap1(why), whyColor: noRule && c.tags.indexOf("strong") >= 0 ? WORK : "rgba(236,236,241,0.5)", onBack: () => c.provenance === "external" ? this.commit({ ext: { ...s.ext, [c.id]: true } }, null, "Back in.") : this.hand(c, true, null) }; });
+
+    // ── NOW ──
+    out.hasTake = !!st.take; out.noTake = !st.take; out.playIcon = st.playing ? "❚❚" : "▶"; out.onPlay = () => this.setState({ playing: !st.playing, T: st.T >= total ? 0 : st.T });
+    out.onPrev = () => this.step(-1); out.onNext = () => this.step(1);
+    if (cur) {
+      const lt = T - cur.at, frac = Math.max(0, Math.min(1, lt / cur.secs)), idx = rows.indexOf(cur);
+      if (cur.voice) { const took = s.rec[cur.key];
+        out.now = { where: "To camera · " + cur.strand, state: st.playing ? "playing" : "paused", hasStill: !!took, g: still("YOU", 0, T, st.playing), isEmpty: !took, emptyText: "Twelve seconds, you, to camera — what “" + cur.strand + "” adds up to. Not recorded yet.",
+          hasCap: false, cap: [], hasCredit: false, credit: "", isPaused: !st.playing && !!took, outline: took ? "none" : "none", text: "What “" + cur.strand + "” adds up to", why: took ? "Your take, " + took + "s." : "Yours to record.", whyColor: took ? GREEN : REC, canRec: !took, onRec: () => this.openTake(cur.key) };
+      } else { const sk = s.struck[cur.id] || {}, ws = cur.text.split(" ").filter((w, i) => !sk[i]), lit = Math.floor(frac * ws.length * 1.05), sname = set.SRC[cur.src], isX = cur.provenance === "external";
+        const from = Math.max(0, Math.min(ws.length - 6, lit - 3)), win = ws.slice(from, from + 7);
+        out.now = { where: sname.name + " · " + cur.ts, state: st.playing ? "playing" : "paused", hasStill: true, g: still(cur.src, cur.id, T, st.playing), isEmpty: false, emptyText: "",
+          hasCap: true, cap: win.map((w, i) => ({ text: w, color: from + i < lit ? "#FFFFFF" : "rgba(255,255,255,0.5)" })), hasCredit: isX, credit: isX ? sname.name + " — linked" : "", isPaused: !st.playing, outline: cur.ghost ? "1.5px dashed rgba(227,162,155,0.8)" : "none",
+          text: ws.join(" "), why: isX ? (cur.ghost ? "A ghost — not cleared yet." : "From outside, credited.") : cap1(this.reason(R.st.find(c => c.id === cur.id), s)) + ".", whyColor: cur.ghost ? ROSE : "rgba(236,236,241,0.5)", canRec: false, onRec: () => {} };
+      }
+      out.now.clock = fmt(T) + " / " + fmt(total); out.now.pos = (cur.voice ? "Space " : "Moment ") + (idx + 1) + " of " + rows.length;
+    } else out.now = { where: "Nothing in the cut", state: "", hasStill: false, g: still("YOU", 0, 0, false), isEmpty: true, emptyText: "No rule keeps anything. Switch a rule on.", hasCap: false, cap: [], hasCredit: false, credit: "", isPaused: false, outline: "none", text: "", why: "", whyColor: "", canRec: false, onRec: () => {}, clock: "0:00", pos: "" };
+
+    // ── TAKE ──
+    if (st.take) { const tk = st.take, row = rows.find(r => r.key === tk.key), strand = row ? row.strand : "", el = tk.now && tk.t0 ? (tk.now - tk.t0) / 1000 : 0;
+      const said = R.rows.filter(r => r.kind === "clip" && r.strand === strand && r.provenance !== "external").map(r => ({ text: stub(r.text, 64) }));
+      const i = gaps.findIndex(r => r.key === tk.key);
+      const took = tk.took || 0, verdict = took < 6 ? "Short — " + took + "s for a twelve-second space. Keep it and the space shrinks to fit, or go again." : took <= 14 ? "That fits — " + took + "s in a twelve-second space." : "Long — " + took + "s. Keep it and the space grows to fit, or go again tighter.";
+      out.take = { where: "What “" + strand + "” adds up to", slot: "Space " + (i + 1) + " of " + gaps.length, prompt: "What does “" + strand + "” add up to?", said,
+        ring: tk.phase === "rolling" ? "rgba(239,91,79,0.7)" : "rgba(255,255,255,0.08)", isCount: tk.phase === "count", countN: String(Math.max(1, 3 - Math.floor(el))),
+        isReady: tk.phase === "ready", isRolling: tk.phase === "rolling", isDone: tk.phase === "done",
+        barW: tk.phase === "rolling" ? Math.min(100, el / 12 * 100) + "%" : tk.phase === "done" ? Math.min(100, took / 12 * 100) + "%" : "0%", barColor: tk.phase === "rolling" && el > 12 ? ROSE : REC,
+        clock: tk.phase === "rolling" ? fmt(el) : tk.phase === "done" ? fmt(took) : "0:00", verdict, verdictColor: took >= 6 && took <= 14 ? GREEN : "#ECECF1",
+        onGo: () => this.startTake(), onStop: () => this.stopTake(), onClose: () => this.setState({ take: null }), onKeep: () => this.keepTake(), onAgain: () => this.setState({ take: { key: tk.key, phase: "ready" } }) };
+    } else out.take = { said: [] };
+
+    // ── WORDS lens ──
+    out.isWords = st.lens === "words";
+    if (out.isWords) {
+      const byId = {}; R.st.forEach(c => { byId[c.id] = c; });
+      out.wtabs = ["A", "B", "C"].map(k => ({ name: F.SRC[k].name, len: hms(F.SRC[k].secs), dot: SCOL[k], line: st.wsrc === k ? "#ECECF1" : "transparent", color: st.wsrc === k ? "#ECECF1" : "rgba(236,236,241,0.55)", onGo: () => this.setState({ wsrc: k, jump: null }) }));
+      out.wsum = F.SUMMARIES[st.wsrc];
+      out.wlines = F.TRANSCRIPTS[st.wsrc].map(L => { const c = L.m ? byId[L.m] : null, kept = !!(c && c.in), sk = c ? (s.struck[c.id] || {}) : {}, jumped = st.jump === st.wsrc + L.t;
+        return { domId: "w-" + st.wsrc + "-" + L.t.replace(":", "-"), t: L.t, sp: L.sp, notYou: L.sp !== "You", bg: jumped ? "rgba(111,140,255,0.1)" : kept ? "#15151A" : "transparent", ring: kept ? "inset 2px 0 0 " + SCOL[st.wsrc] : c ? "inset 2px 0 0 rgba(236,236,241,0.15)" : "none",
+          font: c ? "'Instrument Serif',serif" : "'Instrument Sans',sans-serif", size: c ? "17px" : "13.5px", ink: kept ? "#ECECF1" : c ? "rgba(236,236,241,0.6)" : "rgba(236,236,241,0.45)",
+          words: L.text.split(" ").map((w, i) => ({ text: w, cls: kept ? "ct-word" : "", deco: sk[i] ? "line-through" : "none", color: sk[i] ? "rgba(236,236,241,0.3)" : "inherit",
+            onStrike: () => { if (!kept) return; const cur2 = { ...(s.struck[c.id] || {}) }; if (cur2[i]) delete cur2[i]; else cur2[i] = true; this.quiet({ struck: { ...s.struck, [c.id]: cur2 } }); } })),
+          hasWhy: !!c, why: c ? (kept ? "In the cut — " : "Out — ") + this.reason(c, s) + (kept && Object.keys(sk).length ? " · " + Object.keys(sk).length + " trimmed" : "") : "", whyColor: kept ? "rgba(236,236,241,0.5)" : "rgba(236,236,241,0.4)" }; });
+    } else { out.wtabs = []; out.wlines = []; out.wsum = ""; }
+
+    // ── FOOTAGE lens ──
+    out.isFootage = st.lens === "footage";
+    if (out.isFootage) {
+      const total2 = Object.values(F.SRC).reduce((a, x) => a + x.secs, 0);
+      out.fsum = "Three recordings, " + hms(total2) + " in all, read once — words and picture. Everything after that is free: the cut, the shorts and every change to them are made from what was read.";
+      out.fsrc = ["A", "B", "C"].map(k => { const n = R.st.filter(c => c.src === k).length, kin = R.st.filter(c => c.src === k && c.in).length;
+        return { name: F.SRC[k].name, len: hms(F.SRC[k].secs), sum: F.SUMMARIES[k], dot: SCOL[k], g: still(k, k.charCodeAt(0), 0, false), read: "Read once · " + F.READS[k].depth + " · " + n + " moments, " + kin + " in the cut" }; });
+      out.fcols = ["A", "B", "C"].map(k => ({ name: DAY[k], dot: SCOL[k] }));
+      const dotOf = c => ({ bg: c.in ? SCOL[c.src] : "transparent", ring: SCOL[c.src] || "#ECECF1", title: (DAY[c.src] || c.src) + " " + c.ts + " — " + stub(c.text, 50) + (c.in ? " (in)" : " (out)"),
+        onGo: () => { this.setState({ lens: "words", wsrc: c.src, jump: c.src + c.ts }); this.flashTo("w-" + c.src + "-" + c.ts.replace(":", "-")); } });
+      out.fgrid = [...F.STRANDS.map(sd => {
+        const mine = R.st.filter(c => c.strand === sd && c.provenance !== "external"), kin = R.st.filter(c => c.strand === sd && c.in), days = Array.from(new Set(mine.map(c => c.src)));
+        let note = "Across " + days.map(k => DAY[k]).join(" and "), color = "rgba(236,236,241,0.55)";
+        if (!kin.length) { note = "Nothing from this thread is in the cut"; color = ROSE; }
+        else if (mine.length === 1) { note = "Said once — " + DAY[mine[0].src] + " at " + mine[0].ts; }
+        else if (days.length === 1) note = "Only on " + DAY[days[0]];
+        if (sd === "what it costs" && !s.ext[101]) { note = "Only your voice on it — Scout found someone else making the same trade"; color = WORK; }
+        const xin = R.st.filter(c => c.strand === sd && c.provenance === "external" && c.in).length; if (xin && kin.length) note += ", and " + (xin === 1 ? "one voice" : xin + " voices") + " from outside";
+        if (sd === "landing it" && !kin.length) { note = "Said once, on Sunday at 44:02 — and it’s out, so the film never lands"; color = WORK; }
+        return { name: cap1(sd), cells: ["A", "B", "C"].map(k => ({ dots: mine.filter(c => c.src === k).map(dotOf) })), note, noteColor: color }; }),
+        { name: "Asides", cells: ["A", "B", "C"].map(k => ({ dots: R.st.filter(c => !c.strand && c.src === k).map(dotOf) })), note: "Hellos, mic checks, signing off — rule " + this.idx(s, 2) + " keeps them out", noteColor: "rgba(236,236,241,0.45)" }];
+      out.fext = F.EXT.map(c => { const sn = F.EXT_SRC[c.src], on = !!s.ext[c.id];
+        const st2 = c.acq === "verified" ? ["Cleared to use with a credit on screen.", GREEN] : c.acq === "scouted" ? ["Found, not cleared. In the cut it would be a ghost — visible, but it can’t go out until it’s cleared.", ROSE] : ["Scout is still looking for a copy it can link to. In the cut it would be a ghost.", "rgba(236,236,241,0.55)"];
+        return { where: sn.name + " · " + c.ts + " · on “" + c.strand + "”", text: c.text, status: st2[0], stColor: st2[1], badge: sn.host, g: still(c.src, c.id, 0, false), outline: c.acq === "verified" ? "1px solid rgba(236,236,241,0.35)" : "1.5px dashed rgba(227,162,155,0.8)",
+          btn: on ? "Take it out" : "Put it in", btnBg: on ? "transparent" : "#ECECF1", btnColor: on ? "rgba(236,236,241,0.75)" : "#101013",
+          onGo: () => this.commit({ ext: { ...s.ext, [c.id]: !on } }, null, on ? "Took out the clip from " + sn.name + "." : "Put in the clip from " + sn.name + (c.acq === "verified" ? ", credited." : " — as a ghost until it’s cleared."), { flash: on ? null : "c" + c.id }) }; });
+    } else { out.fsrc = []; out.fcols = []; out.fgrid = []; out.fext = []; out.fsum = ""; }
+
+    // ── SHORTS lens ──
+    out.isShorts = st.lens === "shorts";
+    if (out.isShorts) {
+      const sh = s.sh, setSh = patch => this.save({ ...s, sh: { ...sh, ...patch } }), bandBg = b => b === "Strong" ? GREEN : b === "Worth a look" ? "#ECECF1" : "rgba(236,236,241,0.2)", bandInk = b => b === "Long shot" ? "#ECECF1" : "#101013";
+      const sel = SH.list.find(c => c.id === sh.sel) || SH.list[0];
+      out.sh = { stats: SH.list.length + " shorts · " + shKept.length + " kept · " + fmt(shKept.reduce((n, c) => n + c.d, 0)) + " to post",
+        lens: Object.keys(SH.LEN).map(k => ({ name: SH.LEN[k][2], bg: sh.len === k ? "#2E2E36" : "transparent", color: sh.len === k ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => setSh({ len: k }) })),
+        counts: [4, 6, 10].map(n => ({ name: "Best " + n, bg: sh.count === n ? "#2E2E36" : "transparent", color: sh.count === n ? "#ECECF1" : "rgba(236,236,241,0.5)", onGo: () => setSh({ count: n }) })),
+        cards: SH.list.map(c => { const skip = !!sh.skip[c.id], ws = c.text.split(" ").filter((w, i) => !((sh.struck[c.id] || {})[i]));
+          const g = still(c.src, c.id, 0, false);
+          return { band: c.j.band, bandBg: bandBg(c.j.band), bandInk: bandInk(c.j.band), dur: fmt(c.d), cap: ws.slice(0, 3).join(" "), tc: DAY[c.src] + " " + c.ts, g, svgStyle: vstyle(g, "follow"), op: skip ? "0.45" : "1",
+            ring: sel && c.id === sel.id ? "inset 0 0 0 2px #ECECF1" : skip ? "inset 0 0 0 1px rgba(255,255,255,0.06)" : "inset 0 0 0 1px rgba(255,255,255,0.14)", onSel: () => setSh({ sel: c.id }) }; }),
+        hasSel: !!sel, outs: SH.outs.map(({ c, why }) => ({ when: DAY[c.src] + " " + c.ts, text: stub(c.text, 80), why: cap1(why), onForce: () => setSh({ forced: { ...sh.forced, [c.id]: true }, sel: c.id }) })) };
+      out.sh.hasOuts = out.sh.outs.length > 0;
+      if (sel) { const sk = !!sh.skip[sel.id], stk = sh.struck[sel.id] || {}, ws = sel.text.split(" "), live = ws.filter((w, i) => !stk[i]), inCut = !!R.st.find(c => c.id === sel.id && c.in), frm = sh.frame || "follow", capM = sh.cap || "word";
+        const gs = still(sel.src, sel.id, 0, false);
+        out.sh.sel = { g: gs, band: sel.j.band, bandBg: bandBg(sel.j.band), bandInk: bandInk(sel.j.band), dur: fmt(sel.d), origin: F.SRC[sel.src].name + " · " + sel.ts,
+          stageBg: frm === "whole" ? "#1A1A1F" : "#0B0B0E", svgStyle: vstyle(gs, frm),
+          state: sk ? "Skipped" : "Keeping", stateBg: sk ? "rgba(236,236,241,0.08)" : "rgba(94,201,143,0.14)", stateInk: sk ? "rgba(236,236,241,0.55)" : GREEN,
+          rank: (SH.list.indexOf(sel) + 1) + " of " + SH.list.length + (inCut ? " · also in the cut" : ""), text: live.join(" "), why: sel.j.why,
+          words: ws.map((w, i) => ({ text: w, deco: stk[i] ? "line-through" : "none", color: stk[i] ? "rgba(236,236,241,0.3)" : "inherit", onStrike: () => { const c2 = { ...stk }; if (c2[i]) delete c2[i]; else c2[i] = true; setSh({ struck: { ...sh.struck, [sel.id]: c2 } }); } })),
+          hasCap: capM !== "none", cap: capM === "word" ? live.slice(0, 3).join(" ") : live.slice(0, 10).join(" "), capSize: capM === "word" ? "11cqw" : "6.2cqw",
+          opts: [{ label: "Reframe", opts: [["follow", "Follow the speaker"], ["whole", "Whole frame"]].map(([k, n2]) => ({ name: n2, bg: frm === k ? "rgba(236,236,241,0.16)" : "#1A1A1F", color: frm === k ? "#ECECF1" : "rgba(236,236,241,0.55)", onGo: () => setSh({ frame: k }) })) },
+                 { label: "Captions", opts: [["word", "Word by word"], ["lines", "Two lines"], ["none", "None"]].map(([k, n2]) => ({ name: n2, bg: capM === k ? "rgba(236,236,241,0.16)" : "#1A1A1F", color: capM === k ? "#ECECF1" : "rgba(236,236,241,0.55)", onGo: () => setSh({ cap: k }) })) }],
+          postTitle: live.slice(0, 9).join(" ") + (live.length > 9 ? "…" : ""), postBody: live.join(" ") + " — from " + F.SRC[sel.src].name + ".",
+          keepLabel: sk ? "Keep it" : "Skip it", keepBg: sk ? "#ECECF1" : "#232329", keepInk: sk ? "#131316" : "rgba(236,236,241,0.8)", onKeep: () => setSh({ skip: { ...sh.skip, [sel.id]: !sk } }),
+          toCut: inCut ? "Show it in the cut" : "Add it to the cut", onToCut: () => { if (!inCut) this.hand(sel, true, null); this.setState({ lens: "cut" }); this.flashTo("ct-c" + sel.id); } };
+      } else out.sh.sel = { g: still("YOU", 0, 0, false), why: [], words: [], opts: [] };
+    } else out.sh = { lens: [], counts: [], cards: [], outs: [], sel: { g: still("YOU", 0, 0, false), why: [], words: [], opts: [] } };
+
+    // ── RULES lens ──
+    out.isRules = st.lens === "rules";
+    if (out.isRules) {
+      const main = s.rules.filter(r => !r.hand), base = this.count(R);
+      const flip = r => { const s1 = { ...s, rules: s.rules.map(x => x.id === r.id ? { ...x, on: !x.on } : x) }, R1 = this.cutOf(s1), c = this.count(R1), d = c.n - base.n;
+        if (c.secs === base.secs && !d && c.gaps === base.gaps) return (r.on ? "Off" : "On") + ", the cut would be the same" + (R1.ord !== R.ord ? " length in a different order." : " — no other rule brings these in.");
+        return (r.on ? "Off, it would be " : "On, it would be ") + fmt(c.secs) + (d ? ", " + Math.abs(d) + (d > 0 ? " more " : " fewer ") + (Math.abs(d) === 1 ? "moment" : "moments") : "") + (c.gaps !== base.gaps ? ", " + (c.gaps ? c.gaps + (c.gaps === 1 ? " space" : " spaces") : "no spaces") + " to camera" : "") + "."; };
+      const toggle = r => this.commit({ rules: s.rules.map(x => x.id === r.id ? { ...x, on: !x.on } : x) }, null, "Rule " + this.idx(s, r.id) + " is " + (r.on ? "off." : "on again."));
+      out.rl = main.map(r => {
+        let eff = "", ec = "rgba(236,236,241,0.62)";
+        if (!r.on) { eff = "Off — doing nothing"; ec = "rgba(236,236,241,0.4)"; }
+        else if (r.kind === "keep") { const n = R.st.filter(c => c.in && c.byId === r.id).length; eff = n ? "Keeps " + n + (n === 1 ? " moment" : " moments") : "Keeps nothing right now — a later rule cuts what it would keep"; }
+        else if (r.kind === "drop") { const n = R.st.filter(c => !c.in && c.dropId === r.id).length; eff = n ? "Takes out " + n + (n === 1 ? " moment" : " moments") : "Takes out nothing right now"; }
+        else if (r.kind === "cap") { const n = R.st.filter(c => !c.in && c.dropId === r.id).length; eff = n ? "Takes out " + n + " to fit — the longest quieter ones first" : "Fits already — takes nothing out"; }
+        else if (r.kind === "order") eff = "The cut runs " + F.ORDERS[r.order].name;
+        else if (r.kind === "gap") { eff = R.ord === "time" ? "No spaces while it runs as it happened — they sit between threads" : gaps.length + " spaces for you, " + Object.keys(s.rec).filter(k => gaps.some(g => g.key === k)).length + " recorded"; }
+        return { n: this.idx(s, r.id), text: r.text, effect: eff, effColor: ec, off: flip(r), op: r.on ? "1" : "0.62",
+          swBg: r.on ? GREEN : "rgba(236,236,241,0.16)", knob: r.on ? "19px" : "3px", toggleTitle: r.on ? "Switch off" : "Switch on", onToggle: () => toggle(r),
+          isOrder: r.kind === "order", orderWhy: r.kind === "order" ? F.ORDERS[r.order].why : "",
+          orders: r.kind === "order" ? Object.keys(F.ORDERS).map(o => ({ name: F.ORDERS[o].name, bg: r.order === o ? "rgba(236,236,241,0.16)" : "#1A1A1F", color: r.order === o ? "#ECECF1" : "rgba(236,236,241,0.55)", onGo: () => r.order !== o && this.commit({ rules: F.applyRule(s.rules, { kind: "order", order: o }) }, null, "Rule " + this.idx(s, r.id) + " now runs it " + F.ORDERS[o].name + ".") })) : [] };
+      });
+      const hand = s.rules.filter(r => r.hand);
+      out.hasHand = hand.length > 0;
+      out.hand = hand.map(r => ({ text: r.text, op: r.on ? "1" : "0.6", swBg: r.on ? GREEN : "rgba(236,236,241,0.16)", knob: r.on ? "19px" : "3px", onToggle: () => this.commit({ rules: s.rules.map(x => x.id === r.id ? { ...x, on: !x.on } : x) }, null, r.on ? "That call by hand is off — the rules decide that moment again." : "That call by hand is back on.") }));
+      out.sayable = ["Cut the hedging", "Keep where I land it", "Under four minutes", "Run it as it happened", "Keep the line about the room", "No spaces to camera", "Cut the house"].map(x => ({ text: x, onGo: () => this.run(x) }));
+    } else { out.rl = []; out.hand = []; out.hasHand = false; out.sayable = []; }
+    return out;
+  }
+}
+</script>
+</body>
+</html>

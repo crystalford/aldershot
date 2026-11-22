@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Aldershot works</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<style>
+html, body { margin: 0; padding: 0; background: #101013; }
+* { box-sizing: border-box; }
+a { color: #ECECF1; text-decoration: none; }
+a:focus-visible, [role=button]:focus-visible, input:focus-visible { outline: 2px solid #ECECF1; outline-offset: 2px; }
+input::placeholder { color: rgba(236,236,241,0.38); }
+@keyframes mnIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.mn-wrap { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 56px; }
+.mn-nav { position: sticky; top: 24px; align-self: start; display: flex; flex-direction: column; gap: 1px; }
+.mn-ch { margin-top: 72px; scroll-margin-top: 24px; }
+.mn-n { font-size: 12.5px; font-variant-numeric: tabular-nums; color: rgba(236,236,241,0.4); }
+.mn-h { margin: 6px 0 0; font-weight: 700; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; letter-spacing: -0.03em; }
+.mn-p { margin: 14px 0 0; max-width: 620px; font-size: 15px; line-height: 1.65; color: rgba(236,236,241,0.72); }
+.mn-card { border-radius: 12px; background: #141418; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+.mn-try { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: rgba(111,140,255,0.14); color: #B9C6FF; }
+.mn-cols { display: grid; grid-template-columns: 1fr 1.6fr 1fr; gap: 8px; }
+.mn-ways { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mn-row:hover { background: #18181D; }
+@media (max-width: 900px) { .mn-wrap { grid-template-columns: 1fr; gap: 0; } .mn-nav { display: none; } }
+@media (max-width: 680px) { .mn-cols, .mn-ways { grid-template-columns: 1fr; } .mn-two { grid-template-columns: 1fr !important; } }
+</style>
+</helmet>
+<div style="min-height:100vh;background:#101013;color:#ECECF1;font-family:'Instrument Sans',sans-serif;-webkit-font-smoothing:antialiased">
+  <div style="display:flex;align-items:center;gap:22px;height:52px;padding:0 24px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <a href="Home.dc.html" aria-label="Aldershot home" style="display:inline-flex;align-items:baseline;gap:4px;font-weight:600;font-size:15.5px;letter-spacing:-0.01em">aldershot<span aria-hidden="true" style="display:inline-flex;align-items:flex-end;gap:2.5px;transform:translateY(-1px)"><span style="width:5.5px;height:11px;background:#ECECF1;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.5;border-radius:2px"></span><span style="width:5.5px;height:11px;background:#ECECF1;opacity:.22;border-radius:2px"></span></span></a>
+    <div style="display:flex;gap:18px;font-size:13px"><a href="Home.dc.html" style="color:rgba(236,236,241,0.55)">Home</a><a href="Library.dc.html" style="color:rgba(236,236,241,0.55)">Library</a></div>
+    <div style="flex:1"></div>
+    <a href="Settings.dc.html" title="Settings" style="width:28px;height:28px;border-radius:50%;background:#232329;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600">C</a>
+  </div>
+
+  <div style="max-width:1080px;margin:0 auto;padding:clamp(32px,6vw,72px) clamp(16px,4vw,28px) 100px">
+    <div class="mn-wrap">
+      <nav class="mn-nav" aria-label="Chapters">
+        <div style="font-size:12px;font-weight:600;color:rgba(236,236,241,0.45);padding:0 10px 8px">The manual</div>
+        <sc-for list="{{ nav }}" as="n" hint-placeholder-count="12"><a href="{{ n.href }}" style="display:flex;gap:8px;font-size:13px;padding:5px 10px;border-radius:6px;color:rgba(236,236,241,0.62)" style-hover="background:#18181D;color:#ECECF1"><span style="width:18px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.35)">{{ n.n }}</span>{{ n.name }}</a></sc-for>
+      </nav>
+      <div style="min-width:0">
+        <div style="font-size:13px;color:rgba(236,236,241,0.5)">The manual</div>
+        <h1 style="margin:8px 0 0;font-weight:700;font-size:clamp(38px,6vw,60px);line-height:1;letter-spacing:-0.04em">How Aldershot works</h1>
+        <p class="mn-p" style="font-size:17px;max-width:640px;color:rgba(236,236,241,0.78)">You say what you’re making. Aldershot plans the film, goes through the footage you have, finds what’s missing, and puts it together. You decide; it shows you why it did each thing. If it can check a fact, it checks it — and if it can’t find a source, it tells you.</p>
+        <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.5)">Two of the examples below are live — the same engine as the Studio, running on the sample vlogs.</p>
+
+        <!-- 1 -->
+        <section id="start" class="mn-ch"><div class="mn-n">1</div><h2 class="mn-h">Start with a sentence</h2>
+          <p class="mn-p">Home is where you say what you want to make, in your own words — “a twenty-minute essay about NASA as a medium”, “cut my three vlogs about moving down to six minutes”. Aldershot reads it as one of six kinds and opens the right project. Attach footage and it reads that too.</p>
+          <div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+            <sc-for list="{{ kinds }}" as="k" hint-placeholder-count="6"><div class="mn-card" style="padding:14px 15px;opacity:{{ k.op }}"><div style="font-size:14px;font-weight:600">{{ k.name }}</div><div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)">{{ k.what }}</div></div></sc-for>
+          </div>
+        </section>
+
+        <!-- 2 -->
+        <section id="room" class="mn-ch"><div class="mn-n">2</div><h2 class="mn-h">One room, three columns</h2>
+          <p class="mn-p">A project opens in the Studio. Whatever you’re making, the room is the same: on the left you talk to it; in the middle is the work, top to bottom; on the right is what’s playing now — or a take, when you’re recording.</p>
+          <div class="mn-cols" style="margin-top:20px">
+            <div class="mn-card" style="padding:14px"><div style="font-size:12px;font-weight:600;color:rgba(236,236,241,0.5)">Left</div><div style="margin-top:6px;font-size:14px;font-weight:600">The conversation</div><div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.6)">Say a change or ask a question — typed, or held-mic. Aldershot proposes things here too, one at a time, with the one it recommends marked.</div></div>
+            <div class="mn-card" style="padding:14px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.18)"><div style="font-size:12px;font-weight:600;color:rgba(236,236,241,0.5)">Middle</div><div style="margin-top:6px;font-size:14px;font-weight:600">The work</div><div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.6)">The film or the cut, top to bottom, with its tabs across the top. Click any picture to change that shot; click any moment to play from it.</div>
+              <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px"><sc-for list="{{ lensKinds }}" as="l" hint-placeholder-count="2"><div style="font-size:12px;line-height:1.5"><span style="font-weight:600">{{ l.kind }}</span> <span style="color:rgba(236,236,241,0.55)">{{ l.tabs }}</span></div></sc-for></div></div>
+            <div class="mn-card" style="padding:14px"><div style="font-size:12px;font-weight:600;color:rgba(236,236,241,0.5)">Right</div><div style="margin-top:6px;font-size:14px;font-weight:600">Now</div><div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.6)">The player, with the words as they’re said. When you record, it becomes the take — the line to say, a countdown, and whether it fit.</div></div>
+          </div>
+          <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.55)">There is no timeline. Every shot is a picture and a sentence; cutting a word cuts the video.</p>
+        </section>
+
+        <!-- direct -->
+        <section id="direct" class="mn-ch"><div class="mn-n">3</div><h2 class="mn-h">Direct it, and let it work</h2>
+          <p class="mn-p">You don’t have to do it shot by shot. Give Aldershot a direction the way you’d give it to an editor — “make act two feel like an old documentary, NASA footage wherever it exists, a painted depiction for Kepler’s dream” — and it answers with a plan: the steps, which shots, what it costs. Press Go and carry on with anything else while the crew works through it, with the list beside the conversation showing where it’s up to.</p>
+          <div class="mn-card" style="margin-top:20px;padding:16px 18px">
+            <sc-for list="{{ directSteps }}" as="d" hint-placeholder-count="4"><div style="display:flex;gap:12px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05)"><span style="flex:none;width:8px;height:8px;border-radius:50%;background:{{ d.dot }};transform:translateY(-1px)"></span><span style="flex:none;width:110px;font-size:13.5px;font-weight:600">{{ d.name }}</span><span style="flex:1;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.65)">{{ d.what }}</span></div></sc-for>
+          </div>
+          <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.55)">When it’s done you get a reel of what it did, the few things that need your eye, and what it would do next.</p>
+        </section>
+
+        <!-- 3 live -->
+        <section id="rules" class="mn-ch"><div class="mn-n">4</div><h2 class="mn-h">Rules make the cut</h2>
+          <p class="mn-p">A cut from your footage isn’t stored. It’s made fresh from a few plain sentences every time one changes. Switch one off and everything it did comes back; say a new one and it joins the list. When two disagree, the later one wins — and every moment says which rule put it there.</p>
+          <div class="mn-card" style="margin-top:20px;padding:18px">
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span class="mn-try">Try it · switch a rule</span><span style="margin-left:auto;font-size:26px;font-weight:600;font-variant-numeric:tabular-nums">{{ demo.len }}</span><span style="font-size:13px;color:rgba(236,236,241,0.55)">{{ demo.what }}</span></div>
+            <div style="margin-top:12px;display:flex;gap:2px;height:12px"><sc-for list="{{ demo.strip }}" as="b" hint-placeholder-count="10"><div title="{{ b.title }}" style="flex:{{ b.flex }};min-width:3px;border-radius:2px;background:{{ b.bg }};box-shadow:{{ b.ring }};transition:flex .35s ease"></div></sc-for></div>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ demo.rules }}" as="r" hint-placeholder-count="4">
+                <div style="display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:9px;background:#1A1A1F;opacity:{{ r.op }}">
+                  <span style="flex:none;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.4)">{{ r.n }}</span>
+                  <div style="flex:1;min-width:0"><div style="font-size:14px;line-height:1.4">{{ r.text }}</div><div style="margin-top:2px;font-size:12px;color:rgba(236,236,241,0.5)">{{ r.effect }}</div></div>
+                  <div tabindex="0" role="button" onclick="{{ r.onToggle }}" title="Switch it" style="flex:none;width:38px;height:22px;border-radius:11px;background:{{ r.swBg }};position:relative;cursor:pointer;transition:background .2s"><span style="position:absolute;top:3px;left:{{ r.knob }};width:16px;height:16px;border-radius:50%;background:#FFFFFF;transition:left .2s"></span></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top:12px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.55)">{{ demo.note }}</div>
+          </div>
+        </section>
+
+        <!-- 4 live -->
+        <section id="ask" class="mn-ch"><div class="mn-n">5</div><h2 class="mn-h">Ask what you said</h2>
+          <p class="mn-p">Everything you bring in is read once — the words, who’s speaking, what’s on screen. After that you can ask it anything and it answers with the lines themselves, timed, so you can jump straight to them. It searches by meaning: “money” also finds the rent and the pricing.</p>
+          <div class="mn-card" style="margin-top:20px;padding:18px">
+            <span class="mn-try">Try it · ask the three sample vlogs</span>
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><input class="mn-in" value="{{ ask.q }}" oninput="{{ ask.onQ }}" placeholder="money, the house, Tuesday nights…" style="flex:1 1 260px;min-width:0;font-family:inherit;font-size:14px;padding:10px 13px;border-radius:9px;border:none;outline:none;background:#0E0E11;color:#ECECF1;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.14)"></div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ ask.chips }}" as="c" hint-placeholder-count="4"><span tabindex="0" role="button" onclick="{{ c.onGo }}" style="font-size:12px;padding:4px 9px;border-radius:5px;background:rgba(236,236,241,0.08);color:rgba(236,236,241,0.75);cursor:pointer" style-hover="background:rgba(236,236,241,0.16)">{{ c.text }}</span></sc-for></div>
+            <div style="margin-top:12px;font-size:12.5px;color:rgba(236,236,241,0.55)">{{ ask.line }}</div>
+            <div style="margin-top:6px;display:flex;flex-direction:column;gap:2px">
+              <sc-for list="{{ ask.hits }}" as="h" hint-placeholder-count="3"><div class="mn-row" style="display:flex;gap:14px;align-items:baseline;padding:8px 10px;border-radius:8px;animation:mnIn .2s ease both"><span style="flex:none;width:96px;font-size:12px;font-variant-numeric:tabular-nums;color:rgba(236,236,241,0.5)">{{ h.when }}</span><span style="flex:1;min-width:0;font-family:'Instrument Serif',serif;font-size:16px;line-height:1.4;color:rgba(236,236,241,0.75)">{{ h.pre }}<span style="color:#ECECF1;background:rgba(111,140,255,0.2);border-radius:3px;padding:0 2px">{{ h.mid }}</span>{{ h.post }}</span></div></sc-for>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 -->
+        <section id="shots" class="mn-ch"><div class="mn-n">6</div><h2 class="mn-h">Every shot is a choice</h2>
+          <p class="mn-p">Click any picture in the Studio and you see every way that shot could be filled, the one Aldershot recommends first and why. The recommendation follows one rule you set for the whole film — what the pictures can cost.</p>
+          <div class="mn-ways" style="margin-top:20px">
+            <sc-for list="{{ ways }}" as="w" hint-placeholder-count="4"><div class="mn-card" style="padding:14px"><div style="display:flex;gap:8px;align-items:baseline"><span style="font-size:14px;font-weight:600">{{ w.name }}</span><span style="margin-left:auto;font-size:11.5px;font-weight:600;color:{{ w.costColor }}">{{ w.cost }}</span></div><div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:rgba(236,236,241,0.62)">{{ w.what }}</div></div></sc-for>
+          </div>
+          <div class="mn-card mn-two" style="margin-top:8px;padding:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+            <sc-for list="{{ budgets }}" as="b" hint-placeholder-count="3"><div><div style="font-size:13.5px;font-weight:600">{{ b.name }}</div><div style="margin-top:4px;font-size:12.5px;line-height:1.5;color:rgba(236,236,241,0.6)">{{ b.what }}</div></div></sc-for>
+          </div>
+          <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.55)">On top of any picture: a credit, words, a name, captions, you small in a corner — and how it comes in and goes out. That’s the whole of “layers” here.</p>
+        </section>
+
+        <!-- 6 -->
+        <section id="tell" class="mn-ch"><div class="mn-n">7</div><h2 class="mn-h">Ways to tell a scene</h2>
+          <p class="mn-p">A shot can hold more than one picture. Open a scene and Aldershot pitches ways to tell it, made from what that scene contains — a countdown montage, the document read word by word, five months in fifteen seconds. Or describe it your way, in a sentence, and it becomes a shot list. <b>Ways to tell the film</b> does this across every scene at once, and never the same way twice in a row.</p>
+          <div style="margin-top:18px;display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ devices }}" as="d" hint-placeholder-count="10"><span title="{{ d.what }}" style="font-size:12.5px;padding:5px 11px;border-radius:99px;background:{{ d.bg }};color:{{ d.color }}">{{ d.name }}</span></sc-for></div>
+          <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.55)">The model chooses the devices and the sources. Code places every cut — the model never sets a time.</p>
+        </section>
+
+        <!-- 7 -->
+        <section id="scout" class="mn-ch"><div class="mn-n">8</div><h2 class="mn-h">Scout finds what’s missing</h2>
+          <p class="mn-p">Scout is how a film gets better than your footage alone. It looks for what each part needs — the proof behind a claim, the other side, the original a clip came from, someone else making the same point — in archives, libraries, podcasts and the open web. It links what it finds and checks whether it can be used. It never downloads anything.</p>
+          <div class="mn-card" style="margin-top:18px">
+            <sc-for list="{{ scout }}" as="x" hint-placeholder-count="4"><div style="display:flex;gap:14px;align-items:baseline;padding:12px 16px;border-top:1px solid rgba(255,255,255,0.05)"><span style="flex:none;width:9px;height:9px;border-radius:50%;background:{{ x.dot }};box-shadow:{{ x.ring }};transform:translateY(-1px)"></span><span style="flex:none;width:130px;font-size:13.5px;font-weight:600">{{ x.name }}</span><span style="flex:1;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.65)">{{ x.what }}</span></div></sc-for>
+          </div>
+        </section>
+
+        <!-- 8 -->
+        <section id="voice" class="mn-ch"><div class="mn-n">9</div><h2 class="mn-h">Your voice, twenty minutes at a time</h2>
+          <p class="mn-p">The film plays from the first minute, with every line you haven’t recorded yet shown as words. <b>Today</b> picks a sitting — about twenty minutes, whole sections, so you finish things. Press Record on any line and the take opens with that line, a countdown, and whether it fit its space. Keep it or go again.</p>
+          <p class="mn-p">Or record the whole script first. Open <b>Script</b> and choose <b>Record the whole script</b>: one line at a time, in film order, with the line before and after it on screen. Space starts and stops, Enter keeps the take and moves on. Each shot then follows your reading and keeps the pause it was planned with, so the pictures are cut to your voice rather than the other way round. If you say a line differently from how it’s written, it offers to change the line to what you said.</p>
+          <p class="mn-p">Nothing is thrown away. Every take of a line is kept, and so is every picture a shot has had. Open a shot to see its earlier versions and takes, and pick one to put it back.</p>
+          <p class="mn-p"><b>Scene by scene</b> is the same film, one scene at a time: its rough cut on the left, what it’s becoming on the right, and under them a card for every shot with the one thing to do next. Finish a scene and it says so, and offers the next.</p>
+        </section>
+
+        <!-- 9 -->
+        <section id="out" class="mn-ch"><div class="mn-n">10</div><h2 class="mn-h">Before it goes out</h2>
+          <p class="mn-p">Export opens a check, in plain sentences: what’s still a placeholder, which lines aren’t in your voice, any claim with nothing behind it, whose footage it uses and how it’s credited, what was generated and how it’s labelled. Each comes with the fix that matters first. A rough cut can go out — labelled so nobody mistakes it for the finished film.</p>
+          <div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px">
+            <sc-for list="{{ pkg }}" as="f" hint-placeholder-count="6"><div class="mn-card" style="padding:11px 13px"><div style="font-size:13px;font-weight:600">{{ f.name }}</div><div style="margin-top:3px;font-size:12px;line-height:1.5;color:rgba(236,236,241,0.58)">{{ f.what }}</div></div></sc-for>
+          </div>
+          <p class="mn-p" style="font-size:13.5px;color:rgba(236,236,241,0.55)">The package downloads as one file. The timeline opens in Premiere and Resolve, so you can always take the film somewhere else. Each shot arrives as a clip named for what it shows, with a marker saying where it came from, what it needs, and what backs any claim over it.</p>
+        </section>
+
+        <!-- 10 -->
+        <section id="cost" class="mn-ch"><div class="mn-n">11</div><h2 class="mn-h">What it costs</h2>
+          <p class="mn-p">Footage is counted once, the first time it’s read. Every cut, short and change after that is free — so try things. Generated pictures are the only thing that costs per use, and only what lands in a finished film counts. Video is made in clips of up to 8 seconds, at 36¢ a second (Fast) or $1.20 (Full quality), about three times what the model costs us, which pays for the tries you throw away. A longer shot is one clip that then holds on its last frame, a clip every 8 seconds, or a still that moves slowly, for 12¢. One monthly limit covers it all, and you set it.</p>
+          <div class="mn-card" style="margin-top:18px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap"><span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums">{{ limit }}</span><span style="flex:1 1 220px;font-size:13px;line-height:1.5;color:rgba(236,236,241,0.62)">{{ limitLine }}</span><a href="Settings.dc.html#limit" style="font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:7px;background:rgba(111,140,255,0.14);color:#B9C6FF">Change it in Settings</a></div>
+        </section>
+
+        <!-- 11 -->
+        <section id="promises" class="mn-ch"><div class="mn-n">12</div><h2 class="mn-h">What it promises</h2>
+          <div style="margin-top:18px;display:flex;flex-direction:column">
+            <sc-for list="{{ promises }}" as="p" hint-placeholder-count="10"><div style="display:flex;gap:16px;align-items:baseline;padding:14px 0;border-top:1px solid rgba(255,255,255,0.06)"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:#ECECF1;opacity:.5;transform:translateY(-2px)"></span><div><div style="font-size:15px;font-weight:600;line-height:1.4">{{ p.say }}</div><div style="margin-top:3px;font-size:13px;line-height:1.55;color:rgba(236,236,241,0.6)">{{ p.why }}</div></div></div></sc-for>
+          </div>
+        </section>
+
+        <div style="margin-top:64px;display:flex;gap:10px;flex-wrap:wrap">
+          <a href="Home.dc.html" style="font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;background:#ECECF1;color:#101013">Start something</a>
+          <a href="Studio.dc.html" style="font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.2)">Open the sample essay</a>
+          <a href="Cut.dc.html" style="font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;box-shadow:inset 0 0 0 1px rgba(236,236,241,0.2)">Open the sample cut</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+const REC = "#EF5B4F", GREEN = "#5EC98F", WORK = "#6F8CFF", ROSE = "#E3A29B";
+const SCOL = { A: "#D8CFB8", B: "#8FA3B8", C: "#9A8FD0" };
+const fmt = n => { n = Math.max(0, Math.round(n)); return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0"); };
+const DAY = { A: "Tuesday", B: "Thursday", C: "Sunday" };
+class Component extends DCLogic {
+  state = { F: null, rules: null, q: "money" };
+  componentDidMount() { import(new URL("footage.js", document.baseURI).href).then(F => this.setState({ F, rules: F.SEED.map(r => ({ ...r })) })).catch(() => {}); }
+  renderVals() {
+    const st = this.state, F = st.F, out = {};
+    out.nav = [["#start", "Start with a sentence"], ["#room", "One room"], ["#direct", "Direct it"], ["#rules", "Rules make the cut"], ["#ask", "Ask what you said"], ["#shots", "Every shot is a choice"], ["#tell", "Ways to tell a scene"], ["#scout", "Scout"], ["#voice", "Your voice"], ["#out", "Before it goes out"], ["#cost", "What it costs"], ["#promises", "What it promises"]].map(([href, name], i) => ({ href, name, n: String(i + 1) }));
+    out.kinds = [["Essay", "An argument, researched and planned as a film you can play from the first minute.", 1], ["Cut", "Your recordings, cut down by rules you can read.", 1], ["Shorts", "Vertical clips from the strongest moments, each with why.", 1], ["React", "Their video, your answers. Scout finds the original and links it.", 0.55], ["Story", "Built from what you’ve said across months of recordings.", 0.55], ["Supercut", "Every time you said a thing, in order.", 0.55]].map(([name, what, op]) => ({ name, what, op: String(op) }));
+    out.lensKinds = [{ kind: "An essay:", tabs: "Film · To do · Script · Argument · Rules" }, { kind: "A cut:", tabs: "Cut · Words · Footage · Shorts · Rules" }];
+    // live: the rules demo
+    if (F && st.rules) {
+      const R = F.compute(st.rules), kept = R.rows.filter(r => r.kind === "clip"), gaps = R.rows.filter(r => r.voice), outN = R.st.filter(c => !c.in).length;
+      out.demo = { len: fmt(R.secs), what: kept.length + " of " + F.CLIPS.length + " moments" + (gaps.length ? " · " + gaps.length + " spaces to camera" : ""),
+        strip: R.rows.map(r => ({ flex: String(r.secs), bg: r.voice ? "transparent" : SCOL[r.src], ring: r.voice ? "inset 0 0 0 1.5px " + REC : "none", title: r.voice ? "You, to camera" : DAY[r.src] + " " + r.ts })),
+        rules: st.rules.map((r, i) => { let eff = "Off — doing nothing";
+          if (r.on) { if (r.kind === "keep") eff = "Keeps " + R.st.filter(c => c.in && c.byId === r.id).length + " moments"; else if (r.kind === "drop") eff = "Takes out " + R.st.filter(c => !c.in && c.dropId === r.id).length; else if (r.kind === "order") eff = "Runs " + F.ORDERS[r.order].name; else if (r.kind === "gap") eff = gaps.length ? gaps.length + " spaces for you" : "No spaces while it runs as it happened"; }
+          return { n: "0" + (i + 1), text: r.text, effect: eff, op: r.on ? "1" : "0.6", swBg: r.on ? GREEN : "rgba(236,236,241,0.16)", knob: r.on ? "19px" : "3px", onToggle: () => this.setState({ rules: st.rules.map(x => x.id === r.id ? { ...x, on: !x.on } : x) }) }; }),
+        note: outN + " moments left out, each with the rule that left it out. " + (st.rules.every(r => r.on) ? "Switch off the first rule and almost nothing is kept — it’s doing most of the choosing." : "The sample cut is unchanged — this only plays with a copy.") };
+    } else out.demo = { len: "…", what: "reading the sample vlogs", strip: [], rules: [], note: "" };
+    // live: ask
+    const SW = new Set("the a an and of to in on it my me i about what when where did do you your is was".split(" "));
+    const q = st.q.trim(), q2 = q.split(/\s+/).filter(w => !SW.has(w.toLowerCase())).join(" "), hits = F && q2 ? F.searchLines(q2, "meaning") : [];
+    out.ask = { q: st.q, onQ: e => this.setState({ q: e.target.value }), chips: ["money", "the house", "Tuesday nights", "mum"].map(t => ({ text: t, onGo: () => this.setState({ q: t }) })),
+      line: !F ? "Reading the sample vlogs…" : !q ? "Type anything you might have said." : hits.length ? (hits.length === 1 ? "Once" : hits.length + " times") + " across the three vlogs:" : "Nothing close to that in the three vlogs.",
+      hits: hits.slice(0, 6).map(h => ({ when: DAY[h.src] + " " + h.line.t, pre: h.pre.length > 60 ? "…" + h.pre.slice(-60) : h.pre, mid: h.mid, post: h.post.length > 80 ? h.post.slice(0, 80) + "…" : h.post })) };
+    out.directSteps = [["You say it", "One sentence, typed or said. A look, a source, a scene, a budget — or all of them at once.", "rgba(236,236,241,0.6)"], ["It plans", "The steps it would take, which shots each touches, and what it costs against your limit.", "#6F8CFF"], ["It works", "Scout finds, Sketch draws, generated pictures are made — two at a time per crew member, while you keep going.", "#6F8CFF"], ["You look", "A reel of everything it did. Approve what you like right in the film; redo the rest.", "#5EC98F"]].map(([name, what, dot]) => ({ name, what, dot }));
+    out.ways = [["Yours", "Free", "You on camera, from your phone, your own files and documents. Always first when you have it.", "rgba(236,236,241,0.6)"], ["Found", "Free", "Scout’s finds from archives and libraries — linked, credited, checked for use.", "rgba(236,236,241,0.6)"], ["Drawn", "Free", "Diagrams, counters, timelines and words on screen, drawn in code from real numbers.", "rgba(236,236,241,0.6)"], ["Generated", "from 12¢", "For moments made to be felt, or to depict what’s being said. Never photoreal, always labelled — over a claim, labelled a depiction.", WORK]].map(([name, cost, what, costColor]) => ({ name, cost, what, costColor }));
+    out.budgets = [["Nothing", "Drawn, found, words on screen, sound made visible. No generating at all."], ["A little", "The same, plus a generated still with a slow push in where a moment needs a mood."], ["Where it shows", "Generated video for the moments made to be felt, and depictions where you want them."]].map(([name, what]) => ({ name, what }));
+    out.devices = [["Held", 1], ["Montage", 1], ["Countdown", 1], ["Glitch", 1], ["Telemetry beeps", 1], ["Words that move", 1], ["Side by side", 1], ["Archive reveal", 1], ["Read it on screen", 1], ["Speed ramp", 1], ["Cut to music", 1], ["Match cut", 0], ["Cutaways", 0], ["Let it breathe", 0], ["One-frame flash", 0]].map(([name, built]) => ({ name, what: built ? "Built" : "Designed, not built yet", bg: built ? "rgba(236,236,241,0.09)" : "transparent", color: built ? "#ECECF1" : "rgba(236,236,241,0.45)" }));
+    out.scout = [["Linked", GREEN, "none", "Found, checked, credited on screen when it plays. It plays from its own source."], ["A ghost", "transparent", "inset 0 0 0 1.5px " + ROSE, "Found but not cleared, or not found yet. It sits in the film, visibly, and can’t go out until it’s settled."], ["Traced", WORK, "none", "Followed back to where it first appeared — the programme, the paper, the date."], ["Nothing backs this", ROSE, "none", "A real answer. The claim stays flagged on screen until something does, or you cut it."]].map(([name, dot, ring, what]) => ({ name, dot, ring, what }));
+    out.pkg = [["The timeline", "A file Premiere and Resolve open: every shot in order, your voice under it, a marker on each."], ["The markers", "The same markers for Resolve, which imports them separately."], ["Captions", "A subtitle file timed to the words."], ["Credits", "Everyone whose footage it uses, in order."], ["Receipts", "Each claim and what backs it — for viewers too."], ["The cue sheet", "What was generated, how, and how it’s labelled."], ["The ledger", "What was left out, and the rule that left it out."]].map(([name, what]) => ({ name, what }));
+    let lim = 50; try { const s = JSON.parse(localStorage.getItem("aldershot.settings.v1") || "null"); if (s && typeof s.limit === "number") lim = s.limit; } catch (e) {}
+    out.limit = lim ? "$" + lim : "None"; out.limitLine = lim ? "Your monthly limit for generated pictures. The Studio stops recommending them as you get close." : "You’ve set no generated pictures at all. The Studio only recommends free ways.";
+    out.promises = [
+      ["It won’t leave old edits behind.", "Change a rule and the cut is rebuilt from scratch, so nothing from the old version hangs around."],
+      ["AI doesn’t decide where cuts land.", "The AI suggests what should happen. Ordinary code works out the exact timing, and every edit is checked before you see it."],
+      ["No scores or percentages.", "You get Strong, Worth a look or Long shot instead — with the reason."],
+      ["It tells you when nothing backs a claim.", "If no source is found, it says so. It never swaps in something that’s only close."],
+      ["Your footage is processed once.", "You pay to process a video once. Editing after that is free."],
+      ["Deleting can be undone for 30 days.", "Rules switch off instead of disappearing, and anything you remove can be restored for 30 days."],
+      ["It won’t hide a partial failure.", "If part of a job fails, it tells you which part. It never reports the job as done."],
+      ["Your own pictures come first.", "Then your documents, then what Scout finds, then generated pictures — never photorealistic, and labelled as a depiction next to a claim."],
+      ["It won’t download what it shouldn’t.", "Clips from other platforms are linked and credited, never downloaded or stored."],
+      ["It writes in your voice.", "Picking a format like “documentary” shapes the structure, not how the lines sound. Where you’ve said something yourself, your wording is used."],
+    ].map(([say, why]) => ({ say, why }));
+    return out;
+  }
+}
+</script>
+</body>
+</html>

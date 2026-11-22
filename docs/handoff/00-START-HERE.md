@@ -32,6 +32,7 @@ Aldershot is a hands-off video editor for people who make videos out of footage 
 | 18 | `18-SCOUT-BUILD-SPEC.md` | **Scout, buildable**: architecture, tables, every step with its schema and rule, the verifier, the stopping math, adapters and quotas, match-back, phases with acceptance tests |
 | 19 | `19-SCOUT-EVAL.md` | What to gather for the eval, what each number means, and how each one flatters |
 | 20 | `20-DESIGN-BRIEF.md` | **The handoff running the other way**: what the product IS becoming (a session, not a screen; a project that grows, not a cut delivered), why the substrate already chose that, the surfaces nothing draws, and the nine decisions only the design can make |
+| 22 | `22-CANVAS-TO-CODE.md` | **The canvas, ported**: `design/canvas/` is the prototype at v73; this is the order it comes into the code, one PR per row, and what the canvas fakes |
 | 21 | `21-THE-PLAN-IS-THE-ROOM.md` | **The design's answer to 20**: the plan as the room, playable from the first minute — acts → sections → the two-column script, the sound weave, ghosts by type, Rough and Drawn finishes, the crew (Aldershot · Scout · Sketch), notes at the playhead, one task at a time. Pages in `design/next/` |
 | — | `PR-1-HYGIENE.md` | The first pull request for the repo, file by file |
 | — | `PR-1-HYGIENE.md` | The first pull request, step by step: retire the old design, bring in the current prototype and this package, repoint the fidelity scripts, declare the dead-letter queue |
